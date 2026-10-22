@@ -3,28 +3,32 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0f1a17">
-  <title>IronM</title>
+  <meta name="theme-color" content="#f4f3ef" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c100f" media="(prefers-color-scheme: dark)">
+  <title>IronM · 你的健身教练团队</title>
   <link rel="stylesheet" href="/iron/style.css">
   <script src="/iron/app.js" defer></script>
 </head>
 <body>
-  <header class="top" id="top" hidden>
-    <div class="brand">Iron<b>M</b></div>
-    <div class="title" id="title"></div>
-    <button class="me" id="me" aria-label="我的">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
-    </button>
-  </header>
-  <main id="view" aria-live="polite"></main>
-  <a class="ask" id="ask" href="/chat" hidden>
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>问教练
-  </a>
-  <nav class="tabs" id="tabs" hidden>
-    <a href="#home" data-tab="home"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/></svg>首页</a>
-    <a href="#moves" data-tab="moves"><svg viewBox="0 0 24 24"><path d="M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12"/></svg>动作</a>
-    <a href="#food" data-tab="food"><svg viewBox="0 0 24 24"><path d="M7 3v8a2 2 0 0 0 2 2v8M5 3v6M9 3v6M17 21V3c-2 1-3 3.5-3 7h3"/></svg>饮食</a>
-    <a href="#data" data-tab="data"><svg viewBox="0 0 24 24"><path d="M3 20h18M6 16l4-5 3 3 5-7"/></svg>数据</a>
+  <div class="app">
+    <header class="bar" id="bar" hidden>
+      <div class="bar-text">
+        <div class="bar-kicker" id="kicker"></div>
+        <h1 class="bar-title" id="title"></h1>
+      </div>
+      <a class="avatar" id="avatar" href="#me" aria-label="我的"></a>
+    </header>
+    <main id="view" class="view" aria-live="polite"></main>
+  </div>
+  <nav class="tabs" id="tabs" hidden aria-label="主导航">
+    <div class="tabs-inner">
+      <a href="#home" data-tab="home"><span class="ti" data-icon="home"></span>首页</a>
+      <a href="#moves" data-tab="moves"><span class="ti" data-icon="dumbbell"></span>动作</a>
+      <a href="#chat" data-tab="chat" class="coach-tab"><span class="ti" data-icon="coach"></span>教练</a>
+      <a href="#food" data-tab="food"><span class="ti" data-icon="food"></span>饮食</a>
+      <a href="#data" data-tab="data"><span class="ti" data-icon="chart"></span>数据</a>
+    </div>
   </nav>
+  <div id="sheet-root"></div>
 </body>
 </html>

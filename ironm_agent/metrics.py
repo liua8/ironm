@@ -64,6 +64,8 @@ class Metric:
     tone: Tone = "neutral"
     series: tuple[Point, ...] = ()  # 画小趋势图用
     ref: str = ""  # 依据库编号（K..），没有时为空
+    brief: str = ""  # 卡片上的短结论（如"正常""基本持平"），没有结论时为空
+    display: str = ""  # 数值的写法（如血压 112/71、蛋白质 111–138），为空时按 value 显示
 
     @property
     def ok(self) -> bool:
@@ -104,13 +106,13 @@ def bmi(weight: Point | None, height_cm: float | None) -> Metric:
     m = height_cm / 100
     value = round(weight[1] / (m * m), 1)
     if value < 18.5:
-        label, tone = "体重过低（< 18.5）", "attention"
+        label, tone, brief = "体重过低（< 18.5）", "attention", "偏低"
     elif value < 24:
-        label, tone = "正常（18.5–23.9）", "good"
+        label, tone, brief = "正常（18.5–23.9）", "good", "正常"
     elif value < 28:
-        label, tone = "超重（24.0–27.9）", "attention"
+        label, tone, brief = "超重（24.0–27.9）", "attention", "超重"
     else:
-        label, tone = "肥胖（≥ 28.0）", "attention"
+        label, tone, brief = "肥胖（≥ 28.0）", "attention", "肥胖"
     return Metric(
         "bmi",
         "BMI",
@@ -121,6 +123,7 @@ def bmi(weight: Point | None, height_cm: float | None) -> Metric:
         data=f"体重 {_fmt(weight[1])} 公斤（{weight[0].isoformat()}）；身高 {_fmt(height_cm)} 厘米",
         source=f"{BMI_SOURCE}：中国成年人 18.5–23.9 为正常。BMI 不区分肌肉和脂肪，肌肉量大的人会偏高",
         tone=tone,  # type: ignore[arg-type]
+        brief=brief,
     )
 
 
@@ -182,11 +185,11 @@ def weight_trend(points: Sequence[Point]) -> Metric:
     t = _T975[n - 3] if n - 2 <= len(_T975) else 2.0
     week, low, high = slope * 7, (slope - t * se) * 7, (slope + t * se) * 7
     if high < 0:
-        word = "在下降"
+        word, brief = "在下降", "在下降"
     elif low > 0:
-        word = "在上升"
+        word, brief = "在上升", "在上升"
     else:
-        word = "变化不明显（可信范围跨过 0）"
+        word, brief = "变化不明显（可信范围跨过 0）", "基本持平"
     weeks_used = weeks  # 用的是哪个时间窗口（4、8 或 12 周）
     return Metric(
         key,
@@ -199,6 +202,7 @@ def weight_trend(points: Sequence[Point]) -> Metric:
         source="每周减重 0.5–1 公斤左右更容易长期保持（美国疾控中心）",
         ref="K16",
         series=tuple(pts),
+        brief=brief,
     )
 
 
@@ -292,6 +296,7 @@ def calorie_target(total: Metric, base: Metric, p: Profile) -> Metric:
         data="每日总消耗、基础代谢；目标来自档案",
         source=why,
         ref=ref,
+        brief=GOALS[p.goal],
     )
 
 
@@ -315,6 +320,8 @@ def protein_target(weight: Point | None, p: Profile) -> Metric:
         data=f"体重 {_fmt(weight[1])} 公斤（{weight[0].isoformat()}）",
         source="运动人群每天 1.4–2.0 克/公斤体重（国际运动营养学会立场声明，2017）",
         ref="K09",
+        brief=GOALS.get(p.goal or "", ""),
+        display=f"{a}–{b}",
     )
 
 
@@ -347,6 +354,7 @@ def against_baseline(
             key, name, round(avg, 1), unit,
             f"最近 7 天平均 {_fmt(avg)} {unit}；本人基线的数据还不够（需要 {BASELINE_MIN} 天，现在 {len(base)} 天），暂不比较",
             how="最近 7 天（以最后一条记录为准）取平均", data=_span(week), source=source, ref=ref, series=series,
+            brief="基线积累中",
         )  # fmt: skip
     mean = statistics.fmean(v for _, v in base)
     sd = statistics.pstdev([v for _, v in base]) or 0.0
@@ -357,10 +365,12 @@ def against_baseline(
             ("明显高于" if diff > 0 else "明显低于") + "你自己的基线，可能疲劳、睡眠不足或生病",
             "attention",
         )
+        brief = "明显偏高" if diff > 0 else "明显偏低"
     elif sd and abs(diff) >= sd:
         word, tone = ("高于" if diff > 0 else "低于") + "你自己的基线（方向是好的）", "good"
+        brief = "好于基线"
     else:
-        word, tone = "在你自己的正常波动范围内", "good"
+        word, tone, brief = "在你自己的正常波动范围内", "good", "正常波动"
     return Metric(
         key,
         name,
@@ -373,6 +383,7 @@ def against_baseline(
         ref=ref,
         tone=tone,  # type: ignore[arg-type]
         series=series,
+        brief=brief,
     )
 
 
@@ -404,7 +415,7 @@ def sleep(points: Sequence[Point]) -> Metric:
         f"最近 7 天平均 {_fmt(avg)} 小时，其中 {short} 天不足 7 小时",
         how="最近 7 天（以最后一条记录为准）每晚的睡眠时长取平均", data=_span(week),
         source="成年人每晚应规律地睡 7 小时及以上（美国睡眠医学会与睡眠研究会共识，2015）", ref="K07",
-        tone=tone, series=tuple(sorted(points))[-60:],
+        tone=tone, series=tuple(sorted(points))[-60:], brief="充足" if avg >= 7 else "偏少",
     )  # fmt: skip
 
 
@@ -422,7 +433,7 @@ def steps(points: Sequence[Point], age: int | None) -> Metric:
         f"最近 7 天平均 {round(avg)} 步；参考：{lo}–{hi} 步/天以后收益趋于平稳",
         how="最近 7 天（以最后一条记录为准）每天的步数取平均", data=_span(week),
         source=f"每天步数与全因死亡风险的荟萃分析（Lancet Public Health，2022）：{'60 岁及以上' if lo == 6000 else '60 岁以下'}约 {lo}–{hi} 步趋于平稳",
-        ref="K21", tone=tone, series=tuple(sorted(points))[-60:],
+        ref="K21", tone=tone, series=tuple(sorted(points))[-60:], brief="达标" if avg >= lo else "偏少",
     )  # fmt: skip
 
 
@@ -432,17 +443,18 @@ def blood_pressure(sys_pt: Point | None, dia_pt: Point | None) -> Metric:
         return missing(key, name, unit, "血压记录")
     s, d = sys_pt[1], dia_pt[1]
     if s >= 140 or d >= 90:
-        label, tone = "达到高血压的数值范围（≥ 140/90）", "attention"
+        label, tone, brief = "达到高血压的数值范围（≥ 140/90）", "attention", "偏高"
     elif s >= 120 or d >= 80:
-        label, tone = "正常高值（120–139/80–89）", "neutral"
+        label, tone, brief = "正常高值（120–139/80–89）", "neutral", "正常高值"
     else:
-        label, tone = "正常（< 120/80）", "good"
+        label, tone, brief = "正常（< 120/80）", "good", "正常"
     return Metric(
         key, name, s, unit,
         f"最近一次 {round(s)}/{round(d)} mmHg，{label}。只作参考，不作诊断，确诊需要医生在不同日子多次测量",
         how="取最近一次收缩压和舒张压，按分级标准对照",
         data=f"收缩压 {round(s)}（{sys_pt[0].isoformat()}）；舒张压 {round(d)}（{dia_pt[0].isoformat()}）",
         source="中国高血压防治指南（2018 年修订版）的血压分级", tone=tone,  # type: ignore[arg-type]
+        brief=brief, display=f"{round(s)}/{round(d)}",
     )  # fmt: skip
 
 

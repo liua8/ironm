@@ -134,3 +134,25 @@ def test_profile_height_falls_back_to_recorded_height() -> None:
         for x in m.compute_all(m.Readings(weight=days([69.2]), height_cm=175), m.Profile(), TODAY)
     }
     assert out["bmi"].value == 22.6
+
+
+def test_cards_get_a_short_conclusion_and_display_value() -> None:
+    """卡片上只放一个数和一个短结论；长说明留给详情。"""
+    assert m.bmi((END, 69.2), 175).brief == "正常" and m.bmi((END, 90.0), 175).brief == "肥胖"
+    bp = m.blood_pressure((END, 112), (END, 71))
+    assert (bp.brief, bp.display) == ("正常", "112/71")
+    assert m.blood_pressure((END, 145), (END, 85)).brief == "偏高"
+    flat = days([69.2, 69.4, 69.1, 69.3, 69.2, 69.0, 69.3] * 3)
+    assert m.weight_trend(flat).brief == "基本持平"
+    falling = days([71 - 0.07 * i for i in range(28)])
+    assert m.weight_trend(falling).brief == "在下降"
+    protein = m.protein_target((END, 69.2), m.Profile(goal="fat_loss"))
+    assert (protein.display, protein.brief) == ("111–138", "减脂")
+    assert (
+        m.steps(days([9000] * 7), 31).brief == "达标" and m.sleep(days([6.0] * 7)).brief == "偏少"
+    )
+    calm = m.resting_hr(days([56.0, 57.0] * 35))
+    assert calm.brief == "正常波动"
+    tired = m.resting_hr(days([56.0, 57.0] * 30 + [63.0] * 7))
+    assert (tired.brief, tired.tone) == ("明显偏高", "attention")
+    assert m.resting_hr(days([56.0] * 10)).brief == "基线积累中"

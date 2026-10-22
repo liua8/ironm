@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from ironm_agent import profile as profiles
+from ironm_agent.exercises import EQUIPMENT, NOTE, PARTS, library
 from ironm_agent.healthdata import read_all
 from ironm_agent.memory_extract import MAX_CONTENT
 from ironm_agent.memory_store import CATEGORIES, ORIGINS, Item, MemoryStore, default_store
@@ -96,6 +97,17 @@ async def put_profile(
 ) -> dict[str, Any]:
     await profiles.save(user_id, body)
     return await get_profile(user_id)
+
+
+@router.get("/iron/api/exercises")
+async def get_exercises(user_id: str = Depends(_verify())) -> dict[str, Any]:
+    lib = library()
+    return {
+        "parts": PARTS,
+        "equipment": EQUIPMENT,
+        "note": NOTE,
+        "exercises": [x.model_dump() for x in lib.exercises],
+    }
 
 
 # ---- 记忆接口：前端不显示（项目负责人决定），保留查看、修改、删除、暂停，留给以后的隐私设置或 App ----
