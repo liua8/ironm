@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
@@ -55,16 +56,32 @@ def with_memory(items: list[Item]) -> MemoryBook:
     return book
 
 
-def test_each_expert_gets_its_part_of_the_memory(monkeypatch: Any) -> None:
+def test_each_expert_gets_its_part_of_the_memory(monkeypatch: Any, caplog: Any) -> None:
+    caplog.set_level(logging.INFO, logger="ironm_agent.run")
     s = Script()
     blocks = collect(agent(s, monkeypatch=monkeypatch, memory=with_memory(KNOWN)), QUESTION)
     assert "左膝有旧伤" in s.seen["route"]  # 主教练调度时看画像
     assert "哑铃" in s.seen["exercise"] and "乳糖" not in s.seen["exercise"]
     assert "乳糖" in s.seen["nutrition"] and "哑铃" not in s.seen["nutrition"]
+    # 记忆不在前端显示：对话过程里既不列出记忆条目，也没有用了哪几类记忆的提示（回答本身照常用上记忆）
     shown = json.dumps(blocks, ensure_ascii=False)
-    assert "记得你的情况" in shown
-    assert "伤病与身体状况、器械与场地）" in shown  # 动作教练拿到了哪几类，过程里看得到
-    assert "饮食限制与习惯）" in shown and "左膝" not in shown  # 只显示类别，不显示内容
+    for hidden in (
+        "记得你的情况",
+        "参考你的记忆",
+        "伤病与身体状况",
+        "器械与场地",
+        "饮食限制与习惯",
+    ):
+        assert hidden not in shown
+    assert not any(x.content in shown for x in KNOWN)
+    # 各角色拿到哪几类只写进日志，只有类别、没有内容
+    logged = [
+        r.getMessage() for r in caplog.records if r.getMessage().startswith("ironm memory use")
+    ]
+    assert len(logged) == 1
+    roles = json.loads(logged[0].removeprefix("ironm memory use "))["roles"]
+    assert roles == {"exercise": ["injury", "equipment"], "nutrition": ["diet"]}
+    assert "左膝" not in logged[0] and "乳糖" not in logged[0]
 
 
 def test_numbers_the_user_said_before_can_be_used_without_a_source(monkeypatch: Any) -> None:

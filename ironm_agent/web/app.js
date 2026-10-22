@@ -186,70 +186,9 @@ const PAGES = {
       } catch (err) { msg.textContent = err.message; }
     });
     view.append(h("p", { class: "lede" }, "这些信息用来计算 BMI、基础代谢、每日热量和蛋白质目标。"), form);
-    const memory = h("section", { class: "stack", id: "memory" });
-    view.append(memory);
-    await memorySection(memory);
     view.append(h("button", { class: "ghost", onclick: () => { store.set(""); cache = { metrics: null, profile: null }; render(); } }, "退出登录"));
   },
 };
-
-// ---- 我的记忆 -------------------------------------------------------------------------------
-const STATUS_TAG = { pending: ["待确认", "attention"], resolved: ["已解决", ""] };
-
-function day(iso) { const d = new Date(iso); return `${d.getMonth() + 1}月${d.getDate()}日`; }
-
-async function memorySection(box) {
-  box.replaceChildren(h("h2", {}, "我的记忆"));
-  let data;
-  try { data = await api("/iron/api/memory"); } catch (err) { box.append(failed(err)); return; }
-  const refresh = () => memorySection(box);
-  const act = async (fn) => { try { await fn(); } catch (err) { alertLine.textContent = err.message; return; } refresh(); };
-  const alertLine = h("div", { class: "error" });
-  const pause = h("input", { type: "checkbox", checked: data.paused });
-  pause.addEventListener("change", () => act(() => api("/iron/api/memory-settings", { method: "PUT", body: JSON.stringify({ paused: pause.checked }) })));
-  box.append(
-    h("p", { class: "lede" }, "教练从对话里记下的你的情况，回答时会参考。可以改、可以删；系统推断的条目要你确认后才会用。"),
-    h("label", { class: "switch" }, pause, h("span", {}, data.paused ? "记忆已暂停：不再记新的，已有的仍会参考" : "暂停记忆（暂停后不再记新的）")),
-    alertLine);
-  if (!data.items.length) {
-    box.append(h("div", { class: "card muted" }, "还没有记忆。跟教练说说你的伤病、器械、能练的时间、饮食习惯，教练会记下来。"));
-    return;
-  }
-  for (const [key, label] of Object.entries(data.categories)) {
-    const items = data.items.filter((x) => x.category === key);
-    if (!items.length) continue;
-    box.append(h("div", { class: "card mem" }, h("div", { class: "mem-title" }, label), ...items.map((x) => memoryItem(x, act))));
-  }
-}
-
-function memoryItem(x, act) {
-  const [tag, tone] = x.expired ? ["已过期", ""] : (STATUS_TAG[x.status] || []);
-  const row = h("div", { class: "mem-item" });
-  const show = () => {
-    row.replaceChildren(
-      h("div", { class: "mem-text" }, x.content, tag ? h("span", { class: `badge ${tone}` }, tag) : null),
-      h("div", { class: "mem-meta" }, `${x.origin_label} · ${day(x.created)}`, x.evidence && x.origin !== "edited" ? ` · 原话「${x.evidence}」` : ""),
-      h("div", { class: "mem-actions" },
-        x.status === "pending" ? h("button", { class: "small", onclick: () => act(() => api(`/iron/api/memory/${x.id}/confirm`, { method: "POST" })) }, "确认") : null,
-        h("button", { class: "small ghost", onclick: edit }, "修改"),
-        h("button", { class: "small ghost", onclick: ask }, "删除")));
-  };
-  const edit = () => {
-    const input = h("input", { value: x.content, maxlength: "60" });
-    const form = h("form", { class: "mem-edit" }, input,
-      h("div", { class: "mem-actions" }, h("button", { class: "small", type: "submit" }, "保存"), h("button", { class: "small ghost", type: "button", onclick: show }, "取消")));
-    form.addEventListener("submit", (e) => { e.preventDefault(); act(() => api(`/iron/api/memory/${x.id}`, { method: "PUT", body: JSON.stringify({ content: input.value }) })); });
-    row.replaceChildren(form); input.focus();
-  };
-  const ask = () => {
-    row.replaceChildren(h("div", { class: "mem-text" }, x.content),
-      h("div", { class: "mem-actions" }, h("span", { class: "muted" }, "删除后教练不再记得这条，确定吗？"),
-        h("button", { class: "small danger", onclick: () => act(() => api(`/iron/api/memory/${x.id}`, { method: "DELETE" })) }, "删除"),
-        h("button", { class: "small ghost", onclick: show }, "取消")));
-  };
-  show();
-  return row;
-}
 const TITLES = { home: "首页", moves: "动作", food: "饮食", data: "数据", me: "我的" };
 
 // ---- 登录 ---------------------------------------------------------------------------------

@@ -98,7 +98,7 @@ async def put_profile(
     return await get_profile(user_id)
 
 
-# ---- 我的记忆 ----------------------------------------------------------------------------
+# ---- 记忆接口：前端不显示（项目负责人决定），保留查看、修改、删除、暂停，留给以后的隐私设置或 App ----
 
 
 def memory_store() -> MemoryStore:

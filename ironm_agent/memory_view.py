@@ -76,12 +76,10 @@ class Recall:
                          + "\n".join(f"- {x.content}（{_day(x)}）" for x in advice))  # fmt: skip
         return "\n\n".join(parts)
 
-    def categories_for(self, role: Role) -> list[str]:
-        """这位专业 Agent 拿到了哪几类记忆（给过程展示看，不含内容）。"""
+    def categories_for(self, role: Role) -> list[Category]:
+        """这位专业 Agent 拿到了哪几类记忆（写日志用，只有类别，不含内容）。"""
         shown = (*ROLE_CATEGORIES.get(role, ()), *EVERYONE, "advice")
-        return [
-            CATEGORIES[c] for c in ORDER if c in shown and any(x.category == c for x in self.items)
-        ]
+        return [c for c in ORDER if c in shown and any(x.category == c for x in self.items)]
 
     def persona(self) -> str:
         """画像（L3）：全部有效记忆按类别排成清单，主教练调度和直接回答时用。"""
@@ -98,10 +96,3 @@ class Recall:
     def numbers_text(self) -> str:
         """记忆里的说法都是用户自己说的：其中的数字（如哑铃 20 公斤）作答时可以直接用。"""
         return "\n".join(x.content for x in self.items if x.category != "advice")
-
-    def summary(self) -> str:
-        """给过程展示看的一句话：用到了几条、分别是哪几类。"""
-        counts: dict[str, int] = {}
-        for x in self.items:
-            counts[CATEGORIES[x.category]] = counts.get(CATEGORIES[x.category], 0) + 1
-        return "、".join(f"{k} {v} 条" for k, v in counts.items())

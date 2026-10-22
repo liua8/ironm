@@ -102,17 +102,3 @@ form { display: flex; flex-direction: column; gap: 12px; }
 .ask svg { width: 18px; height: 18px; }
 .login { max-width: 380px; margin: 12vh auto 0; }
 .login h1 { font-size: 30px; }
-
-/* 我的记忆 */
-.stack { display: flex; flex-direction: column; gap: 10px; }
-.switch { flex-direction: row; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; }
-.switch input { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
-.mem { gap: 0; padding-top: 10px; padding-bottom: 6px; }
-.mem-title { font-size: 13px; color: var(--muted); font-weight: 600; padding-bottom: 4px; }
-.mem-item { padding: 10px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.mem-text { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; overflow-wrap: anywhere; }
-.mem-meta { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
-.mem-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.mem-edit { gap: 8px; }
-button.small { padding: 5px 12px; font-size: 13px; border-radius: 10px; }
-button.danger { background: var(--warn); color: var(--card); }

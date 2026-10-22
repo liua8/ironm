@@ -284,7 +284,7 @@ _default: PgMemory | None = None
 
 
 def default_store() -> MemoryStore:
-    """线上用的记忆存储（问答和"我的记忆"页面共用一个）。"""
+    """线上用的记忆存储（问答和记忆接口共用一个）。"""
     global _default
     if _default is None:
         _default = PgMemory()

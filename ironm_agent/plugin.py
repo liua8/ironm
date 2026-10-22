@@ -79,14 +79,13 @@ def question_of(messages: list[dict[str, Any]]) -> str:
     return ""
 
 
-def route_summary(r: Route, recall: Recall | None = None) -> str:
-    remembered = f"\n记得你的情况：{recall.summary()}" if recall and recall.items else ""
+def route_summary(r: Route) -> str:
     if r.intent != "pro":
         kinds = {"chat": "闲聊", "app": "问 App 用法", "out_of_scope": "超出范围"}
-        return f"判断为{kinds[r.intent]}，由主教练直接回答" + remembered
+        return f"判断为{kinds[r.intent]}，由主教练直接回答"
     names = "、".join(SPECS[x].name for x in r.experts())
     how = "模型判断" if r.by == "model" else "按关键词（" + "；".join(r.problems) + "）"
-    return f"请了：{names}\n方式：{how}" + (f"\n理由：{r.reason}" if r.reason else "") + remembered
+    return f"请了：{names}\n方式：{how}" + (f"\n理由：{r.reason}" if r.reason else "")
 
 
 class IronMAgent:
@@ -280,7 +279,7 @@ class IronMAgent:
         run.update(intent=r.intent, route_by=r.by, concerns=list(r.concerns))
         for block in (
             started("coach", "主教练", "理解问题、安排专业角色"),
-            finished("coach", route_summary(r, recall)),
+            finished("coach", route_summary(r)),
         ):
             yield block
         if r.intent != "pro" or r.primary is None:
@@ -295,13 +294,14 @@ class IronMAgent:
         run["basics"] = len(personal.lines)
         roles = r.experts()
         run["roles"] = [x.value for x in roles]
+        if recall.items:  # 记忆不在前端显示；各角色拿到哪几类只写进日志（只有类别，不含内容）
+            used = {x.value: recall.categories_for(x) for x in roles}
+            _log.info("ironm memory use %s", json.dumps({"turn": run["turn"], "roles": used}))
         metrics_once = self._metrics_source(user_id)
         tasks: dict[asyncio.Task[Consultation], int] = {}
         for i, role in enumerate(roles):
             spec = SPECS[role]
-            kinds = recall.categories_for(role)
-            uses = f"（参考你的记忆：{'、'.join(kinds)}）" if kinds else ""
-            yield started(f"role-{i}", spec.name, spec.duty + uses)
+            yield started(f"role-{i}", spec.name, spec.duty)
             toolbox = Toolbox(
                 spec,
                 kb=self._kb,
