@@ -480,7 +480,7 @@ const STARTERS = [
 
 function chatPage(view) {
   const thread = h("div", { class: "thread" });
-  const input = h("textarea", { rows: "1", placeholder: "问训练、动作、饮食、恢复，或者你的数据…", "aria-label": "输入问题", enterkeyhint: "send" });
+  const input = h("textarea", { rows: "1", placeholder: "问训练、动作、饮食或恢复…", "aria-label": "输入问题", enterkeyhint: "send" });
   const send = h("button", { class: "send", type: "submit", "aria-label": "发送" }, icon("send"));
   const form = h("form", { class: "composer" }, input, send);
   const fresh = h("button", { class: "icon-btn", type: "button", "aria-label": "新对话", title: "新对话", onclick: () => { resetChat(); chat.loaded = true; drawThread(); input.focus(); } }, icon("plus", "sm"));
