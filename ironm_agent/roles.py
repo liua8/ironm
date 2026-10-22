@@ -13,7 +13,6 @@ class Role(StrEnum):
     NUTRITION = "nutrition"
     RECOVERY = "recovery"
     DATA = "data"
-    SAFETY = "safety"
 
 
 @dataclass(frozen=True)
@@ -30,8 +29,8 @@ SPECS: dict[Role, RoleSpec] = {
     Role.PLANNER: RoleSpec(
         Role.PLANNER,
         "训练规划",
-        "训练频率、组数次数、强度、有氧与力量的安排、进阶与减量",
-        frozenset({"training"}),
+        "训练频率、组数次数、强度、有氧与力量的安排、进阶与减量；训练相关的风险与注意事项",
+        frozenset({"training", "safety"}),
         False,
         (
             "计划",
@@ -56,7 +55,7 @@ SPECS: dict[Role, RoleSpec] = {
         Role.EXERCISE,
         "动作教练",
         "动作做法与要点、常见错误、替代动作、热身",
-        frozenset({"exercise", "training"}),
+        frozenset({"exercise", "training", "safety"}),
         False,
         (
             "动作",
@@ -78,8 +77,8 @@ SPECS: dict[Role, RoleSpec] = {
     Role.NUTRITION: RoleSpec(
         Role.NUTRITION,
         "营养",
-        "饮食原则、热量、蛋白质、补剂、减脂与增肌饮食、喝水",
-        frozenset({"nutrition"}),
+        "饮食原则、热量、蛋白质、补剂、减脂与增肌饮食、喝水；饮食与补剂的风险",
+        frozenset({"nutrition", "safety"}),
         False,
         (
             "吃",
@@ -103,10 +102,31 @@ SPECS: dict[Role, RoleSpec] = {
     Role.RECOVERY: RoleSpec(
         Role.RECOVERY,
         "恢复",
-        "睡眠、疲劳、肌肉酸痛、休息安排、心率变异性等恢复指标",
-        frozenset({"recovery"}),
+        "睡眠、疲劳、肌肉酸痛、身体不适与伤痛、生病时的休息安排、心率变异性等恢复指标，以及什么情况要就医",
+        frozenset({"recovery", "safety"}),
         True,
-        ("睡", "失眠", "累", "疲劳", "酸痛", "恢复", "休息", "心率变异", "hrv", "过度训练"),
+        (
+            "睡",
+            "失眠",
+            "累",
+            "疲劳",
+            "酸痛",
+            "恢复",
+            "休息",
+            "心率变异",
+            "hrv",
+            "过度训练",
+            "疼",
+            "痛",
+            "不舒服",
+            "受伤",
+            "扭",
+            "肿",
+            "头晕",
+            "感冒",
+            "发烧",
+            "生病",
+        ),
     ),
     Role.DATA: RoleSpec(
         Role.DATA,
@@ -115,14 +135,6 @@ SPECS: dict[Role, RoleSpec] = {
         frozenset({"data"}),
         True,
         ("体重", "心率", "步数", "血压", "趋势", "数据", "指标", "最近", "变化", "体脂", "化验"),
-    ),
-    Role.SAFETY: RoleSpec(
-        Role.SAFETY,
-        "安全官",
-        "运动与饮食里的安全风险、身体不适、特殊人群、什么情况要就医；只提醒和设限",
-        frozenset({"safety"}),
-        False,
-        ("疼", "痛", "不舒服", "受伤", "怀孕", "高血压", "糖尿病", "心脏", "头晕", "安全"),
     ),
 }
 

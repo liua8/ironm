@@ -14,7 +14,7 @@ type Concern = Literal["discomfort", "special"]
 
 MAX_HELPERS = 2
 
-# 提到这些说法时，一律按专业问题处理，并由安全官把关
+# 提到这些说法时，一律按专业问题处理
 _DISCOMFORT = (
     "疼",
     "痛",
@@ -45,12 +45,10 @@ class Route(ContractModel):
     problems: tuple[str, ...] = ()  # 模型方案没通过的原因（改按关键词时记下）
 
     def experts(self) -> tuple[Role, ...]:
-        """这一轮要请的专业 Agent：主责、辅助、安全官；恢复排在训练规划之前。"""
+        """这一轮要请的专业 Agent：主责与辅助；恢复排在训练规划之前。"""
         if self.intent != "pro" or self.primary is None:
             return ()
         roles = [self.primary, *self.helpers]
-        if Role.SAFETY not in roles:
-            roles.append(Role.SAFETY)
         if Role.RECOVERY in roles and Role.PLANNER in roles:
             roles.remove(Role.RECOVERY)
             roles.insert(roles.index(Role.PLANNER), Role.RECOVERY)
@@ -80,7 +78,7 @@ def keyword_route(text: str, problems: Sequence[str] = ()) -> Route:
         if any(w in lowered for w in _CHAT_WORDS) and len(lowered) <= 12:
             return Route(intent="chat", by="keywords", problems=tuple(problems))
     if not ranked:
-        ranked = [Role.SAFETY if concerns else Role.PLANNER]
+        ranked = [Role.RECOVERY if concerns else Role.PLANNER]
     return Route(
         intent="pro",
         concerns=concerns,
@@ -147,7 +145,7 @@ _PROMPT = """你是健身 App 的主教练，负责理解用户的问题，并�
 请判断：
 1. intent：chat（打招呼、闲聊、鼓励）、app（问 App 怎么用、你能做什么）、pro（训练、动作、饮食、恢复、身体数据、健康安全相关的专业问题）、out_of_scope（与健身健康无关）。拿不准时选 pro。
 2. concerns：这句话是否涉及 discomfort（身体不适、疼痛、受伤）或 special（怀孕、慢病、用药、未成年、老人等特殊人群），可以为空列表。
-3. intent 为 pro 时：primary 选 1 个最该负责的角色；helpers 选 0–2 个确实需要的辅助角色。安全官会自动参加，不用选。问到"我的"数据（体重、心率、睡眠、步数、血压等）时要选 data 或 recovery。
+3. intent 为 pro 时：primary 选 1 个最该负责的角色；helpers 选 0–2 个确实需要的辅助角色。身体不适、伤痛、生病的问题要选 recovery。问到"我的"数据（体重、心率、睡眠、步数、血压等）时要选 data 或 recovery。
 4. reason：一句话说明理由。
 
 最近的对话（用于理解指代，可能为空）：
@@ -157,9 +155,7 @@ _PROMPT = """你是健身 App 的主教练，负责理解用户的问题，并�
 
 
 async def route(text: str, history: Sequence[str], llm: LLM) -> Route:
-    roles = "\n".join(
-        f"- {r.value}：{SPECS[r].name}，{SPECS[r].duty}" for r in EXPERTS if r != Role.SAFETY
-    )
+    roles = "\n".join(f"- {r.value}：{SPECS[r].name}，{SPECS[r].duty}" for r in EXPERTS)
     prompt = _PROMPT.format(roles=roles, history="\n".join(history[-6:]) or "（无）")
     try:
         reply = await llm.chat(

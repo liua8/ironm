@@ -1,8 +1,8 @@
 """主教练：把各专业 Agent 的意见整合成一个回答，并在发出前用规则核对。
 
-- 安全官的提醒不交给模型改写，由系统原样放在回答最后的"安全提醒"里，保证不丢、不改。
 - 核对逐句进行（checks.check_text，与专业 Agent 的意见同一套规则）。
-- 核对不通过时带着原因改写一次；仍不通过就给出主责角色已经核对过的意见，并提示这次回答受限。
+- 核对不通过时带着原因改写一次；仍不通过就 repair（对不上的个人数据句删掉，其余改标〔经验〕）。
+- 模型不可用时，给出主责角色的意见，并提示这次回答受限。
 """
 
 from __future__ import annotations
@@ -12,10 +12,11 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from ironm_agent.checks import CALC_REF, KB_REF, check_text, cited_ids
+from ironm_agent.checks import CALC_REF, KB_REF, check_text, repair
 from ironm_agent.experts import Consultation, Opinion
 from ironm_agent.kb import Entry
 from ironm_agent.llm import LLM, ModelUnavailable
+from ironm_agent.numbers import written_numbers
 from ironm_agent.roles import SPECS, Role
 
 _KB_REF = KB_REF
@@ -25,7 +26,6 @@ _KB_REF = KB_REF
 class Composed:
     text: str  # 回答正文（不含安全提醒和末尾的资料清单）
     entries: tuple[Entry, ...]  # 正文引用到的依据库条目，按出现顺序
-    safety: str  # 安全官的提醒，原样
     degraded: bool
     rewrites: int
     by_model: bool
@@ -39,10 +39,9 @@ _PROMPT = """你是健身 App 的主教练。几位专业角色已经分别回�
 2. 篇幅和问题相当：问一个数、一个做法的简单问题，写 3–6 句话就够，不用小标题；问题复杂、确实需要分步骤时，才用 **结论**、**针对你**、**怎么做**、**注意** 这些小标题，没有内容的省略。
 3. 只使用各角色意见里的内容，不新增事实，也不新增数字；几个角色说的是同一件事时合并成一处，同一个意思只说一次。
 4. 主责角色（{primary}）的意见是主体。
-5. 安全官的提醒由系统单独放在最后，你不用写，也不要和它矛盾。
+5. 各角色意见里的风险提醒、就医信号要保留，合并成一处写在最后。
 6. 个人化：意见里按这个人的数据算出的内容（比如按体重算的量）要保留；不要罗列"你的记录里没有什么"，不要提和这次问题无关的旧话题。
-7. 形如 ⟦D1⟧ 的占位符，每个代表一句引用了用户数据的原话：把它当作一整句原样放在合适的位置，不要改写、拆开、重复或自己补写它的内容。资料句末尾的〔K03〕、计算结果句末尾的〔C2〕跟着它所属的句子原样保留，不能删、不能挪到别的句子上；改写一句话时它的数字和标记保持不变。含数字的句子都必须带着出处标记或就是占位符。
-8. 标了"一般建议"的意见，写成一般建议，不加具体数字。
+7. 形如 ⟦D1⟧ 的占位符，每个代表一句引用了用户数据的原话：把它当作一整句原样放在合适的位置，不要改写、拆开、重复或自己补写它的内容。资料句末尾的〔K03〕、计算结果句末尾的〔C2〕、经验句末尾的〔经验〕跟着它所属的句子原样保留，不能删、不能挪到别的句子上；改写一句话时它的数字和标记保持不变。含数字的句子都必须带着出处标记（〔K〕〔C〕〔经验〕）或就是占位符。
 9. 用中文，口语化，像一位专业又亲切的教练，不要说"根据各角色的意见"这类话。"""
 
 
@@ -106,16 +105,31 @@ def review(
     entries: Mapping[str, Entry],
     question: str,
     calcs: Mapping[str, str] | None = None,
+    experience: Sequence[float] | None = None,
 ) -> list[str]:
     """回答发出前的规则核对，返回问题清单（为空表示通过）。"""
     if not answer.strip():
         return ["回答是空的"]
-    return check_text(answer, support=support, entries=entries, question=question, calcs=calcs)
+    return check_text(
+        answer,
+        support=support,
+        entries=entries,
+        question=question,
+        calcs=calcs,
+        experience=experience,
+    )
 
 
 def _ordered_entries(answer: str, entries: Mapping[str, Entry]) -> tuple[Entry, ...]:
     ids = [r for r in dict.fromkeys(_KB_REF.findall(answer)) if r in entries]
     return tuple(entries[i] for i in ids)
+
+
+def _composed(
+    answer: str, entries: Mapping[str, Entry], calcs: Mapping[str, str], *, rewrites: int
+) -> Composed:
+    used_calcs = tuple((c, calcs[c]) for c in dict.fromkeys(CALC_REF.findall(answer)) if c in calcs)
+    return Composed(answer, _ordered_entries(answer, entries), False, rewrites, True, used_calcs)
 
 
 def fallback(opinion: Opinion) -> str:
@@ -137,25 +151,13 @@ async def compose(
     consultations: Sequence[Consultation],
     llm: LLM,
 ) -> Composed:
-    spoke = [c for c in consultations if c.opinion.speak]
-    safety = next((c.opinion for c in spoke if c.opinion.role is Role.SAFETY), None)
-    caution = safety.caution if safety is not None else ""
-    others = [c for c in spoke if c.opinion.role is not Role.SAFETY]
+    others = [c for c in consultations if c.opinion.speak]
     others.sort(key=lambda c: c.opinion.role is not primary)  # 主责在前
-    # 参考资料只列安全提醒里真正引用到的
-    safety_entries = tuple(
-        c.evidence.entries[b]
-        for c in spoke
-        if c.opinion.role is Role.SAFETY
-        for b in cited_ids(caution)
-        if b in c.evidence.entries
-    )
-    if not others:  # 只有安全官发言：提醒就是回答
-        return Composed("", safety_entries, caution, False, 0, False)
     opinions = [c.opinion for c in others]
     support = {rid: values for c in others for rid, values in c.evidence.support.items()}
     entries = {eid: e for c in others for eid, e in c.evidence.entries.items()}
     calcs = {cid: d for c in others for cid, d in c.evidence.calcs.items()}
+    said = [v for o in opinions for v in written_numbers(o.body())]  # 专业角色意见里出现过的数字
     shield = Shield()
     messages = [
         {"role": "system", "content": _PROMPT.format(primary=SPECS[primary].name)},
@@ -168,15 +170,22 @@ async def compose(
             break
         draft = reply.content.strip()
         answer, problems = shield.restore(draft)
-        problems += review(answer, support=support, entries=entries, question=text, calcs=calcs)
-        if not problems:
-            used = _ordered_entries(answer, entries) + tuple(
-                e for e in safety_entries if e.id not in _KB_REF.findall(answer)
-            )
-            used_calcs = tuple(
-                (c, calcs[c]) for c in dict.fromkeys(CALC_REF.findall(answer)) if c in calcs
-            )
-            return Composed(answer, used, caution, False, attempt, True, used_calcs)
+        problems += review(
+            answer, support=support, entries=entries, question=text, calcs=calcs, experience=said
+        )
+        if not problems or attempt == 1:
+            if problems:  # 改了一次还不过：修正而不是放弃
+                answer = repair(
+                    answer,
+                    support=support,
+                    entries=entries,
+                    question=text,
+                    calcs=calcs,
+                    experience=said,
+                )
+            if answer.strip():
+                return _composed(answer, entries, calcs, rewrites=attempt)
+            break  # 修完什么都不剩：退回主责角色的意见
         messages.append({"role": "assistant", "content": draft})
         messages.append(
             {
@@ -184,4 +193,4 @@ async def compose(
                 "content": "回答没有通过核对，请改正后重写全文：" + "；".join(problems),
             }
         )
-    return Composed(fallback(opinions[0]), safety_entries, caution, True, 1, False)
+    return Composed(fallback(opinions[0]), (), True, 1, False)

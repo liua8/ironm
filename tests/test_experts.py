@@ -43,10 +43,11 @@ def test_nutrition_cites_knowledge_and_numbers_from_it() -> None:
     assert c.status == "spoke" and c.opinion.basis == ("K10",) and "K10" in c.evidence.entries
 
 
-def test_made_up_number_is_fixed_once_then_silenced() -> None:
+def test_wrongly_sourced_number_is_relabelled_as_experience_not_silenced() -> None:
     bad = jsonr({"speak": True, "conclusion": "每天吃 25 克〔K10〕"})
     c, _ = run(Role.NUTRITION, scripted(call(KNOWLEDGE, query="肌酸"), bad, bad))
-    assert c.status == "silent" and "25" in c.opinion.reason
+    assert c.status == "spoke"
+    assert c.opinion.conclusion == "每天吃 25 克〔经验〕" and "K10" not in c.opinion.basis
 
 
 def test_number_must_come_from_cited_entry_not_just_seen_one() -> None:
@@ -57,10 +58,25 @@ def test_number_must_come_from_cited_entry_not_just_seen_one() -> None:
     assert "K09" in tb.evidence.entries and c.status == "spoke" and "3–5" in c.opinion.conclusion
 
 
-def test_made_up_basis_id_is_rejected() -> None:
+def test_made_up_basis_id_becomes_experience() -> None:
     fake = jsonr({"speak": True, "conclusion": "每晚睡够 7 小时〔K99〕"})
     c, _ = run(Role.RECOVERY, scripted(fake, fake))
-    assert c.status == "silent" and "K99" in c.opinion.reason
+    assert c.status == "spoke" and c.opinion.conclusion == "每晚睡够 7 小时〔经验〕"
+
+
+def test_no_evidence_still_answers_from_experience() -> None:
+    answer = jsonr(
+        {"conclusion": "先把动作做标准，再慢慢加重量〔经验〕", "how": "每次只加一点〔经验〕"}
+    )
+    c, _ = run(Role.EXERCISE, scripted(call(KNOWLEDGE, query="壶铃摇摆"), answer))
+    assert c.status == "spoke" and "〔经验〕" in c.opinion.conclusion
+
+
+def test_model_saying_it_wont_speak_is_not_accepted() -> None:
+    silent = jsonr({"speak": False, "reason": "没有依据"})
+    answer = jsonr({"conclusion": "可以练，注意循序渐进〔经验〕"})
+    c, _ = run(Role.PLANNER, scripted(silent, answer))
+    assert c.status == "spoke" and "循序渐进" in c.opinion.conclusion
 
 
 def test_data_numbers_come_from_health_rows() -> None:
@@ -91,11 +107,11 @@ def test_planner_cannot_read_health_data() -> None:
         if not results:
             return call(HEALTH, view="stats")
         seen.extend(results)
-        return jsonr({"speak": False, "reason": "没有依据"})
+        return jsonr({"conclusion": "按每周安排来练〔经验〕"})
 
     c, _ = run(Role.PLANNER, handler, health)
     assert health.asked == [] and "不能使用" in seen[0]
-    assert c.status == "silent"
+    assert c.status == "spoke"
 
 
 def test_health_query_failure_is_reported_not_raised() -> None:

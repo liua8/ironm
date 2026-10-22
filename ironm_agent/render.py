@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from ironm_agent.checks import EXPERIENCE
 from ironm_agent.compose import Composed
 from ironm_agent.experts import Consultation
 from ironm_agent.safety.replies import ReplySection
 
-STATUS = {"spoke": "写出了意见", "silent": "没有发言", "failed": "没能作答"}
+STATUS = {"spoke": "写出了意见", "silent": "没能给出意见", "failed": "没能作答（模型不可用）"}
 
 
 def started(call_id: str, name: str, task: str) -> dict[str, Any]:
@@ -58,12 +59,12 @@ def sections_text(sections: tuple[ReplySection, ...]) -> str:
 
 def answer_text(composed: Composed, *, prefix: str = "") -> str:
     parts = [p for p in (prefix, composed.text) if p]
-    if composed.safety:
-        parts.append(f"**安全提醒**\n{composed.safety}")
     if composed.calcs:
         how = "\n".join(f"- 〔{cid}〕{detail}" for cid, detail in composed.calcs)
         parts.append(f"**怎么算的**\n{how}")
-    if composed.entries:
-        refs = "\n".join(f"- {e.cite_label()}" for e in composed.entries)
-        parts.append(f"**参考资料**\n{refs}")
+    refs = [f"- {e.cite_label()}" for e in composed.entries]
+    if EXPERIENCE in composed.text:
+        refs.append(f"- {EXPERIENCE}教练的专业经验，依据库里暂时没有对应的资料")
+    if refs:
+        parts.append("**参考资料**\n" + "\n".join(refs))
     return "\n\n".join(parts)

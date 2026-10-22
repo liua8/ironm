@@ -56,17 +56,31 @@ def _consult(role: Role, **fields: object) -> Consultation:
     return Consultation(opinion, Evidence(entries=dict(ENTRIES)), "spoke")
 
 
-def test_safety_caution_is_attached_verbatim_by_system() -> None:
-    caution = "有肾脏疾病的人，先问医生再吃。"
+def test_coach_cannot_add_numbers_no_expert_said() -> None:
+    # 整合时写了专业角色都没说过的数字：改一次还不过，这句删掉
     consults = [
-        _consult(Role.NUTRITION, conclusion="每天 3–5 克〔K10〕", basis=("K10",)),
-        _consult(Role.SAFETY, conclusion="肾病要小心", caution=caution, basis=("K10",)),
+        _consult(
+            Role.NUTRITION, conclusion="每天 3–5 克〔K10〕", how="随餐吃〔经验〕", basis=("K10",)
+        )
     ]
-    llm = FakeLLM(lambda *_: Reply("**结论**\n肌酸每天 3–5 克〔K10〕。"))
-    composed = asyncio.run(compose("肌酸怎么吃", Role.NUTRITION, consults, llm))
-    assert not composed.degraded and composed.safety == caution
-    sent = str(llm.seen[0][1][1]["content"])
-    assert "肾脏疾病" not in sent  # 安全官的意见不交给模型改写
+    reply = "肌酸每天 3–5 克〔K10〕。随餐吃，每次配 500 毫升水。"
+    composed = asyncio.run(
+        compose("肌酸怎么吃", Role.NUTRITION, consults, FakeLLM(lambda *_: Reply(reply)))
+    )
+    assert "3–5 克〔K10〕" in composed.text and "500" not in composed.text and not composed.degraded
+
+
+def test_experience_numbers_from_experts_survive_composing() -> None:
+    consults = [_consult(Role.PLANNER, conclusion="每周练 3 次就够〔经验〕")]
+    composed = asyncio.run(
+        compose(
+            "一周练几次",
+            Role.PLANNER,
+            consults,
+            FakeLLM(lambda *_: Reply("每周练 3 次就够〔经验〕。")),
+        )
+    )
+    assert composed.text == "每周练 3 次就够〔经验〕。" and not composed.degraded
 
 
 def test_failed_review_falls_back_to_primary_opinion() -> None:

@@ -1,7 +1,8 @@
-"""专业 Agent：先查依据，再写意见。同一轮里各 Agent 互不可见。
+"""专业 Agent：先查依据，再回答。同一轮里各 Agent 互不可见。
 
-意见里每句话在写的时候就标好出处（资料〔K03〕、数据 <statement>…<cite>[r3]</cite></statement>），
-按 checks.check_text 逐句核对；不合格时让模型改一次，仍不合格则这个 Agent 不发言。
+被请到的 Agent 一定要从自己的专业角度回答这个问题：查到资料或用户数据的地方标出处，
+查不到的凭专业经验回答并标〔经验〕。每句按 checks 逐句核对，不合格让模型改一次；
+还不合格就 repair（对不上的个人数据句删掉，其余改标〔经验〕），不会因为查不到或核对不过而不说话。
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from ironm_agent.checks import check_text, cited_ids
+from ironm_agent.checks import check_text, cited_ids, repair
 from ironm_agent.common import ContractModel
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
 from ironm_agent.personal import Personal
@@ -61,18 +62,17 @@ _PROMPT = """你是健身 App 里的「{name}」，负责：{duty}。
    - 用到指标计算结果（compute_metrics 返回的 C 编号，如 BMI、热量目标）的句子，在这一句的句末写〔C2〕，数字照计算结果写；
    - 用到用户健康数据的句子，写成 <statement>这句话<cite>[r3]</cite></statement>，[ ] 里是这句话用到的数据行编号（r 开头）。
    例：<statement>你近 30 天的静息心率平均 58 次/分<cite>[r3]</cite></statement>，在成年人正常范围的偏低一端〔K20〕。
-3. 回答里的数字（次数、组数、克数、分钟、心率、步数等）只能出现在标了出处的句子里，并且来自那份资料或那行数据；用户自己说的数字可以直接用。依据里没有的数字一律不写。不要提到你没有查到的用户数据。
-4. 依据答不了这个问题时，speak 写 false，reason 写原因；依据不全时，可以给不带具体数字的一般建议，并把 general 写 true。
+   - 查不到资料、凭你的专业经验说的句子，在句末写〔经验〕。
+3. 你被请来就一定要回答这个问题，从你的专业角度给出实用的建议：依据库里有的就用依据库，没有的就用你的专业知识，不能因为查不到就不回答，也不要说"依据库里没有"这类话。
+4. 数字的规矩：标〔K〕〔C〕或数据句里的数字，必须来自那份资料、那个计算结果或那行数据；凭经验给的数字写在标〔经验〕的句子里；不要编造用户的个人数据。
 5. 查健康数据时：没有记录就如实说"没有找到记录"，不能推测为正常；不同设备的心率变异性（SDNN 与 RMSSD）是不同指标，不要放在一起比较。
 6. 不诊断、不开药。涉及疼痛或不适时，写明出现什么情况要停止并就医。
-7. 直接回答用户问的那件事，不说空话套话。for_you 只写能让建议更具体的个人信息（比如按这个人的体重算出的量），没有就留空；不要罗列"你的记录里没有什么"，除非用户问的就是这个数据。
+7. 直接回答用户问的那件事，不说空话套话。只用和这次问题直接相关的个人数据和计算结果（问跑前吃什么就别列 BMI、每日总消耗），不要把查到的指标都罗列出来。for_you 只写能让建议更具体的个人信息（比如按这个人的体重算出的量），没有就留空；不要罗列"你的记录里没有什么"，除非用户问的就是这个数据。
 8. 用到这个人的体重等数据换算时（例如按 0.3 克/公斤算剂量），把这句话写成 <statement>按你 69.2 公斤算，每天约 21 克〔K10〕<cite>[r3]</cite></statement>，资料编号和数据编号都写上。
-9. 用中文，口语化，专业、简洁。{extra}
+9. 用中文，口语化，专业、简洁。
 
 最后只输出 JSON：
-{{"speak": true, "reason": "", "conclusion": "一两句结论", "for_you": "结合这个人的情况（没有可留空）", "how": "具体怎么做", "caution": "注意事项", "uncertain": "不确定的地方（可留空）", "general": false}}"""
-
-_SAFETY_EXTRA = "\n你是安全官：只负责风险和界限。只有这件事对这个人有具体、相关的风险时才发言；健康人可以放心做的常规事情，speak 写 false。发言时 conclusion 一句话说主要风险，caution 最多两句，只写和这件事直接相关的注意点和就医信号，不写通用套话（比如与问题无关时不要写「运动中胸痛立即就医」）；不给训练或饮食方案，不评论用户的数据，也不要说依据库里查到或没查到什么。"
+{{"conclusion": "一两句结论", "for_you": "结合这个人的情况（没有可留空）", "how": "具体怎么做", "caution": "注意事项（与这件事相关的风险、什么情况要停止或就医；没有可留空）", "uncertain": "不确定的地方（可留空）"}}"""
 
 
 def _tool_hint(toolbox: Toolbox) -> str:
@@ -118,14 +118,31 @@ def problems_of(opinion: Opinion, evidence: Evidence, text: str) -> list[str]:
     )
 
 
+def _repaired(opinion: Opinion, evidence: Evidence, text: str) -> Opinion:
+    """逐个字段 repair：对不上的个人数据句删掉，其余对不上出处的句子改标〔经验〕。"""
+    fields = {
+        f: repair(
+            getattr(opinion, f),
+            support=evidence.support,
+            entries=evidence.entries,
+            question=text,
+            calcs=evidence.calcs,
+        )
+        for f in _FIELDS
+    }
+    body = "\n".join(fields.values())
+    if not body.strip():
+        return opinion.model_copy(update={"speak": False, "reason": "没能给出意见"})
+    return opinion.model_copy(update={**fields, "basis": tuple(cited_ids(body))})
+
+
 def _parse(role: Role, content: str) -> Opinion | None:
     raw = parse_json(content)
     if raw is None:
         return None
-    data: dict[str, Any] = {
-        k: raw.get(k) for k in ("speak", "reason", "general", *_FIELDS) if k in raw
-    }
-    for k in ("reason", *_FIELDS):
+    data: dict[str, Any] = {k: raw.get(k) for k in ("general", *_FIELDS) if k in raw}
+    data["speak"] = True  # 被请到就要回答，模型说"不发言"也不算
+    for k in _FIELDS:
         if k in data and not isinstance(data[k], str):
             data[k] = "" if data[k] is None else str(data[k])
     body = "\n".join(str(data.get(k) or "") for k in _FIELDS)
@@ -146,8 +163,7 @@ async def consult(
     personal: Personal | None = None,
 ) -> Consultation:
     """请一个专业 Agent 作答。出错时返回不发言的意见，不向外抛。"""
-    extra = _SAFETY_EXTRA if spec.role is Role.SAFETY else ""
-    system = _PROMPT.format(name=spec.name, duty=spec.duty, tools=_tool_hint(toolbox), extra=extra)
+    system = _PROMPT.format(name=spec.name, duty=spec.duty, tools=_tool_hint(toolbox))
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system},
         {
@@ -177,8 +193,20 @@ async def _loop(
         rounds += 1
         reply = await llm.chat("expert", messages, tools=tools, json_mode=tools is None)
         if reply.tool_calls:
+            if rounds > MAX_ROUNDS + 1:  # 已经不给工具了还要查：放弃，不无限循环
+                return Opinion(role=spec.role, speak=False, reason="一直在查询，没能给出意见")
             if rounds > MAX_ROUNDS:
-                return Opinion(role=spec.role, speak=False, reason="查询太多次，没有给出意见")
+                messages.append(reply.as_message())
+                for call in reply.tool_calls:
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call.id,
+                            "content": "不要再查了，直接按 JSON 回答。",
+                        }
+                    )
+                tools = None  # 不再提供工具，逼它作答
+                continue
             messages.append(reply.as_message())
             for call in reply.tool_calls:
                 if toolbox.evidence.queries >= MAX_QUERIES:
@@ -196,11 +224,12 @@ async def _loop(
         if not problems and opinion is not None:
             return opinion
         if fixes >= 1:
-            reason = "；".join(problems)
+            if opinion is None:
+                return Opinion(role=spec.role, speak=False, reason="没能给出规定格式的意见")
             _log.info(
-                "expert opinion rejected: role=%s problems=%d", spec.role.value, len(problems)
+                "expert opinion repaired: role=%s problems=%d", spec.role.value, len(problems)
             )
-            return Opinion(role=spec.role, speak=False, reason=f"意见没有通过核对（{reason}）")
+            return _repaired(opinion, toolbox.evidence, text)
         fixes += 1
         messages.append({"role": "assistant", "content": reply.content})
         messages.append(

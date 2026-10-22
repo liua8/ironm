@@ -40,7 +40,7 @@ class Scripted:
                         "conclusion": "<statement>近 30 天静息心率平均 58 次/分<cite>[r1]</cite></statement>",
                     }
                 )
-            return jsonr({"speak": False, "reason": "没有需要提醒的风险"})
+            return jsonr({"conclusion": "注意循序渐进〔经验〕"})
         return Reply(self.compose_text)
 
 
@@ -86,7 +86,7 @@ def test_data_question_streams_roles_and_cited_answer(monkeypatch: Any) -> None:
     answer = "**结论**\n<statement>你近 30 天静息心率平均 58 次/分<cite>[r1]</cite></statement>，在正常范围。"
     blocks = collect(agent(Scripted(answer), monkeypatch=monkeypatch), "我最近的静息心率怎么样")
     names = [b["name"] for b in blocks if b["type"] == "tool_call"]
-    assert names == ["主教练", "数据分析", "安全官"]
+    assert names == ["主教练", "数据分析"]
     assert "<cite>[r1]</cite>" in text_of(blocks)
     from mirobody.kernel.citations import parse
 
@@ -123,7 +123,7 @@ def test_list_content_and_empty_message(monkeypatch: Any) -> None:
 
 def test_model_down_everywhere_gives_honest_no_answer(monkeypatch: Any) -> None:
     blocks = collect(agent(Scripted(fail=True), monkeypatch=monkeypatch), "我最近的静息心率怎么样")
-    assert "没有找到可靠的依据" in text_of(blocks)
+    assert "没能调用模型" in text_of(blocks)
     assert not any(b["type"] == "error" for b in blocks)
 
 

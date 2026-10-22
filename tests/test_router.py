@@ -7,18 +7,18 @@ from ironm_agent.router import keyword_route, route, validate
 from tests.fakes import FakeLLM, down, jsonr
 
 
-def test_valid_model_route_adds_safety_officer() -> None:
+def test_valid_model_route_runs_primary_and_helpers() -> None:
     r, problems = validate(
         {"intent": "pro", "primary": "nutrition", "helpers": ["planner"], "reason": "x"},
         "增肌怎么吃",
     )
     assert problems == [] and r is not None
-    assert r.experts() == (Role.NUTRITION, Role.PLANNER, Role.SAFETY)
+    assert r.experts() == (Role.NUTRITION, Role.PLANNER)
 
 
 def test_recovery_goes_before_training_planner() -> None:
     r, _ = validate({"intent": "pro", "primary": "planner", "helpers": ["recovery"]}, "累了还练吗")
-    assert r is not None and r.experts() == (Role.RECOVERY, Role.PLANNER, Role.SAFETY)
+    assert r is not None and r.experts() == (Role.RECOVERY, Role.PLANNER)
 
 
 def test_bad_routes_are_rejected() -> None:
@@ -33,9 +33,9 @@ def test_bad_routes_are_rejected() -> None:
 
 
 def test_discomfort_forces_professional_route() -> None:
-    # 模型说是闲聊，但这句话提到疼：按专业问题处理，安全官参加
+    # 模型说是闲聊，但这句话提到疼：按专业问题处理，由恢复来答
     r = asyncio.run(route("你好，我膝盖有点疼", [], FakeLLM(lambda *_: jsonr({"intent": "chat"}))))
-    assert r.intent == "pro" and "discomfort" in r.concerns and Role.SAFETY in r.experts()
+    assert r.intent == "pro" and "discomfort" in r.concerns and Role.RECOVERY in r.experts()
 
 
 def test_model_down_falls_back_to_keywords() -> None:

@@ -48,7 +48,7 @@ _log = logging.getLogger("ironm_agent.run")
 
 FAILED = "IronM 这次没能回答，请稍后再试。"
 NO_TEXT = "没有收到文字问题。"
-NO_ANSWER = "这个问题我暂时没有找到可靠的依据来回答。你可以换个说法，或者说得更具体一些，比如目标、训练经验、哪里不舒服。"
+NO_ANSWER = "这次没能调用模型，暂时回答不了，请稍后再试。"
 
 
 @cache

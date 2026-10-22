@@ -26,7 +26,6 @@ def box(role: Role) -> Toolbox:
 
 def test_only_some_roles_can_compute_metrics() -> None:
     assert any(s["function"]["name"] == METRICS for s in box(Role.NUTRITION).schemas())
-    assert not any(s["function"]["name"] == METRICS for s in box(Role.SAFETY).schemas())
     assert not any(s["function"]["name"] == METRICS for s in box(Role.EXERCISE).schemas())
 
 
