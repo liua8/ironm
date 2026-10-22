@@ -20,14 +20,18 @@ from ironm_agent.compose import compose
 from ironm_agent.experts import Consultation, consult
 from ironm_agent.kb import KnowledgeBase, default_kb
 from ironm_agent.llm import ModelsConfig, TurnLLM, load_models
-from ironm_agent.memory import recent
+from ironm_agent.memory import last_sources, recent
 from ironm_agent.personal import personal_basics
+from ironm_agent.provenance import explain, is_provenance
 from ironm_agent.render import (
+    SOURCES_ID,
+    SOURCES_NAME,
     answer_text,
     consultation_summary,
     finished,
     notice,
     sections_text,
+    sources_text,
     started,
     text_block,
 )
@@ -192,6 +196,12 @@ class IronMAgent:
             return
         prefix = sections_text(refusal_sections(replies, refusals.kinds)) if refusals.kinds else ""
 
+        # 追问上一条回答的来源：直接从“依据与来源”里讲，不再请专业 Agent
+        if is_provenance(text):
+            run["path"] = "provenance"
+            yield text_block(explain(text, await last_sources(session_id, SOURCES_ID)))
+            return
+
         # 2. 主教练：理解与调度
         history = await recent(session_id, text)
         r = await route(text, history, llm)
@@ -256,3 +266,7 @@ class IronMAgent:
         if composed.degraded:
             yield notice("这次回答受限：整合没有通过核对，下面给出主责角色核对过的意见。")
         yield text_block(answer_text(composed, prefix=prefix))
+        sources = sources_text(composed)
+        if sources:  # 出处不写进正文，放进可展开的“依据与来源”
+            yield started(SOURCES_ID, SOURCES_NAME, "这条回答用到的资料、计算和你的数据")
+            yield finished(SOURCES_ID, sources)

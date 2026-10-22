@@ -206,3 +206,14 @@ def cited_ids(text: str) -> list[str]:
     for seg in parse(text):
         ids.extend(seg.cites)
     return list(dict.fromkeys(ids))
+
+
+_CITE = re.compile(r"<cite>.*?</cite>", re.S)
+_STATEMENT_TAG = re.compile(r"</?statement>")
+_SPACE_BEFORE_PUNCT = re.compile(r"[ \t]+([，。！？；：、）])")
+
+
+def plain(text: str) -> str:
+    """给用户看的正文：去掉出处标记和数据引用的标签，只留话本身。"""
+    out = _STATEMENT_TAG.sub("", _CITE.sub("", ANY_REF.sub("", text)))
+    return _SPACE_BEFORE_PUNCT.sub(r"\1", out).strip()

@@ -12,7 +12,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from ironm_agent.checks import CALC_REF, KB_REF, check_text, repair
+from ironm_agent.checks import CALC_REF, KB_REF, check_text, cited_ids, repair
 from ironm_agent.experts import Consultation, Opinion
 from ironm_agent.kb import Entry
 from ironm_agent.llm import LLM, ModelUnavailable
@@ -24,25 +24,25 @@ _KB_REF = KB_REF
 
 @dataclass(frozen=True)
 class Composed:
-    text: str  # 回答正文（不含安全提醒和末尾的资料清单）
+    text: str  # 回答正文，带出处标记（内部核对用；展示时去掉，出处放进"依据与来源"）
     entries: tuple[Entry, ...]  # 正文引用到的依据库条目，按出现顺序
     degraded: bool
     rewrites: int
     by_model: bool
     calcs: tuple[tuple[str, str], ...] = ()  # 正文引用到的指标计算（C 编号，说明）
+    rows: tuple[tuple[str, str], ...] = ()  # 正文引用到的健康数据（rid，说明）
 
 
 _PROMPT = """你是健身 App 的主教练。几位专业角色已经分别回答了用户的问题（彼此看不到对方的意见），请把它们整合成一个给用户的回答。
 
 要求：
-1. 第一句话直接回答用户问的那件事。
-2. 篇幅和问题相当：问一个数、一个做法的简单问题，写 3–6 句话就够，不用小标题；问题复杂、确实需要分步骤时，才用 **结论**、**针对你**、**怎么做**、**注意** 这些小标题，没有内容的省略。
-3. 只使用各角色意见里的内容，不新增事实，也不新增数字；几个角色说的是同一件事时合并成一处，同一个意思只说一次。
-4. 主责角色（{primary}）的意见是主体。
-5. 各角色意见里的风险提醒、就医信号要保留，合并成一处写在最后。
-6. 个人化：意见里按这个人的数据算出的内容（比如按体重算的量）要保留；不要罗列"你的记录里没有什么"，不要提和这次问题无关的旧话题。
-7. 形如 ⟦D1⟧ 的占位符，每个代表一句引用了用户数据的原话：把它当作一整句原样放在合适的位置，不要改写、拆开、重复或自己补写它的内容。资料句末尾的〔K03〕、计算结果句末尾的〔C2〕、经验句末尾的〔经验〕跟着它所属的句子原样保留，不能删、不能挪到别的句子上；改写一句话时它的数字和标记保持不变。含数字的句子都必须带着出处标记（〔K〕〔C〕〔经验〕）或就是占位符。
-9. 用中文，口语化，像一位专业又亲切的教练，不要说"根据各角色的意见"这类话。"""
+1. 有效、精炼：第一句直接回答用户问的那件事，接着只给最关键的做法。简单问题不超过 150 字；需要分步骤的问题不超过 300 字、最多 5 个要点。同一个意思只说一次，不铺垫、不罗列所有可能，不用小标题。宁可少说，也不要面面俱到。
+2. 只使用各角色意见里的内容，不新增事实，也不新增数字；几个角色说的是同一件事时合并成一处。
+3. 主责角色（{primary}）的意见是主体。
+4. 风险提醒只保留和这件事直接相关、最重要的一条，放在最后。
+5. 个人化：只保留真正改变建议的个人数据（比如按体重算出的剂量）；为了显得个人化而提一句体重之类的不要写；不提和这次问题无关的旧话题，不罗列"你的记录里没有什么"。
+6. 出处标记照规则保留（系统展示时会去掉，并把来源放进可展开的"依据与来源"，所以不用在正文里解释出处）：形如 ⟦D1⟧ 的占位符代表一句引用了用户数据的原话，原样放进合适位置，不要改写或自己补写；资料句末尾的〔K03〕、计算结果句末尾的〔C2〕、经验句末尾的〔经验〕跟着它所属的句子保留，不能删、不能挪；改写一句话时它的数字和标记保持不变。含数字的句子都必须带着出处标记或就是占位符。
+7. 用中文，口语化，像一位专业又亲切的教练，不要说"根据各角色的意见""依据库"这类话。"""
 
 
 _STATEMENT = re.compile(r"<statement>.*?</statement>", re.S)
@@ -126,23 +126,33 @@ def _ordered_entries(answer: str, entries: Mapping[str, Entry]) -> tuple[Entry, 
 
 
 def _composed(
-    answer: str, entries: Mapping[str, Entry], calcs: Mapping[str, str], *, rewrites: int
+    answer: str,
+    entries: Mapping[str, Entry],
+    calcs: Mapping[str, str],
+    rows: Mapping[str, str],
+    *,
+    rewrites: int,
+    degraded: bool = False,
+    by_model: bool = True,
 ) -> Composed:
     used_calcs = tuple((c, calcs[c]) for c in dict.fromkeys(CALC_REF.findall(answer)) if c in calcs)
-    return Composed(answer, _ordered_entries(answer, entries), False, rewrites, True, used_calcs)
+    used_rows = tuple((r, rows[r]) for r in cited_ids(answer) if r in rows)
+    return Composed(
+        answer,
+        _ordered_entries(answer, entries),
+        degraded,
+        rewrites,
+        by_model,
+        used_calcs,
+        used_rows,
+    )
 
 
 def fallback(opinion: Opinion) -> str:
     """整合失败时：给出主责角色已经核对过的意见。"""
-    parts = [f"**结论**\n{opinion.conclusion}"]
-    for label, value in (
-        ("针对你", opinion.for_you),
-        ("怎么做", opinion.how),
-        ("注意", opinion.caution),
-    ):
-        if value:
-            parts.append(f"**{label}**\n{value}")
-    return "\n\n".join(parts)
+    return "\n\n".join(
+        x for x in (opinion.conclusion, opinion.for_you, opinion.how, opinion.caution) if x
+    )
 
 
 async def compose(
@@ -157,6 +167,7 @@ async def compose(
     support = {rid: values for c in others for rid, values in c.evidence.support.items()}
     entries = {eid: e for c in others for eid, e in c.evidence.entries.items()}
     calcs = {cid: d for c in others for cid, d in c.evidence.calcs.items()}
+    rows = {rid: d for c in others for rid, d in c.evidence.rows.items()}
     said = [v for o in opinions for v in written_numbers(o.body())]  # 专业角色意见里出现过的数字
     shield = Shield()
     messages = [
@@ -184,7 +195,7 @@ async def compose(
                     experience=said,
                 )
             if answer.strip():
-                return _composed(answer, entries, calcs, rewrites=attempt)
+                return _composed(answer, entries, calcs, rows, rewrites=attempt)
             break  # 修完什么都不剩：退回主责角色的意见
         messages.append({"role": "assistant", "content": draft})
         messages.append(
@@ -193,4 +204,6 @@ async def compose(
                 "content": "回答没有通过核对，请改正后重写全文：" + "；".join(problems),
             }
         )
-    return Composed(fallback(opinions[0]), (), True, 1, False)
+    return _composed(
+        fallback(opinions[0]), entries, calcs, rows, rewrites=1, degraded=True, by_model=False
+    )

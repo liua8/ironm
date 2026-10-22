@@ -82,15 +82,39 @@ def test_emergency_answers_without_any_model_call(monkeypatch: Any) -> None:
     assert "**" in text_of(blocks) and not any(b["type"] == "tool_call" for b in blocks)
 
 
-def test_data_question_streams_roles_and_cited_answer(monkeypatch: Any) -> None:
-    answer = "**结论**\n<statement>你近 30 天静息心率平均 58 次/分<cite>[r1]</cite></statement>，在正常范围。"
+def test_data_question_answers_plainly_and_attaches_sources(monkeypatch: Any) -> None:
+    answer = "你近 30 天静息心率很稳。<statement>平均 58 次/分<cite>[r1]</cite></statement>，在正常范围。"
     blocks = collect(agent(Scripted(answer), monkeypatch=monkeypatch), "我最近的静息心率怎么样")
     names = [b["name"] for b in blocks if b["type"] == "tool_call"]
-    assert names == ["主教练", "数据分析"]
-    assert "<cite>[r1]</cite>" in text_of(blocks)
-    from mirobody.kernel.citations import parse
+    assert names == ["主教练", "数据分析", "依据与来源"]
+    text = text_of(blocks)
+    assert (
+        "平均 58 次/分" in text
+        and "<statement>" not in text
+        and "〔" not in text
+        and "[r1]" not in text
+    )
+    sources = next(
+        b["content"]
+        for b in blocks
+        if b["type"] == "tool_result" and b["tool_call_id"] == "sources"
+    )
+    assert "你的数据" in sources and "58.2" in sources
 
-    assert any("r1" in seg.cites for seg in parse(text_of(blocks)))
+
+def test_asking_for_sources_explains_the_previous_answer(monkeypatch: Any) -> None:
+    from ironm_agent import plugin
+
+    async def fake_sources(session_id: str, call_id: str) -> str:
+        assert call_id == "sources"
+        return "计算：\n- 每日热量目标：约 2764 千卡/天。计算：每日总消耗 2513 × 1.1 = 2764\n\n资料：\n- 中国居民膳食指南（2022）"
+
+    monkeypatch.setattr(plugin, "last_sources", fake_sources)
+    s = Scripted()
+    blocks = collect(agent(s, monkeypatch=monkeypatch), "2764 是怎么算的")
+    assert s.count == 0 and "2513 × 1.1" in text_of(blocks) and "膳食指南" not in text_of(blocks)
+    blocks = collect(agent(s, monkeypatch=monkeypatch), "这些依据是什么")
+    assert "上一条回答的依据" in text_of(blocks) and "膳食指南" in text_of(blocks)
 
 
 def test_failed_review_degrades_with_notice(monkeypatch: Any) -> None:

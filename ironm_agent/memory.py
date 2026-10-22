@@ -37,3 +37,33 @@ async def recent(session_id: str, current: str, turns: int = TURNS) -> list[str]
     if lines and lines[-1] == f"用户：{current.strip()[:200]}":
         lines.pop()  # 本轮的问题已经先存进去了
     return lines[-turns:]
+
+
+async def last_sources(session_id: str, tool_call_id: str) -> str | None:
+    """本会话上一条回答的“依据与来源”（存在 mirobody 的对话记录里）；没有时返回 None。"""
+    owner, session = split_thread(session_id)
+    if not owner or not session:
+        return None
+    try:
+        from mirobody.agent.chat.message import get_chat_history
+
+        rows: list[dict[str, Any]] = await get_chat_history(owner, session)
+    except Exception as e:
+        _log.warning("history unavailable: error_type=%s", type(e).__name__)
+        return None
+    from ironm_agent.provenance import is_explanation
+
+    for row in reversed(rows):
+        if row.get("role") == "user":
+            continue
+        if is_explanation(str(row.get("content") or "")):
+            continue  # 上一次追问来源的回复，往前找真正的回答
+        for block in row.get("content_dict") or []:
+            if (
+                isinstance(block, dict)
+                and block.get("type") == "tool_result"
+                and block.get("tool_call_id") == tool_call_id
+            ):
+                return str(block.get("content") or "")
+        return ""  # 上一条回答没有附来源
+    return None

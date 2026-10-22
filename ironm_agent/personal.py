@@ -22,6 +22,7 @@ BASICS = ("bodyMasss", "heights")
 class Personal:
     lines: tuple[str, ...] = ()  # 给 Agent 看的几行，每行末尾带 [r编号]
     support: dict[str, list[float]] = field(default_factory=dict)
+    rows: dict[str, str] = field(default_factory=dict)  # rid → 给人看的一句说明
 
     def text(self) -> str:
         if not self.lines:
@@ -44,6 +45,7 @@ async def personal_basics(health: Any, user_id: str, session_id: str) -> Persona
         return Personal()
     lines: list[str] = []
     support: dict[str, list[float]] = {}
+    rows: dict[str, str] = {}
     for row in getattr(envelope, "data", None) or []:
         if not isinstance(row, Mapping) or not isinstance(row.get("rid"), str):
             continue
@@ -52,6 +54,8 @@ async def personal_basics(health: Any, user_id: str, session_id: str) -> Persona
         value = row.get("value") or row.get("value_canonical") or ""
         unit = row.get("unit") or row.get("unit_canonical") or ""
         date = row.get("date") or row.get("time") or ""
-        lines.append(f"- {name}：{value} {unit}（{date}）[{rid}]".replace("  ", " "))
+        label = f"{name}：{value} {unit}（{date}）".replace("  ", " ")
+        lines.append(f"- {label}[{rid}]")
         support[rid] = row_numbers(row)
-    return Personal(tuple(lines), support)
+        rows[rid] = label
+    return Personal(tuple(lines), support, rows)

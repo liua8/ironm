@@ -80,6 +80,7 @@ class Evidence:
     support: dict[str, list[float]] = field(default_factory=dict)  # 健康数据行 rid → 这行的数值
     entries: dict[str, Entry] = field(default_factory=dict)  # 查到的依据库条目
     calcs: dict[str, str] = field(default_factory=dict)  # 指标计算结果 C 编号 → 说明（含数字）
+    rows: dict[str, str] = field(default_factory=dict)  # 健康数据行 rid → 给人看的一句说明
     health_queries: int = 0
     knowledge_queries: int = 0
     metric_queries: int = 0
@@ -104,6 +105,33 @@ def row_numbers(row: Mapping[str, Any]) -> list[float]:
         elif isinstance(value, str):
             out.extend(numbers(value))
     return out
+
+
+_VALUE_FIELDS = (
+    ("value", "值"),
+    ("avg", "平均"),
+    ("min", "最低"),
+    ("max", "最高"),
+    ("last", "最近"),
+)
+
+
+def row_label(row: Mapping[str, Any]) -> str:
+    """一行健康数据给人看的说明：指标、时间、主要数值。"""
+    name = row.get("indicator") or row.get("name") or "数据"
+    when = str(row.get("period") or row.get("date") or "")
+    if not when and (row.get("first_date") or row.get("last_date")):
+        when = f"{row.get('first_date') or ''} 至 {row.get('last_date') or ''}"
+    unit = str(row.get("unit") or "")
+    parts = [
+        f"{label} {row[k]}{(' ' + unit) if unit and k != 'last' else ''}"
+        for k, label in _VALUE_FIELDS
+        if row.get(k) not in (None, "")
+    ]
+    count = row.get("count") or row.get("n")
+    if count:
+        parts.append(f"共 {count} 条")
+    return f"{name}（{when}）：" + "，".join(parts) if when else f"{name}：" + "，".join(parts)
 
 
 def _default_render(envelope: Any) -> str:
@@ -194,4 +222,5 @@ class Toolbox:
             rid = row.get("rid") if isinstance(row, Mapping) else None
             if isinstance(rid, str) and rid:
                 self.evidence.support[rid] = row_numbers(row)
+                self.evidence.rows[rid] = row_label(row)
         return self.render(envelope)

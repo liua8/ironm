@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ironm_agent.checks import EXPERIENCE
+from ironm_agent.checks import EXPERIENCE, plain
 from ironm_agent.compose import Composed
 from ironm_agent.experts import Consultation
 from ironm_agent.safety.replies import ReplySection
@@ -58,13 +58,26 @@ def sections_text(sections: tuple[ReplySection, ...]) -> str:
 
 
 def answer_text(composed: Composed, *, prefix: str = "") -> str:
-    parts = [p for p in (prefix, composed.text) if p]
+    """正文：精炼的回答本身，不带出处标记（出处在“依据与来源”里）。"""
+    return "\n\n".join(p for p in (prefix, plain(composed.text)) if p)
+
+
+SOURCES_ID = "sources"
+SOURCES_NAME = "依据与来源"
+
+
+def sources_text(composed: Composed) -> str:
+    """这条回答用到的资料、计算、个人数据和经验部分；放在可展开的“依据与来源”里。"""
+    parts: list[str] = []
+    if composed.rows:
+        parts.append("你的数据：\n" + "\n".join(f"- {desc}" for _, desc in composed.rows))
     if composed.calcs:
-        how = "\n".join(f"- 〔{cid}〕{detail}" for cid, detail in composed.calcs)
-        parts.append(f"**怎么算的**\n{how}")
-    refs = [f"- {e.cite_label()}" for e in composed.entries]
+        parts.append("计算：\n" + "\n".join(f"- {detail}" for _, detail in composed.calcs))
+    if composed.entries:
+        parts.append(
+            "资料：\n"
+            + "\n".join(f"- {e.cite_label().split('〕', 1)[1]}" for e in composed.entries)
+        )
     if EXPERIENCE in composed.text:
-        refs.append(f"- {EXPERIENCE}教练的专业经验，依据库里暂时没有对应的资料")
-    if refs:
-        parts.append("**参考资料**\n" + "\n".join(refs))
+        parts.append("经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。")
     return "\n\n".join(parts)
