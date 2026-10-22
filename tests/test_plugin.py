@@ -140,3 +140,17 @@ def test_unexpected_error_hides_details(monkeypatch: Any) -> None:
 
 def test_entry_point_is_registered() -> None:
     assert [ep.value for ep in entry_points(group="mirobody.agents")] == ["ironm_agent.plugin"]
+
+
+def test_web_picker_gets_the_model_iron_m_actually_uses() -> None:
+    """网页先取 /api/models 的第一项作为默认模型才能发问；列表为空时无法提问。"""
+    entries = {
+        "claude-sonnet": {"llm_type": "openai", "api_key": "OPENROUTER_API_KEY"},
+        "deepseek": {"llm_type": "openai", "api_key": "DEEPSEEK_API_KEY"},
+    }
+    assert set(IronMAgent.load_llm_clients(entries)) == {"deepseek"}
+
+
+def test_web_picker_never_empty_when_some_model_is_configured() -> None:
+    entries = {"qwen": {"llm_type": "openai", "api_key": "DASHSCOPE_API_KEY"}}
+    assert set(IronMAgent.load_llm_clients(entries)) == {"qwen"}

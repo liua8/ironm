@@ -98,7 +98,19 @@ class IronMAgent:
 
     @classmethod
     def load_llm_clients(cls, models: dict[str, Any]) -> dict[str, Any]:
-        return {}  # 模型由 iron-m 自己按环节配置
+        """告诉 mirobody 网页可以选哪些模型。
+
+        mirobody 的网页先取 /api/models 的第一项作为默认模型，列表为空就无法提问；这个列表由这里
+        返回的名字决定。iron-m 实际用哪个模型由 config/models.yaml 按环节配置，与网页上选哪项无关，
+        所以只报和我们用同一个密钥的那几项（都没有时报全部，保证网页能提问）。
+        """
+        ours = load_models().stages["compose"].api_key_env
+        same = {
+            n: "iron-m"
+            for n, e in models.items()
+            if isinstance(e, Mapping) and e.get("api_key") == ours
+        }
+        return same or dict.fromkeys(models, "iron-m")
 
     def _health_source(self) -> Any:
         if self._health is None:
