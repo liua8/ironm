@@ -1,0 +1,26 @@
+# 每个环节用哪个模型。密钥只写环境变量的名字，值放在 .env，不进仓库。
+# 主模型 deepseek-flash（不开思考）沿用 IronM 2026-10-20 的选型结论。
+turn_budget: 20 # 一轮最多调用模型的次数，超过后停止查询，用已有结果作答
+
+stages:
+  route: # 主教练：理解与调度
+    base_url: https://api.deepseek.com
+    model: deepseek-flash
+    api_key_env: DEEPSEEK_API_KEY
+    extra_body: {thinking: {type: disabled}}
+    timeout_s: 30
+    max_retries: 1
+  expert: # 专业 Agent 作答（含查询）
+    base_url: https://api.deepseek.com
+    model: deepseek-flash
+    api_key_env: DEEPSEEK_API_KEY
+    extra_body: {thinking: {type: disabled}}
+    timeout_s: 45
+    max_retries: 1
+  compose: # 主教练：整合与直接回答
+    base_url: https://api.deepseek.com
+    model: deepseek-flash
+    api_key_env: DEEPSEEK_API_KEY
+    extra_body: {thinking: {type: disabled}}
+    timeout_s: 45
+    max_retries: 1

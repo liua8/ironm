@@ -1,0 +1,513 @@
+# 依据库（首批）。只收公开可得的资料（教材类注明），摘要与要点用自己的话写，不复制原文。
+# review: claude_draft = Claude 依据对这些公开资料的了解撰写，尚未逐条对照原文核实；
+#         approved     = 已对照原文核实并在审定记录里登记。
+# 领域：training 训练、exercise 动作、nutrition 营养、recovery 恢复、safety 安全、data 指标解读
+version: "0.1"
+
+entries:
+  - id: K01
+    domains: [training, data]
+    title: 成年人每周身体活动推荐量
+    source: WHO guidelines on physical activity and sedentary behaviour
+    publisher: 世界卫生组织
+    year: 2020
+    level: guideline
+    population: 18–64 岁成年人（65 岁以上另有平衡与多成分训练建议）
+    summary: 有氧活动按每周总时长计，力量练习按每周天数计；久坐越少越好，任何强度的活动都比坐着好。
+    points:
+      - text: 成年人每周进行 150–300 分钟中等强度有氧活动，或 75–150 分钟高强度有氧活动，或两者的等量组合。
+        where: Recommendations — Adults (aged 18–64 years)
+      - text: 每周至少 2 天进行中等或更高强度、涉及全身主要肌群的肌肉力量练习。
+        where: Recommendations — Adults (aged 18–64 years)
+      - text: 中等强度有氧超过 300 分钟或高强度超过 150 分钟，可以获得额外的健康益处。
+        where: Recommendations — Adults (aged 18–64 years)
+      - text: 65 岁及以上的人每周至少 3 天做强调平衡和力量的多成分身体活动，以预防跌倒。
+        where: Recommendations — Older adults (aged 65 years and older)
+    keywords: [每周, 多少运动, 有氧, 运动量, 久坐, 一周练]
+    url: https://www.who.int/publications/i/item/9789240015128
+    review: claude_draft
+
+  - id: K02
+    domains: [training, data]
+    title: 中国成年人身体活动推荐
+    source: 中国人群身体活动指南（2021）
+    publisher: 国家卫生健康委疾病预防控制局、中国疾病预防控制中心
+    year: 2021
+    level: guideline
+    population: 18–64 岁成年人
+    summary: 与世界卫生组织的推荐一致：有氧按每周总时长，力量练习每周至少 2 天，并鼓励增加日常活动。
+    points:
+      - text: 成年人每周进行 150–300 分钟中等强度或 75–150 分钟高强度有氧活动，或等量的组合。
+        where: 成年人身体活动推荐，第 1 条
+      - text: 成年人每周至少进行 2 天肌肉力量练习。
+        where: 成年人身体活动推荐，第 2 条
+      - text: 保持日常身体活动，并增加活动量。
+        where: 成年人身体活动推荐，第 3 条
+    keywords: [每周, 运动量, 有氧, 力量练习]
+    review: claude_draft
+
+  - id: K03
+    domains: [training]
+    title: 力量训练的负荷、组数、频率与进阶（健康成年人）
+    source: Progression Models in Resistance Training for Healthy Adults（Med Sci Sports Exerc 41(3):687–708）
+    publisher: 美国运动医学会（ACSM）
+    year: 2009
+    level: position_stand
+    population: 健康成年人，新手到有经验者
+    summary: 新手用中等负荷、较多次数、少量组数，每周全身练 2–3 次；能稳定多做 1–2 次时再小幅加重。增肌以 6–12 次的范围为主。
+    points:
+      - text: 新手采用约 60–70% 最大重量（1RM）的负荷，每组 8–12 次，1–3 组。
+        where: Novice training — loading and volume
+      - text: 新手每周训练 2–3 天（全身）；中级 3–4 天；高级 4–5 天。
+        where: Frequency
+      - text: 当能连续两次训练都比目标次数多做 1–2 次时，负荷增加 2–10%。
+        where: Progression — load
+      - text: 以增肌为目标时，新手和中级者用 70–85% 1RM、8–12 次、1–3 组；高级者以 6–12 次为主，3–6 组。
+        where: Muscular hypertrophy
+      - text: 大重量的多关节主要动作，组间休息至少 2–3 分钟；辅助动作 1–2 分钟。
+        where: Rest periods
+    keywords: [组数, 次数, 重量, 加重, 增肌, 力量, 新手, 休息多久, 一周几次]
+    url: https://journals.lww.com/acsm-msse/fulltext/2009/03000/progression_models_in_resistance_training_for.26.aspx
+    review: claude_draft
+
+  - id: K04
+    domains: [training]
+    title: 每周训练量与增肌的关系
+    source: Dose-response relationship between weekly resistance training volume and increases in muscle mass（J Sports Sci 35(11):1073–1082）
+    publisher: Schoenfeld、Ogborn、Krieger
+    year: 2017
+    level: systematic_review
+    population: 进行抗阻训练的成年人
+    summary: 每个肌群每周的组数越多，增肌效果越好，呈剂量—效应关系；每周 10 组以上明显好于不足 5 组。
+    points:
+      - text: 每个肌群每周 10 组及以上的增肌效果，好于每周不足 5 组。
+        where: Results — weekly sets categories
+      - text: 每周每多做一组，增肌效应量随之增加。
+        where: Results — dose-response
+    keywords: [训练量, 组数, 增肌, 每周多少组]
+    review: claude_draft
+
+  - id: K05
+    domains: [training]
+    title: 每个肌群每周练几次
+    source: Effects of Resistance Training Frequency on Measures of Muscle Hypertrophy（Sports Med 46(11):1689–1697）
+    publisher: Schoenfeld、Ogborn、Krieger
+    year: 2016
+    level: systematic_review
+    population: 进行抗阻训练的成年人
+    summary: 同一肌群每周练 2 次，增肌效果好于每周 1 次。
+    points:
+      - text: 主要肌群每周至少训练 2 次，增肌效果好于每周 1 次。
+        where: Conclusions
+    keywords: [频率, 一周练几次, 分化, 全身]
+    review: claude_draft
+
+  - id: K06
+    domains: [training, recovery, data]
+    title: 有氧运动强度怎么分、热身与放松
+    source: Quantity and Quality of Exercise for Developing and Maintaining Fitness in Apparently Healthy Adults（Med Sci Sports Exerc 43(7):1334–1359）
+    publisher: 美国运动医学会（ACSM），Garber 等
+    year: 2011
+    level: position_stand
+    population: 表面健康的成年人
+    summary: 用最大心率百分比或主观用力程度划分强度；每次训练前后各有热身和放松；柔韧练习每周 2–3 天。
+    points:
+      - text: 中等强度约为最大心率的 64–76%，主观用力程度（6–20 分）12–13 分；高强度约为最大心率的 77–95%，14–17 分。
+        where: Table — Classification of exercise intensity
+      - text: 每次训练包括至少 5–10 分钟低到中等强度的热身，结束时至少 5–10 分钟的放松。
+        where: Components of the exercise training session
+      - text: 柔韧练习每周至少 2–3 天，每个静态拉伸保持 10–30 秒，每个动作累计约 60 秒。
+        where: Flexibility exercise
+    keywords: [心率区间, 强度, 有氧, 跑步, 热身, 拉伸, 放松]
+    url: https://journals.lww.com/acsm-msse/fulltext/2011/07000/quantity_and_quality_of_exercise_for_developing.26.aspx
+    review: claude_draft
+
+  - id: K07
+    domains: [recovery]
+    title: 成年人每晚睡多久
+    source: Recommended Amount of Sleep for a Healthy Adult（Sleep 38(6):843–844）
+    publisher: 美国睡眠医学会（AASM）与睡眠研究会（SRS），Watson 等
+    year: 2015
+    level: consensus
+    population: 18–60 岁成年人
+    summary: 成年人应规律地每晚睡 7 小时及以上；长期少于 7 小时与多种健康问题相关。
+    points:
+      - text: 成年人应规律地每晚睡 7 小时或更多。
+        where: Recommendation
+      - text: 规律睡眠不足 7 小时，与体重增加、心血管疾病、情绪低落、表现下降等风险增加相关。
+        where: Recommendation — rationale
+    keywords: [睡眠, 睡多久, 失眠, 熬夜, 睡不够, 睡得, 睡不好, 睡不着]
+    review: claude_draft
+
+  - id: K08
+    domains: [recovery, exercise]
+    title: 延迟性肌肉酸痛（练后酸痛）
+    source: Delayed Onset Muscle Soreness — Treatment Strategies and Performance Factors（Sports Med 33(2):145–164）
+    publisher: Cheung、Hume、Maxwell
+    year: 2003
+    level: review
+    population: 运动人群
+    summary: 不熟悉或离心为主的训练后常见的酸痛，一两天后最明显，通常一周内自行缓解；轻度活动可以减轻不适，但要和受伤区分开。
+    points:
+      - text: 练后酸痛一般在训练后 24 小时左右出现，24–72 小时最明显，5–7 天内消退。
+        where: Introduction / Symptoms
+      - text: 酸痛期间肌肉力量和关节活动范围可能暂时下降，同一肌群宜减少强度。
+        where: Performance factors
+      - text: 轻度活动是缓解酸痛最有效的方法之一，但效果是暂时的。
+        where: Treatment strategies — exercise
+    keywords: [酸痛, 练后酸, 肌肉酸, 延迟性]
+    review: claude_draft
+
+  - id: K09
+    domains: [nutrition]
+    title: 运动人群的蛋白质需要量与分配
+    source: International Society of Sports Nutrition Position Stand — Protein and Exercise（J Int Soc Sports Nutr 14:20）
+    publisher: 国际运动营养学会（ISSN），Jäger 等
+    year: 2017
+    level: position_stand
+    population: 规律运动的健康成年人
+    summary: 多数运动人群每天每公斤体重 1.4–2.0 克蛋白质就够；分到几餐吃，每餐 20–40 克；热量不足的减脂期可以更高。
+    points:
+      - text: 多数运动人群每天蛋白质摄入 1.4–2.0 克/公斤体重即可满足需要。
+        where: Position statement, point 2
+      - text: 每餐约 0.25 克/公斤体重（约 20–40 克）高质量蛋白，每 3–4 小时一次，分布全天。
+        where: Position statement, points 4–5
+      - text: 有抗阻训练习惯的人在热量不足时，2.3–3.1 克/公斤去脂体重的更高蛋白质摄入可能有助于保留肌肉。
+        where: Position statement, point 8
+    keywords: [蛋白质, 蛋白粉, 吃多少蛋白, 增肌饮食]
+    url: https://jissn.biomedcentral.com/articles/10.1186/s12970-017-0177-8
+    review: claude_draft
+
+  - id: K10
+    domains: [nutrition]
+    title: 肌酸怎么吃、安不安全
+    source: International Society of Sports Nutrition position stand — safety and efficacy of creatine supplementation（J Int Soc Sports Nutr 14:18）
+    publisher: 国际运动营养学会（ISSN），Kreider 等
+    year: 2017
+    level: position_stand
+    population: 健康成年人
+    summary: 一水肌酸是证据最充分的形式。可以先冲击再维持，也可以直接小剂量每天吃，只是起效慢一些；健康人短期和长期使用都安全，体重可能因水分略增。
+    points:
+      - text: 一水肌酸是最有效、研究最多的形式。
+        where: Position statement, point 1
+      - text: 冲击法：每天约 0.3 克/公斤体重（约 5 克一次、每天 4 次）连续 5–7 天，之后每天 3–5 克维持。
+        where: Position statement — dosing
+      - text: 不冲击时每天 3–5 克，大约 3–4 周后肌肉中的肌酸达到同样的饱和水平。
+        where: Position statement — dosing
+      - text: 健康人群在推荐剂量下短期和长期补充都安全、耐受良好；常见变化是体内水分增加导致体重略升。
+        where: Position statement — safety
+    keywords: [肌酸, 补剂, 冲击, 一水肌酸]
+    url: https://jissn.biomedcentral.com/articles/10.1186/s12970-017-0173-z
+    review: claude_draft
+
+  - id: K11
+    domains: [nutrition]
+    title: 咖啡因与运动表现
+    source: International society of sports nutrition position stand — caffeine and exercise performance（J Int Soc Sports Nutr 18:1）
+    publisher: 国际运动营养学会（ISSN），Guest 等
+    year: 2021
+    level: position_stand
+    population: 健康成年人
+    summary: 适量咖啡因能提高多种运动表现；常用剂量按体重算，运动前约 1 小时服用；剂量过高副作用明显增加，个体差异大。
+    points:
+      - text: 常用有效剂量为 3–6 毫克/公斤体重，运动前约 60 分钟服用。
+        where: Position statement, point 2
+      - text: 低至 2 毫克/公斤的剂量也可能有效；9 毫克/公斤左右的高剂量副作用发生率高。
+        where: Position statement, points 3 and 8
+      - text: 对咖啡因的反应个体差异很大，与遗传、习惯摄入量等有关。
+        where: Position statement, point 7
+    keywords: [咖啡因, 咖啡, 运动前, 提神, 补剂]
+    url: https://jissn.biomedcentral.com/articles/10.1186/s12970-020-00383-4
+    review: claude_draft
+
+  - id: K12
+    domains: [nutrition, safety]
+    title: 运动中的补水
+    source: American College of Sports Medicine position stand — Exercise and fluid replacement（Med Sci Sports Exerc 39(2):377–390）
+    publisher: 美国运动医学会（ACSM），Sawka 等
+    year: 2007
+    level: position_stand
+    population: 运动人群
+    summary: 补水的目标是避免运动中脱水过多，也避免喝过量；运动前提前补水，运动中按出汗量补。
+    points:
+      - text: 运动中避免因失水导致体重下降超过 2%。
+        where: Recommendations — during exercise
+      - text: 运动前至少 4 小时，缓慢饮水约 5–7 毫升/公斤体重。
+        where: Recommendations — before exercise
+      - text: 喝水超过出汗量会有低钠血症的风险，不宜过量饮水。
+        where: Recommendations — hyponatremia
+    keywords: [喝水, 补水, 出汗, 脱水, 电解质]
+    url: https://journals.lww.com/acsm-msse/fulltext/2007/02000/exercise_and_fluid_replacement.22.aspx
+    review: claude_draft
+
+  - id: K13
+    domains: [safety, recovery]
+    title: 高温下运动与中暑
+    source: ACSM Expert Consensus Statement on Exertional Heat Illness（Curr Sports Med Rep 22(4):134–149）
+    publisher: 美国运动医学会（ACSM），Roberts 等
+    year: 2023
+    level: consensus
+    population: 运动人群
+    summary: 热环境下要逐步适应、降低强度、增加休息与补水；运动性热射病是急症，出现意识异常要立即降温并呼叫急救。
+    points:
+      - text: 运动性热射病是医疗急症，特点是体温过高并伴有意识或行为异常（如意识混乱、说胡话、昏倒）。
+        where: Exertional heat stroke — definition
+      - text: 处理原则是"先降温、后转运"，尽快全身冷水浸泡降温。
+        where: Treatment — cool first, transport second
+      - text: 在热环境中训练需要约 1–2 周逐步适应，并据环境调整强度与时长。
+        where: Prevention — heat acclimatization
+    keywords: [中暑, 高温, 天气热, 热射病, 夏天]
+    review: claude_draft
+
+  - id: K14
+    domains: [safety]
+    title: 开始运动前需要先看医生的情况
+    source: Updating ACSM's Recommendations for Exercise Preparticipation Health Screening（Med Sci Sports Exerc 47(11):2473–2479）
+    publisher: 美国运动医学会（ACSM），Riebe 等
+    year: 2015
+    level: consensus
+    population: 准备开始或加大运动的成年人
+    summary: 筛查看三件事：现在是否规律运动、是否有心血管/代谢/肾脏疾病、是否有相关症状；有疾病或症状的人在进行中等以上强度运动前先取得医学许可。
+    points:
+      - text: 有已知心血管、代谢或肾脏疾病，或出现提示这些疾病的症状时，开始或加大到中等以上强度运动前应先取得医学许可。
+        where: Preparticipation screening algorithm
+      - text: 运动中出现胸痛、气短、头晕晕厥等症状，应停止运动并就医评估。
+        where: Signs and symptoms
+    keywords: [体检, 心脏病, 高血压, 糖尿病, 肾病, 能不能运动, 筛查]
+    review: claude_draft
+
+  - id: K15
+    domains: [safety, recovery, exercise]
+    title: 运动受伤后什么时候要看医生
+    source: Sports injuries
+    publisher: 英国国家医疗服务体系（NHS）
+    year: 2023
+    level: health_info
+    population: 一般人群
+    summary: 轻微扭伤拉伤可以先自行处理几天；疼痛严重或加重、肿胀加重、麻木刺痛、不能承重或关节变形时要就医。
+    points:
+      - text: 自行处理几天仍不见好转、疼痛严重或越来越重、肿胀加重时，应去看医生。
+        where: Non-urgent advice — see a GP if
+      - text: 听到断裂声、受伤部位变形、不能活动或承重、出现麻木或刺痛时，应立即就医。
+        where: Urgent advice — go to A&E if
+    keywords: [受伤, 扭伤, 拉伤, 疼, 痛, 肿, 就医, 看医生]
+    url: https://www.nhs.uk/conditions/sports-injuries/
+    review: claude_draft
+
+  - id: K16
+    domains: [nutrition, data]
+    title: 减重的合理速度
+    source: Losing Weight
+    publisher: 美国疾病预防控制中心（CDC）
+    year: 2023
+    level: health_info
+    population: 想减重的成年人
+    summary: 缓慢稳定地减重更容易长期保持，约每周 0.5–1 公斤。
+    points:
+      - text: 每周减重约 1–2 磅（约 0.5–0.9 公斤）的人，更容易长期保持减重成果。
+        where: Losing Weight — Even modest weight loss can mean big benefits
+    keywords: [减重, 减脂, 一周瘦多少, 掉秤, 减肥]
+    url: https://www.cdc.gov/healthy-weight-growth/losing-weight/index.html
+    review: claude_draft
+
+  - id: K17
+    domains: [nutrition]
+    title: 中国居民平衡膳食准则与每日食物量
+    source: 中国居民膳食指南（2022）
+    publisher: 中国营养学会
+    year: 2022
+    level: guideline
+    population: 2 岁以上健康人群
+    summary: 食物多样、吃动平衡；多吃蔬果奶类全谷大豆，适量鱼禽蛋瘦肉，少盐少油控糖限酒，足量饮水。
+    points:
+      - text: 每天蔬菜不少于 300 克（深色蔬菜占一半），水果 200–350 克，奶及奶制品 300–500 克。
+        where: 准则三
+      - text: 鱼、禽、蛋和瘦肉平均每天 120–200 克，每周至少吃 2 次水产品，每天一个鸡蛋。
+        where: 准则四
+      - text: 成年人每天食盐不超过 5 克，烹调油 25–30 克，添加糖不超过 50 克、最好控制在 25 克以下。
+        where: 准则五
+      - text: 成年人每天饮水 1500–1700 毫升（女性 1500、男性 1700），首选白水。
+        where: 准则六
+      - text: 每天谷类 200–300 克，其中全谷物和杂豆 50–150 克。
+        where: 准则一
+    keywords: [饮食, 吃什么, 蔬菜, 水果, 盐, 油, 糖, 喝水, 主食, 膳食]
+    url: http://dg.cnsoc.org/
+    review: claude_draft
+
+  - id: K18
+    domains: [recovery, data]
+    title: 心率变异性怎么看：和自己比、看一周的平均
+    source: Training Adaptation and Heart Rate Variability in Elite Endurance Athletes（Sports Med 43(9):773–781）
+    publisher: Plews 等
+    year: 2013
+    level: review
+    population: 耐力运动人群（方法可供一般运动人群参考）
+    summary: 单天的心率变异性波动很大，应在固定条件下（如晨起）测，用约一周的滚动平均和自己的基线比较，而不是看某一天的数值或和别人比。
+    points:
+      - text: 用 7 天滚动平均来看心率变异性的变化，比看单日数值更可靠。
+        where: Monitoring — rolling averages
+      - text: 应与个人基线比较；持续明显低于自己的基线可能提示疲劳或恢复不足。
+        where: Interpretation
+    keywords: [心率变异性, hrv, 恢复, 疲劳]
+    review: claude_draft
+
+  - id: K19
+    domains: [data, recovery]
+    title: 心率变异性的不同指标不能混比
+    source: An Overview of Heart Rate Variability Metrics and Norms（Front Public Health 5:258）
+    publisher: Shaffer、Ginsberg
+    year: 2017
+    level: review
+    population: 一般人群
+    summary: SDNN 与 RMSSD 是两个不同的心率变异性指标，反映的生理意义和正常范围不同，数值不能直接比较。
+    points:
+      - text: SDNN 反映整体变异性，RMSSD 主要反映副交感（迷走）神经的影响，两者不能互相替代。
+        where: Time-domain measurements
+      - text: 测量时长和条件不同，得到的数值不可比。
+        where: Recording period
+    keywords: [sdnn, rmssd, 心率变异性, 苹果手表, 不同设备]
+    url: https://www.frontiersin.org/articles/10.3389/fpubh.2017.00258/full
+    review: claude_draft
+
+  - id: K20
+    domains: [data, recovery]
+    title: 静息心率的正常范围
+    source: All About Heart Rate (Pulse)
+    publisher: 美国心脏协会（AHA）
+    year: 2024
+    level: health_info
+    population: 成年人
+    summary: 成年人静息心率一般在每分钟 60–100 次；经常训练的人可以更低。
+    points:
+      - text: 成年人的正常静息心率为每分钟 60–100 次。
+        where: What's a normal resting heart rate?
+      - text: 训练有素的运动员静息心率可能低至每分钟 40 次左右。
+        where: What's a normal resting heart rate?
+    keywords: [静息心率, 心率, 脉搏]
+    url: https://www.heart.org/en/health-topics/high-blood-pressure/the-facts-about-high-blood-pressure/all-about-heart-rate-pulse
+    review: claude_draft
+
+  - id: K21
+    domains: [data, training]
+    title: 每天走多少步
+    source: Daily steps and all-cause mortality — a meta-analysis of 15 international cohorts（Lancet Public Health 7(3):e219–e228）
+    publisher: Paluch 等
+    year: 2022
+    level: systematic_review
+    population: 成年人
+    summary: 每天步数越多，全因死亡风险越低，到一定步数后收益趋于平稳，且平稳点随年龄不同。
+    points:
+      - text: 60 岁及以上的人，收益大约在每天 6000–8000 步趋于平稳。
+        where: Findings
+      - text: 60 岁以下的人，收益大约在每天 8000–10000 步趋于平稳。
+        where: Findings
+    keywords: [步数, 走路, 一天走多少, 日行]
+    review: claude_draft
+
+  - id: K22
+    domains: [recovery, safety, training]
+    title: 过度训练：表现、预防与何时就医
+    source: Prevention, diagnosis and treatment of the overtraining syndrome（Med Sci Sports Exerc 45(1):186–205）
+    publisher: 欧洲运动科学学会与美国运动医学会联合共识，Meeusen 等
+    year: 2013
+    level: consensus
+    population: 运动人群
+    summary: 休息后成绩仍持续下降，伴随长期疲劳、情绪和睡眠问题时，要考虑训练与恢复失衡；预防靠合理安排负荷与恢复，诊断前要先排除其他疾病。
+    points:
+      - text: 过度训练的核心表现是充分休息后运动表现仍持续下降，常伴疲劳、情绪改变和睡眠障碍。
+        where: Definition and symptoms
+      - text: 预防措施包括循序渐进地加量、保证恢复、记录训练和状态、避免单调的训练安排。
+        where: Prevention
+      - text: 判断为过度训练前，需要医生排除贫血、感染、甲状腺问题等其他原因。
+        where: Diagnosis
+    keywords: [过度训练, 一直很累, 成绩下降, 练不动, 减量]
+    review: claude_draft
+
+  - id: K23
+    domains: [safety, recovery]
+    title: 生病时还能不能运动
+    source: Exercise and illness — Is it OK to exercise if I'm sick?
+    publisher: 梅奥诊所（Mayo Clinic）
+    year: 2024
+    level: health_info
+    population: 一般成年人
+    summary: 只有流涕、鼻塞、轻微咽痛等"颈部以上"的症状时，可以降低强度适当活动；发烧、全身酸痛、胸闷咳嗽、腹泻等时应当休息。这是经验性建议，证据等级不高。
+    points:
+      - text: 症状只在颈部以上（流涕、鼻塞、打喷嚏、轻微咽痛）时，通常可以降低强度活动。
+        where: Above-the-neck symptoms
+      - text: 发烧、乏力、全身肌肉酸痛，或胸闷、咳嗽、胃肠不适等颈部以下症状时，不宜运动。
+        where: Below-the-neck symptoms
+    keywords: [感冒, 发烧, 生病, 咳嗽, 嗓子疼]
+    review: claude_draft
+
+  - id: K24
+    domains: [safety]
+    title: 孕期运动与需要立即停止的信号
+    source: Physical Activity and Exercise During Pregnancy and the Postpartum Period（ACOG Committee Opinion No. 804）
+    publisher: 美国妇产科医师学会（ACOG）
+    year: 2020
+    level: guideline
+    population: 无并发症的孕妇与产后女性
+    summary: 无并发症的孕妇可以并且应当规律运动，但要在产检医生同意下进行，并知道哪些信号出现时必须停止。
+    points:
+      - text: 无并发症的孕妇每周进行至少 150 分钟中等强度有氧活动。
+        where: Recommendations
+      - text: 出现阴道出血、规律而疼痛的宫缩、阴道流液、头晕、胸痛、小腿疼痛或肿胀等情况，应立即停止运动并就医。
+        where: Warning signs to discontinue exercise
+    keywords: [怀孕, 孕期, 孕妇, 产后]
+    review: claude_draft
+
+  - id: K25
+    domains: [exercise]
+    title: 杠铃深蹲的动作要点
+    source: Essentials of Strength Training and Conditioning（第 4 版）第 15 章 动作技术
+    publisher: 美国国家体能协会（NSCA）
+    year: 2016
+    level: textbook
+    population: 进行力量训练的人
+    summary: 双脚约与肩同宽、脚尖略外展；下蹲时保持躯干稳定和脊柱中立，膝盖沿脚尖方向；在能保持姿势的前提下蹲到大腿约与地面平行。
+    points:
+      - text: 双脚与肩同宽或略宽，脚尖略向外。
+        where: Back squat — starting position
+      - text: 下蹲时背部保持平直（脊柱中立），膝盖与脚尖方向一致，脚跟不离地。
+        where: Back squat — downward movement
+      - text: 在能保持正确姿势的前提下，下蹲到大腿约与地面平行。
+        where: Back squat — downward movement
+    keywords: [深蹲, 蹲, 膝盖内扣, 动作]
+    review: claude_draft
+
+  - id: K26
+    domains: [exercise]
+    title: 硬拉的动作要点
+    source: Essentials of Strength Training and Conditioning（第 4 版）第 15 章 动作技术
+    publisher: 美国国家体能协会（NSCA）
+    year: 2016
+    level: textbook
+    population: 进行力量训练的人
+    summary: 杠铃贴近小腿，背部保持平直，用髋和腿发力把杠铃沿身体拉起；全程不弓背、不让杠铃离身体太远。
+    points:
+      - text: 起始时杠铃位于脚掌中部上方，贴近小腿，双手略宽于肩握杠。
+        where: Deadlift — starting position
+      - text: 拉起过程中背部保持平直，髋和膝一起伸展，杠铃贴着腿上升。
+        where: Deadlift — upward movement
+    keywords: [硬拉, 拉, 腰疼, 弓背, 动作]
+    review: claude_draft
+
+  - id: K27
+    domains: [exercise]
+    title: 卧推的动作要点
+    source: Essentials of Strength Training and Conditioning（第 4 版）第 15 章 动作技术
+    publisher: 美国国家体能协会（NSCA）
+    year: 2016
+    level: textbook
+    population: 进行力量训练的人
+    summary: 头、上背、臀部贴住凳面，双脚踩稳地面；杠铃下放到胸部下缘附近再推起；大重量时要有保护者。
+    points:
+      - text: 保持头、肩背、臀部与凳面接触，双脚平放地面。
+        where: Bench press — starting position
+      - text: 杠铃下放触及胸部（约乳头水平）后推起，手腕保持中立。
+        where: Bench press — movement
+      - text: 做卧推等杠铃过头或过脸的动作时，应有保护者。
+        where: Spotting
+    keywords: [卧推, 推胸, 肩膀疼, 动作]
+    review: claude_draft
