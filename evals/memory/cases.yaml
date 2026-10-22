@@ -1,0 +1,256 @@
+# 记忆考题：多轮、跨会话的情景 → 期望的记忆状态。先于记忆提取的实现写好。
+# 每个情景按顺序跑完所有轮次（每轮：用户说的话 + 教练的回答），最后检查有效记忆。
+#   turns 里单独一行"新会话"表示换了一个会话：前面说过的话看不到了，只剩记忆。
+#   must:     必须有的记忆。category 可写多个（任一即可）；keywords 全部出现在同一条记忆里（忽略空格）；
+#             status 默认 active，写 resolved 表示应当已标为解决。
+#   absent:   不能出现的记忆：同一条有效或待确认的记忆里同时出现这些词就算错（unless 里的词出现则不算）。
+#   none:     true 表示整个情景不应产生任何关于用户的记忆（给过的建议除外）。
+#   tags:     update 表示考的是"情况变化后更新"，整组的 must 与 absent 都对才算这组更新正确。
+#   limits:   某类最多几条（如 advice: 2），超了算"多记"。
+#   generic:  一般的训练原则，不该被记成"给过的建议"；建议里出现这些词算"多记"。
+# 类别：injury 伤病与身体状况、equipment 器械与场地、schedule 可练时间与作息、diet 饮食限制与习惯（含补剂）、
+#       preference 喜好与讨厌、goal 目标、style 回答风格、event 近期事件、advice 给过的关键建议
+version: "0.1"
+
+cases:
+  - id: M01
+    title: 第一次聊：伤病、器械、时间、喜好、饮食、风格、目标
+    turns:
+      - [我左膝有旧伤，前年打篮球伤的，深蹲蹲深了会疼, 那深蹲先控制在不疼的深度，可以用箱式深蹲代替全蹲。]
+      - [我家里只有一对可调哑铃，最重 20 公斤，还有一根弹力带, 这些够用了，高脚杯深蹲、罗马尼亚硬拉、卧推、划船都能做。]
+      - [工作日只能晚上 8 点以后练，每次最多 45 分钟，周末时间多, 工作日安排 40 分钟全身训练，周末练久一点。]
+      - [我不喜欢跑步，太无聊了，有氧更愿意骑车或者游泳, 有氧就用骑车或游泳，每周 2 次。]
+      - [目标是半年内增肌 5 公斤，现在 69 公斤, 先按每月增 0.5–1 公斤来。]
+      - [你回答简短点，别给我列一大堆, 好的，以后说重点。]
+      - [我对乳糖不耐受，喝牛奶会拉肚子, 那蛋白质从鸡蛋、肉、豆制品补。]
+    must:
+      - {category: [injury], keywords: [左膝, 深蹲]}
+      - {category: [equipment], keywords: [哑铃, "20"]}
+      - {category: [equipment], keywords: [弹力带]}
+      - {category: [schedule], keywords: ["8", "45"]}
+      - {category: [preference], keywords: [跑步]}
+      - {category: [preference], keywords: [骑车]}
+      - {category: [goal], keywords: [增肌, "5"]}
+      - {category: [style], keywords: [简短]}
+      - {category: [diet], keywords: [乳糖]}
+    absent:
+      - {keywords: [未愈]}
+      - {keywords: [没有就医]}
+      - {keywords: [未就医]}
+
+  - id: M02
+    tags: [update]
+    title: 膝盖好转后更新原来那条
+    turns:
+      - [我左膝有旧伤，深蹲蹲深了会疼, 先控制深度。]
+      - 新会话
+      - [这两个月练下来膝盖好多了，蹲到大腿平行也不疼了, 那可以恢复到平行深度，重量慢慢加。]
+    must:
+      - {category: [injury], keywords: [左膝, 平行]}
+    absent:
+      - {keywords: [蹲深了会疼], unless: [好, 平行, 不疼]}
+
+  - id: M03
+    tags: [update]
+    title: 新增器械，原来的器械保留
+    turns:
+      - [我家里有一对哑铃，最重 20 公斤, 好的。]
+      - [我新买了一个 24 公斤的壶铃, 可以加壶铃摇摆。]
+    must:
+      - {category: [equipment], keywords: [哑铃, "20"]}
+      - {category: [equipment], keywords: [壶铃, "24"]}
+
+  - id: M04
+    tags: [update]
+    title: 可练时间变了，替换旧的
+    turns:
+      - [我工作日只能晚上 8 点以后练，每次 45 分钟, 好的。]
+      - 新会话
+      - [我换工作了，现在早上 6 点能练一个小时，晚上反而没空了, 那改成早上练。]
+    must:
+      - {category: [schedule], keywords: [早上, "6"]}
+    absent:
+      - {keywords: [晚上, "8"], unless: [没空, 不再, 以前, 原来, 改]}
+
+  - id: M05
+    tags: [update]
+    title: 目标从增肌改成减脂
+    turns:
+      - [我想增肌，半年长 5 公斤, 好的。]
+      - 新会话
+      - [想了想还是先减脂吧，先减到 65 公斤, 那先控制热量。]
+    must:
+      - {category: [goal], keywords: [减脂, "65"]}
+    absent:
+      - {keywords: [增肌, "5"], unless: [改, 先减脂, 不再, 之前, 原来, 以后]}
+
+  - id: M06
+    title: 饮食限制：素食、不吃牛肉
+    turns:
+      - [我吃素，蛋奶可以，但肉和鱼都不吃, 那蛋白质靠蛋奶和豆制品。]
+      - [另外家里人都不吃牛肉, 好的。]
+    must:
+      - {category: [diet], keywords: [素]}
+
+  - id: M07
+    title: 喜好与讨厌
+    turns:
+      - [我最喜欢练腿，最讨厌波比跳, 好的，腿的训练多安排，不放波比跳。]
+    must:
+      - {category: [preference], keywords: [腿]}
+      - {category: [preference], keywords: [波比]}
+
+  - id: M08
+    tags: [update]
+    title: 旧伤已经好了
+    turns:
+      - [我腰去年扭过一次, 好的，硬拉注意腰部。]
+      - 新会话
+      - [腰早就完全好了，现在硬拉一点问题都没有, 那硬拉可以正常练。]
+    must:
+      - {category: [injury], keywords: [腰], status: resolved}
+
+  - id: M09
+    title: 近期事件：练后酸痛
+    turns:
+      - [昨天练完腿，今天走路都疼, 这是练后酸痛，今天练上肢或休息。]
+    must:
+      - {category: [event, injury], keywords: [腿, 疼]}
+
+  - id: M10
+    title: 给过的关键建议（针对这个人的）
+    turns:
+      - [我左膝蹲深了会疼, 你先把全蹲换成箱式深蹲，蹲到箱子上不疼的高度，练 4 周再看。]
+    must:
+      - {category: [injury], keywords: [左膝]}
+      - {category: [advice], keywords: [箱式深蹲]}
+
+  - id: M11
+    title: 打招呼闲聊，不该有记忆
+    turns:
+      - [你好，今天天气不错, 你好！想练点什么？]
+    none: true
+
+  - id: M12
+    title: 一般知识问题，不该有关于用户的记忆
+    turns:
+      - [肌酸要怎么吃, 一水肌酸每天 3–5 克，长期吃。]
+    none: true
+
+  - id: M13
+    title: 说的是别人
+    turns:
+      - [我爸有高血压，能不能跟我一起练, 可以先从快走开始，最好让他先问医生。]
+    absent:
+      - {keywords: [高血压], unless: [爸, 父]}
+
+  - id: M14
+    title: 否定说法
+    turns:
+      - [我没有任何伤病，身体挺好的, 好的。]
+    absent:
+      - {keywords: [膝]}
+      - {keywords: [腰]}
+
+  - id: M15
+    title: 假设性的问题不是事实
+    turns:
+      - [如果我深蹲膝盖疼该怎么办, 先停下，检查动作，换成不疼的幅度。]
+    absent:
+      - {keywords: [膝], unless: [如果, 假如]}
+
+  - id: M16
+    title: 作息
+    turns:
+      - [我一般 12 点半才睡，7 点起, 尽量提前到 12 点前睡。]
+    must:
+      - {category: [schedule, event, preference], keywords: ["12", "7"]}
+
+  - id: M17
+    title: 正在吃的补剂
+    turns:
+      - [我现在每天吃 5 克肌酸, 这个剂量合适，长期吃就行。]
+    must:
+      - {category: [diet], keywords: [肌酸, "5"]}
+
+  - id: M18
+    title: 医生的诊断与限制
+    turns:
+      - [医生说我右膝半月板有点磨损，不建议跳, 那避开跳跃动作，用骑车做有氧。]
+    must:
+      - {category: [injury], keywords: [半月板]}
+      - {category: [injury], keywords: [跳]}
+
+  - id: M19
+    title: 回答风格
+    turns:
+      - [别给我讲原理，直接告诉我怎么做就行, 好的，以后直接说做法。]
+    must:
+      - {category: [style], keywords: [原理]}
+
+  - id: M20
+    tags: [update]
+    title: 跨轮补充同一件器械
+    turns:
+      - [我家里有一对哑铃, 好的。]
+      - [最重的是 15 公斤, 那可以做高脚杯深蹲。]
+    must:
+      - {category: [equipment], keywords: [哑铃, "15"]}
+
+  - id: M21
+    tags: [update]
+    title: 用户纠正左右
+    turns:
+      - [我左膝有旧伤，跑步多了会疼, 先减少跑量。]
+      - 新会话
+      - [更正一下，不是左膝，是右膝, 好的，记住是右膝。]
+    must:
+      - {category: [injury], keywords: [右膝]}
+    absent:
+      - {keywords: [左膝], unless: [不是左膝, 更正, 纠正]}
+
+  - id: M22
+    tags: [update]
+    title: 临时情况不能覆盖长期的器械
+    turns:
+      - [我家里有一对哑铃，最重 20 公斤, 好的。]
+      - 新会话
+      - [这周出差住酒店，没有器械，怎么练, 这周用自重训练：俯卧撑、深蹲、弓步各 3 组。]
+    must:
+      - {category: [equipment], keywords: [哑铃, "20"]}
+      - {category: [event, equipment, schedule], keywords: [出差]}
+
+  - id: M23
+    tags: [update]
+    title: 喜好变了
+    turns:
+      - [我不喜欢跑步，太无聊, 那有氧用骑车。]
+      - 新会话
+      - [最近跟朋友跑了几次，现在挺喜欢跑步的, 那可以每周加一次轻松跑。]
+    must:
+      - {category: [preference], keywords: [喜欢跑步]}
+    absent:
+      - {keywords: [不喜欢跑步], unless: [现在, 最近, 以前, 原来, 改, 变]}
+
+  - id: M24
+    title: 提问里顺带说了自己的情况
+    turns:
+      - [我膝盖不好，上下楼梯会疼，还能跳绳吗, 先别跳绳，换成骑车或椭圆机。]
+    must:
+      - {category: [injury], keywords: [膝, 楼梯]}
+    absent:
+      - {keywords: [跳绳], unless: [别, 不, 换, 能]}
+
+  - id: M25
+    title: 长回答里只记最关键的建议，一般原则不记（回答照真实回答的长度写）
+    turns:
+      - - 我左膝有旧伤，前年打篮球伤的，深蹲蹲深了会疼
+        - "深蹲蹲深就疼，就先别蹲到底——把幅度控制在刚要疼的位置之前，用箱式深蹲或高脚杯深蹲固定深度，重量降 20–30%，每组留 2–3 次余量。脚尖略外展、膝盖跟着脚尖方向走、重心压全脚掌，别内扣。每周 2 次、每次 3 组 8–10 次，组间休息 90 秒，再用腿举、罗马尼亚硬拉、臀桥、分腿蹲替代部分深蹲。训练前热身 5–10 分钟、练后放松 5–10 分钟，每次记录疼痛分数。训练中疼痛超过 3/10、练后 24 小时仍疼或肿胀，就停这个动作；旧伤两年了还蹲到底就疼，建议找运动医学或康复科评估一次。"
+      - - 我家里只有一对可调哑铃，最重 20 公斤，还有一根弹力带。工作日只能晚上 8 点以后练，每次最多 45 分钟
+        - "一对可调哑铃加一根弹力带完全够用：每周练 3 次全身，每个肌群每周练 2 次以上、累计 10 组以上就能持续进步。每次都在晚 8 点后练、控制在 45 分钟内：先热身 5–10 分钟，再按下肢推、下肢拉、上肢推、上肢拉、核心的顺序做 5 个动作——高脚杯或箱式深蹲、单腿罗马尼亚硬拉、哑铃卧推或俯卧撑、单臂哑铃划船、弹力带侧向走；每个动作 3 组、每组 8–12 次，组间休息 1–2 分钟。20 公斤对下肢偏轻，用单腿动作和慢速离心加难度。连续两次都能比目标次数多做 1–2 次时，加重 2–10%。练后膝痛持续到第二天，或出现肿胀、打软腿，就停掉该动作并就医。"
+    must:
+      - {category: [injury], keywords: [左膝, 深蹲]}
+      - {category: [equipment], keywords: [哑铃, "20"]}
+      - {category: [schedule], keywords: ["8", "45"]}
+    limits: {advice: 2}
+    generic: [热身, 放松, "3/10", 组间休息, 余量, 疼痛分数, 就医, 加重 2]
