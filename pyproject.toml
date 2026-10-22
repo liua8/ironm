@@ -1,0 +1,14 @@
+[project]
+name = "iron-m"
+version = "0.1.0"
+description = "iron-m：以 mirobody 为数据底座的多 Agent 健身教练"
+requires-python = ">=3.13"
+dependencies = [
+    "mirobody[app]",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+mirobody = { path = "vendor/mirobody", editable = true }
