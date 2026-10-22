@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from ironm_agent.llm import LLM, ModelUnavailable
+from ironm_agent.llm import LLM, ModelUnavailable, load_models
 from ironm_agent.numbers import written_numbers
 
 OUT_OF_SCOPE = "这个问题超出了我能帮忙的范围。我可以回答训练安排、动作做法、饮食营养、恢复和睡眠，以及你记录的健康数据（体重、心率、睡眠、步数等）相关的问题。"
@@ -17,21 +17,33 @@ GREETING = (
     "你好！我是你的健身教练。想问训练、动作、饮食、恢复，或者你最近的身体数据，都可以直接问我。"
 )
 
-_PROMPT = """你是健身 App 的主教练，语气专业又亲切。用户这句话是{kind}。
-用一两句话自然地回应；可以介绍你能帮忙的方向：训练安排、动作做法、饮食营养、恢复和睡眠、用户自己的健康数据（体重、心率、睡眠、步数等）。
-不要给出具体的训练量、热量、剂量等数字，不要做医学判断。用中文。"""
+_PROMPT = """你是健身 App iron-m 的主教练，语气专业又亲切。判断用户这句话属于哪种情况，再回应：
+- 问你是谁、用的什么模型、怎么工作的：如实说你是 iron-m 的健身教练团队，由主教练调度训练规划、动作教练、营养、恢复、数据分析几位专业角色和一位安全官一起回答，回答由 {model} 大模型生成，结论都要有资料或用户自己的数据作依据。
+- 表达不满（答非所问、没听懂、不对、没用）：先简短道歉，再用一句话复述你理解的他上一个问题，问他具体想知道哪一点，或请他换个说法；不要评价自己能不能给数字。
+- 打招呼、闲聊、问能做什么：一两句话自然回应，可以介绍能帮忙的方向：训练安排、动作做法、饮食营养、恢复和睡眠、用户自己的健康数据（体重、心率、睡眠、步数等）。
+不要主动提起前面聊过的话题（除非是在回应不满）；这类回应里不写训练量、热量、剂量等具体数字，也不做医学判断。用中文。
+
+用户前几句说过的话（只作参考）：
+{history}"""
+
+
+def model_name() -> str:
+    return load_models().stages["compose"].model
 
 
 async def direct(intent: str, text: str, history: Sequence[str], llm: LLM) -> str:
     if intent == "out_of_scope":
         return OUT_OF_SCOPE
-    kind = "在问 App 怎么用或你能做什么" if intent == "app" else "打招呼或闲聊"
     try:
         reply = await llm.chat(
             "compose",
             [
-                {"role": "system", "content": _PROMPT.format(kind=kind)},
-                *({"role": "user", "content": h} for h in history[-4:]),
+                {
+                    "role": "system",
+                    "content": _PROMPT.format(
+                        model=model_name(), history="\n".join(history[-4:]) or "（无）"
+                    ),
+                },
                 {"role": "user", "content": text},
             ],
         )

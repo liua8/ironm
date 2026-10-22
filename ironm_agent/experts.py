@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from ironm_agent.checks import check_text, cited_ids
 from ironm_agent.common import ContractModel
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
+from ironm_agent.personal import Personal
 from ironm_agent.roles import Role, RoleSpec
 from ironm_agent.tools import Evidence, Toolbox
 
@@ -63,12 +64,14 @@ _PROMPT = """你是健身 App 里的「{name}」，负责：{duty}。
 4. 依据答不了这个问题时，speak 写 false，reason 写原因；依据不全时，可以给不带具体数字的一般建议，并把 general 写 true。
 5. 查健康数据时：没有记录就如实说"没有找到记录"，不能推测为正常；不同设备的心率变异性（SDNN 与 RMSSD）是不同指标，不要放在一起比较。
 6. 不诊断、不开药。涉及疼痛或不适时，写明出现什么情况要停止并就医。
-7. 用中文，口语化，专业、简洁。{extra}
+7. 直接回答用户问的那件事，不说空话套话。for_you 只写能让建议更具体的个人信息（比如按这个人的体重算出的量），没有就留空；不要罗列"你的记录里没有什么"，除非用户问的就是这个数据。
+8. 用到这个人的体重等数据换算时（例如按 0.3 克/公斤算剂量），把这句话写成 <statement>按你 69.2 公斤算，每天约 21 克〔K10〕<cite>[r3]</cite></statement>，资料编号和数据编号都写上。
+9. 用中文，口语化，专业、简洁。{extra}
 
 最后只输出 JSON：
 {{"speak": true, "reason": "", "conclusion": "一两句结论", "for_you": "结合这个人的情况（没有可留空）", "how": "具体怎么做", "caution": "注意事项", "uncertain": "不确定的地方（可留空）", "general": false}}"""
 
-_SAFETY_EXTRA = "\n你是安全官：只负责风险和界限。conclusion 用一句话说这件事最主要的风险，caution 写清楚注意什么、出现什么情况要停止并就医；不给训练或饮食方案，不评论用户的数据（你看不到），也不要说依据库里查到或没查到什么。这句话没有值得特别提醒的风险时，speak 写 false。"
+_SAFETY_EXTRA = "\n你是安全官：只负责风险和界限。只有这件事对这个人有具体、相关的风险时才发言；健康人可以放心做的常规事情，speak 写 false。发言时 conclusion 一句话说主要风险，caution 最多两句，只写和这件事直接相关的注意点和就医信号，不写通用套话（比如与问题无关时不要写「运动中胸痛立即就医」）；不给训练或饮食方案，不评论用户的数据，也不要说依据库里查到或没查到什么。"
 
 
 def _tool_hint(toolbox: Toolbox) -> str:
@@ -80,10 +83,17 @@ def _tool_hint(toolbox: Toolbox) -> str:
     return "；".join(hints) or "（没有可用的工具）"
 
 
-def _user_message(text: str, history: Sequence[str], concerns: Sequence[str]) -> str:
+def _user_message(
+    text: str, history: Sequence[str], concerns: Sequence[str], personal: str = ""
+) -> str:
     parts = [f"用户的问题：{text}"]
+    if personal:
+        parts.append(personal)
     if history:
-        parts.append("最近的对话（用于理解指代）：\n" + "\n".join(history[-6:]))
+        parts.append(
+            "用户前几句说过的话（只用来理解这次问题里的指代，不要在回答里重提和这次问题无关的旧话题）：\n"
+            + "\n".join(history)
+        )
     if concerns:
         names = {"discomfort": "身体不适", "special": "特殊人群"}
         parts.append("注意：这句话涉及" + "、".join(names.get(c, c) for c in concerns))
@@ -126,14 +136,20 @@ async def consult(
     concerns: Sequence[str],
     toolbox: Toolbox,
     llm: LLM,
+    personal: Personal | None = None,
 ) -> Consultation:
     """请一个专业 Agent 作答。出错时返回不发言的意见，不向外抛。"""
     extra = _SAFETY_EXTRA if spec.role is Role.SAFETY else ""
     system = _PROMPT.format(name=spec.name, duty=spec.duty, tools=_tool_hint(toolbox), extra=extra)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system},
-        {"role": "user", "content": _user_message(text, history, concerns)},
+        {
+            "role": "user",
+            "content": _user_message(text, history, concerns, personal.text() if personal else ""),
+        },
     ]
+    if personal is not None:
+        toolbox.evidence.support.update(personal.support)
     try:
         opinion = await _loop(spec, messages, toolbox, llm, text)
     except ModelUnavailable as e:

@@ -69,7 +69,7 @@ class Evidence:
         return self.health_queries + self.knowledge_queries
 
 
-def _row_numbers(row: Mapping[str, Any]) -> list[float]:
+def row_numbers(row: Mapping[str, Any]) -> list[float]:
     from mirobody.kernel.citations import numbers
 
     out: list[float] = []
@@ -148,5 +148,5 @@ class Toolbox:
         for row in getattr(envelope, "data", None) or []:
             rid = row.get("rid") if isinstance(row, Mapping) else None
             if isinstance(rid, str) and rid:
-                self.evidence.support[rid] = _row_numbers(row)
+                self.evidence.support[rid] = row_numbers(row)
         return self.render(envelope)

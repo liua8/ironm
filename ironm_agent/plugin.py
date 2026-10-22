@@ -21,6 +21,7 @@ from ironm_agent.experts import Consultation, consult
 from ironm_agent.kb import KnowledgeBase, default_kb
 from ironm_agent.llm import ModelsConfig, TurnLLM, load_models
 from ironm_agent.memory import recent
+from ironm_agent.personal import personal_basics
 from ironm_agent.render import (
     answer_text,
     consultation_summary,
@@ -182,7 +183,9 @@ class IronMAgent:
             yield text_block("\n\n".join(x for x in (prefix, answer) if x))
             return
 
-        # 3. 专业 Agent 同时作答，互不可见；谁先答完先显示
+        # 3. 专业 Agent 同时作答，互不可见；谁先答完先显示。先读这个人最新的体重、身高，大家都能按本人算
+        personal = await personal_basics(self._health_source(), user_id, session_id)
+        run["basics"] = len(personal.lines)
         roles = r.experts()
         run["roles"] = [x.value for x in roles]
         tasks: dict[asyncio.Task[Consultation], int] = {}
@@ -196,7 +199,9 @@ class IronMAgent:
                 user_id=user_id,
                 session_id=session_id,
             )
-            task = asyncio.create_task(consult(spec, text, history, r.concerns, toolbox, llm))
+            task = asyncio.create_task(
+                consult(spec, text, history, r.concerns, toolbox, llm, personal)
+            )
             tasks[task] = i
         results: dict[int, Consultation] = {}
         pending: set[asyncio.Task[Consultation]] = set(tasks)

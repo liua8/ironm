@@ -78,3 +78,31 @@ def test_failed_review_falls_back_to_primary_opinion() -> None:
         compose("肌酸怎么吃", Role.NUTRITION, consults, FakeLLM(lambda *_: Reply("每天吃 99 克。")))
     )
     assert composed.degraded and "3–5" in composed.text and "练前练后" not in composed.text
+
+
+def test_data_sentences_reach_the_model_as_placeholders_and_come_back_intact() -> None:
+    stmt = "<statement>按你 69.2 公斤算，冲击期每天约 21 克〔K10〕<cite>[r1]</cite></statement>"
+    op = Opinion.model_validate(
+        {
+            "role": Role.NUTRITION,
+            "speak": True,
+            "conclusion": "每天 3–5 克〔K10〕",
+            "for_you": stmt,
+        },
+        strict=False,
+    )
+    c = Consultation(op, Evidence(support={"r1": [69.2]}, entries=dict(ENTRIES)), "spoke")
+    llm = FakeLLM(lambda *_: Reply("每天 3–5 克〔K10〕。⟦D1⟧。"))
+    composed = asyncio.run(compose("肌酸该喝多少", Role.NUTRITION, [c], llm))
+    sent = str(llm.seen[0][1][1]["content"])
+    assert "⟦D1⟧" in sent and "<statement>" not in sent
+    assert not composed.degraded and stmt in composed.text
+
+
+def test_unknown_placeholder_fails_review() -> None:
+    op = Opinion.model_validate(
+        {"role": Role.NUTRITION, "speak": True, "conclusion": "每天 3–5 克〔K10〕"}, strict=False
+    )
+    c = Consultation(op, Evidence(entries=dict(ENTRIES)), "spoke")
+    composed = asyncio.run(compose("q", Role.NUTRITION, [c], FakeLLM(lambda *_: Reply("⟦D7⟧"))))
+    assert composed.degraded

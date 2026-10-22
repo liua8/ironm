@@ -7,7 +7,7 @@ from typing import Any
 
 _log = logging.getLogger("ironm_agent.memory")
 
-TURNS = 6
+TURNS = 4  # 只取用户最近几句话，用来理解指代
 
 
 def split_thread(session_id: str) -> tuple[str, str]:
@@ -17,7 +17,7 @@ def split_thread(session_id: str) -> tuple[str, str]:
 
 
 async def recent(session_id: str, current: str, turns: int = TURNS) -> list[str]:
-    """最近几轮对话，格式为"用户：…""教练：…"；读不到时返回空列表。"""
+    """用户最近说过的几句话（不含教练的回答，避免每次都把旧话题带进来）；读不到时返回空列表。"""
     owner, session = split_thread(session_id)
     if not owner or not session:
         return []
@@ -31,10 +31,9 @@ async def recent(session_id: str, current: str, turns: int = TURNS) -> list[str]
     lines = []
     for row in rows:
         content = row.get("content")
-        if not isinstance(content, str) or not content.strip():
+        if row.get("role") != "user" or not isinstance(content, str) or not content.strip():
             continue
-        who = "用户" if row.get("role") == "user" else "教练"
-        lines.append(f"{who}：{content.strip()[:300]}")
-    if lines and lines[-1] == f"用户：{current.strip()[:300]}":
+        lines.append(f"用户：{content.strip()[:200]}")
+    if lines and lines[-1] == f"用户：{current.strip()[:200]}":
         lines.pop()  # 本轮的问题已经先存进去了
-    return lines[-turns * 2 :]
+    return lines[-turns:]

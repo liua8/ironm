@@ -49,8 +49,14 @@ def check_text(
             if bad_rows:
                 problems.append(f"引用了不存在的数据编号：{'、'.join(bad_rows)}")
                 continue
-            pool = [v for c in seg.cites for v in support[c]] + own
-            loose = [v for v in written_numbers(KB_REF.sub("", seg.text)) if not traced(v, pool)]
+            refs = [r for r in KB_REF.findall(seg.text) if r in entries]
+            data = [v for c in seg.cites for v in support[c]]
+            coefs = [v for r in refs for v in written_numbers(entries[r].as_evidence())]
+            loose = [
+                v
+                for v in written_numbers(KB_REF.sub("", seg.text))
+                if not traced(v, own, data=data, coefs=coefs)
+            ]
             if loose:
                 problems.append(
                     f"带数据编号的句子里，这些数字在所引的数据行里找不到：{_shown(loose)}"

@@ -21,7 +21,8 @@ compose_mod.review = _review
 
 
 async def main() -> None:
-    agent = IronMAgent(health=FakeHealth(), environ=os.environ)
+    weight = {"indicator": "Body weight", "name": "bodyMasss", "date": "2026-09-14", "value": "69.2", "unit": "kg", "rid": "r1"}
+    agent = IronMAgent(health=FakeHealth(rows=[weight]), environ=os.environ)
     async for b in agent.generate_response("42", [{"role": "user", "content": sys.argv[1]}], session_id=""):
         if b["type"] == "text":
             print("\n=== 最终 ===\n" + b["text"])
