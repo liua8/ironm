@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from ironm_agent.checks import check_text, cited_ids, repair
 from ironm_agent.common import ContractModel
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
+from ironm_agent.memory_view import Recall
 from ironm_agent.personal import Personal
 from ironm_agent.roles import Role, RoleSpec
 from ironm_agent.tools import Evidence, Toolbox
@@ -87,14 +88,20 @@ def _tool_hint(toolbox: Toolbox) -> str:
 
 
 def _user_message(
-    text: str, history: Sequence[str], concerns: Sequence[str], personal: str = ""
+    text: str,
+    history: Sequence[str],
+    concerns: Sequence[str],
+    personal: str = "",
+    memory: str = "",
 ) -> str:
     parts = [f"用户的问题：{text}"]
     if personal:
         parts.append(personal)
+    if memory:
+        parts.append(memory)
     if history:
         parts.append(
-            "用户前几句说过的话（只用来理解这次问题里的指代，不要在回答里重提和这次问题无关的旧话题）：\n"
+            "这次对话前面的几轮（只用来理解这次问题里的指代，不要在回答里重提和这次问题无关的旧话题）：\n"
             + "\n".join(history)
         )
     if concerns:
@@ -161,21 +168,33 @@ async def consult(
     toolbox: Toolbox,
     llm: LLM,
     personal: Personal | None = None,
+    memory: Recall | None = None,
 ) -> Consultation:
-    """请一个专业 Agent 作答。出错时返回不发言的意见，不向外抛。"""
+    """请一个专业 Agent 作答。出错时返回不发言的意见，不向外抛。
+
+    memory：这个人的长期记忆，只给这个角色该看的那几类；记忆里用户自己说过的数字（如哑铃 20 公斤）
+    和这次问题里的数字一样，作答时可以直接用。
+    """
     system = _PROMPT.format(name=spec.name, duty=spec.duty, tools=_tool_hint(toolbox))
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system},
         {
             "role": "user",
-            "content": _user_message(text, history, concerns, personal.text() if personal else ""),
+            "content": _user_message(
+                text,
+                history,
+                concerns,
+                personal.text() if personal else "",
+                memory.for_role(spec.role) if memory else "",
+            ),
         },
     ]
+    said = "\n".join(x for x in (text, memory.numbers_text() if memory else "") if x)
     if personal is not None:
         toolbox.evidence.support.update(personal.support)
         toolbox.evidence.rows.update(personal.rows)
     try:
-        opinion = await _loop(spec, messages, toolbox, llm, text)
+        opinion = await _loop(spec, messages, toolbox, llm, said)
     except ModelUnavailable as e:
         _log.warning("expert unavailable: role=%s reason=%s", spec.role.value, e)
         silent = Opinion(role=spec.role, speak=False, reason="这次没能调用模型")

@@ -14,7 +14,7 @@ from pydantic import Field
 from ironm_agent.common import ContractModel
 from ironm_agent.yamlfile import load_yaml
 
-type Stage = Literal["route", "expert", "compose"]
+type Stage = Literal["route", "expert", "compose", "memory"]
 
 MODELS_PATH = Path(__file__).resolve().parent.parent / "config" / "models.yaml"
 

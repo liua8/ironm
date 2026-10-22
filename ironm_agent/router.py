@@ -151,12 +151,21 @@ _PROMPT = """你是健身 App 的主教练，负责理解用户的问题，并�
 最近的对话（用于理解指代，可能为空）：
 {history}
 
+{persona}
+
 只输出 JSON：{{"intent": "...", "concerns": [], "primary": "...", "helpers": [], "reason": "..."}}"""
 
 
-async def route(text: str, history: Sequence[str], llm: LLM) -> Route:
+async def route(text: str, history: Sequence[str], llm: LLM, persona: str = "") -> Route:
+    """persona：这个人的画像（长期记忆排成的清单），帮助判断该请谁，比如有伤病时请恢复。"""
     roles = "\n".join(f"- {r.value}：{SPECS[r].name}，{SPECS[r].duty}" for r in EXPERTS)
-    prompt = _PROMPT.format(roles=roles, history="\n".join(history[-6:]) or "（无）")
+    prompt = _PROMPT.format(
+        roles=roles,
+        history="\n".join(history[-6:]) or "（无）",
+        persona=(persona + "\n（只用来判断该请谁，比如问训练安排而他有伤病时，加上 recovery）")
+        if persona
+        else "",
+    )
     try:
         reply = await llm.chat(
             "route",

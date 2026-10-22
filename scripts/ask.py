@@ -47,7 +47,8 @@ def ask(token: str, question: str, session_id: str) -> None:
         b = json.loads(line[5:])
         kind = b.get("type")
         if kind == "tool_call":
-            print(f"[{b.get('name')}] 开始")
+            task = (b.get("args") or {}).get("任务", "")
+            print(f"[{b.get('name')}] 开始" + (f"：{task}" if task else ""))
         elif kind == "tool_result":
             body = str(b.get("content", "")).replace("\n", " | ")
             print(f"   └ {body[:300]}")

@@ -6,6 +6,7 @@ from importlib.metadata import entry_points
 from typing import Any
 
 from ironm_agent.llm import ModelUnavailable, Reply, Stage, load_models
+from ironm_agent.memory_store import MemoryBook, MemoryStore
 from ironm_agent.plugin import FAILED, IronMAgent
 from ironm_agent.tools import HEALTH
 from tests.fakes import FakeHealth, call, jsonr, system_of, tool_results
@@ -45,7 +46,10 @@ class Scripted:
 
 
 def agent(
-    script: Scripted, health: FakeHealth | None = None, monkeypatch: Any = None
+    script: Any,
+    health: FakeHealth | None = None,
+    monkeypatch: Any = None,
+    memory: MemoryStore | None = None,
 ) -> IronMAgent:
     from ironm_agent import plugin
 
@@ -60,13 +64,20 @@ def agent(
             return await self._inner.chat(*args, **kwargs)
 
     monkeypatch.setattr(plugin, "TurnLLM", _LLM)
-    return IronMAgent(health=health or FakeHealth(), models=load_models(), environ={})
+    return IronMAgent(
+        health=health or FakeHealth(),
+        models=load_models(),
+        environ={},
+        memory=memory if memory is not None else MemoryBook(),
+    )
 
 
 def collect(a: IronMAgent, content: Any) -> list[dict[str, Any]]:
     async def go() -> list[dict[str, Any]]:
         msgs = [{"role": "user", "content": content}]
-        return [b async for b in a.generate_response("42", msgs, session_id="42:s1")]
+        blocks = [b async for b in a.generate_response("42", msgs, session_id="42:s1")]
+        await a.settle()  # 等后台的记忆提取做完
+        return blocks
 
     return asyncio.run(go())
 

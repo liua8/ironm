@@ -16,6 +16,7 @@ from ironm_agent.checks import CALC_REF, KB_REF, check_text, cited_ids, repair
 from ironm_agent.experts import Consultation, Opinion
 from ironm_agent.kb import Entry
 from ironm_agent.llm import LLM, ModelUnavailable
+from ironm_agent.memory_view import Recall
 from ironm_agent.numbers import written_numbers
 from ironm_agent.roles import SPECS, Role
 
@@ -42,7 +43,7 @@ _PROMPT = """你是健身 App 的主教练。几位专业角色已经分别回�
 4. 风险提醒只保留和这件事直接相关、最重要的一条，放在最后。
 5. 个人化：只保留真正改变建议的个人数据（比如按体重算出的剂量）；为了显得个人化而提一句体重之类的不要写；不提和这次问题无关的旧话题，不罗列"你的记录里没有什么"。
 6. 出处标记照规则保留（系统展示时会去掉，并把来源放进可展开的"依据与来源"，所以不用在正文里解释出处）：形如 ⟦D1⟧ 的占位符代表一句引用了用户数据的原话，原样放进合适位置，不要改写或自己补写；资料句末尾的〔K03〕、计算结果句末尾的〔C2〕、经验句末尾的〔经验〕跟着它所属的句子保留，不能删、不能挪；改写一句话时它的数字和标记保持不变。含数字的句子都必须带着出处标记或就是占位符。
-7. 用中文，口语化，像一位专业又亲切的教练，不要说"根据各角色的意见""依据库"这类话。"""
+7. 用中文，口语化，像一位专业又亲切的教练，不要说"根据各角色的意见""依据库"这类话。{style}"""
 
 
 _STATEMENT = re.compile(r"<statement>.*?</statement>", re.S)
@@ -160,6 +161,7 @@ async def compose(
     primary: Role,
     consultations: Sequence[Consultation],
     llm: LLM,
+    memory: Recall | None = None,
 ) -> Composed:
     others = [c for c in consultations if c.opinion.speak]
     others.sort(key=lambda c: c.opinion.role is not primary)  # 主责在前
@@ -170,8 +172,12 @@ async def compose(
     rows = {rid: d for c in others for rid, d in c.evidence.rows.items()}
     said = [v for o in opinions for v in written_numbers(o.body())]  # 专业角色意见里出现过的数字
     shield = Shield()
+    style = memory.style() if memory else ""
+    hint = f"\n8. 这个人说过的回答偏好与喜好（照做）：\n{style}" if style else ""
+    # 记忆里用户自己说过的数字（如哑铃 20 公斤）和这次问题里的数字一样，可以直接用
+    question = "\n".join(x for x in (text, memory.numbers_text() if memory else "") if x)
     messages = [
-        {"role": "system", "content": _PROMPT.format(primary=SPECS[primary].name)},
+        {"role": "system", "content": _PROMPT.format(primary=SPECS[primary].name, style=hint)},
         {"role": "user", "content": _payload(text, opinions, shield)},
     ]
     for attempt in range(2):
@@ -182,7 +188,12 @@ async def compose(
         draft = reply.content.strip()
         answer, problems = shield.restore(draft)
         problems += review(
-            answer, support=support, entries=entries, question=text, calcs=calcs, experience=said
+            answer,
+            support=support,
+            entries=entries,
+            question=question,
+            calcs=calcs,
+            experience=said,
         )
         if not problems or attempt == 1:
             if problems:  # 改了一次还不过：修正而不是放弃
@@ -190,7 +201,7 @@ async def compose(
                     answer,
                     support=support,
                     entries=entries,
-                    question=text,
+                    question=question,
                     calcs=calcs,
                     experience=said,
                 )
