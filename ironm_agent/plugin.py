@@ -11,7 +11,7 @@ import logging
 import os
 import time
 import uuid
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from functools import cache
 from typing import Any
 
@@ -90,8 +90,10 @@ class IronMAgent:
         kb: KnowledgeBase | None = None,
         models: ModelsConfig | None = None,
         environ: Mapping[str, str] | None = None,
+        metrics: Callable[[str], Awaitable[list[Any]]] | None = None,
         **kwargs: Any,
     ) -> None:
+        self._metrics = metrics  # 按用户计算指标（默认与数据页同一份计算）
         self._health = health
         self._kb = kb or default_kb()
         self._models = models or load_models()
@@ -112,6 +114,28 @@ class IronMAgent:
             if isinstance(e, Mapping) and e.get("api_key") == ours
         }
         return same or dict.fromkeys(models, "iron-m")
+
+    def _metrics_source(self, user_id: str) -> Callable[[], Awaitable[list[Any]]]:
+        """这一轮的指标：第一次被调用时计算，同一轮里各 Agent 共用结果。"""
+        compute = self._metrics
+        if compute is None:
+            from ironm_agent.web import metrics_for
+
+            async def default(uid: str) -> list[Any]:
+                return list((await metrics_for(uid))[0])
+
+            compute = default
+        result: list[Any] | None = None
+        lock = asyncio.Lock()
+
+        async def once() -> list[Any]:
+            nonlocal result
+            async with lock:
+                if result is None:
+                    result = await compute(user_id)
+                return result
+
+        return once
 
     def _health_source(self) -> Any:
         if self._health is None:
@@ -188,6 +212,7 @@ class IronMAgent:
         run["basics"] = len(personal.lines)
         roles = r.experts()
         run["roles"] = [x.value for x in roles]
+        metrics_once = self._metrics_source(user_id)
         tasks: dict[asyncio.Task[Consultation], int] = {}
         for i, role in enumerate(roles):
             spec = SPECS[role]
@@ -198,6 +223,7 @@ class IronMAgent:
                 health=self._health_source() if spec.health_data else None,
                 user_id=user_id,
                 session_id=session_id,
+                metrics=metrics_once,
             )
             task = asyncio.create_task(
                 consult(spec, text, history, r.concerns, toolbox, llm, personal)

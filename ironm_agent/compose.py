@@ -12,7 +12,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from ironm_agent.checks import KB_REF, check_text, cited_ids
+from ironm_agent.checks import CALC_REF, KB_REF, check_text, cited_ids
 from ironm_agent.experts import Consultation, Opinion
 from ironm_agent.kb import Entry
 from ironm_agent.llm import LLM, ModelUnavailable
@@ -29,6 +29,7 @@ class Composed:
     degraded: bool
     rewrites: int
     by_model: bool
+    calcs: tuple[tuple[str, str], ...] = ()  # 正文引用到的指标计算（C 编号，说明）
 
 
 _PROMPT = """你是健身 App 的主教练。几位专业角色已经分别回答了用户的问题（彼此看不到对方的意见），请把它们整合成一个给用户的回答。
@@ -40,7 +41,7 @@ _PROMPT = """你是健身 App 的主教练。几位专业角色已经分别回�
 4. 主责角色（{primary}）的意见是主体。
 5. 安全官的提醒由系统单独放在最后，你不用写，也不要和它矛盾。
 6. 个人化：意见里按这个人的数据算出的内容（比如按体重算的量）要保留；不要罗列"你的记录里没有什么"，不要提和这次问题无关的旧话题。
-7. 形如 ⟦D1⟧ 的占位符，每个代表一句引用了用户数据的原话：把它当作一整句原样放在合适的位置，不要改写、拆开、重复或自己补写它的内容。资料句末尾的〔K03〕跟着它所属的句子原样保留，不能删、不能挪到别的句子上；改写一句话时它的数字和标记保持不变。含数字的句子都必须带着出处标记或就是占位符。
+7. 形如 ⟦D1⟧ 的占位符，每个代表一句引用了用户数据的原话：把它当作一整句原样放在合适的位置，不要改写、拆开、重复或自己补写它的内容。资料句末尾的〔K03〕、计算结果句末尾的〔C2〕跟着它所属的句子原样保留，不能删、不能挪到别的句子上；改写一句话时它的数字和标记保持不变。含数字的句子都必须带着出处标记或就是占位符。
 8. 标了"一般建议"的意见，写成一般建议，不加具体数字。
 9. 用中文，口语化，像一位专业又亲切的教练，不要说"根据各角色的意见"这类话。"""
 
@@ -104,11 +105,12 @@ def review(
     support: Mapping[str, Sequence[float]],
     entries: Mapping[str, Entry],
     question: str,
+    calcs: Mapping[str, str] | None = None,
 ) -> list[str]:
     """回答发出前的规则核对，返回问题清单（为空表示通过）。"""
     if not answer.strip():
         return ["回答是空的"]
-    return check_text(answer, support=support, entries=entries, question=question)
+    return check_text(answer, support=support, entries=entries, question=question, calcs=calcs)
 
 
 def _ordered_entries(answer: str, entries: Mapping[str, Entry]) -> tuple[Entry, ...]:
@@ -153,6 +155,7 @@ async def compose(
     opinions = [c.opinion for c in others]
     support = {rid: values for c in others for rid, values in c.evidence.support.items()}
     entries = {eid: e for c in others for eid, e in c.evidence.entries.items()}
+    calcs = {cid: d for c in others for cid, d in c.evidence.calcs.items()}
     shield = Shield()
     messages = [
         {"role": "system", "content": _PROMPT.format(primary=SPECS[primary].name)},
@@ -165,12 +168,15 @@ async def compose(
             break
         draft = reply.content.strip()
         answer, problems = shield.restore(draft)
-        problems += review(answer, support=support, entries=entries, question=text)
+        problems += review(answer, support=support, entries=entries, question=text, calcs=calcs)
         if not problems:
             used = _ordered_entries(answer, entries) + tuple(
                 e for e in safety_entries if e.id not in _KB_REF.findall(answer)
             )
-            return Composed(answer, used, caution, False, attempt, True)
+            used_calcs = tuple(
+                (c, calcs[c]) for c in dict.fromkeys(CALC_REF.findall(answer)) if c in calcs
+            )
+            return Composed(answer, used, caution, False, attempt, True, used_calcs)
         messages.append({"role": "assistant", "content": draft})
         messages.append(
             {

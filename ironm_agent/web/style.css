@@ -1,0 +1,104 @@
+/* IronM 功能页：手机优先，跟随系统深浅色 */
+:root {
+  --bg: #f4f3ef; --card: #ffffff; --ink: #14201c; --muted: #66716c; --line: #e3e1da;
+  --accent: #1f7a5a; --accent-ink: #ffffff; --accent-soft: #e3f1ea;
+  --good: #1f7a5a; --good-soft: #e3f1ea; --warn: #a8620b; --warn-soft: #fbefd9;
+  --neutral-soft: #eceae4; --shadow: 0 1px 2px rgba(20, 32, 28, .06), 0 4px 16px rgba(20, 32, 28, .05);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1a17; --card: #17241f; --ink: #e6efe9; --muted: #93a39a; --line: #263630;
+    --accent: #4fc08d; --accent-ink: #08130f; --accent-soft: #1b3229;
+    --good: #4fc08d; --good-soft: #1b3229; --warn: #f0b35a; --warn-soft: #3a2c16;
+    --neutral-soft: #22302a; --shadow: none;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+}
+svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.top {
+  position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px);
+}
+.brand { font-weight: 800; letter-spacing: .02em; font-size: 17px; }
+.brand b { color: var(--accent); }
+.title { flex: 1; color: var(--muted); font-size: 14px; }
+.me { border: 0; background: var(--card); color: var(--ink); width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; box-shadow: var(--shadow); cursor: pointer; }
+
+main {
+  max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px;
+  padding: 6px max(16px, env(safe-area-inset-right, 0px)) 24px max(16px, env(safe-area-inset-left, 0px));
+}
+h1 { font-size: 24px; line-height: 1.25; margin: 6px 0 0; text-wrap: balance; }
+h2 { font-size: 13px; font-weight: 600; letter-spacing: .06em; color: var(--muted); margin: 10px 0 -4px; }
+.lede { color: var(--muted); margin: 0; }
+
+.card { background: var(--card); border-radius: 16px; padding: 14px 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (min-width: 560px) { .grid.wide { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.metric .name { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.metric .value { font-size: 26px; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.metric .value small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+.metric .text { font-size: 13px; color: var(--muted); }
+.metric.empty .value { color: var(--muted); font-size: 18px; font-weight: 600; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex: none; }
+.dot.good { background: var(--good); } .dot.attention { background: var(--warn); }
+.badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--neutral-soft); color: var(--muted); }
+.badge.good { background: var(--good-soft); color: var(--good); } .badge.attention { background: var(--warn-soft); color: var(--warn); }
+
+.spark { width: 100%; height: 38px; display: block; }
+.spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.8; vector-effect: non-scaling-stroke; }
+.spark .area { fill: var(--accent-soft); stroke: none; }
+
+details { border-top: 1px solid var(--line); padding-top: 6px; margin-top: 2px; }
+details summary { cursor: pointer; color: var(--accent); font-size: 13px; list-style: none; }
+details summary::-webkit-details-marker { display: none; }
+details dl { margin: 6px 0 0; display: grid; gap: 4px; font-size: 13px; }
+details dt { color: var(--muted); } details dd { margin: 0 0 4px; }
+
+.note { background: var(--warn-soft); color: var(--warn); border-radius: 12px; padding: 10px 12px; font-size: 13px; }
+.soon { border: 1.5px dashed var(--line); background: transparent; box-shadow: none; }
+.soon .tag { font-size: 12px; color: var(--accent); font-weight: 600; letter-spacing: .04em; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+button, .btn {
+  font: inherit; border: 0; border-radius: 12px; padding: 10px 16px; cursor: pointer; text-decoration: none; text-align: center;
+  background: var(--accent); color: var(--accent-ink); font-weight: 600;
+}
+.btn.ghost, button.ghost { background: var(--neutral-soft); color: var(--ink); font-weight: 500; }
+button:disabled { opacity: .5; cursor: default; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+label .hint { font-size: 12px; }
+input, select {
+  font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; min-width: 0; width: 100%;
+}
+form { display: flex; flex-direction: column; gap: 12px; }
+.error { color: var(--warn); font-size: 13px; }
+.muted { color: var(--muted); font-size: 13px; }
+
+.tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(4, 1fr);
+  background: var(--card); border-top: 1px solid var(--line);
+  padding: 6px max(8px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
+}
+.tabs a { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); text-decoration: none; padding: 4px 0; }
+.tabs a.on { color: var(--accent); font-weight: 600; }
+.ask {
+  position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 6;
+  display: flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 999px; text-decoration: none;
+  background: var(--ink); color: var(--bg); font-weight: 600; font-size: 14px; box-shadow: var(--shadow);
+}
+.ask svg { width: 18px; height: 18px; }
+.login { max-width: 380px; margin: 12vh auto 0; }
+.login h1 { font-size: 30px; }

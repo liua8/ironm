@@ -60,6 +60,9 @@ def answer_text(composed: Composed, *, prefix: str = "") -> str:
     parts = [p for p in (prefix, composed.text) if p]
     if composed.safety:
         parts.append(f"**安全提醒**\n{composed.safety}")
+    if composed.calcs:
+        how = "\n".join(f"- 〔{cid}〕{detail}" for cid, detail in composed.calcs)
+        parts.append(f"**怎么算的**\n{how}")
     if composed.entries:
         refs = "\n".join(f"- {e.cite_label()}" for e in composed.entries)
         parts.append(f"**参考资料**\n{refs}")

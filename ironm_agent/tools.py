@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -19,6 +19,25 @@ _log = logging.getLogger("ironm_agent.tools")
 
 HEALTH = "query_health_indicators"
 KNOWLEDGE = "search_knowledge"
+METRICS = "compute_metrics"
+
+# 能调用指标计算的角色（BMI、基础代谢、热量与蛋白质目标、体重趋势、与本人基线的比较）
+METRIC_ROLES = frozenset({"data", "nutrition", "recovery", "planner"})
+
+METRICS_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": METRICS,
+        "description": (
+            "计算这个人的指标：体重与每周变化、BMI、基础代谢、每日总消耗、每日热量与蛋白质目标、"
+            "静息心率与心率变异性和本人基线的比较、睡眠、步数、血压。每项带编号（如 C2）、计算过程、所用数据和依据；"
+            "缺数据的项会写明还缺什么。与 App 数据页是同一份计算。"
+        ),
+        "parameters": {"type": "object", "additionalProperties": False, "properties": {}},
+    },
+}
+
+type MetricsSource = Callable[[], Awaitable[list[Any]]]
 
 
 def _health_schema() -> dict[str, Any]:
@@ -60,13 +79,15 @@ class Evidence:
 
     support: dict[str, list[float]] = field(default_factory=dict)  # 健康数据行 rid → 这行的数值
     entries: dict[str, Entry] = field(default_factory=dict)  # 查到的依据库条目
+    calcs: dict[str, str] = field(default_factory=dict)  # 指标计算结果 C 编号 → 说明（含数字）
     health_queries: int = 0
     knowledge_queries: int = 0
+    metric_queries: int = 0
     health_failed: bool = False
 
     @property
     def queries(self) -> int:
-        return self.health_queries + self.knowledge_queries
+        return self.health_queries + self.knowledge_queries + self.metric_queries
 
 
 def row_numbers(row: Mapping[str, Any]) -> list[float]:
@@ -103,10 +124,12 @@ class Toolbox:
         user_id: str,
         session_id: str,
         render: Callable[[Any], str] = _default_render,
+        metrics: MetricsSource | None = None,
     ) -> None:
         self.spec = spec
         self.kb = kb
         self.health = health if spec.health_data else None
+        self.metrics = metrics if spec.role.value in METRIC_ROLES else None
         self.user_info = {"user_id": user_id, "session_id": session_id}
         self.render = render
         self.evidence = Evidence()
@@ -115,6 +138,8 @@ class Toolbox:
         out = [KNOWLEDGE_SCHEMA] if self.spec.kb_domains else []
         if self.health is not None:
             out.append(_health_schema())
+        if self.metrics is not None:
+            out.append(METRICS_SCHEMA)
         return out
 
     async def run(self, call: ToolCall) -> str:
@@ -122,7 +147,27 @@ class Toolbox:
             return self._knowledge(str(call.arguments.get("query", "")))
         if call.name == HEALTH and self.health is not None:
             return await self._health(call.arguments)
+        if call.name == METRICS and self.metrics is not None:
+            return await self._metrics()
         return json.dumps({"error": f"{self.spec.name}不能使用这个工具"}, ensure_ascii=False)
+
+    async def _metrics(self) -> str:
+        self.evidence.metric_queries += 1
+        try:
+            items = await self.metrics()  # type: ignore[misc]
+        except Exception as e:
+            _log.warning("metrics failed: error_type=%s", type(e).__name__)
+            return "这次没能计算指标。"
+        lines = []
+        for i, m in enumerate(items, start=1):
+            if m.value is None:
+                lines.append(f"- {m.name}：算不出来，{m.text}")
+                continue
+            cid = f"C{i}"
+            detail = f"{m.name}：{m.text}。计算：{m.how}。数据：{m.data}。依据：{m.source}"
+            self.evidence.calcs[cid] = detail
+            lines.append(f"[{cid}] {detail}")
+        return "\n".join(lines) or "没有可计算的指标。"
 
     def _knowledge(self, query: str) -> str:
         self.evidence.knowledge_queries += 1

@@ -55,9 +55,10 @@ _PROMPT = """你是健身 App 里的「{name}」，负责：{duty}。
 你和其他专业角色同时回答同一个问题，看不到彼此的意见，最后由主教练整合。
 
 做法：
-1. 先用工具查依据：{tools}。可以连续查询，最多 3 次。
+1. 先用工具查依据：{tools}。可以连续查询，最多 3 次。问到 BMI、基础代谢、每天吃多少热量或蛋白质、体重变化、心率和自己基线比怎么样这类问题，先用 compute_metrics。
 2. 根据查到的依据作答，每句话写的时候就标好出处：
    - 用到资料的句子，在这一句的句末写〔K03〕（K 编号是查到的资料编号，写这一句的内容真正出自的那份）；
+   - 用到指标计算结果（compute_metrics 返回的 C 编号，如 BMI、热量目标）的句子，在这一句的句末写〔C2〕，数字照计算结果写；
    - 用到用户健康数据的句子，写成 <statement>这句话<cite>[r3]</cite></statement>，[ ] 里是这句话用到的数据行编号（r 开头）。
    例：<statement>你近 30 天的静息心率平均 58 次/分<cite>[r3]</cite></statement>，在成年人正常范围的偏低一端〔K20〕。
 3. 回答里的数字（次数、组数、克数、分钟、心率、步数等）只能出现在标了出处的句子里，并且来自那份资料或那行数据；用户自己说的数字可以直接用。依据里没有的数字一律不写。不要提到你没有查到的用户数据。
@@ -80,6 +81,8 @@ def _tool_hint(toolbox: Toolbox) -> str:
         hints.append("search_knowledge 查本领域的依据库")
     if toolbox.health is not None:
         hints.append("query_health_indicators 查这个人的健康数据")
+    if toolbox.metrics is not None:
+        hints.append("compute_metrics 计算这个人的指标（BMI、热量与蛋白质目标、体重趋势等）")
     return "；".join(hints) or "（没有可用的工具）"
 
 
@@ -107,7 +110,11 @@ def problems_of(opinion: Opinion, evidence: Evidence, text: str) -> list[str]:
     if not opinion.body().strip():
         return ["意见是空的"]
     return check_text(
-        opinion.body(), support=evidence.support, entries=evidence.entries, question=text
+        opinion.body(),
+        support=evidence.support,
+        entries=evidence.entries,
+        question=text,
+        calcs=evidence.calcs,
     )
 
 

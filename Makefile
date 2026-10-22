@@ -18,11 +18,11 @@ pg-stop:
 pg-check:         ## 核对三个扩展：vector、pg_trgm、pgcrypto
 	scripts/pg.sh check
 
-run:              ## 启动 mirobody：http://127.0.0.1:18090（演示账号 you@mirobody.ai，验证码 111111）
+run:              ## 启动：http://127.0.0.1:18090/iron/ 是 iron-m 页面，/ 是 mirobody 自带网页（演示账号 you@mirobody.ai，验证码 111111）
 	scripts/run_mirobody.sh
 
 stop:             ## 停止后台运行的 mirobody
-	-pkill -f "mirobody dev --host 127.0.0.1 --port 18090"
+	-pkill -f "ironm_agent.server --host 127.0.0.1 --port 18090"
 
 health:
 	curl -fsS http://127.0.0.1:18090/api/health

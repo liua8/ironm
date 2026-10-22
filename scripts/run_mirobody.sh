@@ -11,4 +11,5 @@ export PG_URL="postgres://ironm:${PG_PASSWORD}@127.0.0.1:55432/mirobody"
 export SEED_DEMO_DATA=true   # 演示账号 you@mirobody.ai，验证码 111111（mirobody 自带配置）
 
 cd "$ROOT/vendor/mirobody"
-exec "$ROOT/.venv/bin/mirobody" dev --host 127.0.0.1 --port 18090
+# 和 mirobody dev 相同，另外挂上 iron-m 的页面与接口（/iron/）
+exec "$ROOT/.venv/bin/python" -m ironm_agent.server --host 127.0.0.1 --port 18090
