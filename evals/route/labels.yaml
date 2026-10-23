@@ -1,0 +1,68 @@
+# 问答考题的路由标注（spec [2026-10-23] §16）：每道题应该交给谁。
+# primary：可以当主责的角色（写了几个，选中其中任一个都算对）；required：必须请到的；allowed：请到也合理的（其余算多请）。
+# intent：不请专业角色的问题类型（chat / app / out_of_scope）。
+# 被安全前置、风险拦截、追问截住的题（不会走到路由）和靠上下文才能判断的题不标。
+version: "0.1"
+labels:
+  S05: {primary: [recovery], allowed: [planner]}
+  S06: {primary: [recovery], allowed: [planner]}
+  S08: {primary: [recovery], allowed: [exercise]}
+  S09: {primary: [recovery], allowed: [exercise]}
+  S10: {primary: [recovery], allowed: [planner, nutrition, data]}
+  S11: {primary: [recovery], allowed: [planner, exercise]}
+  D01: {primary: [data], allowed: [recovery]}
+  D02: {primary: [data]}
+  D03: {primary: [data], allowed: [nutrition]}
+  D04: {primary: [recovery, data], allowed: [recovery, data]}
+  D05: {primary: [recovery, data], allowed: [recovery, data]}
+  D06: {primary: [recovery], allowed: [data]}
+  D07: {primary: [nutrition], allowed: [data]}
+  D08: {primary: [nutrition], allowed: [data]}
+  D09: {primary: [data]}
+  D10: {primary: [data], allowed: [recovery]}
+  K01: {primary: [planner]}
+  K02: {primary: [planner]}
+  K03: {primary: [planner], allowed: [recovery]}
+  K04: {primary: [exercise, planner], allowed: [exercise, planner]}
+  K05: {primary: [exercise]}
+  K06: {primary: [exercise], allowed: [recovery]}
+  K07: {primary: [exercise], allowed: [recovery]}
+  K08: {primary: [exercise]}
+  K09: {primary: [nutrition]}
+  K10: {primary: [nutrition]}
+  K11: {primary: [nutrition], allowed: [planner]}
+  K12: {primary: [nutrition]}
+  K13: {primary: [recovery], allowed: [planner]}
+  K14: {primary: [recovery]}
+  K15: {primary: [recovery], allowed: [planner, nutrition]}
+  C01: {intent: chat}
+  C02: {intent: app}
+  C03: {intent: chat}
+  C04: {intent: app}
+  C05: {intent: out_of_scope}
+  M01: {primary: [planner, nutrition], required: [planner, nutrition]}
+  M02: {primary: [planner], allowed: [exercise, recovery]}
+  M03: {primary: [recovery, planner], required: [recovery], allowed: [planner]}
+  M04: {primary: [planner], required: [planner, nutrition]}
+  M05: {primary: [nutrition, recovery], required: [nutrition, recovery], allowed: [exercise]}
+  I01: {primary: [exercise, planner], allowed: [exercise, planner]}
+  I02: {primary: [planner, exercise], allowed: [planner, exercise]}
+  I03: {primary: [exercise, recovery], allowed: [exercise, recovery, planner]}
+  R01: {primary: [planner], allowed: [recovery]}
+  R02: {primary: [planner], allowed: [recovery]}
+  R03: {primary: [recovery, planner], required: [recovery], allowed: [planner]}
+  H02: {primary: [nutrition]}
+  H03: {primary: [planner, exercise], allowed: [planner, exercise, recovery]}
+  H04: {primary: [recovery, planner], allowed: [recovery, planner]}
+  Q03: {primary: [planner]}
+  Q04: {primary: [exercise]}
+  P01: {primary: [planner]}
+  P02: {primary: [planner]}
+  P03: {primary: [planner]}
+  P04: {primary: [planner], allowed: [recovery]}
+  L01: {primary: [planner]}
+  L02: {primary: [planner], allowed: [recovery]}
+  F01: {primary: [exercise]}
+  F02: {primary: [exercise]}
+  F03: {primary: [exercise]}
+  F04: {primary: [exercise], allowed: [recovery]}

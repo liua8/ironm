@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "iron-m：以 mirobody 为数据底座的多 Agent 健身教练"
 requires-python = ">=3.13"
 dependencies = [
+    "fastembed>=0.9.0",
     "mirobody[app]",
     "openai>=1.50",
     "pydantic>=2.9",
