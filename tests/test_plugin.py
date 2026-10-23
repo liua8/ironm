@@ -189,3 +189,36 @@ def test_web_picker_gets_the_model_iron_m_actually_uses() -> None:
 def test_web_picker_never_empty_when_some_model_is_configured() -> None:
     entries = {"qwen": {"llm_type": "openai", "api_key": "DASHSCOPE_API_KEY"}}
     assert set(IronMAgent.load_llm_clients(entries)) == {"qwen"}
+
+
+def test_asking_for_someone_else_is_not_supported(monkeypatch: Any) -> None:
+    """不做关爱圈：提问人（会话编号前半）和数据的主人不同，只说明不支持，不调用模型、不碰记忆。"""
+    from ironm_agent.memory_store import Change, Item, MemoryBook
+    from ironm_agent.plugin import HELP_ASK
+
+    s = Scripted("不该出现")
+    book = MemoryBook()
+    from datetime import UTC, datetime
+
+    t0 = datetime(2026, 10, 1, tzinfo=UTC)
+    asyncio.run(
+        book.apply(
+            "42",
+            [
+                Change(
+                    "insert", item=Item("k", "injury", "左膝旧伤", "左膝", "said", "active", t0, t0)
+                )
+            ],
+        )
+    )
+    a = agent(s, monkeypatch=monkeypatch, memory=book)
+
+    async def go() -> list[dict[str, Any]]:
+        msgs = [{"role": "user", "content": "我妈最近血压怎么样，我自己膝盖也疼"}]
+        blocks = [b async for b in a.generate_response("42", msgs, session_id="7:s1")]
+        await a.settle()
+        return blocks
+
+    blocks = asyncio.run(go())
+    assert text_of(blocks) == HELP_ASK and s.count == 0
+    assert [x.content for x in asyncio.run(book.items("42"))] == ["左膝旧伤"]

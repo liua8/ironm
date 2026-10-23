@@ -3,6 +3,7 @@
 mirobody 的 Server.start 接受额外的接口路由，所以不需要改 mirobody 源码。
 必须在 vendor/mirobody 目录下运行，mirobody 自带的网页（frontend/）才能照常提供。
 用法：PG_URL=... python -m ironm_agent.server [--host 127.0.0.1] [--port 18090]
+本机额外的配置（不进仓库，比如自测用的登录账号）放在 IRONM_EXTRA_CONFIG 指向的 YAML 里，叠在开发配置之上。
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import io
 import json
 import os
 import sys
+from pathlib import Path
 
 
 def main() -> None:
@@ -40,8 +42,19 @@ def main() -> None:
         config_key=os.environ["CONFIG_ENCRYPTION_KEY"],
         **{key: json.dumps(value, ensure_ascii=False) for key, value in pg.items()},
     )
+    files: list[str | io.StringIO] = [io.StringIO(overlay)]
+    extra = os.environ.get("IRONM_EXTRA_CONFIG", "")
+    if extra:
+        path = (
+            Path(extra)
+            if Path(extra).is_absolute()
+            else Path(__file__).resolve().parents[1] / extra
+        )
+        if not path.is_file():
+            sys.exit(f"IRONM_EXTRA_CONFIG 指向的文件不存在：{path}")
+        files.append(str(path))
     print(f"iron-m（mirobody 底座）— http://{args.host}:{args.port}/iron/")
-    asyncio.run(Server.start(yaml_files=[io.StringIO(overlay)], fastapi_routers=[router]))
+    asyncio.run(Server.start(yaml_files=files, fastapi_routers=[router]))
 
 
 if __name__ == "__main__":

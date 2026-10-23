@@ -131,9 +131,9 @@ p { margin: 0; }
 .rows > .row-item:first-child { border-top: 0; padding-top: 2px; }
 .rows > .row-item:last-child { padding-bottom: 2px; }
 .row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.row-title { font-weight: 600; }
+.row-title { font-weight: 600; overflow-wrap: anywhere; }
 .row-sub { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row-end { color: var(--muted); display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.row-end { color: var(--muted); display: flex; align-items: center; gap: 6px; font-size: 14px; flex: none; white-space: nowrap; }
 
 .empty { display: flex; gap: 12px; align-items: center; color: var(--muted); font-size: 14px; }
 .empty .i { color: var(--muted); }
@@ -393,3 +393,35 @@ body.chatting .app { padding-bottom: 0; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .search input:focus { box-shadow: none; }
+
+/* ---- 添加数据：上传报告、随手记、导入苹果健康、基因数据、连接设备 ---- */
+.adds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.add {
+  background: var(--surface); border: 1px solid transparent; border-radius: var(--radius-sm); padding: 12px; box-shadow: var(--shadow);
+  display: flex; gap: 10px; align-items: flex-start; cursor: pointer; min-width: 0;
+}
+.add:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.add:hover, .add-mini:hover { border-color: var(--line); }
+.add-icon { width: 36px; height: 36px; border-radius: 11px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; flex: none; }
+.add-icon .i { width: 20px; height: 20px; }
+.add-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.add-text b { font-size: 14.5px; }
+.add-text span { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.add-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.add-mini {
+  font: inherit; font-size: 12.5px; color: var(--ink-2); background: var(--surface); border: 1px solid transparent; border-radius: var(--radius-sm);
+  padding: 12px 4px 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; box-shadow: var(--shadow); white-space: nowrap;
+}
+@media (prefers-color-scheme: dark) { .add, .add-mini { border-color: var(--line); } }
+.drop {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 6px;
+  padding: 22px 16px; border: 1.5px dashed var(--line); border-radius: var(--radius-sm); background: var(--bg); color: var(--ink); cursor: pointer; font-size: 14px;
+}
+.drop .i { color: var(--accent); width: 28px; height: 28px; }
+.drop b { font-weight: 650; }
+.drop span { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.drop.over, .drop:focus-within { border-color: var(--accent); background: var(--accent-soft); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.progress { height: 6px; border-radius: 6px; background: var(--sunken); overflow: hidden; }
+.progress span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.row-item .mark { width: 36px; height: 36px; border-radius: 11px; }

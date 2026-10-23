@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from ironm_agent import imports
 from ironm_agent import profile as profiles
 from ironm_agent.exercises import EQUIPMENT, NOTE, PARTS, library
 from ironm_agent.healthdata import read_all
@@ -108,6 +112,51 @@ async def get_exercises(user_id: str = Depends(_verify())) -> dict[str, Any]:
         "note": NOTE,
         "exercises": [x.model_dump() for x in lib.exercises],
     }
+
+
+# ---- 导入苹果健康 -------------------------------------------------------------------------
+
+MAX_IMPORT_BYTES = 2 * 1024**3  # 健康 App 的导出包最多收 2GB
+UPLOAD = File(..., description="健康 App 导出的 .zip（或其中的 export.xml）")
+TZ = Form("", description="浏览器所在时区（IANA 名称），记录里没带时区时用")
+
+
+def _zone(tz: str) -> str:
+    try:
+        ZoneInfo(tz)
+    except Exception:
+        return ""
+    return tz
+
+
+@router.post("/iron/api/import/apple")
+async def import_apple(
+    file: UploadFile = UPLOAD, tz: str = TZ, user_id: str = Depends(_verify())
+) -> dict[str, Any]:
+    if imports.running(user_id):
+        raise HTTPException(409, "上一次导入还在进行，完成后再导入")
+    suffix = Path((file.filename or "").lower()).suffix
+    if suffix not in (".zip", ".xml"):
+        raise HTTPException(400, "请上传健康 App 导出的 .zip 压缩包")
+    fd, raw = tempfile.mkstemp(prefix="ironm-upload-", suffix=suffix)
+    path, size = Path(raw), 0
+    with os.fdopen(fd, "wb") as out:
+        while chunk := await file.read(1 << 20):
+            size += len(chunk)
+            if size > MAX_IMPORT_BYTES:
+                break
+            out.write(chunk)
+    if size > MAX_IMPORT_BYTES or size == 0:
+        path.unlink(missing_ok=True)
+        raise HTTPException(413 if size else 400, "文件太大（超过 2GB）" if size else "文件是空的")
+    job = imports.start(user_id, path, _zone(tz) or "UTC")
+    return {"job": job.json()}
+
+
+@router.get("/iron/api/import/apple")
+async def import_apple_status(user_id: str = Depends(_verify())) -> dict[str, Any]:
+    job = imports.latest(user_id)
+    return {"job": job.json() if job else None}
 
 
 # ---- 记忆接口：前端不显示（项目负责人决定），保留查看、修改、删除、暂停，留给以后的隐私设置或 App ----

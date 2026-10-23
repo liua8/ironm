@@ -21,7 +21,7 @@ from ironm_agent.compose import compose
 from ironm_agent.experts import Consultation, consult
 from ironm_agent.kb import KnowledgeBase, default_kb
 from ironm_agent.llm import ModelsConfig, TurnLLM, load_models
-from ironm_agent.memory import last_sources, recent, user_lines
+from ironm_agent.memory import last_sources, recent, split_thread, user_lines
 from ironm_agent.memory_extract import extract
 from ironm_agent.memory_store import MemoryStore, default_store
 from ironm_agent.memory_view import Recall
@@ -57,6 +57,8 @@ _log = logging.getLogger("ironm_agent.run")
 FAILED = "IronM 这次没能回答，请稍后再试。"
 NO_TEXT = "没有收到文字问题。"
 NO_ANSWER = "这次没能调用模型，暂时回答不了，请稍后再试。"
+# 不做关爱圈（项目负责人决定）：提问人和数据的主人不是同一个人时，不读写对方的数据和记忆
+HELP_ASK = "IronM 只回答你自己的问题，暂不支持替别人提问或查看别人的数据。"
 
 
 @cache
@@ -261,6 +263,12 @@ class IronMAgent:
             yield text_block(sections_text(sections))
             return
         prefix = sections_text(refusal_sections(replies, refusals.kinds)) if refusals.kinds else ""
+
+        asker, _ = split_thread(session_id)
+        if asker and asker != user_id:  # 关爱圈里替别人问：只说明不支持
+            run["path"] = "help_ask"
+            yield text_block(HELP_ASK)
+            return
 
         # 追问上一条回答的来源：直接从“依据与来源”里讲，不再请专业 Agent
         if is_provenance(text):

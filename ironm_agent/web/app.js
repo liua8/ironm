@@ -7,7 +7,7 @@ const store = {
   get() { try { return localStorage.getItem(KEY) || ""; } catch { return ""; } },
   set(v) { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch { /* 隐私模式 */ } },
 };
-let cache = { metrics: null, profile: null, exercises: null };
+let cache = { metrics: null, profile: null, exercises: null, files: null };
 
 // ---- 小工具 -------------------------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
@@ -52,6 +52,14 @@ const ICONS = {
   down: [["path", { d: "M7.5 13.5V4H4.5v9.5zM7.5 13.5 11 20.5a2 2 0 0 0 3-2.2l-.9-3.8h5a2 2 0 0 0 2-2.4l-1.3-6.4a2 2 0 0 0-2-1.7H7.5" }]],
   logout: [["path", { d: "M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l4-4-4-4M14 12H4" }]],
   edit: [["path", { d: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" }]],
+  upload: [["path", { d: "M12 15V4M7.5 8.5 12 4l4.5 4.5" }], ["path", { d: "M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" }]],
+  note: [["path", { d: "M6 3.5h9l3.5 3.5v13.5h-12.5z" }], ["path", { d: "M9 11h6M9 15h4" }]],
+  phone: [["rect", { x: "6.5", y: "2.5", width: "11", height: "19", rx: "2.5" }], ["path", { d: "M12 14s-3-1.8-3-3.9A1.6 1.6 0 0 1 12 9a1.6 1.6 0 0 1 3 1.1C15 12.2 12 14 12 14z" }]],
+  dna: [["path", { d: "M7 3c0 4.5 10 4.5 10 9s-10 4.5-10 9M17 3c0 4.5-10 4.5-10 9s10 4.5 10 9" }], ["path", { d: "M9.2 6.5h5.6M9.2 17.5h5.6" }]],
+  watch: [["rect", { x: "6.5", y: "6.5", width: "11", height: "11", rx: "3" }], ["path", { d: "M9 6.5l.6-3.5h4.8l.6 3.5M9 17.5l.6 3.5h4.8l.6-3.5M12 9.5V12l1.6 1" }]],
+  file: [["path", { d: "M6 3h8l4 4v14H6z" }], ["path", { d: "M14 3v4h4M9 13h6M9 17h4" }]],
+  open: [["path", { d: "M14 4h6v6M20 4l-8.5 8.5M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" }]],
+  more: [["circle", { cx: "6", cy: "12", r: "1.4" }], ["circle", { cx: "12", cy: "12", r: "1.4" }], ["circle", { cx: "18", cy: "12", r: "1.4" }]],
 };
 function icon(name, cls = "") {
   const svg = s("svg", { viewBox: "0 0 24 24", class: `i ${cls}`.trim(), "aria-hidden": "true" });
@@ -111,7 +119,7 @@ function tokenEmail() {
     return JSON.parse(decodeURIComponent(escape(atob(part + "=".repeat((4 - (part.length % 4)) % 4))))).email || "";
   } catch { return ""; }
 }
-function signOut() { store.set(""); cache = { metrics: null, profile: null, exercises: null }; resetChat(); render(); }
+function signOut() { store.set(""); cache = { metrics: null, profile: null, exercises: null, files: null }; resetChat(); render(); }
 
 // ---- 通用组件 -----------------------------------------------------------------------------
 function section(title, action, ...body) {
@@ -207,6 +215,7 @@ function metricSheet(m) {
     (m.series || []).length > 1 ? chart(m) : null,
     h("dl", { class: "facts" }, facts.map(([k, v]) => h("div", {}, h("dt", {}, k), h("dd", {}, v)))),
     (m.missing || []).some((x) => x.includes("我的")) ? h("a", { class: "btn block", href: "#me" }, "去「我的」填写") : null,
+    (m.missing || []).some((x) => x.includes("手表")) ? h("button", { class: "btn block", type: "button", onclick: appleSheet }, icon("phone", "sm"), "导入苹果健康数据") : null,
     h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`我的${m.name}最近怎么样？说明什么？`) }, icon("coach", "sm"), "问问教练"));
 }
 
@@ -274,6 +283,7 @@ async function home(view) {
   const body = [m.weight && tile(m.weight, { brief: trend?.value != null ? trend.brief : "", tone: "neutral" }), m.steps && tile(m.steps)].filter(Boolean);
 
   view.append(hero, plan,
+    section("添加数据", more("全部", "#data"), addRow()),
     section("今日营养", more("饮食", "#food"), food),
     body.length ? section("身体", more("全部数据", "#data"), h("div", { class: "tiles" }, body)) : null);
 }
@@ -385,6 +395,7 @@ async function data(view) {
   const m = byKey(list);
   view.append(h("div", { class: "fresh" }, icon("info", "xs"),
     list.as_of ? `数据截至 ${md(list.as_of)}${list.stale_days > 1 ? `（${list.stale_days} 天前）` : ""} · 点开任一项看怎么算的` : "还没有同步到健康数据"));
+  view.append(section("添加数据", null, addGrid()));
   for (const [title, keys] of GROUPS) {
     const present = keys.map((k) => m[k]).filter(Boolean);
     const have = present.filter((x) => x.value != null);
@@ -399,12 +410,432 @@ async function data(view) {
         h("div", { class: "row-main" }, h("span", { class: "row-title" }, x.name), h("span", { class: "row-sub" }, missingHint(x))),
         h("span", { class: "row-end" }, "暂无", icon("chevron", "sm")))))) : null));
   }
+  const [catalog, files] = await Promise.all([catalogSection(), filesSection()]);
+  view.append(catalog, files);
 }
 
 function missingHint(m) {
-  const reason = (m.missing || []).join("；");
-  const how = reason.match(/（(.+)）/);
-  return how ? `${how[1]}后显示` : reason || "暂无数据";
+  const missing = m.missing || [];
+  const how = missing.join("；").match(/（(.+?)）/);
+  if (how) return `${how[1]}后显示`;
+  return missing.length ? `还缺：${missing.join("、")}` : "暂无数据";
+}
+
+// ---- 添加数据：上传报告、随手记一条、导入苹果健康、基因数据、连接设备 ----------------------------
+const MB = 1024 * 1024;
+const REPORT_EXT = [".pdf", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".heic", ".heif", ".tif", ".tiff",
+  ".xlsx", ".xlsm", ".csv", ".docx", ".pptx", ".txt", ".md", ".markdown", ".json", ".xml", ".html", ".htm", ".log"];
+const GENE_EXT = [".txt", ".csv", ".vcf", ".gz", ".bgz", ".bgzf", ".zip"];
+const ADD = [
+  ["upload", "上传报告", "体检报告、化验单，自动识别指标", () => uploadSheet()],
+  ["note", "随手记一条", "症状、血压、用药，一句话就行", () => journalSheet()],
+  ["phone", "导入苹果健康", "睡眠、心率、步数一次导入", () => appleSheet()],
+  ["dna", "基因数据", "WeGene、23andMe 等原始数据", () => geneSheet()],
+  ["watch", "连接设备", "Garmin、Oura、Whoop", () => devicesSheet()],
+];
+function addGrid() {
+  return h("div", { class: "adds" }, ADD.map(([ic, title, sub, go]) => pressable(h("div", { class: "add" },
+    h("span", { class: "add-icon" }, icon(ic)), h("span", { class: "add-text" }, h("b", {}, title), h("span", {}, sub))), go)));
+}
+function addRow() {
+  const items = [...ADD.slice(0, 3), ["more", "更多", "", () => { location.hash = "#data"; }]];
+  return h("div", { class: "add-row" }, items.map(([ic, title, , go]) => h("button", { class: "add-mini", type: "button", onclick: go },
+    h("span", { class: "add-icon" }, icon(ic)), title)));
+}
+const extOf = (name) => { const m = String(name).toLowerCase().match(/\.[a-z0-9]+$/); return m ? m[0] : ""; };
+function sizeText(n) { return n >= MB ? `${(n / MB).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`; }
+function progressBar() {
+  const fill = h("span"); const box = h("div", { class: "progress", hidden: true }, fill);
+  return { el: box, set(p) { box.hidden = false; fill.style.width = `${Math.round(Math.min(1, Math.max(0, p)) * 100)}%`; }, hide() { box.hidden = true; } };
+}
+// 上传用 XHR：要看得到上传进度（fetch 拿不到）
+function send(url, form, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.setRequestHeader("Authorization", `Bearer ${store.get()}`);
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress?.(e.loaded / e.total); };
+    xhr.onload = () => {
+      let body = {};
+      try { body = JSON.parse(xhr.responseText || "{}"); } catch { /* 不是 JSON */ }
+      if (xhr.status === 401 || xhr.status === 403) { signOut(); reject(new Error("登录已失效，请重新登录")); return; }
+      if (xhr.status >= 300) { reject(new Error(body.detail || body.msg || `上传失败（${xhr.status}）`)); return; }
+      resolve(body);
+    };
+    xhr.onerror = () => reject(new Error("上传失败，请检查网络后再试"));
+    xhr.send(form);
+  });
+}
+// 选文件：点选或拖进来；不支持的类型、太大的文件当场提示，不上传
+function picker({ accept, maxBytes, multiple = true, hint, onPick }) {
+  const input = h("input", { type: "file", accept: accept.join(","), multiple, class: "sr-only" });
+  const zone = h("label", { class: "drop" }, input, icon("upload"), h("b", {}, "选择文件，或拖到这里"), h("span", {}, hint));
+  const take = (files) => {
+    const ok = [], bad = [];
+    for (const f of files) {
+      if (!accept.includes(extOf(f.name))) bad.push(`${f.name}：不支持这种文件`);
+      else if (f.size > maxBytes) bad.push(`${f.name}：超过 ${sizeText(maxBytes)}`);
+      else if (!f.size) bad.push(`${f.name}：文件是空的`);
+      else ok.push(f);
+    }
+    onPick(multiple ? ok : ok.slice(0, 1), bad);
+  };
+  input.addEventListener("change", () => { take([...input.files]); input.value = ""; });
+  zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("over"); });
+  zone.addEventListener("dragleave", () => zone.classList.remove("over"));
+  zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("over"); take([...e.dataTransfer.files]); });
+  return zone;
+}
+
+function uploadSheet() {
+  let picked = [];
+  const list = h("div", { class: "rows" });
+  const bar = progressBar();
+  const msg = h("div", { class: "muted", role: "status" });
+  const go = h("button", { class: "btn block", type: "button", disabled: true }, "上传并识别");
+  const zone = picker({ accept: REPORT_EXT, maxBytes: 20 * MB, hint: "PDF、图片、Excel/CSV、Word、文本，单个不超过 20MB，可以一次选多个",
+    onPick: (ok, bad) => {
+      picked = ok;
+      list.replaceChildren(...ok.map((f) => h("div", { class: "row-item" }, icon("file", "sm"), h("div", { class: "row-main" }, h("span", { class: "row-title" }, f.name)), h("span", { class: "row-end" }, sizeText(f.size)))));
+      msg.textContent = bad.join("；"); msg.className = bad.length ? "error" : "muted";
+      go.disabled = !ok.length;
+    } });
+  go.addEventListener("click", async () => {
+    const form = new FormData();
+    for (const f of picked) form.append("files", f);
+    go.disabled = true; msg.className = "muted"; msg.textContent = "上传中…";
+    try {
+      const r = await send("/files/upload?file=true", form, (p) => bar.set(p));
+      const n = (r.data || []).length;
+      msg.textContent = r.code === 0 ? `已上传 ${n} 个文件，正在识别，结果会出现在「数据」页的「我的文件」和「全部指标」里。` : `有的文件没有上传成功：${r.msg || ""}`;
+      picked = []; list.replaceChildren();
+      cache.files = null; watchFiles();
+    } catch (err) { msg.className = "error"; msg.textContent = err.message; go.disabled = false; }
+  });
+  openSheet("上传报告", zone, list, bar.el, msg, go,
+    h("p", { class: "caption" }, "上传后自动识别报告里的指标，一般几十秒到几分钟。只进你自己的记录。"));
+}
+
+// ---- 随手记一条 ----
+const KIND_NAMES = { symptom: "症状", condition: "病情", note: "笔记", measurement: "读数", medication: "用药" };
+function journalError(err) {
+  const text = String(err.message || err);
+  if (/text model/i.test(text)) return "服务器还没有配置文字模型，暂时不能按句子记录。";
+  if (/could not be read/i.test(text)) return "这句话没读懂，换个说法再试试。";
+  return text;
+}
+async function journalSheet() {
+  const box = h("textarea", { rows: "3", placeholder: "比如：今天有点头疼；早上血压 128/82；开始吃维生素 D", "aria-label": "记一条" });
+  const go = h("button", { class: "btn block", type: "button" }, "记下");
+  const out = h("div", { class: "section" });
+  const recent = h("div", { class: "card" }, h("div", { class: "muted" }, "正在读取…"));
+  async function loadRecent() {
+    try {
+      const r = await apiData("/api/v1/journal");
+      const days = r.days || [];
+      recent.replaceChildren(days.length ? h("div", { class: "rows" }, days.flatMap((d) => d.entries.map((x) => h("div", { class: "row-item" },
+        h("div", { class: "row-main" }, h("span", { class: "row-title" }, x.text), h("span", { class: "row-sub" }, `${md(d.date)} · ${KIND_NAMES[x.kind] || x.kind}${x.display && x.display !== x.text ? ` · ${x.display}` : ""}`)),
+        x.kind === "medication" ? null : h("button", { class: "icon-btn", type: "button", "aria-label": "删除这条", onclick: async (e) => {
+          e.currentTarget.disabled = true;
+          try { await apiData(`/api/v1/journal/${x.id}`, { method: "DELETE" }); loadRecent(); } catch (err) { out.replaceChildren(h("div", { class: "error" }, err.message)); }
+        } }, icon("x", "sm"))))))
+        : h("div", { class: "empty" }, icon("note"), "最近 30 天还没有记录。"));
+    } catch (err) { recent.replaceChildren(h("div", { class: "error" }, err.message)); }
+  }
+  go.addEventListener("click", async () => {
+    const text = box.value.trim();
+    if (!text) return;
+    go.disabled = true; out.replaceChildren(h("div", { class: "muted" }, "正在记…"));
+    try {
+      const r = await apiData("/api/v1/journal/sentence", { method: "POST", body: JSON.stringify({ text, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "" }) });
+      const lines = [
+        ...(r.written || []).map((x) => ["记下了", `${x.text}${x.value ? ` ${x.value}${x.unit || ""}` : ""}（${KIND_NAMES[x.kind] || x.kind}）`]),
+        ...(r.medications || []).map((x) => ["用药", `${x.text}${x.reason ? `：${x.reason}` : ""}`]),
+        ...(r.skipped || []).map((x) => ["没有记", `${x.text || x.quote || ""}${x.reason ? `：${x.reason}` : ""}`]),
+      ];
+      out.replaceChildren(h("div", { class: "card" }, lines.length ? lines.map(([k, v]) => h("div", { class: "kv" }, h("span", {}, k), h("span", {}, v))) : h("div", { class: "muted" }, r.already_logged ? "这条已经记过了。" : "没有可记的内容。")));
+      box.value = ""; cache.metrics = null; loadRecent();
+    } catch (err) { out.replaceChildren(h("div", { class: "error" }, journalError(err))); }
+    go.disabled = false;
+  });
+  openSheet("随手记一条", h("p", { class: "lede" }, "用自己的话写，一句话里写几件也行。症状、病情会对上标准名称，提到的用药会加进用药清单，其他的记为笔记。"),
+    box, go, out, h("div", {}, h("h3", {}, "最近 30 天"), recent));
+  loadRecent();
+}
+
+// ---- 导入苹果健康 ----
+let appleTimer = null;
+async function appleSheet() {
+  const bar = progressBar();
+  const status = h("div", { class: "section" });
+  function show(job) {
+    if (!job) { status.replaceChildren(); return; }
+    if (job.state === "running") {
+      status.replaceChildren(h("div", { class: "card" }, h("div", { class: "prog-head" }, h("span", { class: "spin" }), `${job.stage}…`),
+        job.written ? h("p", { class: "caption" }, `已写入 ${job.written.toLocaleString("zh-CN")} 条读数`) : null));
+    } else if (job.state === "done") {
+      status.replaceChildren(h("div", { class: "card" },
+        h("div", { class: "prog-head" }, h("span", { class: "ok-dot" }, icon("check")), job.error || "导入完成"),
+        h("div", { class: "kv" }, h("span", {}, "读到的记录"), h("span", {}, `${job.records.toLocaleString("zh-CN")} 条`)),
+        h("div", { class: "kv" }, h("span", {}, "新增读数"), h("span", {}, `${job.added.toLocaleString("zh-CN")} 条${job.added ? "" : "（之前导入过）"}`)),
+        job.first ? h("div", { class: "kv" }, h("span", {}, "覆盖日期"), h("span", {}, `${job.first} 至 ${job.last}`)) : null,
+        h("a", { class: "btn ghost block", href: "#data", onclick: () => { cache.metrics = null; closeSheet(); render(); } }, "去看数据")));
+    } else {
+      status.replaceChildren(h("div", { class: "error" }, job.error || "导入没有成功"));
+    }
+  }
+  async function poll() {
+    clearTimeout(appleTimer);
+    try {
+      const { job } = await api("/iron/api/import/apple");
+      show(job);
+      if (job?.state === "running") appleTimer = setTimeout(poll, 2000);
+      else if (job?.state === "done") cache.metrics = null;
+    } catch (err) { status.replaceChildren(h("div", { class: "error" }, err.message)); }
+  }
+  const zone = picker({ accept: [".zip", ".xml"], maxBytes: 2048 * MB, multiple: false, hint: "健康 App 导出的「导出.zip」（export.zip），最大 2GB",
+    onPick: async (ok, bad) => {
+      if (bad.length) { status.replaceChildren(h("div", { class: "error" }, bad.join("；"))); return; }
+      if (!ok.length) return;
+      const form = new FormData();
+      form.append("file", ok[0]);
+      form.append("tz", Intl.DateTimeFormat().resolvedOptions().timeZone || "");
+      status.replaceChildren(h("div", { class: "muted" }, `正在上传 ${ok[0].name}（${sizeText(ok[0].size)}）…`));
+      try { await send("/iron/api/import/apple", form, (p) => bar.set(p)); bar.hide(); poll(); }
+      catch (err) { bar.hide(); status.replaceChildren(h("div", { class: "error" }, err.message)); }
+    } });
+  openSheet("导入苹果健康",
+    h("ol", { class: "steps-ol" },
+      h("li", {}, "在 iPhone 上打开「健康」App，点右上角的头像"),
+      h("li", {}, "选「导出所有健康数据」，等它生成「导出.zip」"),
+      h("li", {}, "把压缩包存到「文件」，或用隔空投送发到电脑"),
+      h("li", {}, "在这里选择这个压缩包上传，后台会自动导入")),
+    zone, bar.el, status,
+    h("p", { class: "caption" }, "会导入睡眠、心率、心率变异性、步数、体重等能识别的数据；同一个包再导入不会重复计数。只进你自己的记录。"));
+  poll();
+}
+
+// ---- 基因数据 ----
+async function geneSheet() {
+  const bar = progressBar();
+  const msg = h("div", { class: "muted", role: "status" });
+  const current = h("div", { class: "card" }, h("div", { class: "muted" }, "正在读取…"));
+  async function load() {
+    try {
+      const { active_set: a } = await apiData("/api/v1/genomics/active-set");
+      current.replaceChildren(...(a ? [
+        h("div", { class: "kv" }, h("span", {}, "来源"), h("span", {}, a.vendor || a.format_id || "—")),
+        h("div", { class: "kv" }, h("span", {}, "位点数"), h("span", {}, `${num(a.n_rows)}（已检出 ${num(a.n_called)}）`)),
+        h("div", { class: "kv" }, h("span", {}, "参考基因组"), h("span", {}, a.build_detected || a.build_declared || "—")),
+        a.activated_at ? h("div", { class: "kv" }, h("span", {}, "生效时间"), h("span", {}, md(a.activated_at))) : null,
+      ] : [h("div", { class: "empty" }, icon("dna"), "还没有生效的基因数据。")]));
+    } catch (err) { current.replaceChildren(h("div", { class: "error" }, err.message)); }
+  }
+  const zone = picker({ accept: GENE_EXT, maxBytes: 200 * MB, multiple: false, hint: "WeGene、23andMe、AncestryDNA、MyHeritage、FTDNA 的原始数据，或 VCF；可以是压缩包",
+    onPick: async (ok, bad) => {
+      if (bad.length) { msg.className = "error"; msg.textContent = bad.join("；"); return; }
+      if (!ok.length) return;
+      const form = new FormData(); form.append("files", ok[0]);
+      msg.className = "muted"; msg.textContent = "上传中…";
+      try {
+        const r = await send("/files/upload?file=true", form, (p) => bar.set(p));
+        msg.textContent = r.code === 0 ? "已上传，正在处理；处理完成后会替换当前的基因数据。" : `没有上传成功：${r.msg || ""}`;
+        setTimeout(load, 5000);
+      } catch (err) { msg.className = "error"; msg.textContent = err.message; }
+    } });
+  openSheet("基因数据", h("div", {}, h("h3", {}, "当前生效的集合"), current), zone, bar.el, msg,
+    h("p", { class: "caption" }, "每人只有一份生效的基因数据，新文件处理成功后替换当前的。这里只显示概况，不显示具体基因型。"));
+  load();
+}
+
+// ---- 连接设备 ----
+async function devicesSheet() {
+  const body = h("div", { class: "section" }, h("div", { class: "muted" }, "正在读取…"));
+  async function load() {
+    try {
+      const { providers = [] } = await apiData("/api/v1/pulse/providers");
+      if (!providers.length) {
+        body.replaceChildren(h("div", { class: "card" },
+          h("div", { class: "empty" }, icon("watch"), "这台服务器还没有配置可以连接的设备。连接 Garmin、Oura、Whoop 需要先在服务端配置各家的开发者凭证。"),
+          h("p", { class: "caption" }, "现在可以先导入苹果健康数据，或上传报告。"),
+          h("div", { class: "form-actions" },
+            h("button", { class: "btn ghost", type: "button", onclick: appleSheet }, "导入苹果健康"),
+            h("button", { class: "btn ghost", type: "button", onclick: uploadSheet }, "上传报告"))));
+        return;
+      }
+      body.replaceChildren(h("div", { class: "card" }, h("div", { class: "rows" }, providers.map((p) => {
+        const on = p.status === "connected";
+        return h("div", { class: "row-item" },
+          h("div", { class: "row-main" }, h("span", { class: "row-title" }, p.name || p.slug), h("span", { class: "row-sub" }, p.description || (on ? "已连接" : "未连接"))),
+          h("button", { class: `btn small ${on ? "ghost" : ""}`, type: "button", onclick: () => (on ? unlink(p) : link(p)) }, on ? "断开" : "连接"));
+      }))));
+    } catch (err) { body.replaceChildren(h("div", { class: "error" }, err.message)); }
+  }
+  async function link(p) {
+    try {
+      const r = await apiData("/api/v1/pulse/user/providers/link", { method: "POST", body: JSON.stringify({ provider_slug: p.slug, platform: p.platform || "theta", auth_type: p.auth_type || "oauth2" }) });
+      if (r?.link_web_url) {
+        window.open(r.link_web_url, "_blank", "noopener");
+        body.prepend(h("p", { class: "caption" }, "在新打开的页面里授权，完成后回到这里刷新。"));
+      }
+      setTimeout(load, 3000);
+    } catch (err) { body.prepend(h("div", { class: "error" }, err.message)); }
+  }
+  async function unlink(p) {
+    try { await apiData("/api/v1/pulse/user/providers/unlink", { method: "POST", body: JSON.stringify({ provider_slug: p.slug, platform: p.platform || "theta" }) }); load(); }
+    catch (err) { body.prepend(h("div", { class: "error" }, err.message)); }
+  }
+  openSheet("连接设备", body);
+  load();
+}
+
+// ---- 我的文件 ----
+let filesTimer = null;
+async function files(force = false) {
+  if (!cache.files || force) cache.files = await apiData("/api/v1/data/uploaded-files?limit=20&offset=0");
+  return cache.files;
+}
+// mirobody 先把文件标成"已处理"，过几秒才写入识别出的项数：刚上传 2 分钟内还是 0 项的，仍算识别中
+const recent = (f) => Date.now() - Date.parse(f.upload_time || 0) < 2 * 60 * 1000;
+const busy = (f) => !f.error && f.upload_status !== "failed" && (!f.processed || (!f.indicators_count && recent(f)));
+function fileState(f) {
+  if (f.error || f.upload_status === "failed") return ["没识别出来", "attention"];
+  if (busy(f)) return ["识别中", ""];
+  return f.indicators_count ? [`识别出 ${f.indicators_count} 项`, "good"] : ["没有识别出指标", ""];
+}
+function viewUrl(f) {
+  const url = f.url_full || "";
+  return url ? `${url}${url.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(store.get())}` : "";
+}
+function fileRows(list) {
+  return list.length ? h("div", { class: "rows" }, list.map((f) => {
+    const [state, tone] = fileState(f);
+    return h("button", { class: "row-item", type: "button", onclick: () => fileSheet(f) },
+      h("span", { class: "mark" }, icon("file", "sm")),
+      h("div", { class: "row-main" }, h("span", { class: "row-title" }, f.original_name || f.file_name),
+        h("span", { class: "row-sub" }, `上传于 ${md(f.upload_time)}${f.report_date ? ` · 报告 ${md(f.report_date)}` : ""}`)),
+      h("span", { class: "row-end" }, chip(state, tone)));
+  })) : h("div", { class: "empty" }, icon("upload"), "还没有上传过报告。");
+}
+async function filesSection() {
+  const box = h("div", { class: "card", id: "files-box" });
+  try { box.append(fileRows((await files(true)).files || [])); } catch (err) { box.append(h("div", { class: "error" }, err.message)); }
+  if ((cache.files?.files || []).some(busy)) watchFiles();
+  return section("我的文件", h("button", { class: "link", type: "button", onclick: uploadSheet }, icon("upload", "xs"), "上传"), box);
+}
+// 上传后每 3 秒看一次识别进度，最多 3 分钟；数据页开着时就地更新
+function watchFiles(left = 60) {
+  clearTimeout(filesTimer);
+  filesTimer = setTimeout(async () => {
+    try {
+      const data = await files(true);
+      const box = document.getElementById("files-box");
+      if (box) box.replaceChildren(fileRows(data.files || []));
+      if ((data.files || []).some(busy) && left > 0) watchFiles(left - 1);
+      else { cache.metrics = null; const cat = document.getElementById("catalog-box"); if (cat) catalogSection().then((s) => cat.closest("section")?.replaceWith(s)); }
+    } catch { /* 下次再看 */ }
+  }, 3000);
+}
+function fileSheet(f) {
+  const [state, tone] = fileState(f);
+  const msg = h("div", { class: "muted", role: "status" });
+  const date = h("input", { type: "date", value: String(f.report_date || "").slice(0, 10), max: new Date().toISOString().slice(0, 10), "aria-label": "报告日期" });
+  const saveDate = h("button", { class: "btn ghost small", type: "button" }, "保存日期");
+  saveDate.addEventListener("click", async () => {
+    if (!date.value) return;
+    try {
+      await apiData("/api/v1/health-indicators/file-date", { method: "POST", body: JSON.stringify({ file_key: f.file_key, report_date: date.value }) });
+      msg.className = "muted"; msg.textContent = "已改好，这份报告里的数据按新日期记。";
+      cache.metrics = null; files(true).then((d) => { const box = document.getElementById("files-box"); if (box) box.replaceChildren(fileRows(d.files || [])); });
+    } catch (err) { msg.className = "error"; msg.textContent = err.message; }
+  });
+  const del = h("div", { class: "form-actions" });
+  const ask = () => del.replaceChildren(h("button", { class: "btn danger", type: "button", onclick: askDelete }, "删除这份文件"));
+  const askDelete = () => del.replaceChildren(
+    h("button", { class: "btn ghost", type: "button", onclick: ask }, "取消"),
+    h("button", { class: "btn", style: "background:var(--warn);color:#fff", type: "button", onclick: async () => {
+      try {
+        await apiData("/api/v1/data/delete-files", { method: "POST", body: JSON.stringify({ message_id: f.created_source_id || f.id, file_keys: [f.file_key] }) });
+        cache.files = null; cache.metrics = null; closeSheet(); render();
+      } catch (err) { msg.className = "error"; msg.textContent = err.message; }
+    } }, "确定删除"));
+  ask();
+  openSheet(f.original_name || f.file_name,
+    h("div", { class: "tags" }, chip(state, tone), chip(String(f.file_type || f.type || "").toUpperCase()), chip(sizeText(f.file_size || 0))),
+    h("div", {},
+      h("div", { class: "kv" }, h("span", {}, "上传时间"), h("span", {}, md(f.upload_time))),
+      h("div", { class: "kv" }, h("span", {}, "报告日期"), h("span", {}, f.report_date ? `${md(f.report_date)}${f.date_confirmed ? "" : "（未确认）"}` : "未识别出")),
+      f.error ? h("div", { class: "kv" }, h("span", {}, "原因"), h("span", {}, f.error)) : null),
+    viewUrl(f) ? h("a", { class: "btn ghost block", href: viewUrl(f), target: "_blank", rel: "noopener" }, icon("open", "sm"), "查看原文件") : null,
+    h("div", {}, h("h3", {}, "报告日期不对？"), h("div", { class: "row" }, date, saveDate)),
+    msg,
+    h("div", {}, h("h3", {}, "删除"), h("p", { class: "caption" }, "删除后，从这份文件识别出的数据也会一起去掉。"), del));
+}
+
+// ---- 全部指标（含报告里识别出的化验值） ----
+const LOINC_ZH = {
+  "29463-7": "体重", "8302-2": "身高", "39156-5": "BMI", "8480-6": "收缩压", "8462-4": "舒张压",
+  "40443-4": "静息心率", "8867-4": "心率", "41950-7": "步数", "80404-7": "心率变异性（SDNN）", "93832-4": "睡眠时长",
+  "14647-2": "总胆固醇", "2093-3": "总胆固醇", "14646-4": "高密度脂蛋白胆固醇", "2085-9": "高密度脂蛋白胆固醇",
+  "22748-8": "低密度脂蛋白胆固醇", "13457-7": "低密度脂蛋白胆固醇", "2089-1": "低密度脂蛋白胆固醇",
+  "14927-8": "甘油三酯", "2571-8": "甘油三酯", "14771-0": "空腹血糖", "1558-6": "空腹血糖", "4548-4": "糖化血红蛋白",
+  "718-7": "血红蛋白", "1742-6": "谷丙转氨酶（ALT）", "1920-8": "谷草转氨酶（AST）", "14682-9": "肌酐", "2160-0": "肌酐",
+  "14933-6": "尿酸", "3084-1": "尿酸", "3016-3": "促甲状腺激素（TSH）", "2276-4": "铁蛋白", "1989-3": "25-羟维生素 D",
+  "14635-7": "25-羟维生素 D", "6690-2": "白细胞", "789-8": "红细胞", "777-3": "血小板", "30522-7": "超敏 C 反应蛋白",
+  "59408-5": "血氧饱和度", "2708-6": "血氧饱和度", "9279-1": "呼吸频率", "8310-5": "体温",
+};
+// 苹果健康导入后的每日汇总：名字是 dailyTotalSteps.apple_health_export 这种内部名，换成中文、注明来源
+const DAILY_ZH = {
+  dailytotalsteps: "步数", dailysteps: "步数", "dailytotalsleepanalysis_asleep(total)": "睡眠时长",
+  "dailytotalsleepanalysis_asleep(core)": "核心睡眠", "dailytotalsleepanalysis_asleep(deep)": "深睡",
+  "dailytotalsleepanalysis_asleep(rem)": "快速眼动睡眠", "dailytotalsleepanalysis_inbed": "在床时间",
+  dailytotalactiveenergyburned: "活动能量", dailytotalbasalenergyburned: "静息能量",
+  dailytotaldistancewalkingrunning: "步行跑步距离", dailytotalflightsclimbed: "爬楼层数", dailyavgheartrate: "平均心率",
+};
+const SOURCES_ZH = { apple_health_export: "苹果健康", apple_health: "苹果健康", garmin: "Garmin", oura: "Oura", whoop: "Whoop" };
+function zhName(r) {
+  if (LOINC_ZH[r.code]) return LOINC_ZH[r.code];
+  const [base, source] = String(r.name || r.indicator || "").split(".");
+  const zh = DAILY_ZH[base.toLowerCase()];
+  if (zh) return source ? `${zh}（${SOURCES_ZH[source] || source}）` : zh;
+  return r.indicator || r.name;
+}
+// 值按单位换成好读的写法：毫秒的睡眠换成小时，计数取整
+function readable(r) {
+  const n = Number(r.latest_value);
+  const unit = String(r.unit || "");
+  if (unit === "ms" && Number.isFinite(n)) return [String(Math.round((n / 3_600_000) * 10) / 10), "小时"];
+  if ((unit === "{#}" || unit === "count") && Number.isFinite(n)) return [num(Math.round(n)), ""];
+  return [Number.isFinite(n) && /\.0+$/.test(String(r.latest_value)) ? num(n) : String(r.latest_value), unit];
+}
+async function catalogSection() {
+  const box = h("div", { class: "card", id: "catalog-box" });
+  try {
+    const rows = ((await apiData("/api/v1/health-indicators")).rows || []).filter((r) => r.latest_value != null)
+      .sort((a, b) => String(b.last_date).localeCompare(String(a.last_date)));
+    const row = (r) => h("button", { class: "row-item", type: "button", onclick: () => indicatorSheet(r) },
+      h("div", { class: "row-main" }, h("span", { class: "row-title" }, zhName(r)), h("span", { class: "row-sub" }, `${md(r.last_date)} · ${r.count} 条记录`)),
+      h("span", { class: "row-end" }, h("b", { style: "color:var(--ink)" }, readable(r)[0]), readable(r)[1], icon("chevron", "sm")));
+    const list = h("div", { class: "rows" }, rows.slice(0, 8).map(row));
+    box.append(rows.length ? list : h("div", { class: "empty" }, icon("chart"), "还没有指标数据。"));
+    if (rows.length > 8) {
+      const all = h("button", { class: "link", type: "button", style: "align-self:flex-start" }, `显示全部 ${rows.length} 项`);
+      all.addEventListener("click", () => { list.replaceChildren(...rows.map(row)); all.remove(); });
+      box.append(all);
+    }
+  } catch (err) { box.append(h("div", { class: "error" }, err.message)); }
+  return section("全部指标", null, box, h("p", { class: "caption", style: "padding:0 2px" }, "包括从上传的报告里识别出的化验值。"));
+}
+function indicatorSheet(r) {
+  const name = zhName(r);
+  openSheet(name,
+    h("div", { class: "sheet-big" }, h("span", { class: "v" }, readable(r)[0], readable(r)[1] ? h("small", {}, readable(r)[1]) : null)),
+    h("div", {},
+      h("div", { class: "kv" }, h("span", {}, "最近一次"), h("span", {}, md(r.last_date))),
+      h("div", { class: "kv" }, h("span", {}, "第一次"), h("span", {}, md(r.first_date))),
+      h("div", { class: "kv" }, h("span", {}, "记录数"), h("span", {}, `${r.count} 条`)),
+      h("div", { class: "kv" }, h("span", {}, "标准名"), h("span", {}, `${r.indicator || r.name}${r.code ? `（LOINC ${r.code}）` : ""}`))),
+    h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`我的${name}最近一次是 ${readable(r).join(" ").trim()}，正常吗？要注意什么？`) }, icon("coach", "sm"), "问问教练"));
 }
 
 // ---- 我的 ---------------------------------------------------------------------------------
