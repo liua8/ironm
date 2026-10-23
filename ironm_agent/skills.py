@@ -2,6 +2,7 @@
 
 规程写在 skills.yaml：做事步骤、判断规则、输出要点、禁忌；规程里的数字带依据库编号，装载时把这些资料
 一起交给角色（引用编号能通过核对）。规程只指导怎么作答，本身不作为出处。
+讲法规程（如动作教练的"体感讲解"）只管怎么讲，对得上就和讲内容的规程一起装载，不占 1–2 份的名额。
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from ironm_agent.yamlfile import load_yaml
 
 SKILLS_PATH = Path(__file__).with_name("skills.yaml")
 MAX_SKILLS = 2
-type Trigger = Literal["poor", "injury", "plan", "log", "image"]
+type Trigger = Literal["poor", "injury", "plan", "log", "image", "move"]
 TRIGGER_BONUS = 2  # 这一轮的情况对得上时加的分（比问题里一个说法对得上更重要）
 
 
@@ -30,6 +31,7 @@ class Skill(ContractModel):
     when: tuple[str, ...] = ()
     on: tuple[Trigger, ...] = ()
     default: bool = False
+    style: bool = False  # 讲法规程：管怎么讲、不管讲什么
     steps: tuple[str, ...] = Field(min_length=1)
     rules: tuple[str, ...] = ()
     output: tuple[str, ...] = ()
@@ -61,19 +63,24 @@ def skills(path: Path = SKILLS_PATH) -> tuple[Skill, ...]:
     ids = [x.id for x in data.skills]
     if len(ids) != len(set(ids)):
         raise ValueError("规程编号重复")
+    if any(x.style and x.default for x in data.skills):
+        raise ValueError("讲法规程不能当默认规程")
     return data.skills
 
 
 def pick(role: Role, text: str, triggers: Collection[str] = ()) -> list[Skill]:
-    """这一轮给这个角色装载的规程：得分最高的 1–2 份；都对不上时用这个角色的默认规程。"""
+    """这一轮给这个角色装载的规程：讲内容的取得分最高的 1–2 份，都对不上时用这个角色的默认规程；
+    讲法规程对得上就一起装载，不占名额。"""
     mine = [x for x in skills() if x.role == role]
+    content = [x for x in mine if not x.style]
     scored = sorted(
-        ((x.score(text, triggers), i, x) for i, x in enumerate(mine)), key=lambda t: (-t[0], t[1])
+        ((x.score(text, triggers), i, x) for i, x in enumerate(content)),
+        key=lambda t: (-t[0], t[1]),
     )
     chosen = [x for s, _, x in scored if s > 0][:MAX_SKILLS]
     if not chosen:
-        chosen = [x for x in mine if x.default][:1]
-    return chosen
+        chosen = [x for x in content if x.default][:1]
+    return chosen + [x for x in mine if x.style and x.score(text, triggers) > 0]
 
 
 def prompt_of(chosen: Sequence[Skill]) -> str:

@@ -58,9 +58,13 @@ def test_blood_pressure_and_pregnancy() -> None:
     high = Context(risks=frozenset({"bp_high"}))
     assert kinds("可以试试大重量深蹲", high) == ["blood_pressure"]
     assert kinds("发力时呼气，不要憋气", high) == []
+    # "吸一口气憋住"也是憋气发力（体感讲解里"肚子像要挨一拳那样绷住"常和它连着说）
+    assert kinds("蹲之前吸一口气憋住，肚子像要挨一拳那样绷住", high) == ["blood_pressure"]
+    assert kinds("肚子像要挨一拳那样绷住，别憋住气", high) == []
     preg = Context(risks=frozenset({"pregnancy"}))
     assert kinds("可以做仰卧卷腹 3 组", preg) == ["pregnancy"]
     assert kinds("卷腹改成侧卧抬腿", preg) == []
+    assert kinds("站着推举时屏住呼吸再发力", preg) == ["pregnancy"]
 
 
 def test_calorie_floor_and_weight_loss_rate() -> None:

@@ -13,6 +13,7 @@ from ironm_agent.kb import Entry, KnowledgeBase
 from ironm_agent.yamlfile import load_yaml
 
 EXERCISES_PATH = Path(__file__).with_name("exercises.yaml")
+FEEL_PATH = Path(__file__).with_name("exercise_feel.yaml")
 
 type Part = Literal["腿臀", "胸", "背", "肩", "手臂", "核心", "全身", "有氧"]
 type Equipment = Literal["自重", "哑铃", "壶铃", "弹力带", "杠铃", "单杠", "器械"]
@@ -51,6 +52,29 @@ def library(path: Path = EXERCISES_PATH) -> Library:
     return lib
 
 
+class Feel(ContractModel):
+    cue: str = Field(min_length=4, max_length=60)  # 说给用户听的类比
+    replaces: str = Field(min_length=2)  # 它替代的书面说法：只给审定对照，不交给 Agent
+
+
+class FeelFile(ContractModel):
+    version: str
+    review: str
+    feel: dict[str, tuple[Feel, ...]]
+
+
+@cache
+def feel_cues(path: Path = FEEL_PATH) -> dict[str, tuple[Feel, ...]]:
+    """动作库的体感提示（spec [2026-10-23] §8 体感讲解）：每个动作 1–3 条，和动作库的编号对不上时报错。"""
+    cues = FeelFile.model_validate(load_yaml(path), strict=False).feel
+    ids = {x.id for x in library().exercises}
+    if set(cues) != ids:
+        raise ValueError(f"体感提示与动作库对不上：{sorted(set(cues) ^ ids)}")
+    if any(not 1 <= len(v) <= 3 for v in cues.values()):
+        raise ValueError("每个动作的体感提示要有 1–3 条")
+    return cues
+
+
 # 动作库作为依据（spec [2026-10-23] §8）：每个动作一条，编号 K901 起（按 exercises.yaml 的顺序，只往后加），
 # 和依据库的资料一样引用、核对，列进"依据与来源"
 LIBRARY_BASE = 900
@@ -59,10 +83,12 @@ LIBRARY_BASE = 900
 @cache
 def library_entries() -> tuple[Entry, ...]:
     out = []
+    feel = feel_cues()
     for i, x in enumerate(library().exercises, start=1):
         points = [
             *({"text": f"做法：{s}", "where": "做法"} for s in x.steps),
             {"text": "要点：" + "；".join(x.cues), "where": "要点"},
+            {"text": "体感提示：" + "；".join(c.cue for c in feel[x.id]), "where": "体感提示"},
             {"text": "常见错误：" + "；".join(x.mistakes), "where": "常见错误"},
             {"text": f"更容易的替代：{x.easier}；更难的：{x.harder}", "where": "替代"},
             {"text": f"什么情况先别做：{x.avoid}", "where": "什么情况先别做"},

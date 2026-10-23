@@ -364,3 +364,33 @@ def test_answering_today_question_does_not_make_a_weekly_plan(monkeypatch: Any) 
     blocks, seen = run(a, "你定吧")
     assert seen["path"] == "answer" and seen["task"] is None
     assert not any(str(b.get("id", "")).startswith("card-") for b in blocks)
+
+
+def test_how_to_question_teaches_with_feel_cues(monkeypatch: Any) -> None:
+    """体感讲解（spec [2026-10-23] §8）：动作教练装载体感讲解，预取的动作库资料带体感提示。"""
+
+    class Spy(Team):
+        system = ""
+
+        def __call__(
+            self, stage: Stage, messages: Sequence[Mapping[str, Any]], tools: bool
+        ) -> Reply:
+            if stage == "expert":
+                self.system = system_of(messages)
+            return super().__call__(stage, messages, tools)
+
+    t = Spy("exercise")
+    blocks, seen = run(
+        agent(t, monkeypatch=monkeypatch, snapshot=snapshot_of()), "卧推的时候肩胛骨要怎么收紧"
+    )
+    tasks = {b["name"]: b["args"]["任务"] for b in blocks if b["type"] == "tool_call"}
+    assert "体感讲解" in tasks["动作教练"] and "move-feel" in seen["skills"]["exercise"]
+    assert "【体感讲解】" in t.system and "腋下夹着一张纸" in t.system
+    assert "体感提示：" in t.inputs["exercise"]
+    # 不是问怎么做，但点到了动作库里的动作：也装载；没点到动作就不装载
+    _, seen = run(agent(Spy("exercise"), monkeypatch=monkeypatch, snapshot=snapshot_of()),
+                  "卧推的时候肩膀前面疼怎么办")  # fmt: skip
+    assert "move-feel" in seen["skills"]["exercise"]
+    _, seen = run(agent(Spy("exercise"), monkeypatch=monkeypatch, snapshot=snapshot_of()),
+                  "膝盖疼换什么动作")  # fmt: skip
+    assert "move-feel" not in seen["skills"]["exercise"]

@@ -1,8 +1,12 @@
 """规程与动作库（spec [2026-10-23] §8）。"""
 
 import re
+from pathlib import Path
 
-from ironm_agent.exercises import library, library_entries, named_in
+import pytest
+
+from ironm_agent.compose import _PROMPT, _REVISE
+from ironm_agent.exercises import feel_cues, library, library_entries, named_in
 from ironm_agent.kb import default_kb
 from ironm_agent.roles import EXPERTS, SPECS, Role
 from ironm_agent.skills import pick, prompt_of, skills
@@ -76,3 +80,58 @@ def test_knowledge_base_has_at_least_45_entries() -> None:
     assert all(
         e.points and e.source and e.publisher and e.year and e.population for e in kb.entries
     )
+
+
+# 体感讲解（spec [2026-10-23] §8）：普通人听不懂的解剖术语
+JARGON = ("后缩", "前伸", "回旋", "外旋", "内旋", "外展", "内收", "离心", "向心", "伸髋", "屈髋", "髋铰链",
+          "跖屈", "背屈", "腘绳肌", "竖脊肌", "股四头肌", "臀大肌", "臀中肌", "背阔肌", "三角肌", "肱二头肌",
+          "肱三头肌", "腹横肌", "斜方肌", "肩袖", "腹压", "骨盆", "代偿", "中立")  # fmt: skip
+
+
+def test_how_to_questions_load_the_feel_skill_on_top() -> None:
+    def names(text: str, triggers: frozenset[str] = frozenset()) -> list[str]:
+        return [x.name for x in pick(Role.EXERCISE, text, triggers)]
+
+    for text in ("卧推时肩胛骨怎么收紧", "引体向上怎么发力", "深蹲怎么做",
+                 "深蹲我没看懂，请用大白话、打个比方再给我讲讲怎么做，最容易做错的地方是什么"):  # fmt: skip
+        assert "体感讲解" in names(text), text
+    # 讲法规程不占名额：疼痛改动作、动作教学两份讲内容的规程照样装载
+    both = names("膝盖疼的时候深蹲怎么做", frozenset({"injury"}))
+    assert both[:2] == ["疼痛时怎么改动作", "动作教学"] and both[-1] == "体感讲解"
+    # 问题里点到了动作库里的动作（move）：讲怎么改动作时也用体感描述
+    sore = names("卧推的时候肩膀前面疼怎么办", frozenset({"injury", "move"}))
+    assert sore[0] == "疼痛时怎么改动作" and sore[-1] == "体感讲解"
+    for text in ("膝盖疼换什么动作", "练前热身做什么"):
+        assert "体感讲解" not in names(text), text
+    assert names("嗯") == ["动作教学"]  # 都对不上时仍是默认规程，体感讲解不当默认
+    assert "体感讲解" not in [x.name for x in pick(Role.PLANNER, "深蹲怎么做")]  # 只给动作教练
+    prompt = prompt_of(pick(Role.EXERCISE, "卧推时肩胛骨怎么收紧"))
+    assert "【体感讲解】" in prompt and "腋下夹着一张纸" in prompt
+
+
+def test_every_exercise_has_plain_feel_cues() -> None:
+    cues = feel_cues()
+    assert set(cues) == {x.id for x in library().exercises}
+    for eid, items in cues.items():
+        assert 1 <= len(items) <= 3, eid
+        for c in items:
+            assert not [w for w in JARGON if w in c.cue], (eid, c.cue)
+            assert not re.search(r"\d", c.cue), (eid, c.cue)  # 说给人听的话里不写需要出处的数字
+    assert any("腋下夹着一张纸" in c.cue for c in cues["dumbbell-bench-press"])
+    bench = next(e for e in library_entries() if e.title == "哑铃卧推")
+    assert "体感提示：想象腋下夹着一张纸" in bench.as_evidence()
+
+
+def test_feel_cues_must_match_the_library(tmp_path: Path) -> None:
+    path = tmp_path / "feel.yaml"
+    path.write_text(
+        'version: "0"\nreview: x\nfeel:\n  push-up:\n    - {cue: 身体像一块木板, replaces: 躯干一条直线}\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="对不上"):
+        feel_cues(path)
+
+
+def test_compose_and_revise_keep_the_analogies() -> None:
+    assert "类比和体感描述" in _PROMPT and "不要改回解剖术语" in _PROMPT
+    assert "类比和体感描述" in _REVISE and "不改回解剖术语" in _REVISE

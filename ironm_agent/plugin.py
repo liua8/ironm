@@ -29,6 +29,7 @@ from ironm_agent.coach import direct
 from ironm_agent.compose import Composed, compose, revise
 from ironm_agent.constraints import Context, Violation, annotate, annotate_plan
 from ironm_agent.constraints import check as check_constraints
+from ironm_agent.exercises import named_in
 from ironm_agent.experts import Consultation, consult, write_task
 from ironm_agent.kb import KnowledgeBase, default_kb
 from ironm_agent.llm import ModelsConfig, TurnLLM, load_models
@@ -569,7 +570,7 @@ class IronMAgent:
         triggers = {name for name, on in (
             ("poor", case.readiness.level in ("poor", "fair") or case.readiness.sick),
             ("injury", bool(case.injuries)), ("plan", job == "plan"), ("log", job == "log"),
-            ("image", bool(files.images)),
+            ("image", bool(files.images)), ("move", bool(named_in(text))),
         ) if on}  # fmt: skip
         pictures = [x.part() for x in files.images]
         seeing = r.primary or roles[0]  # 图片只交给主责角色

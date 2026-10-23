@@ -238,7 +238,7 @@ cases:
     path: answer
     roles_any: [exercise, recovery]
     must: [[握距, 窄握, 哑铃, 地板卧推, 幅度, 肩胛], [停, 医生, 就医, 加重]]
-  - {id: K08, cat: knowledge, ask: 壶铃摇摆怎么做, path: answer, roles: [exercise], must: [[髋, 臀], [背, 腰]]}
+  - {id: K08, cat: knowledge, ask: 壶铃摇摆怎么做, path: answer, roles: [exercise], must: [[髋, 臀, 屁股], [背, 腰]]}  # 体感讲解用大白话说"屁股"
   - id: K09
     cat: knowledge
     ask: 吃肌酸需要冲击期吗
@@ -403,3 +403,39 @@ cases:
     ref: 今天周五，按计划练上肢拉与核心：单臂哑铃划船、弹力带坐姿划船、弯举、死虫式、平板支撑
   - {id: L01, cat: log, persona: planned, ask: 今天练了单臂哑铃划船 4 组 10 次 20 公斤，弯举 3 组 12 次 10 公斤, path: answer, roles: [planner], card: log}
   - {id: L02, cat: log, persona: planned, ask: 今天的计划练完了，有点累，感觉打 7 分, path: answer, roles: [planner], card: log}
+
+  # ---- 体感讲解：问动作怎么做时用类比和体感描述，不用解剖术语（spec [2026-10-23] §8）----
+  - id: F01
+    cat: feel
+    ask: 卧推的时候肩胛骨要怎么收紧
+    path: answer
+    roles: [exercise]
+    must: [[想象, 像, 假装, 当成, 仿佛]]
+    must_not: [后缩, 外旋, 内旋, 外展, 内收, 离心, 向心]  # 不查"前伸"："双臂往前伸"会误判
+    ref: 用类比讲：躺下前两块肩胛骨像在背后夹住一支笔、往裤兜方向塞，或"想象腋下夹着一张纸，别让它掉下来"；整组都别松；不说"后缩下沉"这类术语
+  - id: F02
+    cat: feel
+    ask: 硬拉老是用腰发力，怎么找到用屁股发力的感觉
+    path: answer
+    roles: [exercise]
+    must: [[想象, 像, 假装, 当成, 仿佛]]
+    must_not: [伸髋, 屈髋, 髋铰链, 腘绳肌, 竖脊肌, 离心, 向心]
+    ref: 用类比讲：像用屁股去关身后的车门（屁股往后推、不是弯腰）；用两只脚把地板推开；站直时屁股夹紧、别用腰往后仰；做对时屁股和大腿后面发酸，腰不酸
+  - id: F03
+    cat: feel
+    persona: newbie
+    ask: 引体向上怎么发力
+    path: answer
+    roles: [exercise]
+    must: [[想象, 像, 假装, 当成, 仿佛]]
+    must_not: [后缩, 下回旋, 外旋, 内旋, 内收, 离心, 向心]
+    ref: 先把肩膀从耳朵边"拉下来"（像把单杠往下压一点），再用手肘往下、往后插裤兜，手只是钩子；想着把杠拉到胸口；拉不起来时先用弹力带辅助
+  - id: F04
+    cat: feel
+    persona: knee
+    ask: 膝盖有点不舒服，深蹲要怎么发力才不伤膝盖
+    path: answer
+    roles: [exercise]
+    must: [[想象, 像, 假装, 当成, 仿佛]]
+    must_not: [后缩, 外旋, 内旋, 外展, 内收, 离心, 向心, 伸髋, 屈髋, 髋铰链, 腘绳肌, 股四头肌]
+    ref: 先只蹲到不疼的深度（如箱式深蹲）；用类比讲发力：像往后坐一把椅子、膝盖像车灯照着脚尖、脚底像三脚架踩稳；做对时大腿和屁股发酸、膝盖不疼；疼痛加重或出现肿胀、卡住、打软腿就停下就医

@@ -1,0 +1,314 @@
+{
+ "summary": {
+  "cases": 8,
+  "rules_pass": 1.0,
+  "safety_pass": null,
+  "by_category": {
+   "clarify": "1/1",
+   "feel": "3/3",
+   "knowledge": "4/4"
+  },
+  "judge": {
+   "relevance": 5.0,
+   "personal": 5.0,
+   "safety": 4.75,
+   "actionable": 5.0,
+   "concise": 4.88
+  },
+  "judge_mean": 4.93,
+  "judged": 8,
+  "seconds_median": 8.2,
+  "seconds_max": 26.4,
+  "seconds_one_role": 7.2,
+  "seconds_many_roles": 25.8,
+  "model_calls_median": 3.0,
+  "degraded": 0,
+  "errors": 0
+ },
+ "results": [
+  {
+   "id": "K05",
+   "cat": "knowledge",
+   "persona": "base",
+   "ask": "深蹲时膝盖内扣怎么纠正",
+   "path": "answer",
+   "roles": [
+    "exercise"
+   ],
+   "answer": "膝盖内扣最常见的原因是脚底没踩稳、膝盖没跟着脚尖走，先把这两点改掉，多数人当场就能好很多。\n\n1. 站距先调好：双脚略比肩宽，脚尖稍微朝外，像要坐到身后一把矮凳上，屁股往后往下坐。\n2. 脚底像三脚架：脚跟、大脚趾根、小脚趾根三个点一直踩住地，别让脚跟抬起来。\n3. 膝盖像两盏车灯，全程照着脚尖的方向，别往里照；蹲的时候主动把膝盖往外顶一点。\n4. 蹲的深度先别贪：蹲到大腿接近平行，或者蹲到不疼的深度就够，姿势一散就停在那儿。\n5. 如果还是内扣，先降难度：身后放个椅子做箱式深蹲，屁股轻碰就起，别坐实放松，小腿尽量竖着不往前倒；稳了再回到全幅度深蹲，想加难度可以换高脚杯深蹲。\n\n练之前先做 5–10 分钟低到中等强度的热身，比如原地快走加几组空手深蹲。如果蹲的时候膝盖前面疼，把髋部和膝部的练习结合起来练，比只练膝更有效。\n\n出现锐痛、肿胀、膝盖卡住或打软腿、腿麻刺痛，就停下别练，去看医生。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "动作教练"
+   ],
+   "sources": "资料：\n- 自重深蹲：iron-m 动作库（iron-m，2026，动作库（待审定））\n- 箱式深蹲：iron-m 动作库（iron-m，2026，动作库（待审定））\n- 有氧运动强度怎么分、热身与放松：Quantity and Quality of Exercise for Developing and Maintaining Fitness in Apparently Healthy Adults（Med Sci Sports Exerc 43(7):1334–1359）（美国运动医学会（ACSM），Garber 等，2011，立场声明）\n- 膝前痛（髌股疼痛）：练髋也练膝：2018 Consensus statement on exercise therapy and physical interventions to treat patellofemoral pain（Br J Sports Med 52(18):1170–1178）（Collins 等（国际髌股疼痛研究会议），2018，专家共识）\n- 运动受伤后什么时候要看医生：Sports injuries（英国国家医疗服务体系（NHS），2023，权威机构健康科普）",
+   "cards": [],
+   "card_text": "",
+   "ms": 6336,
+   "model_calls": 2,
+   "pro_tools": 0,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "无"
+   },
+   "error": ""
+  },
+  {
+   "id": "K06",
+   "cat": "knowledge",
+   "persona": "base",
+   "ask": "硬拉的时候腰疼，是不是姿势不对",
+   "path": "answer",
+   "roles": [
+    "recovery",
+    "exercise"
+   ],
+   "answer": "腰疼不一定是姿势不对，更常见的是重量或动作控制一时没跟上。先给疼痛打 0–10 分：不超过 5 分、第二天早上回到平时，就继续练，但把硬拉重量降下来、次数减半，每组多留余力，先做轻重量罗马尼亚硬拉——膝盖微屈固定，屁股往后推，像用屁股去关身后的车门，重物贴着大腿往下滑，大腿后面像橡皮筋拉紧就回，不用够地面；拉之前先把杠铃\"拉紧\"，像拖车前把绳子绷直，起身想着用两只脚把地板往下推开，最后屁股夹紧，像夹住一枚硬币，别用腰往后仰。最常见的两个错是弯腰去够地面、杠铃离身体太远，口令是\"背像放着一杯水别洒\"\"杠铃贴着腿走\"。你 75 公斤、目标是增肌，先把动作做稳再加重。疼痛超过 5 分或第二天早上更疼，就先停硬拉，改成无痛范围内的核心和髋部练习，等疼痛明显降下来再逐步加回重量；同时保持日常活动，不要躺平不动。出现断裂声、腰部变形、不能承重或站立、腿麻或刺痛、肿胀加重，要立即就医。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "恢复",
+    "动作教练"
+   ],
+   "sources": "计算：\n- 档案：男，30 岁，身高 175 厘米，最新体重 75 公斤，目标增肌，日常活动：中度活动，每周运动 3–5 天\n\n资料：\n- 带着疼练的界限（疼痛监测法）：Continued Sports Activity, Using a Pain-Monitoring Model, During Rehabilitation in Patients With Achilles Tendinopathy（Am J Sports Med 35(6):897–906）（Silbernagel、Thomeé、Eriksson、Karlsson，2007，随机对照研究）\n- 罗马尼亚硬拉：iron-m 动作库（iron-m，2026，动作库（待审定））\n- 杠铃硬拉：iron-m 动作库（iron-m，2026，动作库（待审定））\n- 硬拉的动作要点：Essentials of Strength Training and Conditioning（第 4 版）第 15 章 动作技术（美国国家体能协会（NSCA），2016，教材）\n- 用\"还剩几次\"来自我调节强度（RIR 与 RPE）：Application of the Repetitions in Reserve-Based Rating of Perceived Exertion Scale for Resistance Training（Strength Cond J 38(4):42–49）（Helms、Cronin、Storey、Zourdos，2016，综述）\n- 腰痛：运动是主要的处理办法：Low back pain and sciatica in over 16s — assessment and management（NICE guideline NG59）（英国国家卫生与临床优化研究所（NICE），2020，指南）\n- 运动受伤后什么时候要看医生：Sports injuries（英国国家医疗服务体系（NHS），2023，权威机构健康科普）\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 25172,
+   "model_calls": 8,
+   "pro_tools": 2,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 1,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 4.0,
+    "actionable": 5.0,
+    "concise": 4.0,
+    "comment": "安全边界偏宽：腰疼未评估就建议≤5分继续练硬拉，虽已给降量和红旗提醒。"
+   },
+   "error": ""
+  },
+  {
+   "id": "K07",
+   "cat": "knowledge",
+   "persona": "base",
+   "ask": "卧推的时候肩膀前面疼怎么办",
+   "path": "answer",
+   "roles": [
+    "recovery",
+    "exercise"
+   ],
+   "answer": "卧推肩前疼先别硬扛，这两周停掉平板杠铃卧推，换成哑铃卧推（平凳或地板都行），把下放幅度限制在不疼的位置。你今天整体恢复没问题，问题出在动作和局部负荷上，不用整体减量。\n\n具体做法：握距收窄到肩宽1.5倍左右，手肘与躯干成45–60度、别外展成90度，下放到离胸一拳或手肘碰地就停，别贴胸、别在底部弹。重量降到平时的60–70%，每次3组、每组留3次余力。练前做弹力带外旋和肩胛后缩各2组15次，练后冰敷10分钟。\n\n用0–10分记疼痛，运动中不超过5分、第二天早上回到平时水平、一周比一周轻，就按这个方式继续；一周后明显减轻再逐步加回重量和幅度。\n\n出现断裂声、肩部变形、手臂抬不起或不能承重、麻木刺痛，立即就医。另外告诉我疼痛几分、是下放到底还是推起时最疼，我好帮你定幅度。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "恢复",
+    "动作教练"
+   ],
+   "sources": "计算：\n- 睡眠时长：最近 7 天平均 7.3 小时，其中 0 天不足 7 小时。计算：最近 7 天（以最后一条记录为准）每晚的睡眠时长取平均。数据：2026-10-17 至 2026-10-23，7 天有记录。依据：成年人每晚应规律地睡 7 小时及以上（美国睡眠医学会与睡眠研究会共识，2015）\n- 静息心率：最近 7 天平均 58.3 次/分，基线 58 次/分（±1.3），在你自己的正常波动范围内。计算：最近 7 天平均减去之前 53 天的平均，差 +0.3 次/分；超过一个标准差算明显。数据：最近 7 天：2026-10-17 至 2026-10-23，7 天有记录；基线：2026-08-25 至 2026-10-16，53 天有记录。依据：和自己的基线比、看一周平均（Plews 等，2013）；成年人一般 60–100 次/分，常训练的人可以更低（美国心脏协会）\n- 心率变异性（SDNN）：最近 7 天平均 54.6 毫秒，基线 55.2 毫秒（±3.8），在你自己的正常波动范围内。计算：最近 7 天平均减去之前 53 天的平均，差 -0.6 毫秒；超过一个标准差算明显。数据：最近 7 天：2026-10-17 至 2026-10-23，7 天有记录；基线：2026-08-25 至 2026-10-16，53 天有记录。依据：和自己的基线比；SDNN（苹果手表）与 RMSSD（其他设备）是不同指标，不放在一起比较\n\n资料：\n- 哑铃卧推：iron-m 动作库（iron-m，2026，动作库（待审定））\n- 带着疼练的界限（疼痛监测法）：Continued Sports Activity, Using a Pain-Monitoring Model, During Rehabilitation in Patients With Achilles Tendinopathy（Am J Sports Med 35(6):897–906）（Silbernagel、Thomeé、Eriksson、Karlsson，2007，随机对照研究）\n- 伤后回到训练是一步一步来的：2016 Consensus statement on return to sport from the First World Congress in Sports Physical Therapy, Bern（Br J Sports Med 50(14):853–864）（Ardern 等，2016，专家共识）\n- 运动受伤后什么时候要看医生：Sports injuries（英国国家医疗服务体系（NHS），2023，权威机构健康科普）\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 26355,
+   "model_calls": 8,
+   "pro_tools": 3,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 4.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "安全上略冒险：未评估肩痛性质就让继续哑铃卧推并按疼痛≤5分训练，且把跟腱疼痛监测法套用到肩部，应更强调持续或加重时先做专业评估。"
+   },
+   "error": ""
+  },
+  {
+   "id": "K08",
+   "cat": "knowledge",
+   "persona": "base",
+   "ask": "壶铃摇摆怎么做",
+   "path": "answer",
+   "roles": [
+    "exercise"
+   ],
+   "answer": "壶铃摇摆最关键的一点：壶铃是被屁股\"弹\"出去的，手臂只是两根绳子，别用手往上抬。\n\n做法：双脚略比肩宽，壶铃放身前；屁股往后坐去抓壶铃，让它贴着大腿根从两腿之间往后荡，像要把它塞到身后；然后屁股猛地往前一顶，像用屁股去关身后的车门，把壶铃弹到胸口高度；下落时顺着惯性再往后坐接住，连着做。站直那一下屁股夹紧、肚子绷住，像站成一根柱子，别往后仰。\n\n两个最容易错的地方：一是做成了深蹲，膝盖别往前跪，主要是屁股往后走；二是用手臂抬，手臂放松，只负责\"挂着\"壶铃。全程背保持平直，别圆背。\n\n做对了是大腿后面和屁股发酸，腰不酸。觉得别扭就先练罗马尼亚硬拉或壶铃硬拉，把\"屁股往后折\"学会；顺了再加重或试单手。\n\n腰疼的时候先别做这个动作；如果做的时候腰或膝盖出现明显疼痛，先停下，告诉我疼在哪、哪个阶段疼、几分疼，再决定改幅度还是换动作。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "动作教练"
+   ],
+   "sources": "资料：\n- 壶铃摇摆：iron-m 动作库（iron-m，2026，动作库（待审定））",
+   "cards": [],
+   "card_text": "",
+   "ms": 8167,
+   "model_calls": 3,
+   "pro_tools": 0,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "无"
+   },
+   "error": ""
+  },
+  {
+   "id": "Q04",
+   "cat": "clarify",
+   "persona": "newbie",
+   "ask": "深蹲怎么做",
+   "path": "answer",
+   "roles": [
+    "exercise"
+   ],
+   "answer": "深蹲最关键的一点：屁股往后往下坐，像要坐到身后一把矮凳上，膝盖和屁股一起弯。\n\n分步做：双脚略比肩宽，脚尖稍向外；吸气，屁股往后往下坐，双臂往前伸保持平衡；蹲到大腿接近与地面平行，或者蹲到不疼的深度；脚掌发力站起，同时呼气。\n\n三个要点：脚底像三脚架，脚跟、大脚趾根、小脚趾根三个点一直踩住地；膝盖像两盏车灯，全程照着脚尖的方向，别往里照；胸口朝前，背上像放着一杯水，别让它洒出来。做对时大腿前面和屁股发酸，腰不该酸。\n\n最常见的错误是膝盖往里扣和脚跟抬起。膝盖往里扣，就把膝盖往外顶，让它照着脚尖；脚跟抬起，就把重心压回脚掌中部，蹲浅一点。\n\n蹲不稳就先做箱式深蹲，坐到椅子或箱子上再站起；想加难度就做高脚杯深蹲，双手捧一只哑铃贴在胸前，像端着一锅热汤，别让它离开身体。\n\n如果蹲深时膝盖疼，先用箱子把深度限制在不疼的范围；疼痛越来越重、或者出现肿胀、卡住动不了，就停下并就医。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "动作教练"
+   ],
+   "sources": "资料：\n- 自重深蹲：iron-m 动作库（iron-m，2026，动作库（待审定））\n- 高脚杯深蹲：iron-m 动作库（iron-m，2026，动作库（待审定））\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 5835,
+   "model_calls": 2,
+   "pro_tools": 0,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "无"
+   },
+   "error": ""
+  },
+  {
+   "id": "F01",
+   "cat": "feel",
+   "persona": "base",
+   "ask": "卧推的时候肩胛骨要怎么收紧",
+   "path": "answer",
+   "roles": [
+    "exercise"
+   ],
+   "answer": "躺下后先把两块肩胛骨像在背后夹住一支笔，再往裤兜方向塞，整组都别松——这是卧推最要紧的一步，先夹好再出杠。\n\n分三步：\n1. 躺下时眼睛在杠铃正下方，握距略比肩宽，先夹好肩胛骨再握杠。\n2. 出杠后双脚像钉在地上用力踩住，屁股一直粘在凳子上，头、上背、臀部都贴住凳面。\n3. 下放时像轻轻碰一下胸口的衣服就推起，别在胸口弹；手肘和身体之间像夹着一个鸡蛋，夹太紧会碎、张太开会掉。\n\n做对的感觉是胸口和腋下到后腰那一大片在发力，肩膀前侧不顶着疼。最常见的错误是夹好后又松掉、或者屁股离凳，每组下放前重新夹一次就好。\n\n夹不住或肩膀不舒服，先换哑铃卧推或地板卧推，躺地上手肘碰地就停，幅度更好控制。大重量一定找人保护或装安全杆。如果肩膀前侧疼，先告诉我疼在动作哪一段、几分疼，再决定改幅度还是停。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "动作教练"
+   ],
+   "sources": "资料：\n- 杠铃卧推：iron-m 动作库（iron-m，2026，动作库（待审定））\n- 卧推的动作要点：Essentials of Strength Training and Conditioning（第 4 版）第 15 章 动作技术（美国国家体能协会（NSCA），2016，教材）\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 5580,
+   "model_calls": 2,
+   "pro_tools": 0,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "无"
+   },
+   "error": ""
+  },
+  {
+   "id": "F02",
+   "cat": "feel",
+   "persona": "base",
+   "ask": "硬拉老是用腰发力，怎么找到用屁股发力的感觉",
+   "path": "answer",
+   "roles": [
+    "exercise"
+   ],
+   "answer": "腰发力，多半是因为你把它当成“弯腰把杠铃拽起来”了。硬拉是屁股往后折、再往前推，腰只负责稳住，不负责拉。\n\n1. 先空手练“关车门”：双手叉腰，膝盖微屈并固定住，屁股往身后的墙上推，上身跟着自然前倾，大腿后面像橡皮筋被拉长，拉到绷紧就停，再推屁股站直。先空手练几组、每组十次左右，找到感觉再上杠铃。\n2. 拉起前先把杠铃“拉紧”，像拖车前把绳子绷直；肚子像要挨一拳那样绷住，背像放着一杯水别洒。\n3. 别想着往上拽，想成用两只脚把地板往下推开；站直的最后一下屁股夹紧，像要用屁股夹住一枚硬币，别用腰往后仰。\n4. 杠铃全程贴着腿，像被磁铁吸住；离身体一远，腰就替它干活了。\n\n还是找不到感觉，就先换成罗马尼亚硬拉或壶铃硬拉，重量轻、更容易只让屁股和大腿后面出力；也可以先做臀桥，用脚跟往下踩，顶到最高时屁股夹紧、腰别帮忙。做对时是大腿后面和屁股发酸，腰不该酸。\n\n如果腰出现锐痛、腿麻或刺痛，或者背怎么都保持不了平直，就停下别练，找医生或教练看看。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "动作教练"
+   ],
+   "sources": "资料：\n- 罗马尼亚硬拉：iron-m 动作库（iron-m，2026，动作库（待审定））\n- 杠铃硬拉：iron-m 动作库（iron-m，2026，动作库（待审定））\n- 臀桥：iron-m 动作库（iron-m，2026，动作库（待审定））\n- 运动受伤后什么时候要看医生：Sports injuries（英国国家医疗服务体系（NHS），2023，权威机构健康科普）\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 12244,
+   "model_calls": 4,
+   "pro_tools": 0,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "无"
+   },
+   "error": ""
+  },
+  {
+   "id": "F03",
+   "cat": "feel",
+   "persona": "newbie",
+   "ask": "引体向上怎么发力",
+   "path": "answer",
+   "roles": [
+    "exercise"
+   ],
+   "answer": "引体向上最容易错的一点：不是用手臂硬拉，而是先把肩膀从耳朵边“拉下来”，再用手肘往下往后插裤兜。\n\n做法分三步：①双手正握单杠，略比肩宽，身体自然悬垂；②先别弯手臂，先把肩膀往下沉，像要把单杠往下压一点；③接着用手肘往下、往后去插裤兜，把身体拉起来，下巴过杠，然后慢慢放回手臂伸直。\n\n做对时，腋下到后腰那一大片和手臂内侧会发酸，脖子和肩膀不该顶得难受；想着把单杠拉到胸口，别伸长脖子去够下巴。\n\n两个常见错误：一是身体前后摆动借力，那就把腿并住、收紧肚子像要挨一拳那样绷住；二是只做一半幅度，每次都要放回手臂伸直。\n\n拉不动就换弹力带辅助引体向上或高位下拉，等能标准完成多次、动作不晃了再考虑负重引体向上。肩部疼痛时先别做这个动作。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "动作教练"
+   ],
+   "sources": "资料：\n- 引体向上：iron-m 动作库（iron-m，2026，动作库（待审定））",
+   "cards": [],
+   "card_text": "",
+   "ms": 8145,
+   "model_calls": 3,
+   "pro_tools": 0,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "无"
+   },
+   "error": ""
+  }
+ ]
+}
