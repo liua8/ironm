@@ -18,7 +18,7 @@ from ironm_agent.kb import Entry
 from ironm_agent.llm import LLM, ModelUnavailable
 from ironm_agent.memory_view import Recall
 from ironm_agent.numbers import written_numbers
-from ironm_agent.roles import SPECS, Role
+from ironm_agent.roles import Role, spec_of
 
 _KB_REF = KB_REF
 
@@ -83,7 +83,7 @@ def _payload(text: str, opinions: Sequence[Opinion], shield: Shield) -> str:
     items = []
     for op in opinions:
         item = {
-            "角色": SPECS[op.role].name,
+            "角色": spec_of(op.role).name,
             "结论": shield.hide(op.conclusion),
             "针对你": shield.hide(op.for_you),
             "怎么做": shield.hide(op.how),
@@ -149,6 +149,12 @@ def _composed(
     )
 
 
+def solo(consultation: Consultation) -> Composed:
+    """只请到一位时，它直接写的回答就是最终回答（已经逐句核对过），不再整合。"""
+    ev = consultation.evidence
+    return _composed(consultation.opinion.answer, ev.entries, ev.calcs, ev.rows, rewrites=0)
+
+
 def fallback(opinion: Opinion) -> str:
     """整合失败时：给出主责角色已经核对过的意见。"""
     return "\n\n".join(
@@ -177,7 +183,7 @@ async def compose(
     # 记忆里用户自己说过的数字（如哑铃 20 公斤）和这次问题里的数字一样，可以直接用
     question = "\n".join(x for x in (text, memory.numbers_text() if memory else "") if x)
     messages = [
-        {"role": "system", "content": _PROMPT.format(primary=SPECS[primary].name, style=hint)},
+        {"role": "system", "content": _PROMPT.format(primary=spec_of(primary).name, style=hint)},
         {"role": "user", "content": _payload(text, opinions, shield)},
     ]
     for attempt in range(2):

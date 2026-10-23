@@ -22,6 +22,7 @@ ROLE_CATEGORIES: dict[Role, tuple[Category, ...]] = {
     Role.NUTRITION: ("diet", "goal"),
     Role.RECOVERY: ("injury", "event", "schedule"),
     Role.DATA: ("goal",),
+    Role.GENERAL: ("injury", "equipment", "schedule", "diet", "goal", "event"),
 }
 EVERYONE: tuple[Category, ...] = ("preference", "style")
 ORDER = tuple(CATEGORIES)

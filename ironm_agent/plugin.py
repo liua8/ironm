@@ -14,10 +14,10 @@ import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from functools import cache
-from typing import Any
+from typing import Any, Literal
 
 from ironm_agent.coach import direct
-from ironm_agent.compose import compose
+from ironm_agent.compose import Composed, compose, solo
 from ironm_agent.experts import Consultation, consult
 from ironm_agent.kb import KnowledgeBase, default_kb
 from ironm_agent.llm import ModelsConfig, TurnLLM, load_models
@@ -39,7 +39,7 @@ from ironm_agent.render import (
     started,
     text_block,
 )
-from ironm_agent.roles import SPECS
+from ironm_agent.roles import GENERAL, SPECS
 from ironm_agent.router import Route, route
 from ironm_agent.safety.emergency import assess
 from ironm_agent.safety.refusals import default_refusals
@@ -102,10 +102,22 @@ class IronMAgent:
         environ: Mapping[str, str] | None = None,
         metrics: Callable[[str], Awaitable[list[Any]]] | None = None,
         memory: MemoryStore | None = None,
+        history: Callable[[str, str], Awaitable[list[str]]] | None = None,
+        sources: Callable[[str, str], Awaitable[str | None]] | None = None,
+        remember: bool = True,
+        mode: Literal["multi", "single"] = "multi",
+        observe: Callable[[dict[str, Any]], None] | None = None,
         **kwargs: Any,
     ) -> None:
         self._metrics = metrics  # 按用户计算指标（默认与数据页同一份计算）
         self._memory = memory  # 长期记忆（默认用数据库里 iron-m 自己的表）
+        # 以下几项给考题用：本会话前几轮、上一条回答的来源（默认读 mirobody 的对话记录）、
+        # 回答后是否提取记忆、架构（multi 正式版 / single 单 Agent 对照组）、每轮结束时拿到运行记录
+        self._history = history
+        self._sources = sources
+        self._remember_on = remember
+        self._mode = mode
+        self._observe = observe
         self._locks: dict[str, asyncio.Lock] = {}  # 同一个人的记忆提取一次只跑一个
         self._tasks: set[asyncio.Task[None]] = set()  # 后台提取记忆的任务
         self._health = health
@@ -223,7 +235,7 @@ class IronMAgent:
                 return
             async for block in self._turn(user_id, session_id, text, llm, run, said):
                 yield block
-            if "answer" in said:
+            if "answer" in said and self._remember_on:
                 task = asyncio.create_task(
                     self._remember(user_id, text, said["answer"], user_lines(said["history"]))
                 )
@@ -241,6 +253,8 @@ class IronMAgent:
             first = ("turn", "path", "ms", "memory", "memory_ms", "model_calls", "model_failures")
             ordered = {k: run[k] for k in first if k in run} | run
             _log.info("ironm turn %s", json.dumps(ordered, ensure_ascii=False))
+            if self._observe is not None:
+                self._observe(dict(ordered))
 
     async def _turn(
         self,
@@ -273,16 +287,23 @@ class IronMAgent:
         # 追问上一条回答的来源：直接从“依据与来源”里讲，不再请专业 Agent
         if is_provenance(text):
             run["path"] = "provenance"
-            yield text_block(explain(text, await last_sources(session_id, SOURCES_ID)))
+            sources = await (self._sources or last_sources)(session_id, SOURCES_ID)
+            yield text_block(explain(text, sources))
             return
 
         # 2. 读这个人的记忆（全部有效记忆，不靠检索）；主教练理解与调度
-        history = await recent(session_id, text)
+        history = await (self._history or recent)(session_id, text)
         read = time.perf_counter()
         recall = await self._recall(user_id)
         run["memory"] = len(recall.items)
         run["memory_ms"] = int((time.perf_counter() - read) * 1000)
         said["history"] = history
+        if self._mode == "single":  # 单 Agent 对照组：一位全能教练一次作答，不调度、不整合
+            async for block in self._single(
+                user_id, session_id, text, history, recall, llm, run, said, prefix
+            ):
+                yield block
+            return
         r = await route(text, history, llm, recall.persona())
         run.update(intent=r.intent, route_by=r.by, concerns=list(r.concerns))
         for block in (
@@ -345,13 +366,57 @@ class IronMAgent:
             yield text_block("\n\n".join(x for x in (prefix, NO_ANSWER) if x))
             return
         composed = await compose(text, r.primary, consultations, llm, recall)
+        for block in self._answer(composed, prefix, run, said):
+            yield block
+
+    def _answer(
+        self, composed: Composed, prefix: str, run: dict[str, Any], said: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """回答正文与可展开的“依据与来源”。"""
         run.update(path="answer", degraded=composed.degraded, rewrites=composed.rewrites,
                    kb=[e.id for e in composed.entries])  # fmt: skip
+        blocks = []
         if composed.degraded:
-            yield notice("这次回答受限：整合没有通过核对，下面给出主责角色核对过的意见。")
+            blocks.append(notice("这次回答受限：整合没有通过核对，下面给出主责角色核对过的意见。"))
         said["answer"] = answer_text(composed)
-        yield text_block(answer_text(composed, prefix=prefix))
+        blocks.append(text_block(answer_text(composed, prefix=prefix)))
         sources = sources_text(composed)
         if sources:  # 出处不写进正文，放进可展开的“依据与来源”
-            yield started(SOURCES_ID, SOURCES_NAME, "这条回答用到的资料、计算和你的数据")
-            yield finished(SOURCES_ID, sources)
+            blocks.append(started(SOURCES_ID, SOURCES_NAME, "这条回答用到的资料、计算和你的数据"))
+            blocks.append(finished(SOURCES_ID, sources))
+        return blocks
+
+    async def _single(
+        self,
+        user_id: str,
+        session_id: str,
+        text: str,
+        history: list[str],
+        recall: Recall,
+        llm: TurnLLM,
+        run: dict[str, Any],
+        said: dict[str, Any],
+        prefix: str,
+    ) -> AsyncGenerator[dict[str, Any]]:
+        """单 Agent 对照组（spec [2026-10-23] §1）：同样的安全前置、记忆、工具和核对，只是不调度、不整合。"""
+        personal = await personal_basics(self._health_source(), user_id, session_id)
+        run.update(intent="pro", route_by="single", roles=[GENERAL.role.value])
+        yield started("role-0", GENERAL.name, GENERAL.duty)
+        toolbox = Toolbox(
+            GENERAL,
+            kb=self._kb,
+            health=self._health_source(),
+            user_id=user_id,
+            session_id=session_id,
+            metrics=self._metrics_source(user_id),
+        )
+        c = await consult(GENERAL, text, history, (), toolbox, llm, personal, recall, solo=True)
+        yield finished("role-0", consultation_summary(c), ok=c.status != "failed")
+        run.update(statuses=[c.status], queries=c.evidence.queries)
+        if not c.opinion.speak:
+            run["path"] = "no_answer"
+            said["answer"] = ""
+            yield text_block("\n\n".join(x for x in (prefix, NO_ANSWER) if x))
+            return
+        for block in self._answer(solo(c), prefix, run, said):
+            yield block

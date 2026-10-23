@@ -22,7 +22,7 @@ KNOWLEDGE = "search_knowledge"
 METRICS = "compute_metrics"
 
 # 能调用指标计算的角色（BMI、基础代谢、热量与蛋白质目标、体重趋势、与本人基线的比较）
-METRIC_ROLES = frozenset({"data", "nutrition", "recovery", "planner"})
+METRIC_ROLES = frozenset({"data", "nutrition", "recovery", "planner", "general"})
 
 METRICS_SCHEMA: dict[str, Any] = {
     "type": "function",

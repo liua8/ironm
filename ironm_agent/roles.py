@@ -13,6 +13,7 @@ class Role(StrEnum):
     NUTRITION = "nutrition"
     RECOVERY = "recovery"
     DATA = "data"
+    GENERAL = "general"  # 单 Agent 对照组的"全能教练"，不参加调度
 
 
 @dataclass(frozen=True)
@@ -141,6 +142,20 @@ SPECS: dict[Role, RoleSpec] = {
 EXPERTS: tuple[Role, ...] = tuple(SPECS)
 COACH_NAME = "主教练"
 
+# 单 Agent 对照组（spec [2026-10-23] §1）：一位"全能教练"用全部工具和资料一次作答，不调度、不整合
+GENERAL = RoleSpec(
+    Role.GENERAL,
+    "全能教练",
+    "训练安排、动作做法、饮食营养、恢复与睡眠、身体数据的解读，以及相关的风险与就医提醒",
+    frozenset({"training", "exercise", "nutrition", "recovery", "safety", "data"}),
+    True,
+    (),
+)
+
+
+def spec_of(role: Role) -> RoleSpec:
+    return GENERAL if role is Role.GENERAL else SPECS[role]
+
 
 def name_of(role: Role) -> str:
-    return COACH_NAME if role is Role.COACH else SPECS[role].name
+    return COACH_NAME if role is Role.COACH else spec_of(role).name

@@ -28,6 +28,7 @@ _log = logging.getLogger("ironm_agent.experts")
 MAX_QUERIES = 3  # 每个 Agent 每轮最多查询几次
 MAX_ROUNDS = 5  # 每个 Agent 每轮最多和模型往返几次（含查询）
 _FIELDS = ("conclusion", "for_you", "how", "caution", "uncertain")
+_SOLO_FIELDS = ("answer",)  # 只请到一位（或单 Agent 对照组）时，它直接写给用户的回答
 
 
 class Opinion(ContractModel):
@@ -39,10 +40,13 @@ class Opinion(ContractModel):
     how: str = ""
     caution: str = ""
     uncertain: str = ""
+    answer: str = ""  # 直接给用户的回答（solo 模式），有它时就不再整合
     basis: tuple[str, ...] = ()  # 意见里引用到的编号：K 开头为依据库条目，r 开头为健康数据行
     general: bool = False  # 没有资料依据，只给不带具体数字的一般建议
 
     def body(self) -> str:
+        if self.answer:
+            return self.answer
         return "\n".join(getattr(self, f) for f in _FIELDS if getattr(self, f))
 
 
@@ -70,10 +74,17 @@ _PROMPT = """你是健身 App 里的「{name}」，负责：{duty}。
 6. 不诊断、不开药。涉及疼痛或不适时，写明出现什么情况要停止并就医。
 7. 直接回答用户问的那件事，不说空话套话。只用真正改变建议的个人数据和计算结果（比如按体重算剂量）；问跑前吃什么就别列 BMI，问膝盖疼就别提体重；不要把查到的指标都罗列出来。for_you 只写能让建议更具体的个人信息（比如按这个人的体重算出的量），没有就留空；不要罗列"你的记录里没有什么"，除非用户问的就是这个数据。
 8. 用到这个人的体重等数据换算时（例如按 0.3 克/公斤算剂量），把这句话写成 <statement>按你 69.2 公斤算，每天约 21 克〔K10〕<cite>[r3]</cite></statement>，资料编号和数据编号都写上。
-9. 用中文，口语化，专业、精炼：每个字段不超过 80 字，只写最关键的一两点，不铺垫、不罗列所有可能。
+{tail}"""
+
+_OPINION_TAIL = """9. 用中文，口语化，专业、精炼：每个字段不超过 80 字，只写最关键的一两点，不铺垫、不罗列所有可能。
 
 最后只输出 JSON：
-{{"conclusion": "一两句结论", "for_you": "结合这个人的情况（没有可留空）", "how": "具体怎么做", "caution": "注意事项（与这件事相关的风险、什么情况要停止或就医；没有可留空）", "uncertain": "不确定的地方（可留空）"}}"""
+{"conclusion": "一两句结论", "for_you": "结合这个人的情况（没有可留空）", "how": "具体怎么做", "caution": "注意事项（与这件事相关的风险、什么情况要停止或就医；没有可留空）", "uncertain": "不确定的地方（可留空）"}"""
+
+# 只请到一位时（或单 Agent 对照组），由它直接写给用户的回答，不再整合（spec [2026-10-23] §7）
+_SOLO_TAIL = """9. 你是这次唯一作答的角色，直接写给用户的回答：第一句直接回答用户问的那件事，接着只给最关键的做法。简单问题不超过 150 字；需要分步骤的不超过 300 字、最多 5 个要点。同一个意思只说一次，不铺垫、不罗列所有可能，不用小标题。风险提醒只留和这件事最相关的一条，放在最后。出处标记照上面的规矩写在句末（系统展示时会去掉，并把来源放进可展开的"依据与来源"，所以不用在正文里解释出处）。用中文，口语化，像一位专业又亲切的教练。
+
+最后只输出 JSON：{"answer": "给用户的回答"}"""
 
 
 def _tool_hint(toolbox: Toolbox) -> str:
@@ -125,7 +136,9 @@ def problems_of(opinion: Opinion, evidence: Evidence, text: str) -> list[str]:
     )
 
 
-def _repaired(opinion: Opinion, evidence: Evidence, text: str) -> Opinion:
+def _repaired(
+    opinion: Opinion, evidence: Evidence, text: str, names: Sequence[str] = _FIELDS
+) -> Opinion:
     """逐个字段 repair：对不上的个人数据句删掉，其余对不上出处的句子改标〔经验〕。"""
     fields = {
         f: repair(
@@ -135,7 +148,7 @@ def _repaired(opinion: Opinion, evidence: Evidence, text: str) -> Opinion:
             question=text,
             calcs=evidence.calcs,
         )
-        for f in _FIELDS
+        for f in names
     }
     body = "\n".join(fields.values())
     if not body.strip():
@@ -143,16 +156,16 @@ def _repaired(opinion: Opinion, evidence: Evidence, text: str) -> Opinion:
     return opinion.model_copy(update={**fields, "basis": tuple(cited_ids(body))})
 
 
-def _parse(role: Role, content: str) -> Opinion | None:
+def _parse(role: Role, content: str, fields: Sequence[str] = _FIELDS) -> Opinion | None:
     raw = parse_json(content)
     if raw is None:
         return None
-    data: dict[str, Any] = {k: raw.get(k) for k in ("general", *_FIELDS) if k in raw}
+    data: dict[str, Any] = {k: raw.get(k) for k in ("general", *fields) if k in raw}
     data["speak"] = True  # 被请到就要回答，模型说"不发言"也不算
-    for k in _FIELDS:
+    for k in fields:
         if k in data and not isinstance(data[k], str):
             data[k] = "" if data[k] is None else str(data[k])
-    body = "\n".join(str(data.get(k) or "") for k in _FIELDS)
+    body = "\n".join(str(data.get(k) or "") for k in fields)
     data["basis"] = tuple(cited_ids(body))
     try:
         return Opinion.model_validate({"role": role, **data}, strict=False)
@@ -169,13 +182,21 @@ async def consult(
     llm: LLM,
     personal: Personal | None = None,
     memory: Recall | None = None,
+    *,
+    solo: bool = False,
 ) -> Consultation:
     """请一个专业 Agent 作答。出错时返回不发言的意见，不向外抛。
 
     memory：这个人的长期记忆，只给这个角色该看的那几类；记忆里用户自己说过的数字（如哑铃 20 公斤）
     和这次问题里的数字一样，作答时可以直接用。
+    solo：这一轮只请到它一位，由它直接写给用户的回答（不再整合）。
     """
-    system = _PROMPT.format(name=spec.name, duty=spec.duty, tools=_tool_hint(toolbox))
+    system = _PROMPT.format(
+        name=spec.name,
+        duty=spec.duty,
+        tools=_tool_hint(toolbox),
+        tail=_SOLO_TAIL if solo else _OPINION_TAIL,
+    )
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system},
         {
@@ -194,7 +215,7 @@ async def consult(
         toolbox.evidence.support.update(personal.support)
         toolbox.evidence.rows.update(personal.rows)
     try:
-        opinion = await _loop(spec, messages, toolbox, llm, said)
+        opinion = await _loop(spec, messages, toolbox, llm, said, _SOLO_FIELDS if solo else _FIELDS)
     except ModelUnavailable as e:
         _log.warning("expert unavailable: role=%s reason=%s", spec.role.value, e)
         silent = Opinion(role=spec.role, speak=False, reason="这次没能调用模型")
@@ -204,7 +225,12 @@ async def consult(
 
 
 async def _loop(
-    spec: RoleSpec, messages: list[dict[str, Any]], toolbox: Toolbox, llm: LLM, text: str
+    spec: RoleSpec,
+    messages: list[dict[str, Any]],
+    toolbox: Toolbox,
+    llm: LLM,
+    text: str,
+    fields: Sequence[str] = _FIELDS,
 ) -> Opinion:
     fixes = 0
     rounds = 0
@@ -235,7 +261,7 @@ async def _loop(
                     result = await toolbox.run(call)
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
             continue
-        opinion = _parse(spec.role, reply.content)
+        opinion = _parse(spec.role, reply.content, fields)
         problems = (
             ["输出不是规定格式的 JSON"]
             if opinion is None
@@ -249,7 +275,7 @@ async def _loop(
             _log.info(
                 "expert opinion repaired: role=%s problems=%d", spec.role.value, len(problems)
             )
-            return _repaired(opinion, toolbox.evidence, text)
+            return _repaired(opinion, toolbox.evidence, text, fields)
         fixes += 1
         messages.append({"role": "assistant", "content": reply.content})
         messages.append(

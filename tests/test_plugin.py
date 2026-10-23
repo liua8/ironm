@@ -222,3 +222,41 @@ def test_asking_for_someone_else_is_not_supported(monkeypatch: Any) -> None:
     blocks = asyncio.run(go())
     assert text_of(blocks) == HELP_ASK and s.count == 0
     assert [x.content for x in asyncio.run(book.items("42"))] == ["左膝旧伤"]
+
+
+def test_single_mode_answers_in_one_pass_without_routing_or_composing(monkeypatch: Any) -> None:
+    """单 Agent 对照组：不调度、不整合，一位全能教练直接写回答，照常核对并附“依据与来源”。"""
+    from tests.fakes import FakeLLM
+
+    def script(stage: Stage, messages: Sequence[Mapping[str, Any]], has_tools: bool) -> Reply:
+        assert stage == "expert" and "全能教练" in system_of(messages)
+        if not tool_results(messages):
+            return call(HEALTH, indicators=["restingHeartRates"], view="stats")
+        return jsonr(
+            {
+                "answer": "你最近很稳：<statement>近 30 天静息心率平均 58 次/分<cite>[r1]</cite></statement>。"
+            }
+        )
+
+    a = agent(script, monkeypatch=monkeypatch)
+    a._mode, a._remember_on = "single", False
+    stages: list[str] = []
+    real = FakeLLM.chat
+
+    async def spy(self: FakeLLM, stage: Stage, *args: Any, **kwargs: Any) -> Reply:
+        stages.append(stage)
+        return await real(self, stage, *args, **kwargs)
+
+    monkeypatch.setattr(FakeLLM, "chat", spy)
+    blocks = collect(a, "我最近的静息心率怎么样")
+    assert set(stages) == {"expert"}
+    assert [b["name"] for b in blocks if b["type"] == "tool_call"] == ["全能教练", "依据与来源"]
+    assert "平均 58 次/分" in text_of(blocks) and "<statement>" not in text_of(blocks)
+
+
+def test_observer_gets_the_run_record(monkeypatch: Any) -> None:
+    seen: dict[str, Any] = {}
+    a = agent(Scripted("你近 30 天静息心率很稳。"), monkeypatch=monkeypatch)
+    a._observe = seen.update
+    collect(a, "我最近的静息心率怎么样")
+    assert seen["path"] == "answer" and seen["roles"] == ["data"] and seen["model_calls"] >= 3
