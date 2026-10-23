@@ -33,6 +33,9 @@ _PROMPT = """你是严格的健身教练考官，给一位 AI 健身教练的回
 这个人的情况：
 {persona}
 
+这个人的数据（AI 教练能查到这些，回答里引用这些数据不算编造；这里没有的个人数字才算编造）：
+{facts}
+
 本会话前几轮：
 {history}
 
@@ -54,11 +57,23 @@ AI 教练的回答：
 
 
 async def judge(
-    env: Mapping[str, str], *, persona: str, history: str, ask: str, ref: str, answer: str
+    env: Mapping[str, str],
+    *,
+    persona: str,
+    facts: str,
+    history: str,
+    ask: str,
+    ref: str,
+    answer: str,
 ) -> dict[str, Any]:
     llm = TurnLLM(ModelsConfig(turn_budget=4, stages={"compose": JUDGE}), env)
     prompt = _PROMPT.format(
-        persona=persona, history=history or "（无）", ask=ask, ref=ref or "（无）", answer=answer
+        persona=persona,
+        facts=facts or "（没有任何数据）",
+        history=history or "（无）",
+        ask=ask,
+        ref=ref or "（无）",
+        answer=answer,
     )
     try:
         reply = await llm.chat("compose", [{"role": "user", "content": prompt}])

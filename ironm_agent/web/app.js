@@ -7,7 +7,7 @@ const store = {
   get() { try { return localStorage.getItem(KEY) || ""; } catch { return ""; } },
   set(v) { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch { /* 隐私模式 */ } },
 };
-let cache = { metrics: null, profile: null, exercises: null, files: null };
+let cache = { metrics: null, profile: null, exercises: null, files: null, me: null };
 
 // ---- 小工具 -------------------------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
@@ -60,11 +60,17 @@ const ICONS = {
   file: [["path", { d: "M6 3h8l4 4v14H6z" }], ["path", { d: "M14 3v4h4M9 13h6M9 17h4" }]],
   open: [["path", { d: "M14 4h6v6M20 4l-8.5 8.5M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" }]],
   more: [["circle", { cx: "6", cy: "12", r: "1.4" }], ["circle", { cx: "12", cy: "12", r: "1.4" }], ["circle", { cx: "18", cy: "12", r: "1.4" }]],
+  sun: [["circle", { cx: "12", cy: "12", r: "4" }], ["path", { d: "M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4" }]],
+  cloud: [["path", { d: "M7 18h10.5a4 4 0 0 0 .4-8 6 6 0 0 0-11.6 1.6A3.3 3.3 0 0 0 7 18z" }]],
+  rain: [["path", { d: "M7 15h10.5a4 4 0 0 0 .4-8 6 6 0 0 0-11.6 1.6A3.3 3.3 0 0 0 7 15z" }], ["path", { d: "M9 18l-1 2.5M13 18l-1 2.5M17 18l-1 2.5" }]],
+  storm: [["path", { d: "M7 14h10.5a4 4 0 0 0 .4-8 6 6 0 0 0-11.6 1.6A3.3 3.3 0 0 0 7 14z" }], ["path", { d: "M12.5 15.5 10.5 19h3l-2 3.5" }]],
+  camera: [["path", { d: "M4 8.5A1.5 1.5 0 0 1 5.5 7h2.3l1.5-2h5.4l1.5 2h2.3A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z" }], ["circle", { cx: "12", cy: "13", r: "3.5" }]],
+  play: [["path", { d: "M8 5.5v13l10.5-6.5z" }]],
 };
 function icon(name, cls = "") {
   const svg = s("svg", { viewBox: "0 0 24 24", class: `i ${cls}`.trim(), "aria-hidden": "true" });
   for (const [tag, attrs] of ICONS[name] || []) svg.append(s(tag, attrs));
-  if (name === "stop") svg.style.fill = "currentColor";
+  if (name === "stop" || name === "play") svg.style.fill = "currentColor";
   return svg;
 }
 
@@ -119,7 +125,7 @@ function tokenEmail() {
     return JSON.parse(decodeURIComponent(escape(atob(part + "=".repeat((4 - (part.length % 4)) % 4))))).email || "";
   } catch { return ""; }
 }
-function signOut() { store.set(""); cache = { metrics: null, profile: null, exercises: null, files: null }; resetChat(); render(); }
+function signOut() { store.set(""); cache = { metrics: null, profile: null, exercises: null, files: null, me: null }; resetChat(); render(); }
 
 // ---- 通用组件 -----------------------------------------------------------------------------
 function section(title, action, ...body) {
@@ -219,78 +225,205 @@ function metricSheet(m) {
     h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`我的${m.name}最近怎么样？说明什么？`) }, icon("coach", "sm"), "问问教练"));
 }
 
-// ---- 首页 ---------------------------------------------------------------------------------
+// ---- 首页：状态卡、计划表、训练日历（spec [2026-10-23] §13）-------------------------------------
 const QUICK = {
   "只有 30 分钟": "今天只有 30 分钟，怎么练最有效？",
   "在家没有器械": "今天在家、没有器械，怎么练？",
   "今天想练腿": "今天想练腿，怎么安排？",
   "今天有点累": "今天有点累，还要练吗？怎么安排？",
 };
-
-function readiness(m) {
-  const hrv = m.hrv_sdnn || m.hrv_rmssd || m.hrv;
-  const items = [["静息心率", m.resting_hr, "heart"], ["心率变异性", hrv, "wave"], ["睡眠", m.sleep, "moon"]];
-  const have = items.filter(([, x]) => x && x.value != null);
-  const bad = have.filter(([, x]) => x.tone === "attention");
-  let tone = "neutral", headline, text;
-  if (!have.length) {
-    headline = "还没有恢复数据";
-    text = "连接手表或上传苹果健康数据后，这里会告诉你今天的身体状态。";
-  } else if (bad.length) {
-    tone = "attention";
-    headline = "今天注意恢复";
-    text = `${bad.map(([n, x]) => `${n}${x.brief}`).join("、")}，可以降低强度或安排轻松训练。`;
-  } else {
-    tone = "good";
-    headline = "状态平稳，可以按计划训练";
-    text = `${have.map(([n, x]) => `${n}${x.brief || "正常"}`).join("、")}。`;
-  }
-  return { items, tone, headline, text };
-}
+const BRIEF_TONE = { good: "good", fair: "neutral", poor: "attention", unknown: "neutral" };
+const BRIEF_HEAD = { good: "状态不错，可以按计划练", fair: "状态一般，量力而行", poor: "今天注意恢复", unknown: "最近缺少恢复数据" };
+const WEEK = ["一", "二", "三", "四", "五", "六", "日"];
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 async function home(view) {
-  const list = await metrics();
-  const m = byKey(list);
-  const r = readiness(m);
-  const hero = h("div", { class: "hero" },
-    h("div", { class: "hero-kicker" }, h("span", { class: `hero-dot ${r.tone}` }), "今天的身体状态"),
-    h("div", {}, h("h2", {}, r.headline), h("p", {}, r.text)),
-    h("div", { class: "hero-stats" }, r.items.map(([name, x, ic]) => {
-      const have = x && x.value != null;
-      return h("div", { class: "hero-stat" },
-        h("span", { class: "k" }, icon(ic, "xs"), name),
-        h("span", { class: "v" }, have ? valueText(x) : "—", have && x.unit ? h("small", {}, x.unit) : null),
-        h("span", { class: `s ${have ? x.tone : "none"}` }, have ? x.brief || "已记录" : "暂无数据"));
-    })),
-    list.as_of ? h("span", { class: "caption", style: "color:var(--hero-muted)" }, `数据截至 ${md(list.as_of)}${list.stale_days > 1 ? `（${list.stale_days} 天前）` : ""}`) : null);
-
-  const plan = h("div", { class: "card plan-card" },
-    h("div", { class: "plan-top" },
-      h("div", { class: "plan-icon" }, icon("dumbbell")),
-      h("div", {}, h("h3", {}, "今日训练"), h("p", { class: "muted" }, "教练会按你的目标、能用的器械和今天的状态，现在就排好。"))),
-    h("button", { class: "btn block", type: "button", onclick: () => askCoach("给我安排今天的训练") }, "安排今天的训练"),
-    h("div", { class: "asks" }, Object.entries(QUICK).map(([label, q]) => askChip(label, q))));
-
-  const kcal = m.kcal_target, protein = m.protein_target;
-  const food = kcal?.value != null || protein?.value != null
-    ? h("a", { class: "card", href: "#food", style: "text-decoration:none" },
-      h("div", { class: "duo" },
-        h("div", { class: "stat" }, h("span", { class: "k" }, "热量目标", chip(kcal?.brief)), h("span", { class: "v" }, kcal?.value != null ? valueText(kcal) : "—", h("small", {}, "千卡"))),
-        h("div", { class: "stat divider-v" }, h("span", { class: "k" }, "蛋白质"), h("span", { class: "v" }, protein?.value != null ? valueText(protein) : "—", h("small", {}, "克")))))
-    : h("div", { class: "card" }, h("div", { class: "empty" }, icon("info"), "在「我的」里填好身高、出生日期、性别和目标，就能算出每天该吃多少。"), h("a", { class: "btn ghost small", href: "#me" }, "去填写"));
-
-  const trend = m.weight_trend;
-  const body = [m.weight && tile(m.weight, { brief: trend?.value != null ? trend.brief : "", tone: "neutral" }), m.steps && tile(m.steps)].filter(Boolean);
-
-  view.append(hero, plan,
-    section("添加数据", more("全部", "#data"), addRow()),
-    section("今日营养", more("饮食", "#food"), food),
-    body.length ? section("身体", more("全部数据", "#data"), h("div", { class: "tiles" }, body)) : null);
+  const [brief, wx, training] = await Promise.all([
+    api("/iron/api/brief").catch(() => null),
+    api("/iron/api/weather").catch(() => ({ status: "unavailable", message: "暂时取不到天气" })),
+    api("/iron/api/training").catch(() => null),
+  ]);
+  view.append(statusCard(brief, wx), planTable(training, brief), calendarCard(brief));
 }
 
-// ---- 动作 ---------------------------------------------------------------------------------
+function wxIcon(text) {
+  if (/雷/.test(text)) return "storm";
+  if (/雨|雪/.test(text)) return "rain";
+  if (/云|阴|雾/.test(text)) return "cloud";
+  return "sun";
+}
+const aqiTone = (a) => (a <= 100 ? "good" : a <= 150 ? "mid" : "bad");
+
+function statusCard(brief, wx) {
+  const day = brief?.today, rd = day?.readiness;
+  const head = rd ? BRIEF_HEAD[rd.level] || rd.name : "今天的状态暂时算不出来";
+  const why = rd?.reasons?.length ? `${rd.reasons.join("；")}。` : day?.alert || "";
+  return h("div", { class: "hero" },
+    h("div", { class: "hero-kicker" }, h("span", { class: `hero-dot ${BRIEF_TONE[rd?.level] || "neutral"}` }), "今天的状态"),
+    h("div", {}, h("h2", {}, head), why ? h("p", {}, why) : null),
+    weatherRow(wx),
+    day?.alert && rd?.reasons?.length ? h("p", { class: "hero-alert" }, icon("alert", "xs"), day.alert) : null);
+}
+
+function weatherRow(wx) {
+  if (wx.status === "no_city") {
+    return h("a", { class: "wx-row", href: "#me" }, icon("sun", "sm"), h("span", {}, "在「我的」里设置城市，就能看到天气和训练提示"), icon("chevron", "xs"));
+  }
+  if (wx.status !== "ok") return h("div", { class: "wx-row" }, icon("cloud", "sm"), h("span", {}, wx.message || "暂时取不到天气"));
+  const advice = wx.advice.reasons.length ? `${wx.advice.name}：${wx.advice.reasons[0]}` : `${wx.advice.name}，天气不影响训练`;
+  return pressable(h("div", { class: "wx", "aria-label": "天气详情" },
+    h("div", { class: "wx-main" },
+      icon(wxIcon(wx.text), "sm"),
+      h("b", {}, `${wx.temperature}°`),
+      h("span", { class: "wx-text" }, `${wx.place} · ${wx.text} · 体感 ${wx.feels_like}°`),
+      wx.aqi != null ? h("span", { class: `aqi ${aqiTone(wx.aqi)}` }, `${wx.aqi_level} ${wx.aqi}`) : null),
+    h("p", { class: `wx-advice ${wx.advice.level}` }, advice)), () => weatherSheet(wx));
+}
+
+function weatherSheet(wx) {
+  const rows = [
+    ["天气", `${wx.text}，${wx.temperature}℃（体感 ${wx.feels_like}℃）`],
+    wx.humidity != null ? ["湿度", `${Math.round(wx.humidity)}%`] : null,
+    wx.wind_kmh != null ? ["风速", `${Math.round(wx.wind_kmh)} 公里/小时`] : null,
+    wx.aqi != null ? ["空气质量", `${wx.aqi_level}（指数约 ${wx.aqi}，按 PM2.5、PM10 估算）`] : null,
+  ].filter(Boolean);
+  openSheet(`${wx.place}的天气`,
+    h("div", {}, rows.map(([k, v]) => h("div", { class: "kv" }, h("span", {}, k), h("span", {}, v)))),
+    h("div", {}, h("h3", {}, "对训练的影响"), h("p", { class: "lede" }, wx.advice.name),
+      wx.advice.reasons.length ? h("ul", { class: "tips" }, wx.advice.reasons.map((t) => h("li", {}, t))) : null),
+    wx.advice.sources.length ? h("p", { class: "caption" }, `依据：${wx.advice.sources.join("；")}`) : null,
+    h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach("按今天的天气，我今天怎么练比较合适？") }, icon("coach", "sm"), "按天气问问教练"));
+}
+
+function planTable(tr, brief) {
+  const plan = tr?.plan, t = brief?.today?.training;
+  if (!plan) {
+    return h("div", { class: "card plan-card" },
+      h("div", { class: "plan-top" }, h("div", { class: "plan-icon" }, icon("dumbbell")),
+        h("div", {}, h("h3", {}, "训练计划"), h("p", { class: "muted" }, "还没有计划：让教练按你的目标、时间和器械排一份。"))),
+      h("button", { class: "btn block", type: "button", onclick: () => askCoach("帮我排一个每周训练计划") }, "让教练排一份计划"),
+      h("div", { class: "asks" }, Object.entries(QUICK).map(([label, q]) => askChip(label, q))));
+  }
+  const todayNo = new Date().getDay() || 7;
+  const byDay = Object.fromEntries(plan.sessions.map((x) => [x.day, x]));
+  const rows = WEEK.map((w, i) => {
+    const d = i + 1, x = byDay[d], isToday = d === todayNo;
+    const row = h("div", { class: `pt-row${isToday ? " today" : ""}${x ? "" : " rest"}` },
+      h("span", { class: "pt-day" }, isToday ? "今天" : `周${w}`),
+      h("span", { class: "pt-name" }, x ? x.name : "休息"),
+      h("span", { class: "pt-min" }, x ? `${x.minutes} 分钟` : ""),
+      x ? icon("chevron", "xs") : h("span"));
+    return x ? pressable(row, () => sessionSheet(x, isToday, t)) : row;
+  });
+  const todaySession = byDay[todayNo];
+  return h("div", { class: "card plan-card" },
+    h("div", { class: "pt-head" },
+      h("div", {}, h("h3", {}, plan.title), h("p", { class: "muted" }, `每周 ${plan.days_per_week} 练${plan.goal ? ` · 目标：${plan.goal}` : ""}`)),
+      h("button", { class: "link", type: "button", onclick: () => askCoach("帮我看看现在的训练计划，需要调整吗？") }, "调整", icon("chevron", "xs"))),
+    t?.tip ? h("div", { class: "notice-line" }, icon("alert", "xs"), t.tip) : null,
+    h("div", { class: "pt" }, rows),
+    todaySession ? h("div", { class: "btn-row" },
+      t?.done ? h("button", { class: "btn ghost", type: "button", disabled: true }, icon("check", "sm"), "今天已打卡")
+        : h("button", { class: "btn", type: "button", onclick: () => doneSheet(todaySession.name) }, icon("check", "sm"), "完成打卡"),
+      h("button", { class: "btn ghost", type: "button", onclick: () => askCoach("今天练什么？按我的计划和今天的状态说") }, icon("coach", "sm"), "今天怎么练"))
+      : null);
+}
+
+function sessionSheet(x, isToday, t) {
+  openSheet(`${isToday ? "今天" : weekdayName(x.day)} · ${x.name}`,
+    h("p", { class: "muted" }, `约 ${x.minutes} 分钟`),
+    h("ol", { class: "plan-items" }, x.items.map((it) => h("li", {}, `${it.exercise} ${it.sets}×${it.reps}${it.load || it.note ? `（${[it.load, it.note].filter(Boolean).join("，")}）` : ""}`))),
+    isToday && !t?.done ? h("button", { class: "btn block", type: "button", onclick: () => doneSheet(x.name) }, icon("check", "sm"), "完成打卡") : null,
+    h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`${x.name}这次训练怎么练？每个动作要注意什么？`) }, icon("coach", "sm"), "问教练怎么练"));
+}
+const weekdayName = (d) => `周${WEEK[d - 1]}`;
+
+let calMonth = "";
+function calendarCard(brief) {
+  const box = h("div", { class: "card cal" });
+  const draw = async () => {
+    let cal;
+    try { cal = await api(`/iron/api/calendar${calMonth ? `?month=${calMonth}` : ""}`); }
+    catch (err) { box.replaceChildren(failed(err, draw)); return; }
+    const [y, m] = cal.month.split("-").map(Number);
+    const first = new Date(y, m - 1, 1), days = new Date(y, m, 0).getDate();
+    const lead = (first.getDay() + 6) % 7;
+    const lit = new Set(cal.done_days);
+    const shift = (n) => { const d = new Date(y, m - 1 + n, 1); calMonth = isoDay(d).slice(0, 7); draw(); };
+    const cells = [...Array.from({ length: lead }, () => h("span", { class: "cal-cell blank" }))];
+    for (let d = 1; d <= days; d++) {
+      const iso = `${cal.month}-${String(d).padStart(2, "0")}`;
+      const entries = cal.days[iso] || [];
+      const cls = `cal-cell${lit.has(iso) ? " lit" : ""}${iso === cal.today ? " today" : ""}${entries.length ? " has" : ""}`;
+      const cell = h("span", { class: cls, "aria-label": `${m}月${d}日${lit.has(iso) ? "，练过" : ""}` }, String(d));
+      cells.push(entries.length ? pressable(cell, () => openSheet(`${m}月${d}日`,
+        h("div", { class: "rows" }, entries.map((e) => h("div", { class: "row-item" },
+          h("span", { class: `dot-state ${e.done ? "on" : ""}` }), h("div", { class: "row-main" }, h("span", { class: "row-title" }, e.line))))))) : cell);
+    }
+    const thisMonth = cal.today.slice(0, 7) === cal.month;
+    const doneToday = lit.has(cal.today);
+    const session = brief?.today?.training?.kind === "session" ? brief.today.training.name : "";
+    box.replaceChildren(
+      h("div", { class: "cal-head" },
+        h("button", { class: "icon-btn", type: "button", "aria-label": "上个月", onclick: () => shift(-1) }, icon("back", "sm")),
+        h("b", {}, `${y}年${m}月`),
+        h("button", { class: "icon-btn", type: "button", "aria-label": "下个月", onclick: () => shift(1), disabled: thisMonth }, icon("chevron", "sm"))),
+      h("div", { class: "cal-grid cal-week" }, WEEK.map((w) => h("span", {}, w))),
+      h("div", { class: "cal-grid" }, cells),
+      h("div", { class: "cal-foot" },
+        h("span", { class: "muted" }, `这个月练了 ${cal.done_days.length} 天`),
+        thisMonth && !doneToday ? h("button", { class: "btn small", type: "button", onclick: () => doneSheet(session || "训练") }, icon("check", "sm"), "今天打卡") : null));
+  };
+  box.append(...skeleton(260));
+  draw();
+  return section("训练日历", null, box);
+}
+
+function doneSheet(session) {
+  let rpe = 0;
+  const scale = h("div", { class: "rpe" });
+  const draw = () => scale.replaceChildren(...Array.from({ length: 10 }, (_, i) => h("button", {
+    type: "button", class: rpe === i + 1 ? "on" : "", "aria-pressed": String(rpe === i + 1), onclick: () => { rpe = i + 1; draw(); } }, String(i + 1))));
+  draw();
+  const note = h("input", { type: "text", maxlength: "60", placeholder: "备注（可不填），比如有点累、膝盖没疼" });
+  const msg = h("p", { class: "muted" });
+  const save = h("button", { class: "btn block", type: "button", onclick: async () => {
+    save.disabled = true; msg.textContent = "正在记下…";
+    try {
+      await api("/iron/api/workouts", { method: "POST", body: JSON.stringify({ session: session === "训练" ? "" : session, done: true, rpe: rpe || null, note: note.value.trim() }) });
+      closeSheet(); render();
+    } catch (err) { msg.textContent = err.message; save.disabled = false; }
+  } }, "打卡");
+  openSheet(`打卡：${session}`,
+    h("p", { class: "muted" }, "这次感觉怎么样？1 很轻松，10 到极限（可不选）"), scale, note, save, msg);
+}
+
+function weekCard(w) {
+  const rows = [];
+  if (w.planned) rows.push(["训练", `完成 ${w.done} / ${w.planned} 次`, w.sessions.map((x) => `${x.day}${x.name}${x.done ? " ✓" : ""}`).join("　")]);
+  else rows.push(["训练", `本周练了 ${w.done} 次`, "还没有计划"]);
+  if (w.weight) rows.push(["体重", w.weight.brief || "—", w.weight.text]);
+  if (w.sleep) rows.push(["睡眠", `平均 ${num(w.sleep.value)} 小时`, w.sleep.brief]);
+  if (w.resting_hr) rows.push(["静息心率", `${num(w.resting_hr.value)} 次/分`, w.resting_hr.brief]);
+  if (w.hrv) rows.push([w.hrv.name, `${num(w.hrv.value)} 毫秒`, w.hrv.brief]);
+  return h("div", { class: "card" },
+    h("div", { class: "rows" }, rows.map(([k, v, sub]) => h("div", { class: "row-item" },
+      h("div", { class: "row-main" }, h("span", { class: "row-title" }, k), sub ? h("span", { class: "row-sub" }, sub) : null),
+      h("span", { class: "row-end" }, v)))),
+    w.tips.length ? h("ul", { class: "tips" }, w.tips.map((t) => h("li", {}, t))) : h("p", { class: "muted" }, "这周没有需要调整的地方，照计划来。"),
+    w.tips.length && w.planned ? h("button", { class: "btn ghost block", type: "button",
+      onclick: () => askCoach(`按这周的复盘帮我调整训练计划：${w.tips.join("")}`) }, icon("coach", "sm"), "让教练按复盘调整计划") : null);
+}
+
+// ---- 动作：卡片流，官方视频，"没看懂"请动作教练用大白话讲（spec [2026-10-23] §13）--------------------
 const PART_MARK = { 腿臀: "腿", 胸: "胸", 背: "背", 肩: "肩", 手臂: "臂", 核心: "核", 全身: "全", 有氧: "氧" };
 const moveFilter = { part: "全部", equip: "全部器械", q: "" };
+const VIDEO_EXT = [".mp4", ".webm", ".mov"];
+const videoUrl = (id) => `/iron/api/exercises/${encodeURIComponent(id)}/video`;
+async function whoami() {
+  if (!cache.me) cache.me = await api("/iron/api/me").catch(() => ({ admin: false }));
+  return cache.me;
+}
 
 function pills(options, current, onPick) {
   const box = h("div", { class: "pills", role: "group" });
@@ -306,9 +439,10 @@ function pills(options, current, onPick) {
 }
 
 async function moves(view) {
-  const lib = await exercises();
+  const [lib, vids, me] = await Promise.all([exercises(), api("/iron/api/videos").catch(() => ({ videos: [] })), whoami()]);
+  const has = new Set(vids.videos);
   const count = h("div", { class: "muted", style: "padding:0 2px" });
-  const listBox = h("div", { class: "card" });
+  const grid = h("div", { class: "move-grid" });
   const input = h("input", { type: "search", placeholder: "搜索动作或部位，比如深蹲、肩", value: moveFilter.q, "aria-label": "搜索动作" });
   function draw() {
     const q = moveFilter.q.trim();
@@ -316,13 +450,9 @@ async function moves(view) {
       (moveFilter.part === "全部" || x.part === moveFilter.part)
       && (moveFilter.equip === "全部器械" || x.equipment.includes(moveFilter.equip))
       && (!q || `${x.name}${x.muscles}${x.part}`.includes(q)));
-    count.textContent = `${items.length} 个动作`;
-    listBox.replaceChildren(items.length
-      ? h("div", { class: "rows" }, items.map((x) => h("button", { class: "row-item", type: "button", onclick: () => exerciseSheet(x, lib.note) },
-        h("div", { class: `mark p-${x.part}` }, PART_MARK[x.part] || x.part[0]),
-        h("div", { class: "row-main" }, h("span", { class: "row-title" }, x.name), h("span", { class: "row-sub" }, x.muscles)),
-        h("div", { class: "row-end" }, h("span", { class: "level" }, x.equipment.slice(0, 2).join(" · ")), icon("chevron", "sm")))))
-      : h("div", { class: "empty" }, icon("search"), "没有符合的动作，换个条件试试，或者直接问动作教练。"));
+    count.textContent = `${items.length} 个动作${has.size ? ` · ${items.filter((x) => has.has(x.id)).length} 个有视频` : ""}`;
+    grid.replaceChildren(...(items.length ? items.map((x) => moveCard(x, has.has(x.id), () => exerciseSheet(x, lib.note, has, me.admin, draw)))
+      : [h("div", { class: "card" }, h("div", { class: "empty" }, icon("search"), "没有符合的动作，换个条件试试，或者直接问动作教练。"))]));
   }
   input.addEventListener("input", () => { moveFilter.q = input.value; draw(); });
   draw();
@@ -330,16 +460,30 @@ async function moves(view) {
     h("label", { class: "search" }, icon("search", "sm"), input),
     pills(["全部", ...lib.parts], moveFilter.part, (v) => { moveFilter.part = v; draw(); }),
     pills(["全部器械", ...lib.equipment], moveFilter.equip, (v) => { moveFilter.equip = v; draw(); }),
-    count, listBox,
+    count, grid,
     h("div", { class: "card plan-card" },
       h("div", { class: "plan-top" }, h("div", { class: "plan-icon" }, icon("coach")),
         h("div", {}, h("h3", {}, "不知道练哪个？"), h("p", { class: "muted" }, "告诉动作教练你想练哪里、有什么器械、哪里不舒服。"))),
       h("div", { class: "asks" }, askChip("在家用哑铃练全身"), askChip("膝盖不好能练什么腿"), askChip("久坐圆肩怎么改善"))));
 }
 
-function exerciseSheet(x, note) {
+function moveCard(x, video, open) {
+  const cover = h("div", { class: `move-cover p-${x.part}` },
+    video ? h("video", { src: `${videoUrl(x.id)}#t=0.5`, muted: true, playsinline: true, preload: "metadata", "aria-hidden": "true" })
+      : h("span", { class: "cover-mark" }, PART_MARK[x.part] || x.part[0]),
+    video ? h("span", { class: "play" }, icon("play", "sm")) : null,
+    h("span", { class: "cover-level" }, x.level));
+  return pressable(h("div", { class: "move-card", "aria-label": `${x.name}，点开看做法` }, cover,
+    h("div", { class: "move-info" }, h("b", {}, x.name), h("span", {}, `${x.part} · ${x.equipment.slice(0, 2).join("、")}`))), open);
+}
+
+function exerciseSheet(x, note, has, admin, redraw) {
   const list = (items, cls, ic) => h("ul", { class: `marks ${cls}` }, items.map((t) => h("li", {}, icon(ic, "xs"), h("span", {}, t))));
+  const video = has.has(x.id)
+    ? h("video", { class: "move-video", src: videoUrl(x.id), controls: true, playsinline: true, preload: "metadata" })
+    : h("div", { class: `move-video empty-video p-${x.part}` }, h("span", { class: "cover-mark" }, PART_MARK[x.part] || x.part[0]), h("span", { class: "caption" }, "官方视频还在制作，先看下面的做法和要点"));
   openSheet(x.name,
+    video,
     h("div", { class: "tags" }, chip(x.part), x.equipment.map((e) => chip(e)), chip(x.level)),
     h("p", { class: "lede" }, `主要练：${x.muscles}`),
     h("div", {}, h("h3", {}, "怎么做"), h("ol", { class: "steps-ol" }, x.steps.map((t) => h("li", {}, t)))),
@@ -347,71 +491,335 @@ function exerciseSheet(x, note) {
     h("div", {}, h("h3", {}, "常见错误"), list(x.mistakes, "bad", "x")),
     h("div", {}, h("h3", {}, "替代动作"), h("div", { class: "swap" }, h("div", {}, h("b", {}, "更容易"), x.easier), h("div", {}, h("b", {}, "更难"), x.harder))),
     h("div", { class: "callout" }, icon("alert", "sm"), h("div", {}, h("strong", {}, "什么情况先别做："), x.avoid)),
+    h("div", { class: "btn-row" },
+      h("button", { class: "btn", type: "button", onclick: () => askCoach(`${x.name}我没看懂，请用大白话、打个比方再给我讲讲怎么做，最容易做错的地方是什么`) }, icon("coach", "sm"), "没看懂？讲简单点"),
+      h("button", { class: "btn ghost", type: "button", onclick: () => askCoach(`${x.name}有什么替代动作？按我的器械和身体情况选`) }, "换个动作")),
     h("p", { class: "caption" }, note),
-    h("button", { class: "btn block", type: "button", onclick: () => askCoach(`${x.name}怎么做？我要注意什么？`) }, icon("coach", "sm"), "问动作教练"));
+    admin ? videoAdmin(x, has, redraw) : null);
 }
 
-// ---- 饮食 ---------------------------------------------------------------------------------
+// 管理员：给动作上传、更换、删除官方视频
+function videoAdmin(x, has, redraw) {
+  const bar = progressBar();
+  const msg = h("div", { class: "muted", role: "status" });
+  const zone = picker({ accept: VIDEO_EXT, maxBytes: 200 * MB, multiple: false, hint: "MP4、WebM、MOV，不超过 200MB；只用自己拍的或有授权的视频",
+    onPick: async (ok, bad) => {
+      if (bad.length) { msg.className = "error"; msg.textContent = bad.join("；"); return; }
+      if (!ok.length) return;
+      const form = new FormData(); form.append("file", ok[0]);
+      msg.className = "muted"; msg.textContent = "上传中…";
+      try {
+        await send(videoUrl(x.id), form, (p) => bar.set(p));
+        has.add(x.id); msg.textContent = "已上传"; closeSheet(); redraw();
+      } catch (err) { msg.className = "error"; msg.textContent = err.message; }
+    } });
+  const del = has.has(x.id) ? h("button", { class: "btn danger block", type: "button", onclick: async () => {
+    if (!confirm(`删除「${x.name}」的视频？`)) return;
+    try { await api(videoUrl(x.id), { method: "DELETE" }); has.delete(x.id); closeSheet(); redraw(); }
+    catch (err) { msg.className = "error"; msg.textContent = err.message; }
+  } }, "删除视频") : null;
+  return h("div", { class: "admin-box" }, h("h3", {}, has.has(x.id) ? "管理员：更换视频" : "管理员：上传视频"), zone, bar.el, msg, del);
+}
+
+// ---- 饮食：饮食记录（照片 + 描述）、推荐这一餐、减脂餐、今日目标（spec [2026-10-23] §13）----------------
+const MEAL_KINDS = ["早餐", "午餐", "晚餐", "加餐"];
+const APPETITES = ["清淡", "正常", "很饿"];
+const SCENES = ["全部", "外卖", "食堂", "便利店", "自己做"];
+const foodState = { kind: null, appetite: "正常", scene: "全部" };
+function mealKindNow() {
+  const hr = new Date().getHours();
+  return hr < 10 ? "早餐" : hr < 15 ? "午餐" : hr < 21 ? "晚餐" : "加餐";
+}
+const macroLine = (m) => `${Math.round(m.kcal)} 千卡 · 蛋白质 ${Math.round(m.protein_g)} 克 · 碳水 ${Math.round(m.carbs_g)} 克 · 脂肪 ${Math.round(m.fat_g)} 克`;
+
+// 手机照片常常好几 MB：先缩到长边 1600 像素、存成 JPEG 再上传
+async function shrinkPhoto(file) {
+  try {
+    const img = await createImageBitmap(file);
+    const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+    const canvas = h("canvas", { width: Math.round(img.width * scale), height: Math.round(img.height * scale) });
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    return await new Promise((ok) => canvas.toBlob((b) => ok(b || file), "image/jpeg", 0.85));
+  } catch { return file; }
+}
+
 async function food(view) {
-  const m = byKey(await metrics());
-  const kcal = m.kcal_target, protein = m.protein_target, bmr = m.bmr, tdee = m.tdee;
-  if (kcal?.value == null && protein?.value == null) {
-    view.append(h("div", { class: "card" }, h("div", { class: "empty" }, icon("info"), "先在「我的」里填好身高、出生日期、性别和目标，就能算出你每天该吃多少。"), h("a", { class: "btn block", href: "#me" }, "去填写")));
-  } else {
-    const [lo, hi] = String(protein?.display || "").split("–").map(Number);
-    const meals = lo && hi ? `${Math.round(lo / 4)}–${Math.round(hi / 4)}` : "20–40";
-    view.append(h("div", { class: "card" },
-      h("div", { class: "tile-head" }, h("span", { class: "tile-name" }, "每日热量目标"), chip(kcal?.brief, "good")),
-      h("div", { class: "target-big" }, h("span", { class: "v" }, kcal?.value != null ? valueText(kcal) : "—"), h("span", { class: "u" }, "千卡")),
-      kcal?.how ? h("p", { class: "caption" }, kcal.how) : null,
-      h("div", { class: "kv", style: "border-top:1px solid var(--line);padding-top:12px" },
-        h("span", {}, "蛋白质"), h("span", {}, protein?.value != null ? `${valueText(protein)} 克` : "—")),
-      h("button", { class: "link", type: "button", onclick: () => openSheet("怎么算的",
-        ...[kcal, protein].filter((x) => x && x.value != null).map((x) => h("div", {}, h("h3", {}, x.name), h("dl", { class: "facts" },
-          [["结论", x.text], ["怎么算的", x.how], ["依据", x.source]].filter(([, v]) => v).map(([k, v]) => h("div", {}, h("dt", {}, k), h("dd", {}, v))))))) }, "怎么算的", icon("chevron", "xs"))));
-    view.append(section("蛋白质分到每一餐", null, h("div", { class: "card" },
-      h("div", { class: "meals" }, ["早餐", "午餐", "晚餐", "加餐"].map((t) => h("div", { class: "meal" }, h("b", {}, meals, h("small", {}, "克")), h("span", {}, t)))),
-      h("p", { class: "caption" }, "分 3–4 餐吃、每餐 20–40 克（国际运动营养学会建议）；鸡蛋、奶、豆制品、瘦肉、鱼虾都是好来源。"))));
-  }
-  const energy = [bmr, tdee].filter((x) => x && x.value != null);
-  if (energy.length) view.append(section("能量估算", null, h("div", { class: "tiles" }, energy.map((x) => tile(x)))));
-  const qs = ["早餐怎么吃够蛋白质", "练前练后吃什么", "外卖怎么点更健康", "要不要吃肌酸", "减脂期饿了怎么办"];
-  view.append(section("问营养师", null, h("div", { class: "card" }, h("div", { class: "rows" },
-    qs.map((q) => h("button", { class: "row-item", type: "button", onclick: () => askCoach(q) },
-      h("div", { class: "row-main" }, h("span", { class: "row-title" }, q)), h("span", { class: "row-end" }, icon("chevron", "sm"))))))));
+  foodState.kind = foodState.kind || mealKindNow();
+  const [day, m] = await Promise.all([api("/iron/api/meals"), metrics().then(byKey).catch(() => ({}))]);
+  const summary = h("div");
+  const list = h("div");
+  const redraw = (d) => { summary.replaceChildren(daySummary(d, m)); list.replaceChildren(mealList(d, redraw)); };
+  redraw(day);
+  view.append(summary,
+    section("记一餐", null, mealForm(redraw)),
+    section("今天吃了什么", null, list),
+    section("推荐这一餐", null, recommendBox(redraw)),
+    section("减脂餐", null, await presetsBox(redraw)),
+    section("问营养师", null, h("div", { class: "asks" },
+      ["早餐怎么吃够蛋白质", "练前练后吃什么", "外卖怎么点更健康", "要不要吃肌酸", "减脂期饿了怎么办"].map((q) => askChip(q)))));
 }
 
-// ---- 数据 ---------------------------------------------------------------------------------
-const GROUPS = [
-  ["身体", ["weight", "weight_trend", "bmi"]],
-  ["恢复", ["resting_hr", "hrv_sdnn", "hrv_rmssd", "hrv", "sleep"]],
-  ["活动", ["steps"]],
+function meter(label, have, target, unit) {
+  const pct = target ? Math.min(100, (have / target) * 100) : 0;
+  const over = target && have > target * 1.05;
+  return h("div", { class: "fmeter" },
+    h("div", { class: "fmeter-top" }, h("span", {}, label),
+      h("span", {}, h("b", {}, Math.round(have)), target ? ` / ${Math.round(target)} ${unit}` : ` ${unit}`)),
+    h("div", { class: "meter" }, h("span", { class: over ? "over" : "", style: `width:${pct}%` })));
+}
+
+function daySummary(d, m) {
+  const t = d.target, tot = d.totals;
+  if (!t) {
+    return h("div", { class: "card" },
+      h("div", { class: "empty" }, icon("info"), "在「我的」里填好身高、出生日期、性别和目标，就能算出每天该吃多少。"),
+      h("a", { class: "btn ghost small", href: "#me" }, "去填写"),
+      tot.kcal ? h("p", { class: "muted" }, `今天已记：${macroLine(tot)}`) : null);
+  }
+  const kcal = m.kcal_target, protein = m.protein_target;
+  const left = Math.max(0, Math.round(t.kcal - tot.kcal));
+  return h("div", { class: "card food-sum" },
+    h("div", { class: "tile-head" }, h("span", { class: "tile-name" }, `今天${d.goal ? ` · 目标${d.goal}` : ""}`), chip(`还能吃约 ${left} 千卡`, left ? "good" : "attention")),
+    meter("热量", tot.kcal, t.kcal, "千卡"),
+    meter("蛋白质", tot.protein_g, protein?.display ? Number(String(protein.display).split("–")[0]) : t.protein_g, "克"),
+    h("p", { class: "caption" }, `碳水 ${Math.round(tot.carbs_g)} 克 · 脂肪 ${Math.round(tot.fat_g)} 克（记录里的营养都是估算）`),
+    h("button", { class: "link", type: "button", onclick: () => openSheet("今日目标怎么算的",
+      ...[kcal, protein, m.bmr, m.tdee].filter((x) => x && x.value != null).map((x) => h("div", {}, h("h3", {}, x.name), h("dl", { class: "facts" },
+        [["结论", x.text], ["怎么算的", x.how], ["依据", x.source]].filter(([, v]) => v).map(([k, v]) => h("div", {}, h("dt", {}, k), h("dd", {}, v))))))) }, "目标怎么算的", icon("chevron", "xs")));
+}
+
+function mealForm(redraw) {
+  let photo = null;
+  const preview = h("div", { class: "photo-preview", hidden: true });
+  const input = h("input", { type: "file", accept: "image/jpeg,image/png,image/webp", capture: "environment", class: "sr-only" });
+  const pick = h("label", { class: "photo-pick" }, input, icon("camera"), h("span", {}, "拍照或选照片"));
+  input.addEventListener("change", async () => {
+    const f = input.files[0]; input.value = "";
+    if (!f) return;
+    if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { msg.className = "error"; msg.textContent = "照片只支持 JPG、PNG、WebP（iPhone 可以在相机设置里选“兼容性最佳”）"; return; }
+    photo = await shrinkPhoto(f);
+    if (photo.size > 5 * MB) { msg.className = "error"; msg.textContent = "照片太大了，换一张试试"; photo = null; return; }
+    msg.textContent = "";
+    preview.hidden = false;
+    preview.replaceChildren(h("img", { src: URL.createObjectURL(photo), alt: "这一餐的照片" }),
+      h("button", { class: "icon-btn", type: "button", "aria-label": "去掉照片", onclick: () => { photo = null; preview.hidden = true; preview.replaceChildren(); } }, icon("close", "sm")));
+  });
+  const said = h("input", { type: "text", maxlength: "120", placeholder: "说一句：比如一碗牛肉面，吃了一半" });
+  const msg = h("div", { class: "muted", role: "status" });
+  const go = h("button", { class: "btn block", type: "button" }, "记下，估算热量");
+  go.addEventListener("click", async () => {
+    if (!photo && !said.value.trim()) { msg.className = "error"; msg.textContent = "拍张照片或写一句描述"; return; }
+    const form = new FormData();
+    form.append("said", said.value.trim()); form.append("kind", foodState.kind);
+    if (photo) form.append("photo", photo, "meal.jpg");
+    go.disabled = true; msg.className = "muted"; msg.textContent = "营养师在估算…";
+    try {
+      const r = await send("/iron/api/meals", form);
+      said.value = ""; photo = null; preview.hidden = true; preview.replaceChildren();
+      msg.textContent = `已记下：${r.meal.name}，约 ${Math.round(r.meal.macros.kcal)} 千卡（估算）`;
+      redraw(r);
+    } catch (err) { msg.className = "error"; msg.textContent = err.message; }
+    go.disabled = false;
+  });
+  return h("div", { class: "card" },
+    pills(MEAL_KINDS, foodState.kind, (v) => { foodState.kind = v; }),
+    h("div", { class: "photo-row" }, pick, preview), said, go, msg,
+    h("p", { class: "caption" }, "照片加一句描述估得更准；照片只存在你的记录里。"));
+}
+
+function mealList(d, redraw) {
+  if (!d.meals.length) return h("div", { class: "card" }, h("div", { class: "empty" }, icon("food"), "今天还没记，拍一张或者从下面的减脂餐里选。"));
+  return h("div", { class: "card" }, h("div", { class: "rows" }, d.meals.map((x) => {
+    const thumb = h("div", { class: "meal-thumb" }, icon("food", "sm"));
+    if (x.has_photo) loadPhoto(x.id, thumb);
+    return pressable(h("div", { class: "row-item" }, thumb,
+      h("div", { class: "row-main" }, h("span", { class: "row-title" }, `${x.kind} · ${x.name}`), h("span", { class: "row-sub" }, macroLine(x.macros))),
+      h("span", { class: "row-end" }, `${Math.round(x.macros.kcal)}`, icon("chevron", "xs"))), () => mealSheet(x, redraw));
+  })));
+}
+
+async function loadPhoto(id, box) {
+  try {
+    const res = await fetch(`/iron/api/meals/${id}/photo`, { headers: { Authorization: `Bearer ${store.get()}` } });
+    if (!res.ok) return;
+    box.replaceChildren(h("img", { src: URL.createObjectURL(await res.blob()), alt: "" }));
+  } catch { /* 照片取不到就显示图标 */ }
+}
+
+function mealSheet(x, redraw) {
+  const photo = h("div", { class: "meal-photo", hidden: !x.has_photo });
+  if (x.has_photo) loadPhoto(x.id, photo);
+  openSheet(`${x.kind} · ${x.name}`, photo,
+    h("div", { class: "macro-grid" }, [["热量", x.macros.kcal, "千卡"], ["蛋白质", x.macros.protein_g, "克"], ["碳水", x.macros.carbs_g, "克"], ["脂肪", x.macros.fat_g, "克"]]
+      .map(([k, v, u]) => h("div", {}, h("b", {}, Math.round(v), h("small", {}, u)), h("span", {}, k)))),
+    x.items.length ? h("div", {}, h("h3", {}, "吃了什么"), h("ul", { class: "tips" }, x.items.map((t) => h("li", {}, t)))) : null,
+    h("p", { class: "caption" }, ["营养是估算的", x.confidence ? `把握：${x.confidence}` : "", x.note].filter(Boolean).join("；")),
+    h("button", { class: "btn danger block", type: "button", onclick: async () => {
+      try { const r = await api(`/iron/api/meals/${x.id}`, { method: "DELETE" }); closeSheet(); redraw(await api("/iron/api/meals")); }
+      catch (err) { alert(err.message); }
+    } }, "删除这条"));
+}
+
+function recommendBox(redraw) {
+  const out = h("div");
+  const go = h("button", { class: "btn block", type: "button" }, icon("food", "sm"), "推荐这一餐");
+  go.addEventListener("click", async () => {
+    go.disabled = true; out.replaceChildren(h("p", { class: "muted" }, "营养师在按你的目标、今天还差多少、天气和状态挑…"));
+    try {
+      const r = await api("/iron/api/meals/recommend", { method: "POST", body: JSON.stringify({ kind: foodState.kind, appetite: foodState.appetite }) });
+      out.replaceChildren(recCard(r, redraw));
+    } catch (err) { out.replaceChildren(h("p", { class: "error" }, err.message)); }
+    go.disabled = false;
+  });
+  return h("div", { class: "card" },
+    h("div", { class: "muted" }, "胃口"), pills(APPETITES, foodState.appetite, (v) => { foodState.appetite = v; }),
+    h("p", { class: "caption" }, "按上面「记一餐」选的餐次推荐。"), go, out);
+}
+
+function recCard(r, redraw) {
+  const rec = r.recommendation, tot = r.total;
+  const save = h("button", { class: "btn ghost block", type: "button" }, icon("check", "sm"), "就吃这个，记下来");
+  save.addEventListener("click", async () => {
+    save.disabled = true;
+    try {
+      const d = await api("/iron/api/meals/record", { method: "POST", body: JSON.stringify({
+        kind: foodState.kind, name: rec.title, items: rec.dishes.map((x) => `${x.name}${x.amount ? ` ${x.amount}` : ""}`), macros: tot }) });
+      save.textContent = "已记下"; redraw(d);
+    } catch (err) { save.disabled = false; alert(err.message); }
+  });
+  return h("div", { class: "rec" },
+    h("h3", {}, rec.title),
+    rec.why ? h("p", { class: "lede" }, rec.why) : null,
+    h("div", { class: "tags" }, r.considered.map((x) => chip(x))),
+    h("div", { class: "rows" }, rec.dishes.map((x) => h("div", { class: "row-item" },
+      h("div", { class: "row-main" }, h("span", { class: "row-title" }, x.name), h("span", { class: "row-sub" }, [x.amount, `蛋白质 ${Math.round(x.protein_g)} 克`].filter(Boolean).join(" · "))),
+      h("span", { class: "row-end" }, `${Math.round(x.kcal)} 千卡`)))),
+    h("div", { class: "macro-grid" }, [["热量", tot.kcal, "千卡"], ["蛋白质", tot.protein_g, "克"], ["碳水", tot.carbs_g, "克"], ["脂肪", tot.fat_g, "克"]]
+      .map(([k, v, u]) => h("div", {}, h("b", {}, Math.round(v), h("small", {}, u)), h("span", {}, k)))),
+    r.remaining ? h("p", { class: "caption" }, `今天还剩约 ${Math.round(r.remaining.kcal)} 千卡、蛋白质约 ${Math.round(r.remaining.protein_g)} 克`) : null,
+    r.warning ? h("div", { class: "notice-line" }, icon("alert", "xs"), r.warning) : null,
+    rec.tips ? h("p", { class: "muted" }, rec.tips) : null,
+    save, h("p", { class: "caption" }, "营养是估算的。"));
+}
+
+async function presetsBox(redraw) {
+  const data = await api("/iron/api/meals/presets").catch(() => ({ presets: [], note: "" }));
+  const grid = h("div", { class: "rows" });
+  const draw = () => grid.replaceChildren(...data.presets.filter((p) => foodState.scene === "全部" || p.scene === foodState.scene).map((p) =>
+    h("div", { class: "row-item preset" },
+      h("div", { class: "row-main" }, h("span", { class: "row-title" }, p.name, h("span", { class: "scene" }, p.scene)),
+        h("span", { class: "row-sub" }, `${p.kcal} 千卡 · 蛋白质 ${p.protein_g} 克 · 碳水 ${p.carbs_g} 克 · 脂肪 ${p.fat_g} 克`),
+        p.tip ? h("span", { class: "row-sub" }, p.tip) : null),
+      h("button", { class: "btn small ghost", type: "button", onclick: async (e) => {
+        e.currentTarget.disabled = true;
+        try { redraw(await api("/iron/api/meals/preset", { method: "POST", body: JSON.stringify({ preset: p.id, kind: foodState.kind }) })); e.target.textContent = "已记"; }
+        catch (err) { alert(err.message); }
+      } }, "记一餐"))));
+  draw();
+  return h("div", { class: "card" }, pills(SCENES, foodState.scene, (v) => { foodState.scene = v; draw(); }), grid,
+    h("p", { class: "caption" }, data.note));
+}
+
+// ---- 数据：人体图 → 常看指标 → 每周复盘 → 其余指标 → 导入数据（spec [2026-10-23] §13）-------------------
+const COMMON = ["weight", "resting_hr", "sleep", "steps"];
+const OTHER = [
+  ["身体", ["weight_trend", "bmi"]],
+  ["恢复", ["hrv_sdnn", "hrv_rmssd", "hrv"]],
   ["血压", ["blood_pressure"]],
   ["能量", ["bmr", "tdee", "kcal_target", "protein_target"]],
 ];
 
 async function data(view) {
-  const list = await metrics();
+  const [list, muscles, brief] = await Promise.all([
+    metrics(), api("/iron/api/muscles").catch(() => null), api("/iron/api/brief").catch(() => null)]);
   const m = byKey(list);
+  view.append(section("肌肉人体图", h("span", { class: "caption" }, "最近 28 天"), muscles ? bodyMap(muscles) : failed(new Error("人体图暂时算不出来"), () => render())));
   view.append(h("div", { class: "fresh" }, icon("info", "xs"),
     list.as_of ? `数据截至 ${md(list.as_of)}${list.stale_days > 1 ? `（${list.stale_days} 天前）` : ""} · 点开任一项看怎么算的` : "还没有同步到健康数据"));
-  view.append(section("添加数据", null, addGrid()));
-  for (const [title, keys] of GROUPS) {
-    const present = keys.map((k) => m[k]).filter(Boolean);
-    const have = present.filter((x) => x.value != null);
-    const miss = present.filter((x) => x.value == null);
-    if (!present.length) continue;
-    const wide = have.filter((x) => (x.series || []).length > 1);
-    const small = have.filter((x) => (x.series || []).length <= 1);
-    const tiles = [...wide.map((x) => tile(x, { wide: true })), ...small.map((x, i) => tile(x, { wide: small.length % 2 === 1 && i === small.length - 1 }))];
-    view.append(section(title, null,
-      tiles.length ? h("div", { class: "tiles" }, tiles) : null,
-      miss.length ? h("div", { class: "card missing-list" }, h("div", { class: "rows" }, miss.map((x) => h("button", { class: "row-item", type: "button", onclick: () => metricSheet(x) },
-        h("div", { class: "row-main" }, h("span", { class: "row-title" }, x.name), h("span", { class: "row-sub" }, missingHint(x))),
-        h("span", { class: "row-end" }, "暂无", icon("chevron", "sm")))))) : null));
+  view.append(metricGroup("常看指标", COMMON.map((k) => m[k]).filter(Boolean)));
+  if (brief) view.append(section("每周复盘", h("span", { class: "caption" }, `${md(brief.week.from)}–${md(brief.week.to)}`), weekCard(brief.week)));
+  const rest = OTHER.map(([title, keys]) => [title, keys.map((k) => m[k]).filter(Boolean)]).filter(([, xs]) => xs.length);
+  if (rest.length) {
+    const more = h("details", { class: "more-metrics" }, h("summary", {}, "更多指标", icon("chevron", "xs")),
+      ...rest.map(([title, xs]) => metricGroup(title, xs)));
+    view.append(more);
   }
   const [catalog, files] = await Promise.all([catalogSection(), filesSection()]);
-  view.append(catalog, files);
+  view.append(catalog, files, section("导入数据", null, addGrid()));
+}
+
+function metricGroup(title, present) {
+  const have = present.filter((x) => x.value != null);
+  const miss = present.filter((x) => x.value == null);
+  const wide = have.filter((x) => (x.series || []).length > 1);
+  const small = have.filter((x) => (x.series || []).length <= 1);
+  const tiles = [...wide.map((x) => tile(x, { wide: true })), ...small.map((x, i) => tile(x, { wide: small.length % 2 === 1 && i === small.length - 1 }))];
+  return section(title, null,
+    tiles.length ? h("div", { class: "tiles" }, tiles) : null,
+    miss.length ? h("div", { class: "card missing-list" }, h("div", { class: "rows" }, miss.map((x) => h("button", { class: "row-item", type: "button", onclick: () => metricSheet(x) },
+      h("div", { class: "row-main" }, h("span", { class: "row-title" }, x.name), h("span", { class: "row-sub" }, missingHint(x))),
+      h("span", { class: "row-end" }, "暂无", icon("chevron", "sm")))))) : null);
+}
+
+// 人体图：正面、背面两张，每个肌群按近期练没练着色（规则计算，见 protools/muscle_map.py）
+const BODY = {
+  front: [
+    ["肩", [["ellipse", { cx: 35, cy: 47, rx: 9, ry: 8 }], ["ellipse", { cx: 85, cy: 47, rx: 9, ry: 8 }]]],
+    ["胸", [["ellipse", { cx: 50, cy: 54, rx: 10, ry: 9 }], ["ellipse", { cx: 70, cy: 54, rx: 10, ry: 9 }]]],
+    ["肱二头肌", [["rect", { x: 23, y: 58, width: 10, height: 26, rx: 5 }], ["rect", { x: 87, y: 58, width: 10, height: 26, rx: 5 }]]],
+    ["核心", [["rect", { x: 46, y: 66, width: 28, height: 38, rx: 8 }]]],
+    ["股四头肌", [["rect", { x: 42, y: 120, width: 16, height: 50, rx: 7 }], ["rect", { x: 62, y: 120, width: 16, height: 50, rx: 7 }]]],
+  ],
+  back: [
+    ["肩", [["ellipse", { cx: 35, cy: 47, rx: 9, ry: 8 }], ["ellipse", { cx: 85, cy: 47, rx: 9, ry: 8 }]]],
+    ["背", [["path", { d: "M42 42 H78 L76 94 Q60 102 44 94 Z" }]]],
+    ["肱三头肌", [["rect", { x: 23, y: 58, width: 10, height: 26, rx: 5 }], ["rect", { x: 87, y: 58, width: 10, height: 26, rx: 5 }]]],
+    ["臀", [["ellipse", { cx: 51, cy: 112, rx: 10, ry: 10 }], ["ellipse", { cx: 69, cy: 112, rx: 10, ry: 10 }]]],
+    ["腘绳肌", [["rect", { x: 42, y: 124, width: 16, height: 44, rx: 7 }], ["rect", { x: 62, y: 124, width: 16, height: 44, rx: 7 }]]],
+    ["小腿", [["ellipse", { cx: 50, cy: 188, rx: 7, ry: 15 }], ["ellipse", { cx: 70, cy: 188, rx: 7, ry: 15 }]]],
+  ],
+};
+// 身体的轮廓（不着色的部分）
+const SILHOUETTE = [
+  ["circle", { cx: 60, cy: 20, r: 12 }], ["rect", { x: 55, y: 31, width: 10, height: 8, rx: 3 }],
+  ["rect", { x: 38, y: 38, width: 44, height: 68, rx: 14 }],
+  ["rect", { x: 21, y: 84, width: 9, height: 30, rx: 4 }], ["rect", { x: 90, y: 84, width: 9, height: 30, rx: 4 }],
+  ["rect", { x: 40, y: 102, width: 40, height: 20, rx: 8 }],
+  ["rect", { x: 43, y: 168, width: 14, height: 46, rx: 6 }], ["rect", { x: 63, y: 168, width: 14, height: 46, rx: 6 }],
+];
+
+function bodyFigure(side, groups, onPick) {
+  const svg = s("svg", { viewBox: "0 0 120 222", class: "body-svg", role: "img", "aria-label": side === "front" ? "正面" : "背面" });
+  for (const [tag, attrs] of SILHOUETTE) svg.append(s(tag, { ...attrs, class: "body-base" }));
+  const by = Object.fromEntries(groups.map((g) => [g.name, g]));
+  for (const [name, shapes] of BODY[side]) {
+    const g = by[name];
+    const part = s("g", { class: `muscle m-${g?.status || "none"}`, tabindex: "0", role: "button", "aria-label": `${name}：${g?.status_name || ""}` });
+    for (const [tag, attrs] of shapes) part.append(s(tag, attrs));
+    const t = s("title", {}); t.textContent = `${name}：${g?.status_name || ""}`; part.append(t);
+    part.addEventListener("click", () => onPick(g));
+    part.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(g); } });
+    svg.append(part);
+  }
+  return h("figure", { class: "body-fig" }, svg, h("figcaption", {}, side === "front" ? "正面" : "背面"));
+}
+
+function bodyMap(mm) {
+  const pick = (g) => g && openSheet(g.name,
+    h("div", { class: "sheet-big" }, chip(g.status_name, g.status === "recent" ? "good" : g.status === "none" ? "attention" : "")),
+    h("div", { class: "kv" }, h("span", {}, "最近一次"), h("span", {}, g.last ? md(g.last) : "最近 28 天没练")),
+    h("div", { class: "kv" }, h("span", {}, "近 7 天"), h("span", {}, `${g.sets_7d} 组`)),
+    g.history.length ? h("div", {}, h("h3", {}, "最近练过"), h("ul", { class: "tips" }, g.history.map((x) => h("li", {}, x)))) : null,
+    h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(g.status === "none" ? `我的${g.name}很久没练了，怎么补上？` : `我的${g.name}最近练得够吗？`) }, icon("coach", "sm"), "问问教练"));
+  const untrained = mm.untrained || [];
+  return h("div", { class: "card body-card" },
+    h("div", { class: "body-pair" }, bodyFigure("front", mm.front, pick), bodyFigure("back", mm.back, pick)),
+    h("div", { class: "legend" },
+      h("span", {}, h("i", { class: "m-recent" }), "两天内练过"), h("span", {}, h("i", { class: "m-week" }), "本周练过"), h("span", {}, h("i", { class: "m-none" }), "7 天以上没练")),
+    mm.sessions === 0 ? h("p", { class: "muted" }, "最近 28 天还没有训练记录：在首页打卡，或在对话里说“今天练了……”就会记下来。")
+      : untrained.length ? h("div", { class: "notice-line" }, icon("info", "xs"), `7 天以上没练：${untrained.join("、")}`) : h("p", { class: "muted" }, "这周主要肌群都练到了。"),
+    untrained.length && mm.sessions ? h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`我最近${untrained.join("、")}没怎么练，下次训练怎么补上？`) }, icon("coach", "sm"), "让教练帮我补上") : null,
+    h("p", { class: "caption" }, mm.note));
 }
 
 function missingHint(m) {
@@ -851,9 +1259,33 @@ async function me(view) {
   edit.addEventListener("click", () => { edit.hidden = true; profileForm(box, data, () => { edit.hidden = false; }); });
   profileView(box, data);
   view.append(section("档案", edit, box, h("p", { class: "caption", style: "padding:0 2px" }, "用来计算 BMI、基础代谢、每日热量和蛋白质目标。")));
+  view.append(citySection());
   view.append(section("说明", null, h("div", { class: "card" }, h("p", { class: "muted" }, "IronM 由主教练调度训练规划、动作教练、营养、恢复、数据分析几位专业角色一起回答。建议仅供参考，不能代替医生；身体不适请及时就医。"))));
   view.append(h("button", { class: "btn danger block", type: "button", onclick: signOut }, icon("logout", "sm"), "退出登录"));
 }
+// 城市：用来取实时天气（spec [2026-10-23] §13）
+function citySection() {
+  const box = h("div", { class: "card" });
+  const draw = (place) => box.replaceChildren(h("div", { class: "kv" }, h("span", {}, "城市"),
+    h("span", {}, place.label || place.city || "未设置", " ", h("button", { class: "link", type: "button", onclick: () => edit(place) }, icon("edit", "xs"), place.city ? "修改" : "设置"))));
+  const edit = (place) => {
+    const input = h("input", { type: "text", maxlength: "30", value: place.city || "", placeholder: "比如：杭州、北京朝阳" });
+    const msg = h("div", { class: "error" });
+    const form = h("form", {}, h("label", {}, "所在城市", input), msg,
+      h("div", { class: "form-actions" },
+        h("button", { class: "btn ghost", type: "button", onclick: () => draw(place) }, "取消"),
+        h("button", { class: "btn", type: "submit" }, "保存")));
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault(); msg.textContent = "正在查找…";
+      try { draw(await api("/iron/api/place", { method: "PUT", body: JSON.stringify({ city: input.value.trim() }) })); }
+      catch (err) { msg.textContent = err.message; }
+    });
+    box.replaceChildren(form); input.focus();
+  };
+  api("/iron/api/place").then(draw).catch(() => draw({}));
+  return section("天气", null, box, h("p", { class: "caption", style: "padding:0 2px" }, "按城市取实时天气和空气质量，首页和教练安排训练、饮食时会用上。"));
+}
+
 function profileView(box, data) {
   const p = data.profile, src = data.sources || {};
   const from = (k) => (src[k] === "账户" ? h("span", { class: "hint" }, "（来自账户）") : null);
@@ -898,8 +1330,35 @@ function profileForm(box, data, done) {
 }
 
 // ---- 教练（对话） ---------------------------------------------------------------------------
-const chat = { session: null, messages: [], busy: false, ctrl: null, loaded: false, pending: null, back: "home", els: null };
-function resetChat() { chat.ctrl?.abort(); Object.assign(chat, { session: null, messages: [], busy: false, ctrl: null, loaded: false, pending: null }); }
+const chat = { session: null, messages: [], busy: false, ctrl: null, loaded: false, pending: null, back: "home", els: null, files: [] };
+function resetChat() { chat.ctrl?.abort(); Object.assign(chat, { session: null, messages: [], busy: false, ctrl: null, loaded: false, pending: null, files: [] }); }
+// 对话附件（spec [2026-10-23] §11）：图片和报告，单个不超过 20MB；先传到存储，发问时带上，由这一轮登记和识别
+const CHAT_EXT = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf"];
+function attachPick(input) {
+  const picked = [...input.files]; input.value = "";
+  for (const f of picked) {
+    if (!CHAT_EXT.includes(extOf(f.name))) { chat.files.push({ name: f.name, error: "只能附图片或 PDF" }); continue; }
+    if (f.size > 20 * MB) { chat.files.push({ name: f.name, error: "超过 20MB" }); continue; }
+    const item = { name: f.name, progress: 0, data: null, error: "" };
+    chat.files.push(item);
+    const form = new FormData(); form.append("files", f);
+    send("/files/upload", form, (x) => { item.progress = x; drawFiles(); })
+      .then((body) => { const d = (body.data || [])[0]; if (d?.file_key) item.data = d; else item.error = body.msg || "上传失败"; })
+      .catch((err) => { item.error = err.message; })
+      .finally(() => { drawFiles(); syncComposer(); });
+  }
+  drawFiles(); syncComposer();
+}
+function drawFiles() {
+  const box = chat.els?.files;
+  if (!box) return;
+  box.hidden = !chat.files.length;
+  box.replaceChildren(...chat.files.map((f, i) => h("span", { class: `attach${f.error ? " bad" : ""}` },
+    icon(extOf(f.name) === ".pdf" ? "file" : "upload", "xs"),
+    h("span", { class: "attach-name" }, f.name),
+    f.error ? h("small", {}, f.error) : f.data ? null : h("small", {}, `${Math.round(f.progress * 100)}%`),
+    h("button", { type: "button", "aria-label": "去掉这个附件", onclick: () => { chat.files.splice(i, 1); drawFiles(); syncComposer(); } }, icon("x", "xs")))));
+}
 function askCoach(question) { chat.pending = question; closeSheet(); location.hash = "#chat"; }
 
 const STARTERS = [
@@ -913,15 +1372,19 @@ function chatPage(view) {
   const thread = h("div", { class: "thread" });
   const input = h("textarea", { rows: "1", placeholder: "问训练、动作、饮食或恢复…", "aria-label": "输入问题", enterkeyhint: "send" });
   const send = h("button", { class: "send", type: "submit", "aria-label": "发送" }, icon("send"));
-  const form = h("form", { class: "composer" }, input, send);
+  const fileInput = h("input", { type: "file", accept: CHAT_EXT.join(","), multiple: true, class: "sr-only", onchange: (e) => attachPick(e.currentTarget) });
+  const clip = h("label", { class: "clip", "aria-label": "附图片或报告", title: "附图片或报告" }, fileInput, icon("plus", "sm"));
+  const files = h("div", { class: "attach-row", hidden: true });
+  const form = h("form", { class: "composer" }, clip, input, send);
   const fresh = h("button", { class: "icon-btn", type: "button", "aria-label": "新对话", title: "新对话", onclick: () => { resetChat(); chat.loaded = true; drawThread(); input.focus(); } }, icon("plus", "sm"));
   view.append(h("div", { class: "chat" },
     h("div", { class: "chat-bar" },
       h("a", { class: "icon-btn", href: `#${chat.back}`, "aria-label": "返回" }, icon("back", "sm")),
       h("div", { class: "who" }, h("b", {}, "教练"), h("span", {}, "训练规划 · 动作教练 · 营养 · 恢复 · 数据分析")),
       fresh),
-    thread, form));
-  chat.els = { thread, input, send };
+    thread, files, form));
+  chat.els = { thread, input, send, files };
+  drawFiles();
   const grow = () => { input.style.height = "auto"; input.style.height = `${Math.min(input.scrollHeight, 140)}px`; syncComposer(); };
   input.addEventListener("input", grow);
   input.addEventListener("keydown", (e) => {
@@ -930,7 +1393,8 @@ function chatPage(view) {
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     if (chat.busy) { chat.ctrl?.abort(); return; }
-    const q = input.value; input.value = ""; grow(); ask(q);
+    if (chat.files.some((f) => !f.data && !f.error)) return;  // 附件还在上传：回车也不发
+    const q = input.value; input.value = ""; grow(); ask(q || (chat.files.some((f) => f.data) ? "帮我看看这个" : ""));
   });
   (async () => {
     if (!chat.loaded) { thread.replaceChildren(h("div", { class: "welcome" }, h("div", { class: "typing" }, h("i"), h("i"), h("i")))); await loadLatest(); }
@@ -949,7 +1413,9 @@ function syncComposer() {
   send.classList.toggle("stop", chat.busy);
   send.replaceChildren(icon(chat.busy ? "stop" : "send"));
   send.setAttribute("aria-label", chat.busy ? "停止" : "发送");
-  send.disabled = !chat.busy && !input.value.trim();
+  const uploading = chat.files.some((f) => !f.data && !f.error);
+  const ready = chat.files.some((f) => f.data);
+  send.disabled = !chat.busy && (uploading || (!input.value.trim() && !ready));
 }
 
 function drawThread() {
@@ -981,7 +1447,8 @@ function paragraphs(text) {
 }
 
 function msgView(msg) {
-  if (msg.role === "user") return h("div", { class: "msg-user" }, msg.text);
+  if (msg.role === "user") return h("div", { class: "msg-user" }, msg.text,
+    (msg.files || []).length ? h("div", { class: "msg-files" }, msg.files.map((n) => h("span", {}, icon("file", "xs"), n))) : null);
   const running = !msg.done;
   const experts = msg.steps.filter((x) => x.id !== "coach");
   let head;
@@ -1006,6 +1473,7 @@ function msgView(msg) {
     prog,
     msg.text ? h("div", { class: "answer" }, paragraphs(msg.text)) : running ? h("div", { class: "typing", "aria-label": "正在回答" }, h("i"), h("i"), h("i")) : null,
     msg.notices.map((t) => h("div", { class: "msg-note" }, t)),
+    msg.cards.map((c) => cardView(msg, c)),
     msg.error ? h("div", { class: "msg-note" }, msg.error) : null,
     msg.sources ? h("details", { class: "sources", open: msg.srcOpen, ontoggle: (e) => { msg.srcOpen = e.currentTarget.open; } },
       h("summary", {}, icon("chevron", "xs"), "依据与来源"), h("div", { class: "src" }, msg.sources)) : null,
@@ -1019,10 +1487,16 @@ function applyBlock(msg, b) {
     case "start": msg.id = b.id || msg.id; break;
     case "tool_call":
       if (b.id === "sources") break;
+      if (String(b.id || "").startsWith("card-")) { if (!msg.cards.some((c) => c.id === b.id)) msg.cards.push({ id: b.id, kind: b.args?.kind, draft: b.args?.draft, data: null, state: "", busy: false, error: "" }); break; }
       if (!msg.steps.some((x) => x.id === b.id)) msg.steps.push({ id: b.id, name: b.name || "", task: b.args?.["任务"] || "", result: "", done: false });
       break;
     case "tool_result": {
       if (b.tool_call_id === "sources") { msg.sources = String(b.content || ""); break; }
+      if (String(b.tool_call_id || "").startsWith("card-")) {
+        const card = msg.cards.find((c) => c.id === b.tool_call_id);
+        if (card) { try { card.data = JSON.parse(b.content || "{}"); } catch { card.data = null; } }
+        break;
+      }
       const step = msg.steps.find((x) => x.id === b.tool_call_id);
       if (step) { step.done = true; step.result = String(b.content || ""); }
       break;
@@ -1035,18 +1509,64 @@ function applyBlock(msg, b) {
   }
 }
 
-function coachMsg() { return { role: "coach", steps: [], text: "", notices: [], sources: "", id: "", error: "", done: false, open: false, srcOpen: false, rating: 0, el: null }; }
+function coachMsg() { return { role: "coach", steps: [], text: "", notices: [], sources: "", cards: [], id: "", error: "", done: false, open: false, srcOpen: false, rating: 0, el: null }; }
+
+// 预览卡片（计划、训练记录）：确认才写入，写入后能撤销；状态从服务端取（刷新后也对）
+const CARD_STATE = { pending: "", confirmed: "已保存", cancelled: "已取消", undone: "已撤销" };
+function cardView(msg, card) {
+  const d = card.data;
+  if (!d) return null;
+  if (!card.state && !card.busy) { card.busy = true; loadCard(msg, card); }
+  const state = card.state || "pending";
+  const expired = state === "pending" && Date.parse(d.expires) < Date.now();
+  const plan = card.kind === "plan";
+  const body = plan
+    ? [d.changes ? h("p", { class: "card-changes" }, d.changes) : null,
+      ...(d.sessions || []).map((x) => h("div", { class: `pv-session${x.changed && d.replaces ? " changed" : ""}` },
+        h("div", { class: "pv-head" }, h("b", {}, `${x.day} · ${x.name}`), h("span", { class: "muted" }, `约 ${x.minutes} 分钟`)),
+        h("ul", {}, x.items.map((it) => h("li", {}, it))))),
+      (d.removed || []).length ? h("p", { class: "muted" }, `去掉：${d.removed.join("、")}`) : null]
+    : [(d.items || []).length ? h("ul", {}, d.items.map((it) => h("li", {}, it))) : null,
+      d.rpe ? h("p", { class: "muted" }, `感受 ${d.rpe} 分`) : null, d.note ? h("p", { class: "muted" }, d.note) : null];
+  const act = (action) => cardAction(msg, card, action);
+  const buttons = state === "pending" && !expired
+    ? [h("button", { class: "btn small", type: "button", disabled: card.busy, onclick: () => act("confirm") }, plan ? "确认，保存计划" : "确认，记下"),
+      h("button", { class: "btn quiet small", type: "button", disabled: card.busy, onclick: () => act("cancel") }, "取消")]
+    : state === "confirmed"
+      ? [h("span", { class: "chip good" }, plan ? "计划已保存" : "已记下"), h("button", { class: "btn quiet small", type: "button", disabled: card.busy, onclick: () => act("undo") }, "撤销")]
+      : [h("span", { class: "chip" }, expired ? "已过期，让教练重新生成" : CARD_STATE[state] || state)];
+  return h("div", { class: `preview ${state}` },
+    h("div", { class: "pv-title" }, icon(plan ? "dumbbell" : "check", "sm"), h("b", {}, d.title), h("span", { class: "muted" }, d.headline || "")),
+    ...body,
+    h("div", { class: "pv-actions" }, buttons),
+    card.error ? h("p", { class: "msg-note" }, card.error) : null);
+}
+async function loadCard(msg, card) {
+  try { card.state = (await api(`/iron/api/drafts/${encodeURIComponent(card.draft)}`)).draft.state; }
+  catch { card.state = "pending"; }
+  card.busy = false; refresh(msg);
+}
+async function cardAction(msg, card, action) {
+  card.busy = true; card.error = ""; refresh(msg);
+  try {
+    card.state = (await api(`/iron/api/drafts/${encodeURIComponent(card.draft)}/${action}`, { method: "POST", body: "{}" })).draft.state;
+    cache.metrics = null;
+  } catch (err) { card.error = err.message; }
+  card.busy = false; refresh(msg);
+}
 
 async function ask(question) {
   const q = String(question || "").trim();
   if (!q || chat.busy) return;
   const msg = coachMsg();
-  chat.messages.push({ role: "user", text: q }, msg);
+  const attached = chat.files.filter((f) => f.data).map((f) => f.data);
+  chat.files = []; drawFiles();
+  chat.messages.push({ role: "user", text: q, files: attached.map((f) => f.file_name) }, msg);
   chat.busy = true;
   drawThread();
   try {
     if (!chat.session) chat.session = (await apiData("/api/session", { method: "POST", body: "{}" })).session_id;
-    await stream(q, msg);
+    await stream(q, msg, attached);
     if (!msg.text && !msg.error) msg.error = "这次没有收到回答，请稍后再试。";
   } catch (err) {
     if (err.name === "AbortError") msg.notices.push("已停止。");
@@ -1057,13 +1577,16 @@ async function ask(question) {
   }
 }
 
-async function stream(question, msg) {
+async function stream(question, msg, attached = []) {
   chat.ctrl = new AbortController();
   syncComposer();
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "content-type": "application/json", Authorization: `Bearer ${store.get()}` },
-    body: JSON.stringify({ question, session_id: chat.session, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "" }),
+    body: JSON.stringify({
+      question, session_id: chat.session, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+      file_list: attached.map((f) => ({ file_key: f.file_key, file_name: f.file_name, file_type: f.file_type, file_url: f.file_url, file_size: f.file_size })),
+    }),
     signal: chat.ctrl.signal,
   });
   if (res.status === 401 || res.status === 403) { signOut(); throw new Error("登录已失效，请重新登录"); }
@@ -1149,11 +1672,11 @@ function loginView(view) {
 
 // ---- 路由 ---------------------------------------------------------------------------------
 const PAGES = {
-  home: { title: "今天", kicker: todayLabel, render: home, skeleton: [250, 190, 120] },
-  moves: { title: "动作", render: moves, skeleton: [46, 40, 420] },
+  home: { title: "今天", kicker: todayLabel, render: home, skeleton: [200, 300, 320] },
+  moves: { title: "动作", render: moves, skeleton: [46, 40, 520] },
   chat: { title: "教练", full: true, render: chatPage },
-  food: { title: "饮食", render: food, skeleton: [210, 150, 120] },
-  data: { title: "数据", render: data, skeleton: [180, 120, 180] },
+  food: { title: "饮食", render: food, skeleton: [180, 220, 150] },
+  data: { title: "数据", render: data, skeleton: [320, 180, 180] },
   me: { title: "我的", render: me, skeleton: [80, 240] },
 };
 let renderSeq = 0;

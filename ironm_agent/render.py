@@ -6,12 +6,14 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from ironm_agent.checks import EXPERIENCE, plain
 from ironm_agent.compose import Composed
 from ironm_agent.experts import Consultation
 from ironm_agent.safety.replies import ReplySection
+from ironm_agent.training import Draft, Plan, WorkoutLog, weekday_name
 
 STATUS = {"spoke": "写出了意见", "silent": "没能给出意见", "failed": "没能作答（模型不可用）"}
 
@@ -41,7 +43,8 @@ def consultation_summary(c: Consultation) -> str:
     if ev.knowledge_queries:
         lines.append(f"查询依据库 {ev.knowledge_queries} 次，查到：{'、'.join(ev.entries) or '无'}")
     if c.opinion.speak:
-        lines.append(f"结论：{c.opinion.conclusion}")
+        first = c.opinion.conclusion or plain(c.opinion.answer).split("。")[0]
+        lines.append(f"结论：{first[:60]}")
     return "\n".join(lines)
 
 
@@ -81,3 +84,59 @@ def sources_text(composed: Composed) -> str:
     if EXPERIENCE in composed.text:
         parts.append("经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。")
     return "\n\n".join(parts)
+
+
+# ---- 预览卡片（spec [2026-10-23] §9）：一对"工具调用 / 结果"，id 以 card- 开头，网页显示成可以确认的卡片 ----
+
+
+def _card(draft: Draft, title: str, body: dict[str, Any]) -> list[dict[str, Any]]:
+    cid = f"card-{draft.id}"
+    content = {
+        "kind": draft.kind,
+        "draft": draft.id,
+        "title": title,
+        "expires": draft.json()["expires"],
+        **body,
+    }
+    return [
+        {"type": "tool_call", "id": cid, "name": title, "args": {"kind": draft.kind, "draft": draft.id}},
+        {"type": "tool_result", "tool_call_id": cid, "content": json.dumps(content, ensure_ascii=False), "status": "ok"},
+    ]  # fmt: skip
+
+
+def plan_card(draft: Draft, plan: Plan, current: Plan | None) -> list[dict[str, Any]]:
+    before = {s.day: s.name for s in current.sessions} if current else {}
+    sessions = [
+        {
+            "day": weekday_name(s.day),
+            "name": s.name,
+            "minutes": s.minutes,
+            "items": [x.line() for x in s.items],
+            "changed": before.get(s.day) != s.name,
+        }
+        for s in plan.sessions
+    ]
+    gone = [
+        f"{weekday_name(d)} {n}"
+        for d, n in before.items()
+        if d not in {s.day for s in plan.sessions}
+    ]
+    body = {
+        "headline": f"《{plan.title}》每周 {plan.days_per_week} 练"
+        + (f" · {plan.goal}" if plan.goal else ""),
+        "changes": str(draft.content.get("changes") or ""),
+        "sessions": sessions,
+        "removed": gone,
+        "replaces": bool(current),
+    }
+    return _card(draft, "计划预览", body)
+
+
+def log_card(draft: Draft, log: WorkoutLog) -> list[dict[str, Any]]:
+    body = {
+        "headline": log.line(),
+        "items": [x.line() for x in log.items],
+        "rpe": log.rpe,
+        "note": log.note,
+    }
+    return _card(draft, "训练记录预览", body)

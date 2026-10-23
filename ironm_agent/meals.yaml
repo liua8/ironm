@@ -1,0 +1,126 @@
+# 常见减脂餐（spec [2026-10-23] §13）：外卖、食堂、便利店、自己做。
+# 营养按常见分量估算（kcal ≈ 蛋白质×4 + 碳水×4 + 脂肪×9），实际随做法和分量变化；
+# 内容由 Claude 整理，待审定。
+version: "0.1"
+review: claude_draft
+
+presets:
+  - id: takeout-chicken-rice
+    name: 鸡胸肉糙米饭（少酱）
+    scene: 外卖
+    items: [鸡胸肉约 150 克, 糙米饭一小碗, 西兰花和生菜]
+    kcal: 470
+    protein_g: 40
+    carbs_g: 55
+    fat_g: 10
+    tip: 酱汁单独放，蘸着吃
+
+  - id: takeout-beef-noodle
+    name: 牛肉面（多牛肉、加青菜）
+    scene: 外卖
+    items: [面条一碗（吃八成）, 牛肉加量, 青菜一份]
+    kcal: 510
+    protein_g: 30
+    carbs_g: 70
+    fat_g: 12
+    tip: 汤少喝，汤里油和盐多
+
+  - id: takeout-wrap
+    name: 全麦鸡肉卷
+    scene: 外卖
+    items: [全麦饼一张, 鸡肉约 100 克, 生菜和番茄]
+    kcal: 400
+    protein_g: 28
+    carbs_g: 45
+    fat_g: 12
+    tip: 选不加沙拉酱的
+
+  - id: takeout-poke
+    name: 波奇饭（金枪鱼或虾）
+    scene: 外卖
+    items: [米饭一小份, 金枪鱼或虾约 100 克, 毛豆、黄瓜、海带]
+    kcal: 470
+    protein_g: 30
+    carbs_g: 60
+    fat_g: 12
+    tip: 酱汁另放，牛油果少放
+
+  - id: canteen-fish-two-veg
+    name: 一荤两素 + 半份米饭
+    scene: 食堂
+    items: [清蒸鱼或去皮鸡腿, 两份青菜, 米饭约 100 克]
+    kcal: 455
+    protein_g: 30
+    carbs_g: 50
+    fat_g: 15
+    tip: 选蒸、煮、炖的荤菜，少选油炸和红烧
+
+  - id: canteen-tomato-egg
+    name: 番茄炒蛋 + 清炒时蔬 + 杂粮饭
+    scene: 食堂
+    items: [番茄炒蛋一份, 清炒时蔬一份, 杂粮饭一小碗]
+    kcal: 455
+    protein_g: 18
+    carbs_g: 60
+    fat_g: 16
+    tip: 蛋白质偏少，可以加一个鸡蛋或一杯豆浆
+
+  - id: store-oden
+    name: 关东煮 + 无糖豆浆
+    scene: 便利店
+    items: [萝卜、魔芋、海带, 鸡蛋 1 个, 鱼丸几个, 无糖豆浆一杯]
+    kcal: 310
+    protein_g: 25
+    carbs_g: 30
+    fat_g: 10
+    tip: 汤汁偏咸，别多喝
+
+  - id: store-sandwich
+    name: 鸡胸肉三明治 + 圣女果
+    scene: 便利店
+    items: [鸡胸肉三明治一份, 圣女果一盒, 无糖茶]
+    kcal: 390
+    protein_g: 30
+    carbs_g: 45
+    fat_g: 10
+    tip: 看配料表，选夹鸡胸肉、少酱的
+
+  - id: store-sweet-potato
+    name: 烤红薯 + 卤蛋 + 牛奶
+    scene: 便利店
+    items: [烤红薯一个（中等）, 卤蛋 2 个, 纯牛奶 250 毫升]
+    kcal: 420
+    protein_g: 22
+    carbs_g: 50
+    fat_g: 15
+    tip: 乳糖不耐受换成无糖豆浆
+
+  - id: home-oats
+    name: 燕麦鸡蛋早餐
+    scene: 自己做
+    items: [燕麦片 40 克, 牛奶 250 毫升, 鸡蛋 2 个, 香蕉半根]
+    kcal: 455
+    protein_g: 28
+    carbs_g: 50
+    fat_g: 16
+    tip: 燕麦选没加糖的
+
+  - id: home-salmon
+    name: 香煎三文鱼 + 糙米 + 芦笋
+    scene: 自己做
+    items: [三文鱼约 120 克, 糙米饭约 100 克, 芦笋一把]
+    kcal: 420
+    protein_g: 30
+    carbs_g: 35
+    fat_g: 18
+    tip: 用不粘锅少油煎
+
+  - id: home-tofu
+    name: 少油麻婆豆腐 + 清炒菠菜 + 米饭（素）
+    scene: 自己做
+    items: [北豆腐半盒, 菠菜一把, 米饭约 100 克]
+    kcal: 385
+    protein_g: 20
+    carbs_g: 45
+    fat_g: 14
+    tip: 素食的蛋白质偏少，可以加一份毛豆或豆浆

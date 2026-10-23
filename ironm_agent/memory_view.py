@@ -77,6 +77,19 @@ class Recall:
                          + "\n".join(f"- {x.content}（{_day(x)}）" for x in advice))  # fmt: skip
         return "\n\n".join(parts)
 
+    def shared(self) -> str:
+        """共享档案以外、所有角色都读的记忆：喜好、回答风格、给过的建议（伤病、器械、时间等限制已经写进共享档案）。"""
+        facts = self._facts(EVERYONE)
+        advice = self._advice()
+        parts = []
+        if facts:
+            parts.append("这个人的喜好与回答风格（照顾到；和这次问题无关的不要提）：\n"
+                         + "\n".join(_line(x) for x in facts))  # fmt: skip
+        if advice:
+            parts.append("之前给他的建议（保持一致；需要改变时说明原因，不必重复）：\n"
+                         + "\n".join(f"- {x.content}（{_day(x)}）" for x in advice))  # fmt: skip
+        return "\n\n".join(parts)
+
     def categories_for(self, role: Role) -> list[Category]:
         """这位专业 Agent 拿到了哪几类记忆（写日志用，只有类别，不含内容）。"""
         shown = (*ROLE_CATEGORIES.get(role, ()), *EVERYONE, "advice")

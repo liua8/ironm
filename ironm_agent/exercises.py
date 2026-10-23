@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import Field
 
 from ironm_agent.common import ContractModel
+from ironm_agent.kb import Entry, KnowledgeBase
 from ironm_agent.yamlfile import load_yaml
 
 EXERCISES_PATH = Path(__file__).with_name("exercises.yaml")
@@ -48,3 +49,76 @@ def library(path: Path = EXERCISES_PATH) -> Library:
     if len(ids) != len(set(ids)):
         raise ValueError("动作编号重复")
     return lib
+
+
+# 动作库作为依据（spec [2026-10-23] §8）：每个动作一条，编号 K901 起（按 exercises.yaml 的顺序，只往后加），
+# 和依据库的资料一样引用、核对，列进"依据与来源"
+LIBRARY_BASE = 900
+
+
+@cache
+def library_entries() -> tuple[Entry, ...]:
+    out = []
+    for i, x in enumerate(library().exercises, start=1):
+        points = [
+            *({"text": f"做法：{s}", "where": "做法"} for s in x.steps),
+            {"text": "要点：" + "；".join(x.cues), "where": "要点"},
+            {"text": "常见错误：" + "；".join(x.mistakes), "where": "常见错误"},
+            {"text": f"更容易的替代：{x.easier}；更难的：{x.harder}", "where": "替代"},
+            {"text": f"什么情况先别做：{x.avoid}", "where": "什么情况先别做"},
+        ]
+        out.append(
+            Entry.model_validate(
+                {
+                    "id": f"K{LIBRARY_BASE + i}",
+                    "domains": ["library"],
+                    "title": x.name,
+                    "source": "iron-m 动作库",
+                    "publisher": "iron-m",
+                    "year": 2026,
+                    "level": "library",
+                    "population": "一般成年人",
+                    "summary": f"{x.part}，主要练{x.muscles}；器械：{'、'.join(x.equipment)}；{x.level}",
+                    "points": points,
+                    "keywords": [x.name, x.part, *x.equipment],
+                    "review": "claude_draft",
+                },
+                strict=False,
+            )
+        )
+    return tuple(out)
+
+
+@cache
+def library_kb() -> KnowledgeBase:
+    return KnowledgeBase(library_entries())
+
+
+_PREFIXES = (
+    "杠铃",
+    "哑铃",
+    "自重",
+    "高脚杯",
+    "箱式",
+    "单臂",
+    "弹力带",
+    "保加利亚",
+    "罗马尼亚",
+    "后撤",
+    "凳上",
+)
+
+
+def named_in(text: str, k: int = 2) -> list[Entry]:
+    """问题里点到名字的动作（"深蹲"能对上各种深蹲），按与问题的相关程度取前几个。"""
+    hits = []
+    for e in library_entries():
+        base = e.title.split("（")[0]
+        for p in _PREFIXES:
+            base = base.removeprefix(p)
+        if e.title in text or (len(base) >= 2 and base in text):
+            hits.append(e)
+    if len(hits) <= k:
+        return hits
+    ranked = KnowledgeBase(tuple(hits)).search(text, {"library"}, k=k)
+    return ranked or hits[:k]

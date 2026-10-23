@@ -54,7 +54,7 @@ def test_number_must_come_from_cited_entry_not_just_seen_one() -> None:
     # "20" 在同时查到的 K09（蛋白质每餐 20–40 克）里，但意见只引用了 K10（肌酸）
     bad = jsonr({"speak": True, "conclusion": "肌酸每天吃 20 克〔K10〕"})
     good = jsonr({"speak": True, "conclusion": "肌酸每天 3–5 克〔K10〕"})
-    c, tb = run(Role.NUTRITION, scripted(call(KNOWLEDGE, query="肌酸"), bad, good))
+    c, tb = run(Role.NUTRITION, scripted(call(KNOWLEDGE, query="肌酸 蛋白质"), bad, good))
     assert "K09" in tb.evidence.entries and c.status == "spoke" and "3–5" in c.opinion.conclusion
 
 

@@ -24,23 +24,28 @@ type Level = Literal[
     "position_stand",
     "systematic_review",
     "consensus",
+    "rct",
     "review",
     "textbook",
     "health_info",
+    "library",
 ]
 
-# 证据等级从高到低：指南与立场声明 > 系统综述 > 专家共识、综述、教材、权威机构的健康科普
+# 证据等级从高到低：指南与立场声明 > 系统综述 > 专家共识、随机对照研究、综述、教材、权威机构的健康科普；
+# library 是 iron-m 自己的动作库（做法、要点、替代、什么情况先别做），按资料一样引用和核对
 LEVEL_NAMES: dict[str, str] = {
     "guideline": "指南",
     "position_stand": "立场声明",
     "systematic_review": "系统综述与荟萃分析",
     "consensus": "专家共识",
+    "rct": "随机对照研究",
     "review": "综述",
     "textbook": "教材",
     "health_info": "权威机构健康科普",
+    "library": "动作库（待审定）",
 }
 
-DOMAINS = frozenset({"training", "exercise", "nutrition", "recovery", "safety", "data"})
+DOMAINS = frozenset({"training", "exercise", "nutrition", "recovery", "safety", "data", "library"})
 
 
 class Point(ContractModel):

@@ -511,3 +511,356 @@ entries:
         where: Spotting
     keywords: [卧推, 推胸, 肩膀疼, 动作]
     review: claude_draft
+
+  # ---- 2026-10-23 扩充（spec [2026-10-23] §8）：补齐规程用到的资料 ----
+  - id: K28
+    domains: [training, exercise]
+    title: 用"还剩几次"来自我调节强度（RIR 与 RPE）
+    source: Application of the Repetitions in Reserve-Based Rating of Perceived Exertion Scale for Resistance Training（Strength Cond J 38(4):42–49）
+    publisher: Helms、Cronin、Storey、Zourdos
+    year: 2016
+    level: review
+    population: 做力量训练的成年人
+    summary: 每组做完后估计"还能再做几次"（RIR），对应 1–10 的用力程度（RPE），用来在状态好坏不同的日子里调整重量，而不是死守固定重量。
+    points:
+      - text: RPE 10 表示一次都做不了了（力竭），RPE 9 表示还能再做 1 次，RPE 8 表示还能再做 2 次。
+        where: The RIR-based RPE scale（Table）
+      - text: 按 RIR 调整负荷，可以照顾到每天恢复状态的差异。
+        where: Practical applications
+    keywords: [还剩几次, 余力, rir, rpe, 力竭, 用力程度, 自我调节, 状态不好]
+    review: claude_draft
+
+  - id: K29
+    domains: [training]
+    title: 每组要不要练到力竭
+    source: Influence of Resistance Training Proximity-to-Failure on Skeletal Muscle Hypertrophy — A Systematic Review with Meta-analysis（Sports Med 53(3):649–665）
+    publisher: Refalo、Helms、Trexler、Hamilton、Fyfe
+    year: 2023
+    level: systematic_review
+    population: 做力量训练的成年人
+    summary: 练到力竭和停在接近力竭（留一两次余力），增肌效果相近；不必每组都练到力竭。
+    points:
+      - text: 练到力竭与不练到力竭相比，增肌效果没有明显差别。
+        where: Results / Conclusions
+      - text: 训练离力竭越远（剩的次数越多），增肌效果可能越差，所以也不要留太多余力。
+        where: Discussion
+    keywords: [力竭, 练到力竭, 余力, 留几次]
+    review: claude_draft
+
+  - id: K30
+    domains: [training]
+    title: 增肌与力量各用什么次数范围
+    source: Loading Recommendations for Muscle Strength, Hypertrophy, and Local Endurance — A Re-Examination of the Repetition Continuum（Sports 9(2):32）
+    publisher: Schoenfeld、Grgic、Van Every、Plotkin
+    year: 2021
+    level: review
+    population: 做力量训练的成年人
+    summary: 只要接近力竭，从较重到较轻的很宽的负荷范围都能增肌；想把力量练到最大，需要多用大重量、低次数。
+    points:
+      - text: 增肌可以在很宽的负荷范围内实现，较轻负荷（每组二三十次）做到接近力竭也有效。
+        where: Hypertrophy
+      - text: 最大力量的提高需要以较大负荷（较少次数）为主。
+        where: Strength
+    keywords: [几次, 次数, 增肌, 力量, 大重量, 小重量, 每组]
+    review: claude_draft
+
+  - id: K31
+    domains: [training, recovery]
+    title: 减量周怎么安排
+    source: Integrating Deloading into Strength and Physique Sports Training Programmes — An International Delphi Consensus Approach（Sports Med Open 9:87）
+    publisher: Bell、Strafford、Coleman 等
+    year: 2023
+    level: consensus
+    population: 做力量与健美训练的人
+    summary: 减量是一段明显降低训练压力的时间，用来恢复、为下一阶段做准备；常用做法是减少组数或降低用力程度。
+    points:
+      - text: 减量一般每 4–8 周安排一次，每次大约 1 周。
+        where: Results — consensus statements
+      - text: 减量主要通过减少训练量（组数）或降低用力程度来实现。
+        where: Results — consensus statements
+    keywords: [减量, 减量周, 降量, 恢复周, 平台期, 累积疲劳]
+    review: claude_draft
+
+  - id: K32
+    domains: [training, exercise]
+    title: 热身对运动表现的作用
+    source: Effects of Warming-up on Physical Performance — A Systematic Review With Meta-analysis（J Strength Cond Res 24(1):140–148）
+    publisher: Fradkin、Zazryn、Smoliga
+    year: 2010
+    level: systematic_review
+    population: 运动人群
+    summary: 大多数研究里，热身之后的运动表现更好，很少有变差的。
+    points:
+      - text: 纳入的研究中，大多数结果显示热身改善了随后的运动表现。
+        where: Results
+    keywords: [热身, 要不要热身, 怎么热身, 激活]
+    review: claude_draft
+
+  - id: K33
+    domains: [recovery, exercise, safety]
+    title: 带着疼练的界限（疼痛监测法）
+    source: Continued Sports Activity, Using a Pain-Monitoring Model, During Rehabilitation in Patients With Achilles Tendinopathy（Am J Sports Med 35(6):897–906）
+    publisher: Silbernagel、Thomeé、Eriksson、Karlsson
+    year: 2007
+    level: rct
+    population: 跟腱病患者（康复训练常借用这个方法判断能不能带着轻微疼痛继续练）
+    summary: 用 0–10 分记录疼痛：运动中疼痛不超过 5 分、第二天早上恢复到平时、一周比一周不加重，就可以继续活动。
+    points:
+      - text: 运动中和运动后疼痛允许到 0–10 分里的 5 分。
+        where: Methods — pain-monitoring model
+      - text: 疼痛应在第二天早上前消退，晨起疼痛和僵硬不能一周比一周加重。
+        where: Methods — pain-monitoring model
+      - text: 按这个方法继续跑跳活动的一组，恢复结果不比停止活动的一组差。
+        where: Results
+    keywords: [疼, 痛, 带着疼, 能不能练, 疼几分, 旧伤, 肌腱]
+    review: claude_draft
+
+  - id: K34
+    domains: [recovery]
+    title: 怎样睡得更好（睡眠习惯）
+    source: Tips for Better Sleep
+    publisher: 美国疾病控制与预防中心（CDC）
+    year: 2022
+    level: health_info
+    population: 成年人
+    summary: 固定作息、改善卧室环境、睡前少用电子设备、避免睡前大餐和咖啡因酒精、白天多活动，都有助于睡眠。
+    points:
+      - text: 每天同一时间上床和起床，周末也一样。
+        where: Tips for Better Sleep
+      - text: 卧室保持安静、黑暗、温度舒适；睡前把电子设备拿出卧室。
+        where: Tips for Better Sleep
+      - text: 睡前避免大餐、咖啡因和酒精；白天保持身体活动。
+        where: Tips for Better Sleep
+    keywords: [睡眠, 睡不好, 失眠, 睡不着, 熬夜, 作息, 早睡]
+    url: https://www.cdc.gov/sleep/about/index.html
+    review: claude_draft
+
+  - id: K35
+    domains: [recovery, training]
+    title: 一夜没睡对肌肉合成的影响
+    source: The effect of acute sleep deprivation on skeletal muscle protein synthesis and the hormonal environment（Physiol Rep 9(1):e14660）
+    publisher: Lamon 等
+    year: 2021
+    level: rct
+    population: 健康青年
+    summary: 一整夜不睡后，第二天肌肉蛋白质合成下降，皮质醇升高、睾酮下降，不利于增肌和恢复。
+    points:
+      - text: 一夜完全不睡后，肌肉蛋白质合成下降约 18%。
+        where: Results
+      - text: 同时皮质醇升高约 21%，睾酮下降约 24%。
+        where: Results
+    keywords: [睡不好, 没睡, 熬夜, 睡眠, 增肌, 缺觉]
+    review: claude_draft
+
+  - id: K36
+    domains: [nutrition]
+    title: 什么时候吃（营养时机）
+    source: International Society of Sports Nutrition Position Stand — Nutrient Timing（J Int Soc Sports Nutr 14:33）
+    publisher: 国际运动营养学会（ISSN），Kerksick 等
+    year: 2017
+    level: position_stand
+    population: 运动人群
+    summary: 全天的总摄入最重要；在此基础上，把蛋白质分到每 3–4 小时一次，训练后两小时内吃一份优质蛋白，有助于肌肉合成。
+    points:
+      - text: 每 3–4 小时摄入一次蛋白质，每次 20–40 克（约 0.25–0.40 克/公斤体重）。
+        where: Position statement — protein
+      - text: 训练后两小时内摄入优质蛋白质，能明显刺激肌肉蛋白质合成。
+        where: Position statement — protein
+      - text: 睡前 30–40 分钟摄入 30–40 克酪蛋白，可以增加夜间的肌肉蛋白质合成。
+        where: Position statement — protein
+    keywords: [练前, 练后, 训练后, 什么时候吃, 吃饭时间, 睡前, 蛋白质分配, 多久吃]
+    review: claude_draft
+
+  - id: K37
+    domains: [nutrition, training]
+    title: 减脂期怎么吃才少掉肌肉
+    source: Evidence-based recommendations for natural bodybuilding contest preparation — nutrition and supplementation（J Int Soc Sports Nutr 11:20）
+    publisher: Helms、Aragon、Fitschen
+    year: 2014
+    level: review
+    population: 做力量训练、正在减脂的人
+    summary: 减得慢一点、蛋白质吃得高一点、坚持力量训练，有利于减脂时保住肌肉。
+    points:
+      - text: 每周减重约为体重的 0.5–1%，有利于保住肌肉。
+        where: Caloric intake
+      - text: 减脂期蛋白质每天 2.3–3.1 克/公斤去脂体重。
+        where: Protein
+    keywords: [减脂, 掉肌肉, 保肌, 减肥, 热量缺口, 一周瘦多少]
+    review: claude_draft
+
+  - id: K38
+    domains: [nutrition, training]
+    title: 运动人群每天吃多少碳水
+    source: Nutrition and Athletic Performance（Med Sci Sports Exerc 48(3):543–568）
+    publisher: 美国运动医学会、美国营养与饮食学会、加拿大营养师协会联合立场声明（Thomas、Erdman、Burke）
+    year: 2016
+    level: position_stand
+    population: 运动人群
+    summary: 碳水按训练量来定：练得越多越久，需要越多；长时间运动中要补充碳水。
+    points:
+      - text: 中等量训练（每天约 1 小时）每天碳水 5–7 克/公斤体重。
+        where: Table — carbohydrate
+      - text: 耐力训练（每天 1–3 小时中高强度）每天碳水 6–10 克/公斤体重。
+        where: Table — carbohydrate
+      - text: 持续 1–2.5 小时的运动中，每小时补充 30–60 克碳水。
+        where: During exercise
+    keywords: [碳水, 主食, 跑步吃什么, 马拉松, 半马, 耐力, 补给]
+    review: claude_draft
+
+  - id: K39
+    domains: [nutrition, safety]
+    title: 补剂：哪些有证据，有什么风险
+    source: IOC consensus statement — dietary supplements and the high-performance athlete（Br J Sports Med 52(7):439–455）
+    publisher: 国际奥委会（IOC），Maughan 等
+    year: 2018
+    level: consensus
+    population: 运动员与运动人群
+    summary: 只有少数补剂有较好的证据能提高运动表现；补剂可能被违禁或有害物质污染，要选第三方检测过的产品。
+    points:
+      - text: 有较好证据提高运动表现的补剂只有少数：咖啡因、肌酸、硝酸盐、β-丙氨酸、碳酸氢钠。
+        where: Performance supplements
+      - text: 补剂存在被污染的风险，选择经过第三方检测认证的产品。
+        where: Risks of supplement use
+    keywords: [补剂, 营养品, 增肌粉, 氮泵, 能不能吃, 有用吗, 违禁]
+    review: claude_draft
+
+  - id: K40
+    domains: [training]
+    title: 有氧和力量一起练（并发训练）
+    source: Concurrent Training — A Meta-Analysis Examining Interference of Aerobic and Resistance Exercises（J Strength Cond Res 26(8):2293–2307）
+    publisher: Wilson 等
+    year: 2012
+    level: systematic_review
+    population: 成年人
+    summary: 有氧和力量一起练，会削弱一部分增肌和力量效果；跑步的影响比骑车大，有氧越频繁、越长，影响越大。
+    points:
+      - text: 与只练力量相比，同时练有氧会减少增肌、力量和爆发力的提高。
+        where: Results
+      - text: 干扰的大小与有氧方式（跑步比骑车明显）、频率和时长有关。
+        where: Results / Conclusions
+    keywords: [有氧, 跑步, 力量, 一起练, 掉肌肉, 先有氧, 搭配, 半马]
+    review: claude_draft
+
+  - id: K41
+    domains: [safety, training]
+    title: 高血压的人怎么运动
+    source: 中国高血压防治指南（2018 年修订版）
+    publisher: 中国高血压防治指南修订委员会
+    year: 2018
+    level: guideline
+    population: 高血压患者
+    summary: 高血压的人适合规律的中等强度运动；安静时血压控制不好或超过 180/110 mmHg 时，暂时不做中等及以上强度的运动。
+    points:
+      - text: 除日常活动外，每周 4–7 天、每天累计 30–60 分钟中等强度运动。
+        where: 生活方式干预 — 增加运动
+      - text: 安静时血压未能很好控制或超过 180/110 mmHg 的患者，暂时禁忌中度及以上的运动。
+        where: 生活方式干预 — 增加运动
+    keywords: [高血压, 血压高, 血压, 降压]
+    review: claude_draft
+
+  - id: K42
+    domains: [safety, training, nutrition]
+    title: 糖尿病的人怎么运动
+    source: Physical Activity/Exercise and Diabetes — A Position Statement of the American Diabetes Association（Diabetes Care 39(11):2065–2079）
+    publisher: 美国糖尿病协会（ADA），Colberg 等
+    year: 2016
+    level: position_stand
+    population: 糖尿病患者
+    summary: 糖尿病的人每周要有足够的有氧和力量训练，不要连续多天不动；用胰岛素或促泌剂的人运动时要防低血糖。
+    points:
+      - text: 成年人每周 150 分钟以上中等到高强度有氧，分布在至少 3 天，不连续 2 天以上不运动。
+        where: Recommendations
+      - text: 每周 2–3 次（不在连续的两天）抗阻训练。
+        where: Recommendations
+      - text: 用胰岛素或胰岛素促泌剂的人，运动时和运动后要注意低血糖。
+        where: Recommendations
+    keywords: [糖尿病, 血糖, 低血糖, 胰岛素]
+    review: claude_draft
+
+  - id: K43
+    domains: [nutrition]
+    title: β-丙氨酸怎么吃
+    source: International society of sports nutrition position stand — Beta-Alanine（J Int Soc Sports Nutr 12:30）
+    publisher: 国际运动营养学会（ISSN），Trexler 等
+    year: 2015
+    level: position_stand
+    population: 运动人群
+    summary: β-丙氨酸需要连续吃几周才起作用，主要帮助 1–4 分钟的高强度运动；常见的副作用是皮肤刺痛感。
+    points:
+      - text: 每天 4–6 克，分次服用，至少连续 2–4 周。
+        where: Position statement
+      - text: 主要提高持续 1–4 分钟的高强度运动表现。
+        where: Position statement
+      - text: 常见副作用是皮肤刺痛感，分小剂量服用可以减轻。
+        where: Position statement
+    keywords: [β-丙氨酸, 丙氨酸, 刺痛, 氮泵, 补剂]
+    review: claude_draft
+
+  - id: K44
+    domains: [recovery, safety, exercise]
+    title: 腰痛：运动是主要的处理办法
+    source: Low back pain and sciatica in over 16s — assessment and management（NICE guideline NG59）
+    publisher: 英国国家卫生与临床优化研究所（NICE）
+    year: 2020
+    level: guideline
+    population: 16 岁以上的腰痛与坐骨神经痛患者
+    summary: 腰痛时建议做运动计划、尽量保持正常活动；在非专科的情况下不常规拍片。
+    points:
+      - text: 可以考虑参加运动计划（力量、有氧、身心类训练或它们的组合）来管理腰痛。
+        where: Non-invasive treatments — exercise
+      - text: 鼓励继续正常的活动。
+        where: Information and self-management
+      - text: 非专科的场合不常规做影像检查。
+        where: Assessment — imaging
+    keywords: [腰痛, 腰疼, 椎间盘, 坐骨神经, 下背痛, 腰酸]
+    url: https://www.nice.org.uk/guidance/ng59
+    review: claude_draft
+
+  - id: K45
+    domains: [recovery, exercise, training]
+    title: 膝前痛（髌股疼痛）：练髋也练膝
+    source: 2018 Consensus statement on exercise therapy and physical interventions to treat patellofemoral pain（Br J Sports Med 52(18):1170–1178）
+    publisher: Collins 等（国际髌股疼痛研究会议）
+    year: 2018
+    level: consensus
+    population: 髌股疼痛（膝盖前面疼）的人
+    summary: 运动训练是膝前痛的首选；髋部和膝部的训练结合起来，比只练膝更好。
+    points:
+      - text: 推荐用运动训练减轻膝前痛，短期、中期和长期都有效。
+        where: Recommendations — exercise therapy
+      - text: 髋部和膝部训练结合，优于只做膝部训练。
+        where: Recommendations — exercise therapy
+    keywords: [膝盖疼, 膝前痛, 髌骨, 膝盖, 蹲起来疼, 上下楼疼]
+    review: claude_draft
+
+  - id: K46
+    domains: [recovery, training, safety]
+    title: 伤后回到训练是一步一步来的
+    source: 2016 Consensus statement on return to sport from the First World Congress in Sports Physical Therapy, Bern（Br J Sports Med 50(14):853–864）
+    publisher: Ardern 等
+    year: 2016
+    level: consensus
+    population: 运动受伤后恢复训练的人
+    summary: 伤后回到运动是一个连续的过程：先恢复参与、再回到运动、最后回到原来的水平；什么时候回去要和医疗人员一起决定。
+    points:
+      - text: 重返运动分三步：重返参与、重返运动、重返原有表现。
+        where: Return to sport as a continuum
+      - text: 能否重返运动由运动者与医疗团队共同决定。
+        where: Shared decision-making
+    keywords: [伤后, 受伤后, 恢复训练, 重新开始练, 回到训练, 康复后]
+    review: claude_draft
+
+  - id: K47
+    domains: [recovery, exercise]
+    title: 拉伸能不能减轻练后酸痛
+    source: Stretching to prevent or reduce muscle soreness after exercise（Cochrane Database Syst Rev 2011(7):CD004577）
+    publisher: Herbert、de Noronha、Kamper（Cochrane 综述）
+    year: 2011
+    level: systematic_review
+    population: 健康成年人
+    summary: 运动前后拉伸，对第二天的肌肉酸痛几乎没有减轻作用，不值得为了防酸痛专门拉伸。
+    points:
+      - text: 运动前后拉伸，在 100 分的酸痛评分上平均只减轻不到 2 分。
+        where: Main results
+    keywords: [拉伸, 酸痛, 练后酸, 放松, 静态拉伸]
+    review: claude_draft

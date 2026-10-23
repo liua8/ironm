@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from ironm_agent.kb import Entry, KnowledgeBase
 from ironm_agent.llm import ToolCall
+from ironm_agent.protools import registry as pro
 from ironm_agent.roles import RoleSpec
 
 _log = logging.getLogger("ironm_agent.tools")
@@ -20,6 +21,29 @@ _log = logging.getLogger("ironm_agent.tools")
 HEALTH = "query_health_indicators"
 KNOWLEDGE = "search_knowledge"
 METRICS = "compute_metrics"
+EXERCISES = "search_exercises"
+
+# 能查动作库的角色（做法、要点、常见错误、替代、什么情况先别做）
+LIBRARY_ROLES = frozenset({"exercise", "planner", "general"})
+
+EXERCISES_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": EXERCISES,
+        "description": "在动作库里查动作：做法、要点、常见错误、更容易和更难的替代、什么情况先别做。返回带编号（如 K905）的条目，引用时写这个编号。",
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "动作名或要找的动作类型，如“深蹲”“练背 弹力带”",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
 
 # 能调用指标计算的角色（BMI、基础代谢、热量与蛋白质目标、体重趋势、与本人基线的比较）
 METRIC_ROLES = frozenset({"data", "nutrition", "recovery", "planner", "general"})
@@ -84,11 +108,19 @@ class Evidence:
     health_queries: int = 0
     knowledge_queries: int = 0
     metric_queries: int = 0
+    pro_queries: int = 0  # 专业工具（只算不查，不占查询次数）
     health_failed: bool = False
 
     @property
     def queries(self) -> int:
         return self.health_queries + self.knowledge_queries + self.metric_queries
+
+    def absorb(self, other: Evidence) -> None:
+        """接力时带上前一层的依据，后一层沿用同样的出处不会被当成编造。"""
+        self.support.update(other.support)
+        self.entries.update(other.entries)
+        self.calcs.update(other.calcs)
+        self.rows.update(other.rows)
 
 
 def row_numbers(row: Mapping[str, Any]) -> list[float]:
@@ -153,31 +185,91 @@ class Toolbox:
         session_id: str,
         render: Callable[[Any], str] = _default_render,
         metrics: MetricsSource | None = None,
+        calcs: Mapping[str, str] | None = None,
+        context: pro.ToolContext | None = None,
     ) -> None:
         self.spec = spec
+        self.context = context  # 专业工具要用的这个人的情况；没有时不提供专业工具
         self.kb = kb
         self.health = health if spec.health_data else None
-        self.metrics = metrics if spec.role.value in METRIC_ROLES else None
+        # 共享档案里已经带了全部计算结果（calcs）时，不再提供 compute_metrics 工具，省一轮查询
+        self.metrics = metrics if spec.role.value in METRIC_ROLES and calcs is None else None
         self.user_info = {"user_id": user_id, "session_id": session_id}
         self.render = render
         self.evidence = Evidence()
+        if calcs:
+            self.evidence.calcs.update(calcs)
+
+    @property
+    def library(self) -> bool:
+        return self.spec.role.value in LIBRARY_ROLES
 
     def schemas(self) -> list[dict[str, Any]]:
         out = [KNOWLEDGE_SCHEMA] if self.spec.kb_domains else []
+        if self.library:
+            out.append(EXERCISES_SCHEMA)
         if self.health is not None:
             out.append(_health_schema())
         if self.metrics is not None:
             out.append(METRICS_SCHEMA)
+        if self.context is not None:
+            out += [t.schema() for t in pro.tools_for(self.spec.role.value)]
         return out
+
+    def _exercises(self, query: str) -> str:
+        from ironm_agent.exercises import library_kb
+
+        self.evidence.knowledge_queries += 1
+        found = library_kb().search(query, {"library"}, k=3)
+        for e in found:
+            self.evidence.entries[e.id] = e
+        if not found:
+            return "动作库里没有找到这个动作。"
+        return "\n\n".join(e.as_evidence() for e in found)
+
+    def adopt(self, entries: Iterable[Entry]) -> None:
+        """把资料记为这一轮可以引用的依据（装载的规程用到的资料）。"""
+        for e in entries:
+            self.evidence.entries[e.id] = e
+
+    def prefetch(self, query: str, k: int = 3) -> str:
+        """作答前先按问题从本领域依据库取出最相关的几条（spec [2026-10-23] §7），不算一次查询；
+        能查动作库的角色，问题里点到名字的动作也一起取出来。"""
+        found = self.kb.search(query, self.spec.kb_domains, k=k) if self.spec.kb_domains else []
+        if self.library:
+            from ironm_agent.exercises import named_in
+
+            found += named_in(query)
+        for e in found:
+            self.evidence.entries[e.id] = e
+        return "\n\n".join(e.as_evidence() for e in found)
 
     async def run(self, call: ToolCall) -> str:
         if call.name == KNOWLEDGE and self.spec.kb_domains:
             return self._knowledge(str(call.arguments.get("query", "")))
+        if call.name == EXERCISES and self.library:
+            return self._exercises(str(call.arguments.get("query", "")))
         if call.name == HEALTH and self.health is not None:
             return await self._health(call.arguments)
         if call.name == METRICS and self.metrics is not None:
             return await self._metrics()
+        if self.context is not None and pro.allowed(self.spec.role.value, call.name):
+            return await self._pro(call)
         return json.dumps({"error": f"{self.spec.name}不能使用这个工具"}, ensure_ascii=False)
+
+    async def _pro(self, call: ToolCall) -> str:
+        from ironm_agent.exercises import library_entries
+
+        assert self.context is not None
+        self.evidence.pro_queries += 1
+        result = await pro.run(call.name, self.context, call.arguments)
+        return pro.render(
+            result,
+            role=self.spec.role.value,
+            calcs=self.evidence.calcs,
+            entries=self.evidence.entries,
+            library={e.id: e for e in library_entries()},
+        )
 
     async def _metrics(self) -> str:
         self.evidence.metric_queries += 1

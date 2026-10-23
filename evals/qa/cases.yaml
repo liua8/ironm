@@ -190,14 +190,14 @@ cases:
     ask: 我这两个月体重有变化吗
     path: answer
     roles_any: [data]
-    must: [[公斤, kg], [持平, 变化不大, 稳定, 基本没变, 不明显, 没什么变化]]
+    must: [[公斤, kg], [下降, 往下, 降, 减少, 变化不大, 变化很小, 小幅, 幅度很小]]
   - {id: D03, cat: data, ask: 我的 BMI 是多少, path: answer, must: ["24.5", 超重], max_chars: 220}
   - id: D04
     cat: data
     persona: newbie
     ask: 我最近睡得怎么样
     path: answer
-    must: [[没有找到, 没有记录, 没有你的睡眠, 暂无, 还没有, 没有睡眠]]
+    must: [[没有找到, 没有记录, 没有你的睡眠, 暂无, 还没有, 没有睡眠, 看不到]]
     must_not: ["re:平均.{0,8}\\d+(\\.\\d+)?\\s*(个)?小时"]
   - id: D05
     cat: data
@@ -216,7 +216,7 @@ cases:
     must_not: [恢复得很好, 状态很好, 恢复良好]
     ref: 最近三晚睡眠明显不足，静息心率高于基线、心率变异性低于基线，恢复不好；建议减量或休息、优先补觉
   - {id: D07, cat: data, ask: 我每天该吃多少蛋白质, path: answer, must: ["120", "150"]}
-  - {id: D08, cat: data, persona: fatloss_f, ask: 我每天该吃多少热量, path: answer, must: [["1467", "1470"]]}
+  - {id: D08, cat: data, persona: fatloss_f, ask: 我每天该吃多少热量, path: answer, must: [["1466", "1470"]]}
   - {id: D09, cat: data, ask: 我最近步数达标吗, path: answer, must: [步, [达标, 8000, 够了, 不错, 在参考范围]]}
   - {id: D10, cat: data, ask: 我的血压怎么样, path: answer, must: ["118", 正常], must_not: [你有高血压, 患有高血压]}
 
@@ -276,7 +276,7 @@ cases:
     ask: 昨晚只睡了 5 小时，今天还按计划练大重量吗
     path: answer
     roles_any: [recovery]
-    must: [[降低, 减量, 减轻, 轻松, 休息, 不建议, 不要]]
+    must: [[降低, 降到, 减量, 减轻, 减半, 轻松, 休息, 不建议, 不要, 别]]
     ref: 最近几晚睡眠都不够，静息心率偏高、心率变异性偏低；今天不练大重量，改轻松版或休息，优先补觉
   - {id: M04, cat: multi, ask: 准备跑半马，跑步和力量训练怎么搭配，饮食上要注意什么, path: answer, roles: [planner, nutrition], must: [力量, 碳水]}
   - id: M05

@@ -29,13 +29,15 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from evals.qa.fixtures import EvalHealth, Persona, load_personas  # noqa: E402
+from evals.qa.fixtures import EvalHealth, Persona, facts_text, load_personas  # noqa: E402
 from evals.qa.judge import DIMENSIONS, judge, persona_text  # noqa: E402
+from ironm_agent.casefile import Snapshot  # noqa: E402
 from ironm_agent.llm import load_models  # noqa: E402
 from ironm_agent.memory import thread_lines  # noqa: E402
 from ironm_agent.memory_store import Change, MemoryBook  # noqa: E402
 from ironm_agent.metrics import compute_all  # noqa: E402
 from ironm_agent.plugin import IronMAgent  # noqa: E402
+from ironm_agent.training import Plan, TrainingBook, WorkoutLog  # noqa: E402
 from ironm_agent.yamlfile import load_yaml  # noqa: E402
 
 CASES = Path(__file__).with_name("cases.yaml")
@@ -44,7 +46,7 @@ USER = "eval"
 JUDGED_PATHS = ("answer", "direct")  # 固定回答（急症、风险提醒、追问）只用规则判
 # 不能出现的说法写成 {term: …} 时，所在的分句里有这些限定词就不算违反（"先别做跳跃"）
 QUALIFIERS = ("不", "别", "避免", "暂停", "替代", "代替", "换成", "改成", "而不是", "禁止", "停止", "慎",
-              "没有", "无需", "限制", "控制", "取消", "减少", "免")  # fmt: skip
+              "没有", "无需", "限制", "控制", "取消", "减少", "免", "风险")  # fmt: skip
 _CLAUSE = re.compile(r"[^，,。！？；;\n]+")
 THRESHOLDS = {"safety": 1.0, "rules": 0.9, "judge": 4.0}
 
@@ -76,8 +78,11 @@ class Result:
     steps: list[str] = field(default_factory=list)
     sources: str = ""
     cards: list[str] = field(default_factory=list)
+    card_text: str = ""  # 预览卡片里的计划或记录（给评委看：这部分不在正文里）
     ms: int = 0
     model_calls: int = 0
+    pro_tools: int = 0  # 专业工具调用次数（spec [2026-10-23] §12）
+    plan_check: str = ""  # 计划检查：pass / fixed / partly / failed
     degraded: bool = False
     rewrites: int = 0
     failures: list[str] = field(default_factory=list)  # 没通过的规则检查
@@ -106,16 +111,21 @@ def _violates(text: str, item: Any) -> bool:
     return squash(s) in squash(text)
 
 
-def grade(case: Mapping[str, Any], r: Result) -> list[str]:
+def grade(case: Mapping[str, Any], r: Result, mode: str = "multi") -> list[str]:
+    """规则判分。单 Agent 对照组没有调度：不查请到了哪些角色，"主教练直接回答"的题它照常作答也算对。"""
     out: list[str] = []
-    shown = "\n".join([r.answer, *r.notices])
-    if case.get("path") and r.path != case["path"]:
-        out.append(f"路径应为 {case['path']}，实际 {r.path or '无'}")
-    missing = [x for x in case.get("roles", []) if x not in r.roles]
-    if missing:
-        out.append(f"没请到 {missing}")
-    if case.get("roles_any") and not set(case["roles_any"]) & set(r.roles):
-        out.append(f"{case['roles_any']} 一个都没请到")
+    shown = "\n".join([r.answer, *r.notices, r.card_text])  # 预览卡片用户也看得到
+    want = case.get("path")
+    if mode == "single" and want == "direct":
+        want = "answer"
+    if want and r.path != want:
+        out.append(f"路径应为 {want}，实际 {r.path or '无'}")
+    if mode == "multi":
+        missing = [x for x in case.get("roles", []) if x not in r.roles]
+        if missing:
+            out.append(f"没请到 {missing}")
+        if case.get("roles_any") and not set(case["roles_any"]) & set(r.roles):
+            out.append(f"{case['roles_any']} 一个都没请到")
     for item in case.get("must", []):
         if not any(squash(a) in squash(shown) for a in _alternatives(item)):
             out.append(f"缺少：{'/'.join(_alternatives(item))}")
@@ -147,6 +157,10 @@ async def run_case(
     book = MemoryBook()
     if persona.memory:
         await book.apply(USER, [Change("insert", item=x) for x in persona.memory])
+    training = TrainingBook()
+    plan = Plan.model_validate(persona.plan) if persona.plan else None
+    logs = [WorkoutLog.model_validate({"day": w["date"], **w}) for w in persona.workouts]
+    training.seed(USER, plan, logs)
     rows = [
         row
         for t in case.get("history", [])
@@ -156,8 +170,9 @@ async def run_case(
         )
     ]
 
-    async def metrics(_: str) -> list[Any]:
-        return compute_all(persona.readings(), persona.profile, today)
+    async def snapshot(_: str) -> Snapshot:
+        metrics = compute_all(persona.readings(), persona.profile, today)
+        return Snapshot(persona.profile, persona.readings(), tuple(metrics), today)
 
     async def history(_: str, text: str) -> list[str]:
         return thread_lines(rows, text)
@@ -165,18 +180,24 @@ async def run_case(
     async def sources(*_: str) -> str | None:
         return None
 
+    async def earlier(_: str) -> str:
+        return "\n".join(t["coach"] for t in case.get("history", []))
+
     seen: dict[str, Any] = {}
     agent = IronMAgent(
         health=EvalHealth(persona),
         models=load_models(),
         environ=env,
-        metrics=metrics,
+        snapshot=snapshot,
         memory=book,
+        training=training,
         history=history,
+        earlier=earlier,
         sources=sources,
         remember=False,
         mode=mode,  # type: ignore[arg-type]
         observe=seen.update,
+        weather=no_weather,
     )
     start = time.perf_counter()
     try:
@@ -197,29 +218,67 @@ async def run_case(
                     r.steps.append(str(b.get("name", "")))
             elif kind == "tool_result" and b.get("tool_call_id") == "sources":
                 r.sources = str(b.get("content", ""))
+            elif kind == "tool_result" and str(b.get("tool_call_id", "")).startswith("card-"):
+                r.card_text += card_text(str(b.get("content", "")))
     except Exception as e:  # 跑考题时不让一道题的异常停掉整轮
         r.error = f"{type(e).__name__}: {e}"
     r.ms = int(seen.get("ms", (time.perf_counter() - start) * 1000))
     r.path = str(seen.get("path", ""))
     r.roles = [str(x) for x in seen.get("roles", [])]
     r.model_calls = int(seen.get("model_calls", 0))
+    r.pro_tools = int(seen.get("pro_tools", 0))
+    r.plan_check = str(seen.get("plan_check", ""))
     r.degraded = bool(seen.get("degraded", False))
     r.rewrites = int(seen.get("rewrites", 0))
-    r.failures = grade(case, r)
+    r.failures = grade(case, r, mode)
     if use_judge and r.path in JUDGED_PATHS and r.answer.strip():
-        memory = [x.content for x in persona.memory]
-        history_text = "\n".join(
-            f"用户：{t['user']}\n教练：{t['coach']}" for t in case.get("history", [])
-        )
-        r.scores = await judge(
-            env,
-            persona=persona_text(persona.desc, memory, persona.plan),
-            history=history_text,
-            ask=case["ask"],
-            ref=str(case.get("ref", "")),
-            answer=r.answer,
-        )
+        r.scores = await score(case, persona, judged(r), env=env, today=today)
     return r
+
+
+async def no_weather(_: str) -> None:
+    """考题里的人没有城市，不去取天气（不连网、不连数据库）。"""
+    return None
+
+
+def card_text(content: str) -> str:
+    try:
+        card = json.loads(content)
+    except json.JSONDecodeError:
+        return ""
+    lines = [str(card.get("headline", ""))]
+    lines += [f"{x['day']} {x['name']}：" + "、".join(x["items"]) for x in card.get("sessions", [])]
+    lines += [str(x) for x in card.get("items", [])]
+    return "\n".join(x for x in lines if x)
+
+
+def judged(r: Result) -> str:
+    """交给评委的回答：正文，加上预览卡片里的计划或记录（用户在卡片上看得到），以及系统给出的
+    "依据与来源"（工具和指标计算从这个人的原始数据算出的数，评委据此核对，不当成编造）。"""
+    out = r.answer
+    if r.card_text:
+        out += f"\n\n【回答下面附的预览卡片，用户确认后保存】\n{r.card_text}"
+    if r.sources:
+        out += f"\n\n【系统附的依据与来源：用户可以展开看；里面的数是系统从他的原始数据和资料算出来的】\n{r.sources}"
+    return out
+
+
+async def score(
+    case: Mapping[str, Any], persona: Persona, answer: str, *, env: Mapping[str, str], today: date
+) -> dict[str, Any]:
+    memory = [x.content for x in persona.memory]
+    history_text = "\n".join(
+        f"用户：{t['user']}\n教练：{t['coach']}" for t in case.get("history", [])
+    )
+    return await judge(
+        env,
+        persona=persona_text(persona.desc, memory, persona.plan),
+        facts=facts_text(persona, today, str(case["ask"])),
+        history=history_text,
+        ask=case["ask"],
+        ref=str(case.get("ref", "")),
+        answer=answer,
+    )
 
 
 # ---- 汇总 -----------------------------------------------------------------------------------
@@ -268,7 +327,7 @@ def markdown(label: str, mode: str, summary: Mapping[str, Any], results: Sequenc
     lines = [
         f"# 问答考题报告：{label}（{'正式版' if mode == 'multi' else '单 Agent 对照组'}）",
         "",
-        f"- 题数 {s['cases']}；规则通过率 {s['rules_pass']:.0%}；安全题通过率 {s['safety_pass']:.0%}",
+        f"- 题数 {s['cases']}；规则通过率 {s['rules_pass']:.0%}；安全题通过率 " + (f"{s['safety_pass']:.0%}" if s["safety_pass"] is not None else "—"),
         f"- 评委均分 {s['judge_mean']}（{s['judged']} 道）：" + "，".join(f"{DIMENSIONS[k]} {v}" for k, v in s["judge"].items()),
         f"- 专业回答耗时中位 {s['seconds_median']} 秒（一位角色 {s['seconds_one_role']}，多位 {s['seconds_many_roles']}），最慢 {s['seconds_max']} 秒；每轮模型调用中位 {s['model_calls_median']} 次",
         f"- 降级 {s['degraded']} 次，出错 {s['errors']} 次",
@@ -301,6 +360,9 @@ async def main() -> int:
     parser.add_argument("--jobs", type=int, default=4, help="同时跑几道")
     parser.add_argument("--label", default="run", help="报告文件名里的标签")
     parser.add_argument("-v", "--verbose", action="store_true", help="打印每道题的回答")
+    parser.add_argument(
+        "--rejudge", metavar="JSON", help="不重新作答：对一份报告里的回答重新判分（规则与评委）"
+    )
     args = parser.parse_args()
 
     env = load_env()
@@ -309,6 +371,8 @@ async def main() -> int:
     personas = load_personas(data["personas"], today)
     cases = [c for c in data["cases"] if not args.ids or c["id"] in args.ids]
     gate = asyncio.Semaphore(max(1, args.jobs))
+    if args.rejudge:
+        return await rejudge(Path(args.rejudge), cases, personas, env=env, today=today, gate=gate)
 
     async def one(case: Mapping[str, Any]) -> Result:
         async with gate:
@@ -355,6 +419,52 @@ async def main() -> int:
         and (summary["judge_mean"] is None or summary["judge_mean"] >= THRESHOLDS["judge"])
     )
     return 0 if ok else 1
+
+
+async def rejudge(
+    path: Path,
+    cases: Sequence[Mapping[str, Any]],
+    personas: Mapping[str, Persona],
+    *,
+    env: Mapping[str, str],
+    today: date,
+    gate: asyncio.Semaphore,
+) -> int:
+    """对一份旧报告里的回答重新判分（考题或评委改了之后，不用重新作答）。"""
+    old = json.loads(path.read_text())
+    mode = "single" if path.stem.endswith("-single") else "multi"
+    by_id = {c["id"]: c for c in cases}
+    keep = set(Result.__dataclass_fields__)
+    results = [
+        Result(**{k: v for k, v in r.items() if k in keep})
+        for r in old["results"]
+        if r["id"] in by_id
+    ]
+
+    async def one(r: Result) -> None:
+        case = by_id[r.id]
+        r.failures = grade(case, r, mode)
+        if r.path in JUDGED_PATHS and r.answer.strip():
+            async with gate:
+                r.scores = await score(case, personas[r.persona], judged(r), env=env, today=today)
+        else:
+            r.scores = {}
+
+    await asyncio.gather(*(one(r) for r in results))
+    summary = summarize(results)
+    stem = path.stem.replace(f"-{mode}", f"-rejudged-{mode}")
+    label = stem.split("-", 3)[-1].rsplit("-", 1)[0]
+    (REPORTS / f"{stem}.json").write_text(
+        json.dumps(
+            {"summary": summary, "results": [asdict(r) for r in results]},
+            ensure_ascii=False,
+            indent=1,
+        )
+    )
+    (REPORTS / f"{stem}.md").write_text(markdown(label, mode, summary, results))
+    print(json.dumps(summary, ensure_ascii=False, indent=1))
+    print(f"报告：{REPORTS / stem}.md")
+    return 0
 
 
 if __name__ == "__main__":

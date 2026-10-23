@@ -9,19 +9,26 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Sequence
+import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 from pydantic import ValidationError
 
+from ironm_agent.casefile import CaseFile
 from ironm_agent.checks import check_text, cited_ids, repair
 from ironm_agent.common import ContractModel
+from ironm_agent.frameworks import framework
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
 from ironm_agent.memory_view import Recall
 from ironm_agent.personal import Personal
+from ironm_agent.protools import registry as pro
 from ironm_agent.roles import Role, RoleSpec
-from ironm_agent.tools import Evidence, Toolbox
+from ironm_agent.skills import Skill, prompt_of
+from ironm_agent.tools import METRIC_ROLES, Evidence, Toolbox
+from ironm_agent.training import parse_log, parse_plan
 
 _log = logging.getLogger("ironm_agent.experts")
 
@@ -41,6 +48,8 @@ class Opinion(ContractModel):
     caution: str = ""
     uncertain: str = ""
     answer: str = ""  # 直接给用户的回答（solo 模式），有它时就不再整合
+    plan: dict[str, Any] | None = None  # 训练规划写的计划（要写计划的那一轮），系统校验后做成预览
+    log: dict[str, Any] | None = None  # 训练规划整理的训练记录（要记训练的那一轮）
     basis: tuple[str, ...] = ()  # 意见里引用到的编号：K 开头为依据库条目，r 开头为健康数据行
     general: bool = False  # 没有资料依据，只给不带具体数字的一般建议
 
@@ -58,13 +67,15 @@ class Consultation:
 
 
 _PROMPT = """你是健身 App 里的「{name}」，负责：{duty}。
-你和其他专业角色同时回答同一个问题，看不到彼此的意见，最后由主教练整合。
+{team}
+
+{framework}
 
 做法：
-1. 先用工具查依据：{tools}。可以连续查询，最多 3 次。问到 BMI、基础代谢、每天吃多少热量或蛋白质、体重变化、心率和自己基线比怎么样这类问题，先用 compute_metrics。
-2. 根据查到的依据作答，每句话写的时候就标好出处：
-   - 用到资料的句子，在这一句的句末写〔K03〕（K 编号是查到的资料编号，写这一句的内容真正出自的那份）；
-   - 用到指标计算结果（compute_metrics 返回的 C 编号，如 BMI、热量目标）的句子，在这一句的句末写〔C2〕，数字照计算结果写；
+1. 先看这个人的档案和系统已经查好的资料；不够再用工具查：{tools}。可以连续查询，最多 3 次。问到 BMI、基础代谢、每天吃多少热量或蛋白质、体重变化、心率和自己基线比怎么样这类问题，直接用档案里的指标计算结果（没有档案时用 compute_metrics）。
+2. 根据依据作答，每句话写的时候就标好出处：
+   - 用到资料的句子，在这一句的句末写〔K03〕（K 编号是资料编号，写这一句的内容真正出自的那份）；
+   - 用到档案或指标计算结果（C 编号，如 BMI、热量目标、今天的身体状态）的句子，在这一句的句末写〔C2〕，数字照档案写；
    - 用到用户健康数据的句子，写成 <statement>这句话<cite>[r3]</cite></statement>，[ ] 里是这句话用到的数据行编号（r 开头）。
    例：<statement>你近 30 天的静息心率平均 58 次/分<cite>[r3]</cite></statement>，在成年人正常范围的偏低一端〔K20〕。
    - 查不到资料、凭你的专业经验说的句子，在句末写〔经验〕。
@@ -82,7 +93,7 @@ _OPINION_TAIL = """9. 用中文，口语化，专业、精炼：每个字段不�
 {"conclusion": "一两句结论", "for_you": "结合这个人的情况（没有可留空）", "how": "具体怎么做", "caution": "注意事项（与这件事相关的风险、什么情况要停止或就医；没有可留空）", "uncertain": "不确定的地方（可留空）"}"""
 
 # 只请到一位时（或单 Agent 对照组），由它直接写给用户的回答，不再整合（spec [2026-10-23] §7）
-_SOLO_TAIL = """9. 你是这次唯一作答的角色，直接写给用户的回答：第一句直接回答用户问的那件事，接着只给最关键的做法。简单问题不超过 150 字；需要分步骤的不超过 300 字、最多 5 个要点。同一个意思只说一次，不铺垫、不罗列所有可能，不用小标题。风险提醒只留和这件事最相关的一条，放在最后。出处标记照上面的规矩写在句末（系统展示时会去掉，并把来源放进可展开的"依据与来源"，所以不用在正文里解释出处）。用中文，口语化，像一位专业又亲切的教练。
+_SOLO_TAIL = """9. 你是这次唯一作答的角色，直接写给用户的回答：第一句直接回答用户问的那件事，接着只给最关键的做法；没问到的事（比如问 BMI 时的饮食建议）不要加。简单问题不超过 150 字；需要分步骤的不超过 300 字、最多 5 个要点。同一个意思只说一次，不铺垫、不罗列所有可能，不用小标题。风险提醒只留和这件事最相关的一条，放在最后。出处标记照上面的规矩写在句末（系统展示时会去掉，并把来源放进可展开的"依据与来源"，所以不用在正文里解释出处）。用中文，口语化，像一位专业又亲切的教练。
 
 最后只输出 JSON：{"answer": "给用户的回答"}"""
 
@@ -95,7 +106,69 @@ def _tool_hint(toolbox: Toolbox) -> str:
         hints.append("query_health_indicators 查这个人的健康数据")
     if toolbox.metrics is not None:
         hints.append("compute_metrics 计算这个人的指标（BMI、热量与蛋白质目标、体重趋势等）")
+    if toolbox.context is not None:
+        names = [t.name for t in pro.tools_for(toolbox.spec.role.value)]
+        if names:
+            hints.append("专业工具 " + "、".join(names) + "（结果带 C 编号，用法见上面的思考顺序）")
     return "；".join(hints) or "（没有可用的工具）"
+
+
+# 这一轮要写计划或整理训练记录时（spec [2026-10-23] §9），交给训练规划的额外要求；写在 JSON 里，由系统做成预览卡片
+TASKS = {
+    "plan": """
+
+这一轮要写一份每周训练计划（新排，或者按用户的要求改档案里的当前计划）：
+- 在 JSON 里加上 "plan"，写完整的新计划（改计划时没改的部分照抄当前计划，不是只写改动）：
+  {"title": "计划名（不超过 12 个字）", "goal": "目标", "days_per_week": 每周几练, "sessions": [{"day": 1 到 7（1 是周一）, "name": "这一次练什么（如下肢）", "minutes": 大概多少分钟, "items": [{"exercise": "动作名", "sets": 组数, "reps": "次数（如 8–12）", "load": "重量或强度说明，可空", "note": "要点或限制，可空"}]}]}
+- 每次最多 6 个动作，热身和放松不写成动作；load、note 各不超过 15 个字；
+- 动作、组次、时长都要符合档案：他的器械、可练时间、伤病（有伤病的动作在 note 里写明限制或换掉）、今天的身体状态；
+- 再加上 "changes"：一句话说清这份计划是怎么排的、改了什么（如"周三从上肢推改成练背，推的动作挪到周一"）；
+- 给用户的文字只写一两句话：这份计划的思路和改了什么，不要把整份计划再写一遍（系统会把 plan 显示成预览卡片，用户确认后才保存）。""",
+    "log": """
+
+这一轮要把用户说的这次训练整理成一条记录：
+- 在 JSON 里加上 "log"：{"day": "日期（默认今天，YYYY-MM-DD）", "session": "按计划练的是哪一次（档案里当前计划的那次的名字，没有就空）", "items": [{"exercise": "动作名", "sets": 组数或 null, "reps": "次数", "weight_kg": 重量（公斤）或 null}], "done": 是否练完, "rpe": 感受（1–10，用户说了才写）或 null, "minutes": 时长或 null, "note": "备注（如“有点累”），可空"}；
+- 记录里的数字只能来自用户这句话，用户没说的就写 null，不要猜；
+- 给用户的文字只写一两句话：简单反馈这次训练（按档案和计划说下一次怎么练），不要把记录再写一遍（系统会显示成预览卡片，用户确认后才记下）。""",
+}
+
+_WRITE = """你是健身 App 里的「训练规划」。你刚才已经回答了用户，但没有按格式写出{what}。请照你的回答和这个人的档案，把{what}写成 JSON。{rules}
+
+只输出 JSON。"""
+
+
+async def write_task(
+    llm: LLM, task: str, text: str, answer: str, case: str, current: str = ""
+) -> dict[str, Any] | None:
+    """训练规划回答了、却没写出合格的计划或记录时，单独请它补写一次（只要 JSON，不要文字）。"""
+    what = "计划（plan）" if task == "plan" else "训练记录（log）"
+    rules = TASKS.get(task, "").replace("给用户的文字只写一两句话", "不用写给用户的文字")
+    parts = [f"用户的话：{text}", f"你的回答：{answer}", case]
+    if current:
+        parts.append(f"当前计划（JSON）：{current}")
+    try:
+        reply = await llm.chat(
+            "expert",
+            [
+                {"role": "system", "content": _WRITE.format(what=what, rules=rules)},
+                {"role": "user", "content": "\n\n".join(x for x in parts if x)},
+            ],
+            json_mode=True,
+        )
+    except ModelUnavailable:
+        return None
+    raw = parse_json(reply.content) or {}
+    found = raw.get(task)
+    if not isinstance(found, dict):
+        return None
+    if task == "plan" and isinstance(raw.get("changes"), str):
+        found = {**found, "changes": raw["changes"]}
+    return found
+
+
+_ALONE = "你和其他专业角色同时回答同一个问题，看不到彼此的意见，最后由主教练整合。"
+_RELAYED = "你在前面同事给出结论之后作答：你的建议要和他们的结论一致（冲突时以安全和恢复为准），不用重复他们说过的。"
+_SOLO = "这一轮只请了你一位，你写的就是给用户的回答。"
 
 
 def _user_message(
@@ -104,12 +177,18 @@ def _user_message(
     concerns: Sequence[str],
     personal: str = "",
     memory: str = "",
+    *,
+    case: str = "",
+    relay: str = "",
+    note: str = "",
+    prefetched: str = "",
 ) -> str:
     parts = [f"用户的问题：{text}"]
-    if personal:
-        parts.append(personal)
-    if memory:
-        parts.append(memory)
+    for extra in (case, personal, memory, relay, note):
+        if extra:
+            parts.append(extra)
+    if prefetched:
+        parts.append("系统按问题先查好的资料（可以直接引用编号，不够再查）：\n" + prefetched)
     if history:
         parts.append(
             "这次对话前面的几轮（只用来理解这次问题里的指代，不要在回答里重提和这次问题无关的旧话题）：\n"
@@ -121,13 +200,26 @@ def _user_message(
     return "\n\n".join(parts)
 
 
-def problems_of(opinion: Opinion, evidence: Evidence, text: str) -> list[str]:
-    """意见不合格的地方：逐句核对出处与数字（与整合后的回答同一套规则）。"""
+def problems_of(
+    opinion: Opinion,
+    evidence: Evidence,
+    text: str,
+    task: str | None = None,
+    today: date | None = None,
+) -> list[str]:
+    """意见不合格的地方：逐句核对出处与数字（与整合后的回答同一套规则）；要写计划或记录时，格式也要对。"""
     if not opinion.speak:
         return []
     if not opinion.body().strip():
         return ["意见是空的"]
-    return check_text(
+    shape: list[str] = []
+    if task == "plan":
+        _, why = parse_plan(opinion.plan)
+        shape = [why or ""] if opinion.plan is not None else ["这一轮要写出 plan（完整的每周计划）"]
+    elif task == "log":
+        _, why = parse_log(opinion.log, today or date.today())
+        shape = [why or ""] if opinion.log is not None else ["这一轮要写出 log（这次训练的记录）"]
+    return [x for x in shape if x] + check_text(
         opinion.body(),
         support=evidence.support,
         entries=evidence.entries,
@@ -156,11 +248,29 @@ def _repaired(
     return opinion.model_copy(update={**fields, "basis": tuple(cited_ids(body))})
 
 
+def _salvage(content: str, fields: Sequence[str]) -> dict[str, Any] | None:
+    """JSON 坏了（常见于计划太长被截断）时，尽量把文字字段取出来，计划和记录就不要了。"""
+    out: dict[str, Any] = {}
+    for k in fields:
+        m = re.search(rf'"{k}"\s*:\s*"((?:[^"\\]|\\.)*)"', content)
+        if m:
+            try:
+                out[k] = json.loads(f'"{m.group(1)}"')
+            except json.JSONDecodeError:
+                continue
+    return out or None
+
+
 def _parse(role: Role, content: str, fields: Sequence[str] = _FIELDS) -> Opinion | None:
-    raw = parse_json(content)
+    raw = parse_json(content) or _salvage(content, fields)
     if raw is None:
         return None
     data: dict[str, Any] = {k: raw.get(k) for k in ("general", *fields) if k in raw}
+    for k in ("plan", "log"):
+        if isinstance(raw.get(k), dict):
+            data[k] = raw[k]
+    if isinstance(data.get("plan"), dict) and isinstance(raw.get("changes"), str):
+        data["plan"] = {**data["plan"], "changes": raw["changes"]}  # 改了什么，跟着计划走
     data["speak"] = True  # 被请到就要回答，模型说"不发言"也不算
     for k in fields:
         if k in data and not isinstance(data[k], str):
@@ -184,38 +294,64 @@ async def consult(
     memory: Recall | None = None,
     *,
     solo: bool = False,
+    case: CaseFile | None = None,
+    relay: str = "",
+    note: str = "",
+    task: str | None = None,
+    today: date | None = None,
+    skills: Sequence[Skill] = (),
+    images: Sequence[Mapping[str, Any]] = (),
 ) -> Consultation:
     """请一个专业 Agent 作答。出错时返回不发言的意见，不向外抛。
 
-    memory：这个人的长期记忆，只给这个角色该看的那几类；记忆里用户自己说过的数字（如哑铃 20 公斤）
+    memory：这个人的长期记忆；有共享档案（case）时，伤病、器械等限制已经在档案里，这里只给喜好、
+    回答风格和给过的建议，没有档案时给这个角色该看的那几类。记忆里用户自己说过的数字（如哑铃 20 公斤）
     和这次问题里的数字一样，作答时可以直接用。
     solo：这一轮只请到它一位，由它直接写给用户的回答（不再整合）。
+    relay：前一层同事的结论（分层接力）；note：主教练交代的话（如按默认值排）。
+    task：这一轮要写计划（plan）或整理训练记录（log），只交给训练规划；写出的计划或记录由系统校验后做成预览。
+    images：用户这一轮附的图片（给模型看的图片段），只交给主责角色。
     """
+    team = _SOLO if solo else (_RELAYED if relay else _ALONE)
     system = _PROMPT.format(
         name=spec.name,
         duty=spec.duty,
+        team=team,
+        framework=framework(spec.role),
         tools=_tool_hint(toolbox),
-        tail=_SOLO_TAIL if solo else _OPINION_TAIL,
+        tail=(_SOLO_TAIL if solo else _OPINION_TAIL)
+        + TASKS.get(task or "", "")
+        + prompt_of(skills),
     )
+    toolbox.adopt(e for x in skills for r in x.refs if (e := toolbox.kb.get(r)) is not None)
+    if memory is None:
+        remembered = ""
+    else:
+        remembered = memory.shared() if case is not None else memory.for_role(spec.role)
+    calcs = spec.role.value in METRIC_ROLES
+    asked = _user_message(
+        text,
+        history,
+        concerns,
+        personal.text() if personal else "",
+        remembered,
+        case=case.text(calcs=calcs) if case is not None else "",
+        relay=relay,
+        note=note,
+        prefetched=toolbox.prefetch(text),
+    )
+    content: str | list[Any] = [{"type": "text", "text": asked}, *images] if images else asked
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system},
-        {
-            "role": "user",
-            "content": _user_message(
-                text,
-                history,
-                concerns,
-                personal.text() if personal else "",
-                memory.for_role(spec.role) if memory else "",
-            ),
-        },
+        {"role": "user", "content": content},
     ]
     said = "\n".join(x for x in (text, memory.numbers_text() if memory else "") if x)
     if personal is not None:
         toolbox.evidence.support.update(personal.support)
         toolbox.evidence.rows.update(personal.rows)
     try:
-        opinion = await _loop(spec, messages, toolbox, llm, said, _SOLO_FIELDS if solo else _FIELDS)
+        fields = _SOLO_FIELDS if solo else _FIELDS
+        opinion = await _loop(spec, messages, toolbox, llm, said, fields, task, today)
     except ModelUnavailable as e:
         _log.warning("expert unavailable: role=%s reason=%s", spec.role.value, e)
         silent = Opinion(role=spec.role, speak=False, reason="这次没能调用模型")
@@ -231,6 +367,8 @@ async def _loop(
     llm: LLM,
     text: str,
     fields: Sequence[str] = _FIELDS,
+    task: str | None = None,
+    today: date | None = None,
 ) -> Opinion:
     fixes = 0
     rounds = 0
@@ -265,7 +403,7 @@ async def _loop(
         problems = (
             ["输出不是规定格式的 JSON"]
             if opinion is None
-            else problems_of(opinion, toolbox.evidence, text)
+            else problems_of(opinion, toolbox.evidence, text, task, today)
         )
         if not problems and opinion is not None:
             return opinion

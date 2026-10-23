@@ -56,13 +56,16 @@ def with_memory(items: list[Item]) -> MemoryBook:
     return book
 
 
-def test_each_expert_gets_its_part_of_the_memory(monkeypatch: Any, caplog: Any) -> None:
+def test_every_expert_sees_the_same_limits_in_the_shared_case_file(
+    monkeypatch: Any, caplog: Any
+) -> None:
+    """共享档案（spec [2026-10-23] §2）：伤病、器械、饮食等限制，被请到的角色都看得到。"""
     caplog.set_level(logging.INFO, logger="ironm_agent.run")
     s = Script()
     blocks = collect(agent(s, monkeypatch=monkeypatch, memory=with_memory(KNOWN)), QUESTION)
     assert "左膝有旧伤" in s.seen["route"]  # 主教练调度时看画像
-    assert "哑铃" in s.seen["exercise"] and "乳糖" not in s.seen["exercise"]
-    assert "乳糖" in s.seen["nutrition"] and "哑铃" not in s.seen["nutrition"]
+    for role in ("exercise", "nutrition"):
+        assert all(x in s.seen[role] for x in ("左膝有旧伤", "最重 20 公斤", "乳糖不耐受"))
     # 记忆不在前端显示：对话过程里既不列出记忆条目，也没有用了哪几类记忆的提示（回答本身照常用上记忆）
     shown = json.dumps(blocks, ensure_ascii=False)
     for hidden in (
@@ -79,8 +82,8 @@ def test_each_expert_gets_its_part_of_the_memory(monkeypatch: Any, caplog: Any) 
         r.getMessage() for r in caplog.records if r.getMessage().startswith("ironm memory use")
     ]
     assert len(logged) == 1
-    roles = json.loads(logged[0].removeprefix("ironm memory use "))["roles"]
-    assert roles == {"exercise": ["injury", "equipment"], "nutrition": ["diet"]}
+    used = json.loads(logged[0].removeprefix("ironm memory use "))["categories"]
+    assert used == ["diet", "equipment", "injury"]
     assert "左膝" not in logged[0] and "乳糖" not in logged[0]
 
 

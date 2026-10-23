@@ -6,7 +6,7 @@ import logging
 import os
 import tempfile
 from dataclasses import asdict
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -17,12 +17,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ironm_agent import imports
 from ironm_agent import profile as profiles
+from ironm_agent.brief import today_brief, weekly_review
+from ironm_agent.casefile import Snapshot
 from ironm_agent.exercises import EQUIPMENT, NOTE, PARTS, library
 from ironm_agent.healthdata import read_all
 from ironm_agent.memory_extract import MAX_CONTENT
 from ironm_agent.memory_store import CATEGORIES, ORIGINS, Item, MemoryStore, default_store
 from ironm_agent.memory_view import expired
 from ironm_agent.metrics import ACTIVITY, GOALS, Metric, compute_all
+from ironm_agent.training import TrainingStore, WorkoutLog, default_training
 
 _log = logging.getLogger("ironm_agent.web")
 
@@ -44,16 +47,23 @@ def metric_json(m: Metric) -> dict[str, Any]:
     return out
 
 
-async def metrics_for(
-    user_id: str, today: date | None = None
-) -> tuple[list[Metric], dict[str, Any]]:
-    """这个人的全部指标（页面和问答共用）。"""
+async def snapshot_for(user_id: str, today: date | None = None) -> Snapshot:
+    """这个人这一刻的数据：档案、每天的健康数据、全部指标（页面、问答、共享档案共用一份计算）。"""
     from mirobody.agent.tools.health_indicators_service import HealthIndicatorsService
 
     today = today or date.today()
     readings = await read_all(HealthIndicatorsService(), user_id, today)
     profile, _ = await profiles.load(user_id)
-    metrics = compute_all(readings, profile, today)
+    return Snapshot(profile, readings, tuple(compute_all(readings, profile, today)), today)
+
+
+async def metrics_for(
+    user_id: str, today: date | None = None
+) -> tuple[list[Metric], dict[str, Any]]:
+    """这个人的全部指标（页面和问答共用）。"""
+    snap = await snapshot_for(user_id, today)
+    readings, today = snap.readings, snap.today
+    metrics = list(snap.metrics)
     dates = [
         d
         for s in (readings.weight, readings.resting_hr, readings.steps, readings.sleep_hours)
@@ -253,6 +263,153 @@ async def memory_settings(
     return {"paused": body.paused}
 
 
+# ---- 训练计划、训练记录与预览（spec [2026-10-23] §9）；今日简报与每周复盘（§10）----------------------
+
+
+def training_store() -> TrainingStore:
+    return default_training()
+
+
+TRAINING = Depends(training_store)  # 测试时用 dependency_overrides 换成内存版
+
+
+@router.get("/iron/api/drafts/{draft_id}")
+async def get_draft(
+    draft_id: str, user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
+) -> dict[str, Any]:
+    d = await store.draft(user_id, draft_id)
+    if d is None:
+        raise HTTPException(404, "这份预览不存在")
+    return {"draft": d.json()}
+
+
+async def _draft_action(
+    store: TrainingStore, user_id: str, draft_id: str, action: str
+) -> dict[str, Any]:
+    d = await store.draft(user_id, draft_id)
+    if d is None:
+        raise HTTPException(404, "这份预览不存在")
+    if action == "confirm":
+        if d.state == "pending" and d.expired():
+            raise HTTPException(410, "预览已经过期（超过 24 小时），请让教练重新生成")
+        done = await store.confirm(user_id, draft_id)
+    elif action == "cancel":
+        done = await store.cancel(user_id, draft_id)
+    else:
+        done = await store.undo(user_id, draft_id)
+    if done is None:
+        now = await store.draft(user_id, draft_id)
+        if now is not None and (
+            (action == "confirm" and now.state == "confirmed")
+            or (action == "cancel" and now.state == "cancelled")
+            or (action == "undo" and now.state == "undone")
+        ):
+            return {"draft": now.json()}  # 已经做过了（比如点了两次）：不重复写入
+        why = {
+            "confirm": "这份预览已经处理过，不能再确认",
+            "cancel": "这份预览已经处理过",
+            "undo": "之后又改过计划，不能撤销这一次" if d.kind == "plan" else "这条记录不能撤销",
+        }[action]
+        raise HTTPException(409, why)
+    _log.info("draft %s: kind=%s", action, done.kind)
+    return {"draft": done.json()}
+
+
+@router.post("/iron/api/drafts/{draft_id}/confirm")
+async def confirm_draft(
+    draft_id: str, user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
+) -> dict[str, Any]:
+    return await _draft_action(store, user_id, draft_id, "confirm")
+
+
+@router.post("/iron/api/drafts/{draft_id}/cancel")
+async def cancel_draft(
+    draft_id: str, user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
+) -> dict[str, Any]:
+    return await _draft_action(store, user_id, draft_id, "cancel")
+
+
+@router.post("/iron/api/drafts/{draft_id}/undo")
+async def undo_draft(
+    draft_id: str, user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
+) -> dict[str, Any]:
+    return await _draft_action(store, user_id, draft_id, "undo")
+
+
+class WorkoutIn(BaseModel):
+    """首页一键记下今天的训练：按计划的哪一次、是否练完、感受、备注。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session: str = Field(default="", max_length=16)
+    done: bool = True
+    rpe: int | None = Field(default=None, ge=1, le=10)
+    note: str = Field(default="", max_length=80)
+
+
+@router.post("/iron/api/workouts")
+async def add_workout(
+    body: WorkoutIn, user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
+) -> dict[str, Any]:
+    row = await store.log(user_id, WorkoutLog(day=date.today(), **body.model_dump()))
+    return {"workout": {"id": row.id, **row.log.model_dump(mode="json"), "line": row.log.line()}}
+
+
+@router.delete("/iron/api/workouts/{workout_id}")
+async def delete_workout(
+    workout_id: str, user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
+) -> dict[str, Any]:
+    if not await store.delete_workout(user_id, workout_id):
+        raise HTTPException(404, "这条记录不存在")
+    return {"deleted": workout_id}
+
+
+@router.get("/iron/api/training")
+async def get_training(
+    user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
+) -> dict[str, Any]:
+    today = date.today()
+    plan = await store.plan(user_id)
+    logs = await store.workouts(user_id, today - timedelta(days=30))
+    return {
+        "plan": plan.plan.model_dump(mode="json") if plan else None,
+        "plan_lines": plan.plan.lines() if plan else [],
+        "workouts": [
+            {"id": x.id, **x.log.model_dump(mode="json"), "line": x.log.line()}
+            for x in reversed(logs)
+        ],
+    }
+
+
+@router.get("/iron/api/brief")
+async def get_brief(
+    user_id: str = Depends(_verify()),
+    store: TrainingStore = TRAINING,
+    memory: MemoryStore = STORE,
+) -> dict[str, Any]:
+    """首页的今日简报与每周复盘：只用规则，不调用模型。"""
+    try:
+        snap = await snapshot_for(user_id)
+    except Exception as e:
+        _log.error("brief failed: error_type=%s", type(e).__name__)
+        raise HTTPException(503, "今天的简报暂时生成不了，请稍后再试") from e
+    plan, logs, items = None, [], []
+    try:  # 计划、记录、记忆读不到时，简报照样出（只是少了这部分）
+        plan = await store.plan(user_id)
+        logs = [x.log for x in await store.workouts(user_id, snap.today - timedelta(days=14))]
+    except Exception as e:
+        _log.warning("brief training unavailable: error_type=%s", type(e).__name__)
+    try:
+        items = [x for x in await memory.items(user_id) if x.status == "active"]
+    except Exception as e:
+        _log.warning("brief memory unavailable: error_type=%s", type(e).__name__)
+    current = plan.plan if plan else None
+    return {
+        "today": today_brief(snap, items, current, logs),
+        "week": weekly_review(snap, current, logs, plan.since if plan else None),
+    }
+
+
 @router.get("/iron")
 @router.get("/iron/")
 async def index() -> FileResponse:
@@ -265,3 +422,9 @@ async def asset(name: str) -> FileResponse:
     if path.parent != WEB_DIR.resolve() or not path.is_file():
         raise HTTPException(404)
     return FileResponse(path, headers={"Cache-Control": "no-cache"})
+
+
+# 前端改版的接口（spec [2026-10-23] §13）放在 web_more.py，挂在同一个 router 上
+from ironm_agent.web_more import router as _more  # noqa: E402
+
+router.include_router(_more)

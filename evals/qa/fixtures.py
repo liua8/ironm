@@ -151,6 +151,35 @@ def load_personas(raw: Mapping[str, Mapping[str, Any]], today: date) -> dict[str
     return out
 
 
+def facts_text(persona: Persona, today: date, ask: str = "") -> str:
+    """给评委看的这个人的数据：档案、今天的状态、计划、指标计算结果（与 Agent 看到的同一份）和最近三天的读数。"""
+    from ironm_agent.casefile import Snapshot, build
+    from ironm_agent.memory_view import Recall
+    from ironm_agent.metrics import compute_all
+
+    metrics = compute_all(persona.readings(), persona.profile, today)
+    case = build(
+        Snapshot(persona.profile, persona.readings(), tuple(metrics), today), Recall(), ask
+    )
+    lines = [
+        f"- 档案：{case.basics}",
+        f"- {case.readiness.line()}（系统按最近的睡眠、心率和这句话里说的情况判断）",
+        "- 当前计划：" + ("有（见上）" if persona.plan else "没有"),
+        *(f"- {m.name}：{m.text}" for m in metrics),
+    ]
+    labels = {"sleep": "睡眠（小时）", "resting_hr": "静息心率", "hrv_sdnn": "心率变异性 SDNN",
+              "hrv_rmssd": "心率变异性 RMSSD", "weight": "体重", "steps": "步数"}  # fmt: skip
+    for key, label in labels.items():
+        points = persona.series.get(key, ())
+        recent = [f"{d.month}/{d.day} {v:g}" for d, v in points if (today - d).days < 3]
+        if recent:
+            lines.append(f"- 最近三天{label}：" + "，".join(recent))
+    dia = dict(persona.series.get("diastolic", ()))
+    for d, s in persona.series.get("systolic", ()):
+        lines.append(f"- 血压读数 {d.isoformat()}：{s:g}/{dia.get(d, 0):g} mmHg")
+    return "\n".join(lines)
+
+
 # ---- 假的健康数据查询 ----------------------------------------------------------------------
 
 

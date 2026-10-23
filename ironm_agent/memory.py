@@ -70,6 +70,21 @@ async def recent(session_id: str, current: str, turns: int = TURNS) -> list[str]
     return thread_lines(rows, current, turns)
 
 
+async def earlier(session_id: str) -> str:
+    """本会话之前的全部回答原文（只用来判断某条固定提醒说过没有，不交给模型）；读不到时为空。"""
+    owner, session = split_thread(session_id)
+    if not owner or not session:
+        return ""
+    try:
+        from mirobody.agent.chat.message import get_chat_history
+
+        rows: list[dict[str, Any]] = await get_chat_history(owner, session)
+    except Exception as e:
+        _log.warning("history unavailable: error_type=%s", type(e).__name__)
+        return ""
+    return "\n".join(str(r.get("content") or "") for r in rows if r.get("role") == "assistant")
+
+
 def user_lines(history: list[str]) -> list[str]:
     """只要用户自己说的话（记忆提取用：记忆只能来自用户的原话）。"""
     return [line for line in history if line.startswith(USER)]

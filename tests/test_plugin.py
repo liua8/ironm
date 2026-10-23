@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from importlib.metadata import entry_points
 from typing import Any
 
+from ironm_agent.casefile import Snapshot
 from ironm_agent.llm import ModelUnavailable, Reply, Stage, load_models
 from ironm_agent.memory_store import MemoryBook, MemoryStore
 from ironm_agent.plugin import FAILED, IronMAgent
@@ -15,9 +16,12 @@ from tests.fakes import FakeHealth, call, jsonr, system_of, tool_results
 class Scripted:
     """按环节与角色回答的假模型（替换 TurnLLM）。"""
 
-    def __init__(self, compose_text: str = "", fail: bool = False) -> None:
+    def __init__(
+        self, compose_text: str = "", fail: bool = False, helpers: Sequence[str] = ()
+    ) -> None:
         self.compose_text = compose_text
         self.fail = fail
+        self.helpers = list(helpers)
         self.count = 0
 
     def __call__(
@@ -29,18 +33,21 @@ class Scripted:
         system = system_of(messages)
         if stage == "route":
             return jsonr(
-                {"intent": "pro", "primary": "data", "helpers": [], "reason": "问自己的数据"}
+                {
+                    "intent": "pro",
+                    "primary": "data",
+                    "helpers": self.helpers,
+                    "reason": "问自己的数据",
+                }
             )
         if stage == "expert":
+            stated = "<statement>近 30 天静息心率平均 58 次/分<cite>[r1]</cite></statement>"
             if "数据分析" in system:
                 if not tool_results(messages):
                     return call(HEALTH, indicators=["restingHeartRates"], view="stats")
-                return jsonr(
-                    {
-                        "speak": True,
-                        "conclusion": "<statement>近 30 天静息心率平均 58 次/分<cite>[r1]</cite></statement>",
-                    }
-                )
+                if "这一轮只请了你一位" in system:  # 只请到一位：它直接写给用户的回答
+                    return jsonr({"answer": self.compose_text or stated})
+                return jsonr({"speak": True, "conclusion": stated})
             return jsonr({"conclusion": "注意循序渐进〔经验〕"})
         return Reply(self.compose_text)
 
@@ -50,6 +57,7 @@ def agent(
     health: FakeHealth | None = None,
     monkeypatch: Any = None,
     memory: MemoryStore | None = None,
+    snapshot: Any = None,
 ) -> IronMAgent:
     from ironm_agent import plugin
 
@@ -64,11 +72,16 @@ def agent(
             return await self._inner.chat(*args, **kwargs)
 
     monkeypatch.setattr(plugin, "TurnLLM", _LLM)
+
+    async def no_data(_: str) -> Snapshot:
+        return Snapshot()
+
     return IronMAgent(
         health=health or FakeHealth(),
         models=load_models(),
         environ={},
         memory=memory if memory is not None else MemoryBook(),
+        snapshot=snapshot or no_data,
     )
 
 
@@ -129,8 +142,11 @@ def test_asking_for_sources_explains_the_previous_answer(monkeypatch: Any) -> No
 
 
 def test_failed_review_degrades_with_notice(monkeypatch: Any) -> None:
+    """请了两位、需要整合时：整合两次都没通过核对，给出主责角色核对过的意见并提示受限。"""
     blocks = collect(
-        agent(Scripted("你的静息心率平均 99 次/分。"), monkeypatch=monkeypatch),
+        agent(
+            Scripted("你的静息心率平均 99 次/分。", helpers=["recovery"]), monkeypatch=monkeypatch
+        ),
         "我最近的静息心率怎么样",
     )
     assert any(b["type"] == "notice" and "受限" in b["text"] for b in blocks)

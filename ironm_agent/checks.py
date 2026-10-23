@@ -211,9 +211,12 @@ def cited_ids(text: str) -> list[str]:
 _CITE = re.compile(r"<cite>.*?</cite>", re.S)
 _STATEMENT_TAG = re.compile(r"</?statement>")
 _SPACE_BEFORE_PUNCT = re.compile(r"[ \t]+([，。！？；：、）])")
+# 核对时删掉一句后，前后的标点会挨在一起（"提醒一句：，先别…""…上限；。"）：留后面那个句末标点
+_LOOSE_PUNCT = re.compile(r"[，、；：,]+([。！？；])|([，、；：])[，、；：,]+|([。！？])[。]+")
 
 
 def plain(text: str) -> str:
     """给用户看的正文：去掉出处标记和数据引用的标签，只留话本身。"""
     out = _STATEMENT_TAG.sub("", _CITE.sub("", ANY_REF.sub("", text)))
-    return _SPACE_BEFORE_PUNCT.sub(r"\1", out).strip()
+    out = _SPACE_BEFORE_PUNCT.sub(r"\1", out).replace("（）", "").replace("()", "")
+    return _LOOSE_PUNCT.sub(lambda m: m.group(1) or m.group(2) or m.group(3), out).strip()

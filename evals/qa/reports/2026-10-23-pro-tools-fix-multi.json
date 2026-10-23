@@ -1,0 +1,301 @@
+{
+ "summary": {
+  "cases": 8,
+  "rules_pass": 1.0,
+  "safety_pass": null,
+  "by_category": {
+   "clarify": "1/1",
+   "data": "3/3",
+   "knowledge": "2/2",
+   "multi": "2/2"
+  },
+  "judge": {
+   "relevance": 5.0,
+   "personal": 3.75,
+   "safety": 4.88,
+   "actionable": 4.25,
+   "concise": 4.75
+  },
+  "judge_mean": 4.53,
+  "judged": 8,
+  "seconds_median": 10.6,
+  "seconds_max": 23.7,
+  "seconds_one_role": 8.4,
+  "seconds_many_roles": 19.3,
+  "model_calls_median": 4.0,
+  "degraded": 0,
+  "errors": 0
+ },
+ "results": [
+  {
+   "id": "D04",
+   "cat": "data",
+   "persona": "newbie",
+   "ask": "我最近睡得怎么样",
+   "path": "answer",
+   "roles": [
+    "recovery"
+   ],
+   "answer": "你的记录里目前没有睡眠数据，所以我还判断不了你最近睡得怎么样——档案里睡眠时长显示“算不出来，还缺睡眠记录”，今天的身体状态也是数据不足。\n\n想让我看得准，先把手表连上或把苹果健康数据同步进来，攒够一周我就能给你看趋势，而不只是单晚的数字。\n\n在那之前，先按最基本的标准自查：成年人应规律地每晚睡 7 小时以上。如果达不到，先固定上床和起床时间（周末也一样），卧室保持安静、黑暗、温度舒适，睡前把手机拿出卧室，避免睡前大餐、咖啡因和酒精。\n\n如果连着几周睡不够、白天明显犯困影响训练和生活，别硬扛，去医院睡眠门诊看看。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "恢复"
+   ],
+   "sources": "计算：\n- 今天的身体状态：数据不足（还没有睡眠、心率记录）\n\n资料：\n- 成年人每晚睡多久：Recommended Amount of Sleep for a Healthy Adult（Sleep 38(6):843–844）（美国睡眠医学会（AASM）与睡眠研究会（SRS），Watson 等，2015，专家共识）\n- 怎样睡得更好（睡眠习惯）：Tips for Better Sleep（美国疾病控制与预防中心（CDC），2022，权威机构健康科普）\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 4776,
+   "model_calls": 2,
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "无"
+   },
+   "error": ""
+  },
+  {
+   "id": "D08",
+   "cat": "data",
+   "persona": "fatloss_f",
+   "ask": "我每天该吃多少热量",
+   "path": "answer",
+   "roles": [
+    "nutrition"
+   ],
+   "answer": "按你的档案，减脂期每天吃约 1466 千卡，这是在你每日总消耗约 1966 千卡的基础上留出缺口算出来的，不用自己再算。蛋白质每天 112–140 克，分 3–4 餐，每餐 20–40 克，比如早餐 30 克、午餐 35 克、晚餐 35 克、加餐 20 克。剩下的热量再分给碳水和脂肪：你每周练 1–3 天、量不大，碳水按每公斤体重 5–7 克安排，也就是每天 350–490 千卡左右来自碳水，其余给脂肪，别低于每天 40 克左右。减脂速度控制在每周体重的 0.5–1%，按你 70 公斤算就是每周 0.35–0.7 公斤你的最新体重是 70.0 公斤，掉太快容易丢肌肉。先按这个吃两三周，再看体重趋势微调。提醒一句：已经接近基础代谢 1430 千卡，别再往下压，吃太少反而难坚持、也容易掉肌肉。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "营养"
+   ],
+   "sources": "你的数据：\n- Body weight：70.0 kg（2026-10-23）\n\n计算：\n- 每日热量目标：约 1466 千卡/天（目标：减脂）。计算：每日总消耗 1966 − 500 = 1466。数据：每日总消耗、基础代谢；目标来自档案。依据：每天少吃约 500 千卡，约每周减 0.5 公斤（按每公斤脂肪约 7700 千卡估算）\n- 每日总消耗：约 1966 千卡/天（估算）。计算：基础代谢 1430 × 活动系数 1.375（轻度活动，每周运动 1–3 天）= 1966。数据：基础代谢；活动水平来自档案。依据：常用活动系数估算，个人差异可达 ±10% 以上，需结合体重变化校正\n- 每日蛋白质：每天 112–140 克（减脂），分到 3–4 餐，每餐 20–40 克。计算：体重 70 公斤 × 1.6–2.0 克/公斤 = 112–140 克。数据：体重 70 公斤（2026-10-23）。依据：运动人群每天 1.4–2.0 克/公斤体重（国际运动营养学会立场声明，2017）\n- 基础代谢：约 1430 千卡/天（安静躺着一整天消耗的能量）。计算：10 × 70 公斤 + 6.25 × 165 厘米 − 5 × 28 岁 − 161（女） = 1430。数据：体重 70 公斤（2026-10-23）；身高、年龄、性别来自档案。依据：Mifflin-St Jeor 公式（Am J Clin Nutr 1990;51:241–247）\n\n资料：\n- 运动人群的蛋白质需要量与分配：International Society of Sports Nutrition Position Stand — Protein and Exercise（J Int Soc Sports Nutr 14:20）（国际运动营养学会（ISSN），Jäger 等，2017，立场声明）\n- 运动人群每天吃多少碳水：Nutrition and Athletic Performance（Med Sci Sports Exerc 48(3):543–568）（美国运动医学会、美国营养与饮食学会、加拿大营养师协会联合立场声明（Thomas、Erdman、Burke），2016，立场声明）\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 7935,
+   "model_calls": 3,
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 3.0,
+    "safety": 5.0,
+    "actionable": 3.0,
+    "concise": 4.0,
+    "comment": "最主要问题是碳水建议单位/换算错误：把每公斤5–7克写成每天350–490千卡，实际对应350–490克碳水，热量远高于1466千卡目标，前后矛盾。"
+   },
+   "error": ""
+  },
+  {
+   "id": "D09",
+   "cat": "data",
+   "persona": "base",
+   "ask": "我最近步数达标吗",
+   "path": "answer",
+   "roles": [
+    "data"
+   ],
+   "answer": "达标了，而且很稳。你最近 7 天平均 9163 步，最近 28 天平均 8961 步，头一周 8988、最后一周 9163，基本持平，没有明显上升或下降。对 60 岁以下的人来说，每天 8000–10000 步以后，健康收益就趋于平稳了，你正好在这个区间里。接下来保持这个量就行，不用刻意加量；如果哪天低于 8000 步，第二天补回来即可。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "数据分析"
+   ],
+   "sources": "计算：\n- 步数：最近 7 天平均 9163 步；参考：8000–10000 步/天以后收益趋于平稳。计算：最近 7 天（以最后一条记录为准）每天的步数取平均。数据：2026-10-17 至 2026-10-23，7 天有记录。依据：每天步数与全因死亡风险的荟萃分析（Lancet Public Health，2022）：60 岁以下约 8000–10000 步趋于平稳\n- 步数（最近 28 天）：平均 8961 步，最低 7244（2026-10-04），最高 12399（2026-10-10）。计算：按天的记录求平均，取最低和最高。数据：2026-09-26 到 2026-10-23 的步数记录 28 条\n- 步数的变化（最近 28 天）：头一周平均 8988，最后一周平均 9163，最后一周多 174 步，大约每周增加 51 步；变化没有超过日常波动，算基本持平。计算：头、尾各取 7 天的平均相减；每周变化用全部记录的最小二乘直线斜率 × 7；相差超过日常波动（直线残差）的 2 倍标准误才算真实变化。数据：2026-09-26 到 2026-10-23 的步数记录 28 条\n\n资料：\n- 每天走多少步：Daily steps and all-cause mortality — a meta-analysis of 15 international cohorts（Lancet Public Health 7(3):e219–e228）（Paluch 等，2022，系统综述与荟萃分析）\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 8196,
+   "model_calls": 4,
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 2.0,
+    "safety": 5.0,
+    "actionable": 4.0,
+    "concise": 4.0,
+    "comment": "编造了最近28天平均步数、头一周步数等未提供数据，个人数据使用不够严谨。"
+   },
+   "error": ""
+  },
+  {
+   "id": "K10",
+   "cat": "knowledge",
+   "persona": "base",
+   "ask": "练前喝咖啡有用吗，喝多少合适",
+   "path": "answer",
+   "roles": [
+    "nutrition"
+   ],
+   "answer": "有用，咖啡因是少数证据比较扎实、能提高运动表现的补剂之一。按你 75 公斤算，运动前约 60 分钟摄入 225–450 毫克，也就是每公斤体重 3–6 毫克；如果你平时喝咖啡少，可以先从 2 毫克/公斤左右试起，这个剂量也可能有效。一杯美式大约 100–150 毫克，具体看浓度，自己算一下别超量；到 675 毫克左右副作用就明显增多，容易心慌、手抖、睡不着。第一次别在重要训练日试新剂量，反应个体差异很大。买补剂选第三方检测认证的产品；有心脏问题或在吃药，先问医生。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "营养"
+   ],
+   "sources": "计算：\n- 咖啡因：运动前约 60 分钟 225–450 毫克；到 675 毫克左右副作用明显增多。计算：75×3=225，75×6=450，75×9=675（每公斤体重 3–6 毫克，9 毫克副作用多）。数据：体重 75 公斤。依据：K11\n\n资料：\n- 补剂：哪些有证据，有什么风险：IOC consensus statement — dietary supplements and the high-performance athlete（Br J Sports Med 52(7):439–455）（国际奥委会（IOC），Maughan 等，2018，专家共识）\n- 咖啡因与运动表现：International society of sports nutrition position stand — caffeine and exercise performance（J Int Soc Sports Nutr 18:1）（国际运动营养学会（ISSN），Guest 等，2021，立场声明）\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 8506,
+   "model_calls": 4,
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "无"
+   },
+   "error": ""
+  },
+  {
+   "id": "K11",
+   "cat": "knowledge",
+   "persona": "base",
+   "ask": "减脂期怎么吃才不掉肌肉",
+   "path": "answer",
+   "roles": [
+    "nutrition"
+   ],
+   "answer": "减脂期不掉肌肉，核心就三件事：减得慢、蛋白质吃够、力量训练别停。\n\n每周减重控制在体重的 0.5–1%，按你的体重就是每周 0.375–0.75 公斤，别追求更快。蛋白质按去脂体重往高的一端吃，每天 2.3–3.1 克/公斤去脂体重；没有去脂体重数据时，按体重每天 1.6–2.0 克/公斤估算，约 120–150 克，分 3–4 餐，每餐 20–40 克。比如早餐鸡蛋加牛奶、午餐一掌心肉或鱼、晚餐豆制品或瘦肉，训练后那餐也放够蛋白。\n\n热量别砍太狠，低于基础代谢的吃法不建议；碳水跟着训练量走，练得多的那天多吃主食。蔬菜、水果、全谷物照常吃，控制油盐糖。\n\n补剂只提一个：一水肌酸每天 3–5 克，健康人长期吃安全，体重可能因水分略升。\n\n如果出现持续乏力、力量明显下滑或关节疼痛，先停下减脂并就医。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "营养"
+   ],
+   "sources": "资料：\n- 减脂期怎么吃才少掉肌肉：Evidence-based recommendations for natural bodybuilding contest preparation — nutrition and supplementation（J Int Soc Sports Nutr 11:20）（Helms、Aragon、Fitschen，2014，综述）\n- 运动人群的蛋白质需要量与分配：International Society of Sports Nutrition Position Stand — Protein and Exercise（J Int Soc Sports Nutr 14:20）（国际运动营养学会（ISSN），Jäger 等，2017，立场声明）\n- 中国居民平衡膳食准则与每日食物量：中国居民膳食指南（2022）（中国营养学会，2022，指南）\n- 肌酸怎么吃、安不安全：International Society of Sports Nutrition position stand — safety and efficacy of creatine supplementation（J Int Soc Sports Nutr 14:18）（国际运动营养学会（ISSN），Kreider 等，2017，立场声明）\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 12697,
+   "model_calls": 3,
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 3.0,
+    "safety": 5.0,
+    "actionable": 4.0,
+    "concise": 5.0,
+    "comment": "最主要问题是未结合其当前目标为增肌且近4周体重已在下降，直接按减脂期给建议，未先澄清目标冲突。"
+   },
+   "error": ""
+  },
+  {
+   "id": "M01",
+   "cat": "multi",
+   "persona": "base",
+   "ask": "我想减脂又不想掉肌肉，训练和饮食怎么安排",
+   "path": "answer",
+   "roles": [
+    "planner",
+    "nutrition"
+   ],
+   "answer": "减脂保肌的核心就一句：力量照常练、重量别降，蛋白质吃够，热量只留小幅缺口。力量每周3练，深蹲、髋铰链、推、拉各1个主项，每个3–4组、每组6–10次，练到还剩1–2次，重量尽量不降；有氧每周2–3次、每次25–35分钟骑车，放在力量之后或另找一天。蛋白质每天120–150克、分3–4餐，每餐约20–40克；热量以2896千卡为起点小幅下调，别低于基础代谢1699千卡。你最近 4 周每周减 0.14 公斤，缺口还小，可以稍微收紧饮食，但不必大改。每周减重别超过体重的1%。别用大量有氧代替力量训练，跑步比骑车更影响增肌；若充分休息后力量仍持续下降或长期疲劳，要减量并就医。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "训练规划",
+    "营养"
+   ],
+   "sources": "你的数据：\n- Body weight：75.0 kg（2026-10-23）\n\n计算：\n- 每日蛋白质：每天 120–150 克（增肌），分到 3–4 餐，每餐 20–40 克。计算：体重 75 公斤 × 1.6–2.0 克/公斤 = 120–150 克。数据：体重 75 公斤（2026-10-23）。依据：运动人群每天 1.4–2.0 克/公斤体重（国际运动营养学会立场声明，2017）\n- 每日热量目标：约 2896 千卡/天（目标：增肌）。计算：每日总消耗 2633 × 1.1 = 2896。数据：每日总消耗、基础代谢；目标来自档案。依据：增肌期小幅盈余（约 10%），配合力量训练，减少多余脂肪增长\n- 基础代谢：约 1699 千卡/天（安静躺着一整天消耗的能量）。计算：10 × 75 公斤 + 6.25 × 175 厘米 − 5 × 30 岁 + 5（男） = 1699。数据：体重 75 公斤（2026-10-23）；身高、年龄、性别来自档案。依据：Mifflin-St Jeor 公式（Am J Clin Nutr 1990;51:241–247）\n- 体重每周变化：最近 4 周每周 -0.14 公斤（95% 可信范围 -0.25 至 -0.03），在下降。计算：对最近 4 周的称重做直线回归，斜率乘以 7；可信范围按 t 分布计算。数据：2026-09-27 至 2026-10-23，14 天有记录。依据：每周减重 0.5–1 公斤左右更容易长期保持（美国疾控中心）\n\n资料：\n- 减脂期怎么吃才少掉肌肉：Evidence-based recommendations for natural bodybuilding contest preparation — nutrition and supplementation（J Int Soc Sports Nutr 11:20）（Helms、Aragon、Fitschen，2014，综述）\n- 有氧和力量一起练（并发训练）：Concurrent Training — A Meta-Analysis Examining Interference of Aerobic and Resistance Exercises（J Strength Cond Res 26(8):2293–2307）（Wilson 等，2012，系统综述与荟萃分析）\n- 过度训练：表现、预防与何时就医：Prevention, diagnosis and treatment of the overtraining syndrome（Med Sci Sports Exerc 45(1):186–205）（欧洲运动科学学会与美国运动医学会联合共识，Meeusen 等，2013，专家共识）\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 14905,
+   "model_calls": 6,
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 4.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "最主要的问题是直接把增肌目标的2896千卡作为减脂起点小幅下调，未结合总消耗2633千卡给出明确减脂热量区间。"
+   },
+   "error": ""
+  },
+  {
+   "id": "M05",
+   "cat": "multi",
+   "persona": "base",
+   "ask": "练完肩膀有点疼，晚上吃什么有助于恢复",
+   "path": "answer",
+   "roles": [
+    "recovery",
+    "nutrition"
+   ],
+   "answer": "练完肩膀酸痛，今晚吃够蛋白质和碳水就能帮恢复：一掌半到两掌的瘦肉、鱼虾或鸡蛋（约 35 克蛋白），配一碗米饭或面条，加 300 克左右蔬菜（深色占一半），再抓一小把坚果；睡前 1–2 小时可以喝 200–300 毫升牛奶或一杯酸奶。今晚别喝酒，睡前别吃太撑。你今天状态好、睡眠 7.3 小时、心率变异性在基线内，恢复条件不错。肩膀先别练推举和侧平举，改练腿或核心，等疼痛降到 2 分以下再恢复上肢。先给疼痛打 0–10 分：如果有断裂声、肩膀变形、抬不起手臂、麻木刺痛或肿胀加重，立即就医；越来越疼或几天不见好也要看医生。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "恢复",
+    "营养"
+   ],
+   "sources": "计算：\n- 今天的身体状态：好\n- 睡眠时长：最近 7 天平均 7.3 小时，其中 0 天不足 7 小时。计算：最近 7 天（以最后一条记录为准）每晚的睡眠时长取平均。数据：2026-10-17 至 2026-10-23，7 天有记录。依据：成年人每晚应规律地睡 7 小时及以上（美国睡眠医学会与睡眠研究会共识，2015）\n- 心率变异性（SDNN）：最近 7 天平均 54.6 毫秒，基线 55.2 毫秒（±3.8），在你自己的正常波动范围内。计算：最近 7 天平均减去之前 53 天的平均，差 -0.6 毫秒；超过一个标准差算明显。数据：最近 7 天：2026-10-17 至 2026-10-23，7 天有记录；基线：2026-08-25 至 2026-10-16，53 天有记录。依据：和自己的基线比；SDNN（苹果手表）与 RMSSD（其他设备）是不同指标，不放在一起比较\n\n资料：\n- 中国居民平衡膳食准则与每日食物量：中国居民膳食指南（2022）（中国营养学会，2022，指南）\n- 怎样睡得更好（睡眠习惯）：Tips for Better Sleep（美国疾病控制与预防中心（CDC），2022，权威机构健康科普）\n- 带着疼练的界限（疼痛监测法）：Continued Sports Activity, Using a Pain-Monitoring Model, During Rehabilitation in Patients With Achilles Tendinopathy（Am J Sports Med 35(6):897–906）（Silbernagel、Thomeé、Eriksson、Karlsson，2007，随机对照研究）\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 23660,
+   "model_calls": 7,
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "无"
+   },
+   "error": ""
+  },
+  {
+   "id": "Q03",
+   "cat": "clarify",
+   "persona": "knee",
+   "ask": "帮我做个训练计划",
+   "path": "answer",
+   "roles": [
+    "planner"
+   ],
+   "answer": "按你每周能练 3 天、每次 45 分钟、家里只有一对 20 公斤哑铃和弹力带，我排了全身三分化：周一、周三、周五各练一次，每个肌群一周练到 2 次以上、总组数在 10 组以上，每组 8–12 次、还剩 2 次就停。左膝这边，深蹲只蹲到不疼的幅度，腿的动作换成后撤弓步和高脚杯深蹲，这两个动作对膝盖更友好；练时疼痛不超过 5 分、第二天能恢复就继续，如果疼痛逐周加重、肿胀或打软腿就停下就医。有氧不安排跑步，用快走或弹力带代替。能连续两次都比目标次数多做 1–2 次，就加重 2–10%。\n\n下面是计划预览，点「确认」才会保存，保存后也能撤销。",
+   "notices": [],
+   "steps": [
+    "主教练",
+    "训练规划"
+   ],
+   "sources": "资料：\n- 每个肌群每周练几次：Effects of Resistance Training Frequency on Measures of Muscle Hypertrophy（Sports Med 46(11):1689–1697）（Schoenfeld、Ogborn、Krieger，2016，系统综述与荟萃分析）\n- 每周训练量与增肌的关系：Dose-response relationship between weekly resistance training volume and increases in muscle mass（J Sports Sci 35(11):1073–1082）（Schoenfeld、Ogborn、Krieger，2017，系统综述与荟萃分析）\n- 力量训练的负荷、组数、频率与进阶（健康成年人）：Progression Models in Resistance Training for Healthy Adults（Med Sci Sports Exerc 41(3):687–708）（美国运动医学会（ACSM），2009，立场声明）\n- 后撤弓步：iron-m 动作库（iron-m，2026，动作库（待审定））\n- 高脚杯深蹲：iron-m 动作库（iron-m，2026，动作库（待审定））\n- 带着疼练的界限（疼痛监测法）：Continued Sports Activity, Using a Pain-Monitoring Model, During Rehabilitation in Patients With Achilles Tendinopathy（Am J Sports Med 35(6):897–906）（Silbernagel、Thomeé、Eriksson、Karlsson，2007，随机对照研究）",
+   "cards": [
+    "plan"
+   ],
+   "card_text": "《居家哑铃全身三分化》每周 3 练 · 增肌\n周一 全身A：蹲+推：高脚杯深蹲 3×8–12（20 公斤哑铃，只蹲到不疼的深度）、哑铃卧推（地板或凳上） 3×8–12（每手 20 公斤，肩胛收紧，别耸肩）、单臂哑铃划船 3×10–12（20 公斤，背发力，不甩腰）、哑铃肩推 3×8–12（每手 20 公斤，核心收紧，别塌腰）、弹力带弯举 2×12–15（弹力带，肘固定，慢放）、平板支撑 3×30–45 秒（自重，臀腹收紧，不塌腰）\n周三 全身B：髋+拉：哑铃罗马尼亚硬拉 3×8–12（每手 20 公斤，髋往后推，背挺直）、后撤弓步 3×每侧 8–10（自重或每手 10 公斤，前膝顺脚尖，幅度不疼为准）、俯身哑铃划船 3×8–12（每手 20 公斤，背平，拉向腹部）、弹力带面拉 3×12–15（弹力带，练后肩，改善圆肩）、哑铃臀桥 3×12–15（20 公斤放髋上，顶髋停 1 秒）、弹力带侧向走 2×每侧 12 步（弹力带，膝盖不内扣）\n周五 全身C：综合+核心：高脚杯深蹲 3×10–12（20 公斤哑铃，比周一略浅，不疼为准）、哑铃地板卧推 3×10–12（每手 20 公斤，肘触地即起）、单臂哑铃划船 3×10–12（20 公斤，两侧各做）、哑铃保加利亚分腿蹲 2×每侧 8–10（自重或每手 10 公斤，膝盖有伤：只做到不疼的深度；膝盖疼就换原地分腿蹲）、弹力带推举 3×12–15（弹力带，站姿，核心收紧）、死虫 3×每侧 10（自重，腰贴地，慢做）",
+   "ms": 17044,
+   "model_calls": 4,
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 3.0,
+    "safety": 4.0,
+    "actionable": 3.0,
+    "concise": 5.0,
+    "comment": "计划总组数偏多，周三/周五尤其难在45分钟内完成，且“加重2–10%”与只有一对固定20公斤哑铃不匹配。"
+   },
+   "error": ""
+  }
+ ]
+}
