@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ironm_agent import imports
 from ironm_agent import profile as profiles
-from ironm_agent.brief import today_brief, weekly_review
+from ironm_agent.brief import hero_line, today_brief, weekly_review
 from ironm_agent.casefile import Snapshot
 from ironm_agent.exercises import EQUIPMENT, NOTE, PARTS, library
 from ironm_agent.healthdata import read_all
@@ -475,10 +475,9 @@ async def get_brief(
     except Exception as e:
         _log.warning("brief memory unavailable: error_type=%s", type(e).__name__)
     current = plan.plan if plan else None
-    return {
-        "today": today_brief(snap, items, current, logs),
-        "week": weekly_review(snap, current, logs, plan.since if plan else None),
-    }
+    today = today_brief(snap, items, current, logs)
+    week = weekly_review(snap, current, logs, plan.since if plan else None)
+    return {"today": today, "week": week, "hero": hero_line(today, week)}
 
 
 @router.get("/iron")

@@ -72,3 +72,36 @@ def test_two_day_plan_is_not_told_to_drop_to_two_days() -> None:
     two = PLAN.model_copy(update={"sessions": PLAN.sessions[:2], "days_per_week": 2})
     w = weekly_review(snap(Readings()), two, [])
     assert w["due"] == 2 and not any("减到 2 天" in t for t in w["tips"])
+
+
+# ---- 今日战报（spec [2026-10-23] §19）------------------------------------------------------------
+
+
+def test_hero_line_four_cases() -> None:
+    from ironm_agent.brief import hero_line
+
+    def today(kind: str, *, done: bool = False, level: str = "good") -> dict[str, object]:
+        t = {"kind": kind, "name": "下肢", "minutes": 50, "done": done}
+        return {"training": t, "readiness": {"level": level}}
+
+    week = {"planned": 3, "done": 1}
+    assert hero_line(today("session", done=True), week)["title"] == "下肢 已拿下"
+    poor = hero_line(today("session", level="poor"), week)
+    assert poor["title"] == "今天练下肢" and "今天的版本" in poor["push"]
+    go = hero_line(today("session"), week)
+    assert "50 分钟" in go["push"] and "冲" in go["push"]
+    assert hero_line(today("rest"), week)["title"] == "休息日"
+    assert "本周目标已经拿下" in hero_line(today("rest"), {"planned": 3, "done": 3})["push"]
+    assert hero_line(today("no_plan"), {})["title"] == "开练吧"
+
+
+def test_web_files_load_nothing_external() -> None:
+    import re
+    from pathlib import Path
+
+    web = Path(__file__).resolve().parents[1] / "ironm_agent" / "web"
+    for name in ("index.html", "style.css", "app.js"):
+        text = (
+            (web / name).read_text().replace("http://www.w3.org/2000/svg", "")
+        )  # SVG 命名空间不是请求
+        assert not re.search(r"https?://|@import|//cdn", text), name

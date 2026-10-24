@@ -125,3 +125,34 @@ def weekly_review(
         "hrv": {"name": hrv.name, "value": hrv.value, "brief": hrv.brief} if hrv else None,
         "tips": tips[:MAX_TIPS],
     }
+
+
+def hero_line(today: dict[str, Any], week: dict[str, Any]) -> dict[str, str]:
+    """首页"今日战报"的大标题和一句鼓劲的话（spec [2026-10-23] §19）：按规则，不调用模型。"""
+    t = today.get("training") or {}
+    level = (today.get("readiness") or {}).get("level")
+    planned, done = week.get("planned") or 0, week.get("done") or 0
+    week_won = bool(planned) and done >= planned
+    kind = t.get("kind")
+    if kind == "session" and t.get("done"):
+        return {
+            "title": f"{t['name']} 已拿下",
+            "push": "今天的训练完成了，干得漂亮！好好吃饭、早点睡。",
+        }
+    if kind == "session":
+        if level == "poor":
+            return {
+                "title": f"今天练{t['name']}",
+                "push": "状态差也来了，就赢了一半：按今天的版本轻松练。",
+            }
+        if week_won:
+            return {"title": f"今天练{t['name']}", "push": "本周目标已经达成，这一练是额外加分！"}
+        return {
+            "title": f"今天练{t['name']}",
+            "push": f"{t.get('minutes', 45)} 分钟，练完就点亮今天，冲！",
+        }
+    if kind == "rest":
+        if week_won:
+            return {"title": "休息日", "push": "本周目标已经拿下，今天专心恢复。"}
+        return {"title": "休息日", "push": "恢复也是训练的一部分：散散步、拉拉伸。"}
+    return {"title": "开练吧", "push": "还没有训练计划：让教练按你的目标排一份，从今天开始。"}

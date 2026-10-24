@@ -11,6 +11,12 @@ let cache = { metrics: null, profile: null, exercises: null, files: null, me: nu
 
 // ---- 小工具 -------------------------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
+// replaceChildren、append 和 h() 一样跳过 null、false（否则页面上会显示 "null"）
+for (const name of ["replaceChildren", "append"]) {
+  const raw = Element.prototype[name];
+  Element.prototype[name] = function (...kids) { return raw.apply(this, kids.flat(Infinity).filter((k) => k != null && k !== false)); };
+}
+
 function h(tag, attrs = {}, ...kids) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -233,17 +239,39 @@ const QUICK = {
   "今天有点累": "今天有点累，还要练吗？怎么安排？",
 };
 const BRIEF_TONE = { good: "good", fair: "neutral", poor: "attention", unknown: "neutral" };
-const BRIEF_HEAD = { good: "状态不错，可以按计划练", fair: "状态一般，量力而行", poor: "今天注意恢复", unknown: "最近缺少恢复数据" };
 const WEEK = ["一", "二", "三", "四", "五", "六", "日"];
 const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 async function home(view) {
-  const [brief, wx, training] = await Promise.all([
+  const [brief, wx, training, cal] = await Promise.all([
     api("/iron/api/brief").catch(() => null),
     api("/iron/api/weather").catch(() => ({ status: "unavailable", message: "暂时取不到天气" })),
     api("/iron/api/training").catch(() => null),
+    api("/iron/api/calendar").catch(() => null),
   ]);
-  view.append(statusCard(brief, wx), triggersCard(), goalCard(), planTable(training, brief), calendarCard(brief));
+  view.append(statusCard(brief, wx, cal), triggersCard(), goalCard(), planTable(training, brief), calendarCard(brief));
+}
+
+// 本周进度环（spec [2026-10-23] §19）
+function ring(done, planned) {
+  const p = planned ? Math.min(1, done / planned) : 0;
+  return h("div", { class: `ring${planned && done >= planned ? " full" : ""}`, style: `--p:${p}`, role: "img", "aria-label": planned ? `本周完成 ${done} / ${planned} 次` : "本周还没有计划" },
+    h("div", { class: "ring-in" }, h("b", {}, String(done)), h("span", {}, planned ? `/ ${planned}` : "次"), h("small", {}, "本周")));
+}
+
+// 打卡成功的庆祝画面：写明本周第几练；点一下或 2.4 秒后自动消失
+async function celebrate() {
+  const b = await api("/iron/api/brief").catch(() => null);
+  const w = b?.week, n = w?.done || 0;
+  const won = w?.planned && n >= w.planned;
+  const el = h("div", { class: "cheer", role: "status" },
+    h("div", { class: "cheer-burst" }, icon("check")),
+    h("b", { class: "cheer-title" }, "打卡成功"),
+    h("p", {}, n ? `本周第 ${n} 练${won ? "，本周目标达成！" : "，继续保持！"}` : "又进步了一点，继续保持！"));
+  const close = () => el.remove();
+  el.addEventListener("click", close);
+  document.body.append(el);
+  setTimeout(close, 2400);
 }
 
 // 目标进度与阶段复测（spec [2026-10-23] §18 需求 6）：没设目标时首页不显示，数据页提示去"我的"设置
@@ -324,15 +352,25 @@ function wxIcon(text) {
 }
 const aqiTone = (a) => (a <= 100 ? "good" : a <= 150 ? "mid" : "bad");
 
-function statusCard(brief, wx) {
-  const day = brief?.today, rd = day?.readiness;
-  const head = rd ? BRIEF_HEAD[rd.level] || rd.name : "今天的状态暂时算不出来";
-  const why = rd?.reasons?.length ? `${rd.reasons.join("；")}。` : day?.alert || "";
+// 今日战报（spec [2026-10-23] §19）：今天练什么、一句鼓劲的话、本周进度环、本月天数、状态与天气
+function statusCard(brief, wx, cal) {
+  const day = brief?.today, rd = day?.readiness, week = brief?.week, hero = brief?.hero;
+  const why = rd?.reasons?.length ? `${rd.reasons.join("；")}。` : "";
+  const monthDays = cal?.done_days?.length ?? null;
   return h("div", { class: "hero" },
-    h("div", { class: "hero-kicker" }, h("span", { class: `hero-dot ${BRIEF_TONE[rd?.level] || "neutral"}` }), "今天的状态"),
-    h("div", {}, h("h2", {}, head), why ? h("p", {}, why) : null),
+    h("div", { class: "hero-kicker" }, h("span", { class: "hero-tag" }, "今日战报")),
+    h("div", { class: "hero-main" },
+      h("div", { class: "hero-text" },
+        h("h2", { class: "hero-title" }, hero?.title || "今天"),
+        h("p", { class: "hero-push" }, hero?.push || "今天的简报暂时取不到，稍后再看。")),
+      ring(week?.done || 0, week?.planned || 0)),
+    h("div", { class: "hero-stats" },
+      h("div", { class: "hero-stat" }, h("span", { class: "k" }, "本月练了"), h("span", { class: "v" }, monthDays == null ? "—" : String(monthDays), h("small", {}, "天"))),
+      h("div", { class: "hero-stat" }, h("span", { class: "k" }, "今天状态"), h("span", { class: `v state-${BRIEF_TONE[rd?.level] || "neutral"}` }, rd ? rd.name : "—")),
+      h("div", { class: "hero-stat" }, h("span", { class: "k" }, "今天时长"), h("span", { class: "v" }, day?.training?.kind === "session" ? String(day.training.minutes) : "—", h("small", {}, day?.training?.kind === "session" ? "分钟" : "")))),
+    why && !day?.alert ? h("p", { class: "hero-why" }, why) : null,
     weatherRow(wx),
-    day?.alert && rd?.reasons?.length ? h("p", { class: "hero-alert" }, icon("alert", "xs"), day.alert) : null);
+    day?.alert ? h("p", { class: "hero-alert" }, icon("alert", "xs"), day.alert) : null);
 }
 
 function weatherRow(wx) {
@@ -530,7 +568,7 @@ function doneSheet(session, version = null) {
       await api("/iron/api/workouts", { method: "POST", body: JSON.stringify({ session: session === "训练" ? "" : session, done: true, rpe: rpe || null,
         note: (version ? [note.value.trim(), "按今天的版本"].filter(Boolean).join("；") : note.value.trim()).slice(0, 80),
         items, ...(version ? { minutes: version.minutes } : {}) }) });
-      closeSheet(); render();
+      closeSheet(); render(); celebrate();
     } catch (err) { msg.textContent = err.message; save.disabled = false; }
   } }, "打卡");
   openSheet(`打卡：${session}${version ? "（今天的版本）" : ""}`,
@@ -746,7 +784,7 @@ function dietReviewCard() {
   };
   const draw = (r) => {
     const p = r.proposal, c = r.current;
-    box.replaceChildren(
+    box.replaceChildren(...[
       c ? h("div", { class: "kv" }, h("span", {}, "现在的调整"), h("span", {}, `${kcal(c.kcal)} 千卡/天（${md(c.since)}起）`)) : null,
       c ? h("p", { class: "caption" }, `原因：${c.reason}`) : null,
       p ? h("p", { class: "lede" }, `${p.reason}：建议每天${p.delta > 0 ? "多" : "少"}吃约 ${Math.abs(p.delta)} 千卡，目标从 ${p.before} 调到 ${p.after} 千卡。`) : h("p", { class: "muted" }, r.message),
@@ -754,7 +792,7 @@ function dietReviewCard() {
       h("div", { class: "btn-row" },
         p ? h("button", { class: "btn", type: "button", onclick: () => act("/iron/api/diet/adjust") }, icon("check", "sm"), "确认调整") : null,
         c ? h("button", { class: "btn ghost", type: "button", onclick: () => act("/iron/api/diet/adjust/undo") }, "撤销上次调整") : null),
-      h("p", { class: "caption" }, "每两周按体重趋势复盘一次；调整后的目标不会低于基础代谢和安全下限。"));
+      h("p", { class: "caption" }, "每两周按体重趋势复盘一次；调整后的目标不会低于基础代谢和安全下限。")].filter(Boolean));
   };
   api("/iron/api/diet/review").then(draw).catch((err) => box.replaceChildren(h("p", { class: "muted" }, err.message)));
   return section("两周饮食复盘", null, box);
