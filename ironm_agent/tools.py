@@ -22,6 +22,55 @@ HEALTH = "query_health_indicators"
 KNOWLEDGE = "search_knowledge"
 METRICS = "compute_metrics"
 EXERCISES = "search_exercises"
+MEDS = "query_medications"  # mirobody 的用药记录（spec [2026-10-23] §25）
+MEDICAL = "search_medical_knowledge"  # mirobody 的医学知识（部署配置了才有）
+
+# 能查用药记录的角色：判断运动风险（降压药、胰岛素等）
+MEDS_ROLES = frozenset({"recovery", "general"})
+# 能查医学知识的角色：问到检验项目、药物副作用时
+MEDICAL_ROLES = frozenset({"recovery", "nutrition", "general"})
+
+type MedicalSearch = Callable[[str, str], Awaitable[str]]
+
+
+def _meds_schema() -> dict[str, Any]:
+    from mirobody.kernel.meds import TOOL_SCHEMA
+
+    return {
+        "type": "function",
+        "function": {
+            "name": MEDS,
+            "description": (
+                "查询这个人健康记录里的用药（药名、剂量、开始和停止时间）。判断运动风险时用："
+                "如降压药（尤其β受体阻滞剂会让心率偏低）、胰岛素和降糖药（运动时防低血糖）。"
+                "没有返回说明没有记录，不代表没在吃药；不建议改药、停药。"
+            ),
+            "parameters": TOOL_SCHEMA,
+        },
+    }
+
+
+MEDICAL_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": MEDICAL,
+        "description": (
+            "查通用医学知识：检验项目是什么意思、药物的作用和副作用、疾病是什么（来自 MedlinePlus、"
+            "美国 FDA 药品说明书等）。不读这个人的记录。query 用英文医学词，不要写这个人的名字、数值和日期。"
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "英文医学词，如 metoprolol exercise heart rate",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
 
 # 能查动作库的角色（做法、要点、常见错误、替代、什么情况先别做）
 LIBRARY_ROLES = frozenset({"trainer", "recovery", "general"})
@@ -187,8 +236,13 @@ class Toolbox:
         metrics: MetricsSource | None = None,
         calcs: Mapping[str, str] | None = None,
         context: pro.ToolContext | None = None,
+        meds: Any | None = None,
+        medical: MedicalSearch | None = None,
     ) -> None:
         self.spec = spec
+        role = spec.role.value
+        self.meds = meds if role in MEDS_ROLES else None  # mirobody 的用药记录工具
+        self.medical = medical if role in MEDICAL_ROLES else None  # mirobody 的医学知识
         self.context = context  # 专业工具要用的这个人的情况；没有时不提供专业工具
         self.kb = kb
         self.health = health if spec.health_data else None
@@ -212,6 +266,10 @@ class Toolbox:
             out.append(_health_schema())
         if self.metrics is not None:
             out.append(METRICS_SCHEMA)
+        if self.meds is not None:
+            out.append(_meds_schema())
+        if self.medical is not None:
+            out.append(MEDICAL_SCHEMA)
         if self.context is not None:
             out += [t.schema() for t in pro.tools_for(self.spec.role.value)]
         return out
@@ -253,6 +311,10 @@ class Toolbox:
             return await self._health(call.arguments)
         if call.name == METRICS and self.metrics is not None:
             return await self._metrics()
+        if call.name == MEDS and self.meds is not None:
+            return await self._meds(call.arguments)
+        if call.name == MEDICAL and self.medical is not None:
+            return await self._medical(str(call.arguments.get("query", "")))
         if self.context is not None and pro.allowed(self.spec.role.value, call.name):
             return await self._pro(call)
         return json.dumps({"error": f"{self.spec.name}不能使用这个工具"}, ensure_ascii=False)
@@ -288,6 +350,26 @@ class Toolbox:
             self.evidence.calcs[cid] = detail
             lines.append(f"[{cid}] {detail}")
         return "\n".join(lines) or "没有可计算的指标。"
+
+    async def _meds(self, args: Mapping[str, Any]) -> str:
+        self.evidence.health_queries += 1
+        try:
+            out = await self.meds.query_medications(self.user_info, **dict(args))  # type: ignore[union-attr]
+        except Exception as e:  # 读不到不影响作答
+            _log.warning("medications query failed: error_type=%s", type(e).__name__)
+            return "这次没能读取用药记录。"
+        if isinstance(out, Mapping) and out.get("success") is False:
+            return "用药记录查询没有成功，可以如实说明没读到。"
+        text = out.get("result") if isinstance(out, Mapping) else out
+        return str(text or "没有用药记录。")
+
+    async def _medical(self, query: str) -> str:
+        self.evidence.knowledge_queries += 1
+        try:
+            return await self.medical(query, "")  # type: ignore[misc]
+        except Exception as e:
+            _log.warning("medical knowledge failed: error_type=%s", type(e).__name__)
+            return "这次没能查到医学资料。"
 
     def _knowledge(self, query: str) -> str:
         self.evidence.knowledge_queries += 1

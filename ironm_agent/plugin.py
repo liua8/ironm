@@ -246,8 +246,13 @@ class IronMAgent:
         observe: Callable[[dict[str, Any]], None] | None = None,
         weather: Callable[[str], Awaitable[Weather | None]] | None = None,
         pain: PainStore | None = None,
+        medications: Any | None = None,
+        medical: Any | None = None,
         **kwargs: Any,
     ) -> None:
+        # mirobody 的用药记录与医学知识（spec [2026-10-23] §25）；测试时换成假的，注入了 health 却没给的不用
+        self._meds = medications
+        self._medical = medical
         self._pain = pain  # 说疼的部位和日期（触发型调整用，默认用数据库里 iron-m 自己的表）
         self._weather = weather  # 这个人所在城市的天气（默认按"我的"里设置的城市去取）
         self._snapshot = snapshot  # 这个人的档案、健康数据与指标（默认与数据页同一份计算）
@@ -428,6 +433,25 @@ class IronMAgent:
         """等后台的记忆提取做完（测试与停机时用）。"""
         while self._tasks:
             await asyncio.gather(*list(self._tasks), return_exceptions=True)
+
+    def _meds_source(self) -> Any | None:
+        if self._meds is None and self._health is None:  # 线上：用 mirobody 的用药记录工具
+            from mirobody.agent.tools.medications_service import MedicationsService
+
+            self._meds = MedicationsService()
+        return self._meds
+
+    def _medical_source(self) -> Any | None:
+        """部署配置了医学知识（离线索引或联网）时才有。"""
+        if self._medical is not None:
+            return self._medical
+        try:
+            from mirobody.agent.knowledge import tools as medical
+
+            return medical.search if medical.scopes() else None
+        except Exception as e:
+            _log.warning("medical knowledge unavailable: error_type=%s", type(e).__name__)
+            return None
 
     def _health_source(self) -> Any:
         if self._health is None:
@@ -707,6 +731,8 @@ class IronMAgent:
                     session_id=session_id,
                     calcs=case.calcs,
                     context=tools_ctx,
+                    meds=self._meds_source() if spec.health_data else None,
+                    medical=self._medical_source(),
                 )
                 for c in before:
                     toolbox.evidence.absorb(c.evidence)

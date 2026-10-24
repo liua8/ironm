@@ -904,7 +904,9 @@ async def get_coach(user_id: str = Depends(_verify())) -> dict[str, Any]:
     except Exception as e:
         _log.error("coach failed: error_type=%s", type(e).__name__)
         raise HTTPException(503, "管家的方案暂时算不出来，请稍后再试") from e
-    order = {x.key: i for i, x in enumerate(state.items)}  # 按方案里的顺序：今天、提醒、待确认、饮食、目标……
+    order = {
+        x.key: i for i, x in enumerate(state.items)
+    }  # 按方案里的顺序：今天、提醒、待确认、饮食、目标……
     today = [c for c in await deps.store.history(user_id, 60) if c.day == state.day]
     latest = {c.key: c for c in reversed(today)}  # 同一项今天改了几次只显示最后一次
     shown = sorted(latest.values(), key=lambda c: order.get(c.key, len(order)))
