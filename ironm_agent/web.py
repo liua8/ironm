@@ -29,6 +29,8 @@ from ironm_agent.memory_view import expired
 from ironm_agent.metrics import ACTIVITY, GOALS, KcalAdjust, Metric, compute_all
 from ironm_agent.progression import targets
 from ironm_agent.training import LogItem, TrainingStore, WorkoutLog, default_training
+from ironm_agent.triggers import pain_parts
+from ironm_agent.web_more import PAIN
 
 _log = logging.getLogger("ironm_agent.web")
 
@@ -393,8 +395,18 @@ async def add_workout(
     user_id: str = Depends(_verify()),
     store: TrainingStore = TRAINING,
     memory: MemoryStore = STORE,
+    pain: Any = PAIN,
 ) -> dict[str, Any]:
     row = await store.log(user_id, WorkoutLog(day=date.today(), **body.model_dump()))
+    if parts := pain_parts(
+        body.note
+    ):  # 打卡备注里说疼：触发型调整用（spec [2026-10-23] §18 需求 5）
+        try:
+            if not await memory.paused(user_id):
+                for part in parts:
+                    await pain.add(user_id, part, date.today())
+        except Exception as e:
+            _log.warning("pain record failed: error_type=%s", type(e).__name__)
     refresh_later(
         user_id, memory, store
     )  # 打卡后在后台更新训练记录得出的偏好（spec [2026-10-23] §17）

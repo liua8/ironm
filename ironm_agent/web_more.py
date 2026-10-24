@@ -548,12 +548,52 @@ def make_agent(training: TrainingStore, memory: MemoryStore) -> Any:
     return agent
 
 
+# ---- 触发型调整（spec [2026-10-23] §18 需求 5）---------------------------------------------------
+
+TRIGGER_ASK = "按首页的提醒调整训练计划"
+
+
+def pain_store() -> Any:
+    from ironm_agent.triggers import default_pain
+
+    return default_pain()
+
+
+PAIN = Depends(pain_store)  # 测试时用 dependency_overrides 换成内存版
+
+
+async def _triggers(user_id: str, training: TrainingStore, pain: Any, today: date) -> list[Any]:
+    from ironm_agent.triggers import PAIN_DAYS, PLATEAU_LOOKBACK, detect
+
+    stored = await training.plan(user_id)
+    logs = [
+        x.log for x in await training.workouts(user_id, today - timedelta(days=PLATEAU_LOOKBACK))
+    ]
+    pains = await pain.since(user_id, today - timedelta(days=PAIN_DAYS))
+    return detect(
+        stored.plan if stored else None, logs, stored.since if stored else None, pains, today
+    )
+
+
+@router.get("/iron/api/triggers")
+async def get_triggers(
+    user_id: str = Depends(_verify()), training: TrainingStore = TRAINING, pain: Any = PAIN
+) -> dict[str, Any]:
+    found = await _triggers(user_id, training, pain, date.today())
+    return {"triggers": [
+        {"kind": t.kind, "title": t.title, "detail": t.detail, "action": t.action} for t in found
+    ]}  # fmt: skip
+
+
 @router.post("/iron/api/review/proposal")
 async def review_proposal(
+    trigger: str = "",
     user_id: str = Depends(_verify()),
     training: TrainingStore = TRAINING,
     memory: MemoryStore = MEMORY,
+    pain: Any = PAIN,
 ) -> dict[str, Any]:
+    """按每周复盘（或首页的某条提醒，trigger 为提醒的种类）生成调整方案；提醒在服务端重新判断。"""
     from ironm_agent.brief import weekly_review
     from ironm_agent.plugin import REVIEW_ASK, REVIEW_MAX_DAYS
     from ironm_agent.protools.plan_check import changed_days
@@ -563,11 +603,19 @@ async def review_proposal(
     if stored is None:
         raise HTTPException(409, "还没有训练计划：先让教练排一份")
     snap = await _web().snapshot_for(user_id)
-    logs = [x.log for x in await training.workouts(user_id, snap.today - timedelta(days=14))]
-    tips = weekly_review(snap, stored.plan, logs, stored.since)["tips"]
-    if not tips:
-        return {"status": "no_change", "message": "这周没有需要调整的地方，照计划来。"}
-    ask = f"{REVIEW_ASK}（每次最多改两处，只改需要改的地方）：" + "".join(tips)
+    if trigger:
+        found = await _triggers(user_id, training, pain, snap.today)
+        hit = next((t for t in found if t.kind == trigger and t.action == "proposal"), None)
+        if hit is None:
+            return {"status": "no_change", "message": "这条提醒已经不需要处理了。"}
+        tips = [hit.tip]
+        ask = f"{TRIGGER_ASK}（只改需要改的地方）：{hit.tip}"
+    else:
+        logs = [x.log for x in await training.workouts(user_id, snap.today - timedelta(days=14))]
+        tips = weekly_review(snap, stored.plan, logs, stored.since)["tips"]
+        if not tips:
+            return {"status": "no_change", "message": "这周没有需要调整的地方，照计划来。"}
+        ask = f"{REVIEW_ASK}（每次最多改两处，只改需要改的地方）：" + "".join(tips)
     agent = make_agent(training, memory)
     msgs = [{"role": "user", "content": ask}]
     blocks = [b async for b in agent.generate_response(user_id, msgs, session_id="")]
@@ -598,7 +646,7 @@ async def review_proposal(
         "draft": draft.json(),
         "changed_days": n,
         "warning": f"这份方案改动了 {n} 天，超过了每次最多改 {REVIEW_MAX_DAYS} 天"
-        if n > REVIEW_MAX_DAYS
+        if n > REVIEW_MAX_DAYS and not trigger
         else "",
     }
 
@@ -686,6 +734,7 @@ async def get_today(
     """按今天的状态、天气和可用时间，用规则改出今天的版本；原计划不变。"""
     from ironm_agent.casefile import readiness
     from ironm_agent.today import build
+    from ironm_agent.triggers import gap_scale
 
     if minutes is not None and not 10 <= minutes <= 180:
         raise HTTPException(422, "可用时间要在 10 到 180 分钟之间")
@@ -698,6 +747,9 @@ async def get_today(
         return {"status": "rest"}
     snap = await _web().snapshot_for(user_id)
     state = readiness(snap.readings, "", today)
+    gap = gap_scale(
+        [x.log for x in await training.workouts(user_id, today - timedelta(days=60))], today
+    )
     wx = await weather.for_user(user_id)
     advice = weather.assess(wx) if wx else None
     poor = state.level == "poor"
@@ -708,6 +760,8 @@ async def get_today(
         indoor=advice is not None and advice.level in ("indoor", "avoid"),
         indoor_why=advice.reasons[0] if advice and advice.reasons else "",
         minutes=minutes,
+        scale=gap[0] if gap else None,
+        scale_why=gap[1] if gap else "",
     )
     return {
         "status": "ok",

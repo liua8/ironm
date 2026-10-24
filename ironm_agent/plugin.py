@@ -86,6 +86,7 @@ from ironm_agent.training import (
     task_of,
     trusted_log,
 )
+from ironm_agent.triggers import PainStore, default_pain, pain_parts
 from ironm_agent.weather import Weather
 from ironm_agent.weather import case_line as weather_line
 from ironm_agent.weather import for_user as weather_for
@@ -238,8 +239,10 @@ class IronMAgent:
         mode: Literal["multi", "single"] = "multi",
         observe: Callable[[dict[str, Any]], None] | None = None,
         weather: Callable[[str], Awaitable[Weather | None]] | None = None,
+        pain: PainStore | None = None,
         **kwargs: Any,
     ) -> None:
+        self._pain = pain  # 说疼的部位和日期（触发型调整用，默认用数据库里 iron-m 自己的表）
         self._weather = weather  # 这个人所在城市的天气（默认按"我的"里设置的城市去取）
         self._snapshot = snapshot  # 这个人的档案、健康数据与指标（默认与数据页同一份计算）
         self._files: dict[str, Any] = dict(files or {})  # 读附件的方式（测试时换成假的）
@@ -325,6 +328,21 @@ class IronMAgent:
         except Exception as e:
             _log.warning("weather unavailable: error_type=%s", type(e).__name__)
             return None
+
+    def _pain_store(self) -> PainStore:
+        if self._pain is None:
+            self._pain = default_pain()
+        return self._pain
+
+    async def _record_pain(self, user_id: str, parts: list[str]) -> None:
+        """记下这句话里说疼的部位（spec [2026-10-23] §18 需求 5）；暂停记忆时不记。"""
+        try:
+            if await self._memory_store().paused(user_id):
+                return
+            for part in parts:
+                await self._pain_store().add(user_id, part, date.today())
+        except Exception as e:  # 出错不影响已经发出的回答
+            _log.warning("pain record failed: error_type=%s", type(e).__name__)
 
     def _training_store(self) -> TrainingStore:
         if self._training is None:
@@ -439,6 +457,11 @@ class IronMAgent:
                 else:
                     hold(session_id, text)
                     run["memory_extract"] = "skipped"
+                if parts := pain_parts(text):  # 说疼的部位：触发型调整用
+                    run["pain_parts"] = len(parts)
+                    task = asyncio.create_task(self._record_pain(user_id, parts))
+                    self._tasks.add(task)
+                    task.add_done_callback(self._tasks.discard)
                 if prefs_due(user_id):  # 每天第一次回答之后，后台更新训练记录得出的偏好
                     task = asyncio.create_task(self._refresh_prefs(user_id))
                     self._tasks.add(task)

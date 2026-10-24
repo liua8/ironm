@@ -243,7 +243,18 @@ async function home(view) {
     api("/iron/api/weather").catch(() => ({ status: "unavailable", message: "暂时取不到天气" })),
     api("/iron/api/training").catch(() => null),
   ]);
-  view.append(statusCard(brief, wx), planTable(training, brief), calendarCard(brief));
+  view.append(statusCard(brief, wx), triggersCard(), planTable(training, brief), calendarCard(brief));
+}
+
+// 触发型调整（spec [2026-10-23] §18 需求 5）：满足条件就提醒，一键生成调整方案；中断后回来的降量已经在今天的版本里
+function triggersCard() {
+  const box = h("div", { class: "triggers" });
+  api("/iron/api/triggers").then((r) => {
+    box.replaceChildren(...r.triggers.map((t) => h("div", { class: "card trigger" },
+      h("div", { class: "notice-line" }, icon("alert", "xs"), h("div", {}, h("b", {}, t.title), h("p", {}, t.detail))),
+      t.action === "proposal" ? h("button", { class: "btn ghost block", type: "button", onclick: () => proposalSheet(t) }, icon("check", "sm"), "生成调整方案") : null)));
+  }).catch(() => box.replaceChildren());
+  return box;
 }
 
 function wxIcon(text) {
@@ -480,15 +491,15 @@ function weekCard(w) {
       h("div", { class: "row-main" }, h("span", { class: "row-title" }, k), sub ? h("span", { class: "row-sub" }, sub) : null),
       h("span", { class: "row-end" }, v)))),
     w.tips.length ? h("ul", { class: "tips" }, w.tips.map((t) => h("li", {}, t))) : h("p", { class: "muted" }, "这周没有需要调整的地方，照计划来。"),
-    w.tips.length && w.planned ? h("button", { class: "btn block", type: "button", onclick: proposalSheet }, icon("check", "sm"), "生成调整方案") : null);
+    w.tips.length && w.planned ? h("button", { class: "btn block", type: "button", onclick: () => proposalSheet() }, icon("check", "sm"), "生成调整方案") : null);
 }
 
 // 每周复盘直接出调整方案（spec [2026-10-23] §18 需求 1）：训练规划按复盘改计划，确认后才替换，可以撤销
-async function proposalSheet() {
-  const box = h("div", { class: "sheet-stack" }, h("p", { class: "muted" }, "训练规划在按这周的复盘改计划，大约要半分钟…"));
-  openSheet("按复盘调整计划", box);
+async function proposalSheet(trigger = null) {
+  const box = h("div", { class: "sheet-stack" }, h("p", { class: "muted" }, `训练规划在按${trigger ? "提醒" : "这周的复盘"}改计划，大约要半分钟…`));
+  openSheet(trigger ? trigger.title : "按复盘调整计划", box);
   let r;
-  try { r = await api("/iron/api/review/proposal", { method: "POST" }); }
+  try { r = await api(`/iron/api/review/proposal${trigger ? `?trigger=${trigger.kind}` : ""}`, { method: "POST" }); }
   catch (err) { box.replaceChildren(h("p", { class: "error" }, err.message)); return; }
   if (r.status !== "ok") {
     box.replaceChildren(h("p", { class: "muted" }, r.message), r.answer ? h("p", {}, r.answer) : null,

@@ -481,3 +481,123 @@ def test_chat_log_keeps_only_said_set_numbers() -> None:
     assert len(kept.items[0].done_sets) == 2
     made_up = trusted_log(log, "深蹲做了 8 次和 7 次", None)  # 没说重量：整组不记，不编
     assert made_up.items[0].done_sets == []
+
+
+# ---- 需求 5：触发型调整 -----------------------------------------------------------------------
+
+from ironm_agent import triggers as trig  # noqa: E402
+
+THREE = Plan.model_validate(
+    {"title": "x", "days_per_week": 3, "sessions": [
+        {"day": 1, "name": "下肢", "items": [{"exercise": "杠铃深蹲", "sets": 3, "reps": "6–8"}]},
+        {"day": 3, "name": "上肢", "items": [{"exercise": "卧推", "sets": 3, "reps": "6–8"}]},
+        {"day": 5, "name": "全身", "items": [{"exercise": "俯卧撑", "sets": 3, "reps": "10"}]}]}
+)  # fmt: skip
+
+
+def test_pain_parts_and_pain_trigger() -> None:
+    assert trig.pain_parts("我膝盖又疼了") == ["knee"]
+    assert trig.pain_parts("深蹲会影响膝盖吗") == [] and trig.pain_parts("我妈膝盖疼") == []
+    same_day = [("knee", TODAY), ("knee", TODAY)]
+    assert trig.pain_triggers(same_day, THREE, TODAY) == []  # 同一天说两次算一次
+    two = [("knee", TODAY - timedelta(days=10)), ("knee", TODAY - timedelta(days=1))]
+    [t] = trig.pain_triggers(two, THREE, TODAY)
+    assert (
+        t.kind == "pain" and t.action == "proposal" and "杠铃深蹲" in t.tip and "医生" in t.detail
+    )
+    old = [("knee", TODAY - timedelta(days=20)), ("knee", TODAY - timedelta(days=1))]
+    assert trig.pain_triggers(old, THREE, TODAY) == []  # 超过 14 天的不算
+    [w] = trig.pain_triggers([("wrist", TODAY), ("wrist", TODAY - timedelta(days=3))], None, TODAY)
+    assert w.action == "info"  # 没有计划：只提醒
+
+
+def test_missed_and_gap() -> None:
+    def done(back: int) -> WorkoutLog:
+        return WorkoutLog(day=TODAY - timedelta(days=back), session="下肢")
+
+    # TODAY 是周六；上次练是 9 天前（周四），之后的周五、周一、周三、周五都没练
+    m = trig.missed_trigger(THREE, [done(9)], TODAY - timedelta(days=60), TODAY)
+    assert m is not None and "连着 4 次" in m.detail and m.action == "proposal"
+    assert trig.missed_trigger(THREE, [done(2)], None, TODAY) is None  # 上次练后只空了 1 次
+    assert trig.missed_trigger(THREE, [done(9), done(0)], None, TODAY) is None  # 今天练了
+    assert trig.gap_scale([done(9)], TODAY) == (0.7, "上次训练是 9 天前，先按原量的约 7 成恢复")
+    assert (
+        trig.gap_scale([done(20)], TODAY) is not None
+        and trig.gap_scale([done(20)], TODAY)[0] == 0.5
+    )  # type: ignore[index]
+    assert trig.gap_scale([done(3)], TODAY) is None and trig.gap_scale([], TODAY) is None
+    v = today_mod.build(leg_day(), scale=0.7, scale_why="上次训练是 9 天前")
+    assert [x.sets for x in v.session.items] == [3, 2, 2, 2, 1] and "约 7 成" in v.changes[0]
+
+
+def test_plateau() -> None:
+    def squat(back: int, w: float, reps: int = 5) -> WorkoutLog:
+        return did("杠铃深蹲", [reps] * 3, w, back)
+
+    flat = [squat(40, 100), squat(30, 100), squat(14, 100), squat(5, 97.5)]
+    [t] = trig.plateau_triggers(THREE, flat, TODAY)
+    assert t.kind == "plateau" and "杠铃深蹲" in t.detail
+    rising = [squat(40, 100), squat(30, 100), squat(14, 102.5), squat(5, 105)]
+    assert trig.plateau_triggers(THREE, rising, TODAY) == []
+    assert (
+        trig.plateau_triggers(THREE, [squat(14, 100), squat(5, 100)], TODAY) == []
+    )  # 没有更早的记录
+
+
+def test_trigger_endpoints_and_pain_records(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mirobody.server.auth import verify_token
+
+    from ironm_agent import web, web_more
+
+    real = date.today()
+    pain = trig.PainBook()
+    book = TrainingBook()
+    d = asyncio.run(book.add_draft("42", "plan", plan_content(THREE)))
+    asyncio.run(book.confirm("42", d.id))
+    app = FastAPI()
+    app.include_router(web.router)
+    app.dependency_overrides[verify_token] = lambda: "42"
+    app.dependency_overrides[web_more.training_store] = lambda: book
+    app.dependency_overrides[web.training_store] = lambda: book
+    app.dependency_overrides[web.memory_store] = MemoryBook
+    app.dependency_overrides[web_more.pain_store] = lambda: pain
+    monkeypatch.setattr(web, "refresh_later", lambda *a: None)
+    c = TestClient(app)
+    c.post("/iron/api/workouts", json={"session": "下肢", "note": "膝盖有点疼"})
+    assert pain.rows["42"] == [("knee", real)]  # 打卡备注里说疼：记下部位和日期
+    pain.rows["42"].append(("knee", real - timedelta(days=4)))
+    kinds = [t["kind"] for t in c.get("/iron/api/triggers").json()["triggers"]]
+    assert "pain" in kinds
+    seen: dict[str, Any] = {}
+
+    def fake_agent(training: TrainingBook, memory: Any) -> FakeAgent:
+        seen["agent"] = FakeAgent(training, THREE)
+        return seen["agent"]
+
+    async def snap(user_id: str, today: date | None = None) -> Snapshot:
+        p = Profile(height_cm=175, sex="male", goal="muscle", activity="moderate")
+        return Snapshot(p, Readings(), tuple(compute_all(Readings(), p, real)), real)
+
+    monkeypatch.setattr(web, "snapshot_for", snap)
+    monkeypatch.setattr(web_more, "make_agent", fake_agent)
+    r = c.post("/iron/api/review/proposal?trigger=pain").json()
+    assert r["status"] == "ok" and r["warning"] == ""
+    assert (
+        seen["agent"].asked.startswith(web_more.TRIGGER_ASK) and "杠铃深蹲" in seen["agent"].asked
+    )
+    assert c.post("/iron/api/review/proposal?trigger=plateau").json()["status"] == "no_change"
+
+
+def test_chat_pain_is_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.test_turn_flow import Team, agent
+
+    a = agent(Team("exercise"), monkeypatch=monkeypatch, memory=MemoryBook())
+    a._pain = book = trig.PainBook()
+
+    async def go() -> None:
+        msgs = [{"role": "user", "content": "我左膝最近又疼了，深蹲要注意什么"}]
+        [b async for b in a.generate_response("42", msgs, session_id="42:s1")]
+        await a.settle()
+
+    asyncio.run(go())
+    assert book.rows["42"] == [("knee", date.today())]

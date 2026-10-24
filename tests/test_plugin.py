@@ -10,6 +10,7 @@ from ironm_agent.llm import ModelUnavailable, Reply, Stage, load_models
 from ironm_agent.memory_store import MemoryBook, MemoryStore
 from ironm_agent.plugin import FAILED, IronMAgent
 from ironm_agent.tools import HEALTH
+from ironm_agent.triggers import PainBook
 from tests.fakes import FakeHealth, call, jsonr, route_reply, system_of, tool_results
 
 
@@ -75,6 +76,7 @@ def agent(
         environ={},
         memory=memory if memory is not None else MemoryBook(),
         snapshot=snapshot or no_data,
+        pain=PainBook(),
     )
 
 

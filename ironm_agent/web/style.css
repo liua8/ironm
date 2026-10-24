@@ -592,3 +592,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .next-target { font-size: 13px; margin-top: 2px; color: var(--ink); }
 .next-target.up { color: var(--good, var(--ink)); font-weight: 600; }
 .next-target.down { color: var(--warn); }
+
+/* 触发型调整的提醒（spec [2026-10-23] §18 需求 5） */
+.triggers { display: flex; flex-direction: column; gap: 12px; }
+.triggers:empty { display: none; }
+.trigger { display: flex; flex-direction: column; gap: 10px; }
+.trigger p { margin: 2px 0 0; }
