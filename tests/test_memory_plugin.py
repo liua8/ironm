@@ -9,7 +9,7 @@ from typing import Any
 
 from ironm_agent.llm import ModelUnavailable, Reply, Stage
 from ironm_agent.memory_store import Change, Item, MemoryBook
-from tests.fakes import jsonr, system_of
+from tests.fakes import jsonr, route_reply, system_of
 from tests.test_plugin import agent, collect, text_of
 
 T0 = datetime(2026, 10, 20, tzinfo=UTC)
@@ -38,7 +38,7 @@ class Script:
         self.calls[key] = self.calls.get(key, 0) + 1
         self.seen[key] = system + "\n" + user
         if stage == "route":
-            return jsonr({"intent": "pro", "primary": "exercise", "helpers": ["nutrition"]})
+            return route_reply("pro", "exercise", ["nutrition"])
         if key == "exercise":
             return jsonr({"conclusion": ANSWER})
         if key == "nutrition":

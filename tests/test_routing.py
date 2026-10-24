@@ -134,3 +134,28 @@ def test_llm_channel_parses_and_falls_back() -> None:
     )
     assert asyncio.run(llm_scores("x", FakeLLM(down))) is None
     assert asyncio.run(llm_scores("x", FakeLLM(lambda *_: jsonr({"intent": "什么"})))) is None
+
+
+def test_as_route_and_summary_for_the_chain() -> None:
+    from ironm_agent.compose import _PROMPT as COMPOSE
+    from ironm_agent.plugin import as_route, route_summary
+
+    d = combine("x", llm=("pro", s(nutrition=1.0, planner=0.9)), keyword=None, vector=None)
+    r = as_route(d)
+    assert r.by == "weighted" and r.primary is Role.NUTRITION and r.helpers == (Role.PLANNER,)
+    text = route_summary(r)
+    assert "三路打分" in text and "营养 1.00" in text and "模型 1.0" in text
+    assert "管家直接回答" in route_summary(
+        as_route(combine("你好", llm=("chat", ZERO), keyword=None, vector=None))
+    )
+    assert "AI 健身管家" in COMPOSE  # 多位角色时以管家的口吻整合
+
+
+def test_chain_logs_route_scores(monkeypatch: Any) -> None:
+    """作答链路的运行记录里有三路的得分（这里只有模型一路），不含用户原话。"""
+    from tests.test_turn_flow import Team, agent, run
+
+    a = agent(Team("nutrition", ["planner"]), monkeypatch=monkeypatch)
+    _, seen = run(a, "增肌期练完吃什么比较好")
+    assert seen["route_by"] == "weighted" and seen["route"]["roles"] == ["nutrition", "planner"]
+    assert "llm" in seen["route"]["channels"] and "增肌" not in str(seen["route"])

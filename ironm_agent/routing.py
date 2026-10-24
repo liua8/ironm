@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import re
@@ -206,17 +207,21 @@ _PROMPT = """你是健身 App "AI 健身管家"的问题分类器。只做分类
 最近的对话（用于理解指代，可能为空）：
 {history}
 
+{persona}
+
 只输出 JSON：{{"intent": "pro", "scores": {{{keys}}}}}"""
 
 
 async def llm_scores(
-    text: str, llm: LLM, history: Sequence[str] = ()
+    text: str, llm: LLM, history: Sequence[str] = (), persona: str = ""
 ) -> tuple[Intent, dict[str, float]] | None:
+    """persona：这个人的画像（有效记忆排成的清单），帮助判断，比如有伤病时恢复更相关。"""
     roles = "\n".join(f"- {r.value}：{SPECS[r].name}，{SPECS[r].duty}" for r in EXPERTS)
     prompt = _PROMPT.format(
         roles=roles,
         history="\n".join(history[-6:]) or "（无）",
         keys=", ".join(f'"{n}": 0' for n in NAMES),
+        persona=(persona + "\n（只用来判断该请谁）") if persona else "",
     )
     try:
         reply = await llm.chat(
@@ -296,6 +301,8 @@ def combine(
         return Decision(intent, (), weighted, channels, weights, concerns)
     ranked = sorted(NAMES, key=lambda n: (-weighted[n], NAMES.index(n)))
     top = weighted[ranked[0]]
+    if top <= 0:  # 哪一路都没打出分（比如几路都不可用）：不硬选，交给调用方兜底
+        return Decision(intent, (), weighted, channels, weights, concerns)
     chosen = [ranked[0]] + [
         n for n in ranked[1:] if weighted[n] >= JOIN_MIN and top - weighted[n] <= JOIN_GAP
     ]
@@ -313,9 +320,9 @@ def combine(
 
 @dataclass
 class Router:
-    """三路打分路由；关键字和向量两路的打分器只建一次。"""
+    """三路打分路由；关键字和向量两路的打分器只建一次。哪一路是 None，那一路就不参加。"""
 
-    keyword: KeywordScorer = field(default_factory=KeywordScorer.build)
+    keyword: KeywordScorer | None = field(default_factory=KeywordScorer.build)
     vector: VectorScorer | None = field(default_factory=VectorScorer)
 
     def vector_scores(self, text: str) -> dict[str, float] | None:
@@ -327,8 +334,21 @@ class Router:
             _log.warning("vector channel unavailable: error_type=%s", type(e).__name__)
             return None
 
-    async def route(self, text: str, llm: LLM | None, history: Sequence[str] = ()) -> Decision:
-        found = await llm_scores(text, llm, history) if llm is not None else None
-        return combine(
-            text, llm=found, keyword=self.keyword.scores(text), vector=self.vector_scores(text)
-        )
+    def warm(self) -> None:
+        """提前载入本机模型并算好例句的向量（启动时在后台调用），第一位用户不用等。"""
+        self.vector_scores("热身")
+
+    async def route(
+        self, text: str, llm: LLM | None, history: Sequence[str] = (), persona: str = ""
+    ) -> Decision:
+        """模型这一路和本机的两路同时进行。"""
+        asked = asyncio.create_task(llm_scores(text, llm, history, persona)) if llm else None
+        keyword = self.keyword.scores(text) if self.keyword is not None else None
+        vector = await asyncio.to_thread(self.vector_scores, text)
+        found = await asked if asked is not None else None
+        return combine(text, llm=found, keyword=keyword, vector=vector)
+
+
+@cache
+def default_router() -> Router:
+    return Router()

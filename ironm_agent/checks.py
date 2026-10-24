@@ -1,4 +1,4 @@
-"""逐句核对出处：专业 Agent 的意见和主教练整合后的回答用同一套规则。
+"""逐句核对出处：专业 Agent 的意见和管家整合后的回答用同一套规则。
 
 - 引用资料的句子在句末写〔K03〕：句子里的数字只能来自这一句引用的资料；
 - 引用指标计算结果的句子在句末写〔C2〕：数字只能来自这个计算结果；
@@ -66,7 +66,7 @@ def _sentence_problems(
 ) -> list[str]:
     if EXPERIENCE in sentence:
         # 专业 Agent 凭经验说的：用户看得到，不核对数字（experience 为 None）；
-        # 主教练整合时：经验句里的数字必须来自某位专业 Agent 的意见，整合不能自己加数字
+        # 管家整合时：经验句里的数字必须来自某位专业 Agent 的意见，整合不能自己加数字
         if experience is None:
             return []
         loose = [

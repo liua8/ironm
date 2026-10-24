@@ -1,7 +1,7 @@
 """iron-m 的 Agent：通过 mirobody 的 Agent 插件接口替换它自带的 Agent。
 
-一轮回答：安全前置（规则）→ 读这个人的记忆 → 主教练理解与调度 → 专业 Agent 同时作答（互不可见）
-→ 主教练整合 → 规则核对；回答发出后在后台提取这一轮的记忆（不拖慢回答，失败也不影响回答）。
+一轮回答：安全前置（规则）→ 读这个人的记忆 → 三路打分路由（模型、关键字、语义向量）→ 专业 Agent 分层作答
+→ 只请一位时它直接作答、多位时由管家整合 → 规则核对；回答发出后在后台提取这一轮的记忆（不拖慢回答，失败也不影响回答）。
 """
 
 from __future__ import annotations
@@ -56,7 +56,9 @@ from ironm_agent.render import (
     text_block,
 )
 from ironm_agent.roles import Role, spec_of
-from ironm_agent.router import MAX_HELPERS, Route, concerns_of, keyword_route, route
+from ironm_agent.router import MAX_HELPERS, Route, concerns_of, keyword_route
+from ironm_agent.routing import Decision as RouteDecision
+from ironm_agent.routing import default_router
 from ironm_agent.safety.emergency import assess
 from ironm_agent.safety.refusals import default_refusals
 from ironm_agent.safety.replies import (
@@ -178,13 +180,36 @@ def relay_text(before: Sequence[Consultation]) -> str:
     )
 
 
+CHANNEL_NAMES = {"llm": "模型", "keyword": "关键字", "vector": "语义向量"}
+
+
+def as_route(d: RouteDecision) -> Route:
+    """三路打分的结果（spec [2026-10-23] §16）转成作答链路用的调度结果。"""
+    used = "、".join(f"{CHANNEL_NAMES[c]} {w:.1f}" for c, w in d.weights.items())
+    top = "、".join(f"{spec_of(x).name} {d.weighted[x.value]:.2f}" for x in d.roles)
+    return Route(
+        intent=d.intent,
+        concerns=d.concerns,  # type: ignore[arg-type]
+        primary=d.primary,
+        helpers=d.roles[1:],
+        reason=f"加权得分：{top}" if top else "",
+        by="weighted",
+        problems=(f"权重：{used}",) if used else (),
+    )
+
+
 def route_summary(r: Route) -> str:
     if r.intent != "pro":
         kinds = {"chat": "闲聊", "app": "问 App 用法", "out_of_scope": "超出范围"}
-        return f"判断为{kinds[r.intent]}，由主教练直接回答"
+        return f"判断为{kinds[r.intent]}，由管家直接回答"
     names = "、".join(spec_of(x).name for x in r.experts())
-    how = "模型判断" if r.by == "model" else "按关键词（" + "；".join(r.problems) + "）"
-    return f"请了：{names}\n方式：{how}" + (f"\n理由：{r.reason}" if r.reason else "")
+    if r.by == "weighted":
+        how = "模型、关键字、语义向量三路打分（" + "；".join(r.problems) + "）"
+    elif r.by == "model":
+        how = "模型判断"
+    else:
+        how = "按关键词（" + "；".join(r.problems) + "）"
+    return f"请了：{names}\n方式：{how}" + (f"\n{r.reason}" if r.reason else "")
 
 
 class IronMAgent:
@@ -446,7 +471,7 @@ class IronMAgent:
             return
 
         # 2. 读本会话前几轮与这个人的记忆（全部有效记忆，不靠检索）；同时开始读他的数据（档案、健康数据、
-        #    指标），与主教练调度并行（spec [2026-10-23] §7）
+        #    指标），与路由并行（spec [2026-10-23] §7）
         read = time.perf_counter()
         history, recall = await asyncio.gather(
             (self._history or recent)(session_id, text), self._recall(user_id)
@@ -514,7 +539,9 @@ class IronMAgent:
         if self._mode == "single":  # 单 Agent 对照组：一位全能教练一次作答，不调度、不整合
             r = Route(intent="pro", concerns=concerns_of(text), primary=Role.GENERAL, by="rule")
         else:
-            r = await route(text, history, llm, recall.persona())
+            d = await default_router().route(text, llm, history, recall.persona())
+            r = as_route(d)
+            run["route"] = d.log()  # 三路各自的得分与加权结果（不含原话）
             if files.images and (r.intent != "pro" or r.primary is None):
                 r = keyword_route(text + "（附了图片）")  # 附了图片就当专业问题，按问题请人
             if (
@@ -522,7 +549,9 @@ class IronMAgent:
             ):  # 饭菜照片
                 r = r.model_copy(update={"intent": "pro", "primary": Role.NUTRITION,
                                          "helpers": r.experts()[:MAX_HELPERS]})  # fmt: skip
-            yield started("coach", "主教练", "理解问题、安排专业角色")
+            if r.intent == "pro" and r.primary is None:  # 三路都没打出分：按关键词兜底
+                r = keyword_route(text)
+            yield started("coach", "管家", "理解问题、安排专业角色")
             yield finished("coach", route_summary(r))
         run.update(intent=r.intent, route_by=r.by, concerns=list(r.concerns))
         if r.intent != "pro" or r.primary is None:

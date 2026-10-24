@@ -10,7 +10,7 @@ from ironm_agent.llm import ModelUnavailable, Reply, Stage, load_models
 from ironm_agent.memory_store import MemoryBook, MemoryStore
 from ironm_agent.plugin import FAILED, IronMAgent
 from ironm_agent.tools import HEALTH
-from tests.fakes import FakeHealth, call, jsonr, system_of, tool_results
+from tests.fakes import FakeHealth, call, jsonr, route_reply, system_of, tool_results
 
 
 class Scripted:
@@ -32,14 +32,7 @@ class Scripted:
             raise ModelUnavailable("missing_key")
         system = system_of(messages)
         if stage == "route":
-            return jsonr(
-                {
-                    "intent": "pro",
-                    "primary": "data",
-                    "helpers": self.helpers,
-                    "reason": "问自己的数据",
-                }
-            )
+            return route_reply("pro", "data", self.helpers)
         if stage == "expert":
             stated = "<statement>近 30 天静息心率平均 58 次/分<cite>[r1]</cite></statement>"
             if "数据分析" in system:
@@ -110,7 +103,7 @@ def test_data_question_answers_plainly_and_attaches_sources(monkeypatch: Any) ->
     answer = "你近 30 天静息心率很稳。<statement>平均 58 次/分<cite>[r1]</cite></statement>，在正常范围。"
     blocks = collect(agent(Scripted(answer), monkeypatch=monkeypatch), "我最近的静息心率怎么样")
     names = [b["name"] for b in blocks if b["type"] == "tool_call"]
-    assert names == ["主教练", "数据分析", "依据与来源"]
+    assert names == ["管家", "数据分析", "依据与来源"]
     text = text_of(blocks)
     assert (
         "平均 58 次/分" in text
@@ -181,10 +174,11 @@ def test_model_down_everywhere_gives_honest_no_answer(monkeypatch: Any) -> None:
 def test_unexpected_error_hides_details(monkeypatch: Any) -> None:
     from ironm_agent import plugin
 
-    async def boom(*_: Any, **__: Any) -> Any:
-        raise RuntimeError("SELECT secret FROM th_messages")
+    class Boom:
+        async def route(self, *_: Any, **__: Any) -> Any:
+            raise RuntimeError("SELECT secret FROM th_messages")
 
-    monkeypatch.setattr(plugin, "route", boom)
+    monkeypatch.setattr(plugin, "default_router", Boom)
     blocks = collect(agent(Scripted(), monkeypatch=monkeypatch), "我最近的静息心率怎么样")
     assert blocks == [{"type": "error", "message": FAILED}]
 

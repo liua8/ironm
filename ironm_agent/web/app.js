@@ -1260,7 +1260,7 @@ async function me(view) {
   profileView(box, data);
   view.append(section("档案", edit, box, h("p", { class: "caption", style: "padding:0 2px" }, "用来计算 BMI、基础代谢、每日热量和蛋白质目标。")));
   view.append(citySection());
-  view.append(section("说明", null, h("div", { class: "card" }, h("p", { class: "muted" }, "IronM 由主教练调度训练规划、动作教练、营养、恢复、数据分析几位专业角色一起回答。建议仅供参考，不能代替医生；身体不适请及时就医。"))));
+  view.append(section("说明", null, h("div", { class: "card" }, h("p", { class: "muted" }, "AI 健身管家会把你的问题交给最合适的专业角色（训练规划、动作教练、营养、恢复、数据分析），涉及几个方面时再把他们的意见整合起来。建议仅供参考，不能代替医生；身体不适请及时就医。"))));
   view.append(h("button", { class: "btn danger block", type: "button", onclick: signOut }, icon("logout", "sm"), "退出登录"));
 }
 // 城市：用来取实时天气（spec [2026-10-23] §13）
@@ -1424,7 +1424,7 @@ function drawThread() {
   if (!chat.messages.length) {
     thread.replaceChildren(h("div", { class: "welcome" },
       h("div", { class: "mark-big" }, icon("coach")),
-      h("div", {}, h("h2", {}, "你的教练团队"), h("p", { class: "muted" }, "主教练会请合适的专业角色一起回答；每条回答都能展开看依据和来源。")),
+      h("div", {}, h("h2", {}, "你的教练团队"), h("p", { class: "muted" }, "管家会把问题交给合适的专业角色，涉及几个方面时再整合起来；每条回答都能展开看依据和来源。")),
       h("div", { class: "starters" }, STARTERS.map(([q, who]) => h("button", { class: "starter", type: "button", onclick: () => ask(q) }, q, h("span", {}, who))))));
   } else {
     thread.replaceChildren(...chat.messages.map((msg) => (msg.el = msgView(msg))));
@@ -1456,9 +1456,9 @@ function msgView(msg) {
     const busy = msg.steps.filter((x) => !x.done);
     head = msg.text ? "正在整理回答…"
       : busy.length ? `${busy.map((x) => x.name).join("、")}正在${busy.some((x) => x.id === "coach") ? "安排" : "回答"}…`
-        : msg.steps.length ? "主教练正在整合…" : "正在理解你的问题…";
+        : msg.steps.length ? "管家正在整合…" : "正在理解你的问题…";
   } else {
-    head = experts.length ? `${experts.length} 位专业角色参与` : msg.steps.length ? "主教练直接回答" : "";
+    head = experts.length ? `${experts.length} 位专业角色参与` : msg.steps.length ? "管家直接回答" : "";
   }
   const showList = msg.open || (running && !msg.text);
   const prog = msg.steps.length || running ? h("div", { class: "prog" },
@@ -1666,7 +1666,7 @@ function loginView(view) {
     } catch (err) { msg.textContent = err.message; }
   });
   view.append(h("div", { class: "login" },
-    h("div", {}, h("div", { class: "wordmark" }, "Iron", h("b", {}, "M")), h("p", { class: "lede", style: "margin-top:10px" }, "你的健身教练团队：训练、动作、饮食、恢复和身体数据，一起帮你练。")),
+    h("div", {}, h("div", { class: "wordmark" }, "Iron", h("b", {}, "M")), h("p", { class: "lede", style: "margin-top:10px" }, "AI 健身管家：训练、动作、饮食、恢复和身体数据，交给对的专业角色帮你练。")),
     form));
 }
 
@@ -1694,7 +1694,7 @@ async function render() {
   const name = (location.hash.slice(1) || "home").split("/")[0];
   const page = PAGES[name] ? name : "home";
   const cfg = PAGES[page];
-  document.title = `${cfg.title} · IronM`;
+  document.title = `${cfg.title} · AI 健身管家`;
   for (const a of document.querySelectorAll(".tabs a")) a.classList.toggle("on", a.dataset.tab === page);
   $("tabs").hidden = Boolean(cfg.full);
   $("bar").hidden = Boolean(cfg.full);

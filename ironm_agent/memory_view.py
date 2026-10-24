@@ -96,14 +96,14 @@ class Recall:
         return [c for c in ORDER if c in shown and any(x.category == c for x in self.items)]
 
     def persona(self) -> str:
-        """画像（L3）：全部有效记忆按类别排成清单，主教练调度和直接回答时用。"""
+        """画像（L3）：全部有效记忆按类别排成清单，路由（模型这一路）和管家直接回答时用。"""
         facts = self._facts(ORDER)
         if not facts:
             return ""
         return "这个人以前说过的情况：\n" + "\n".join(_line(x) for x in facts)
 
     def style(self) -> str:
-        """主教练整合时要照顾的回答风格与喜好。"""
+        """管家整合时要照顾的回答风格与喜好。"""
         facts = self._facts(EVERYONE)
         return "\n".join(_line(x) for x in facts)
 

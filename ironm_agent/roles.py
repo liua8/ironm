@@ -140,7 +140,7 @@ SPECS: dict[Role, RoleSpec] = {
 }
 
 EXPERTS: tuple[Role, ...] = tuple(SPECS)
-COACH_NAME = "主教练"
+COACH_NAME = "管家"
 
 # 单 Agent 对照组（spec [2026-10-23] §1）：一位"全能教练"用全部工具和资料一次作答，不调度、不整合
 GENERAL = RoleSpec(

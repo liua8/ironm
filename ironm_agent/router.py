@@ -1,4 +1,7 @@
-"""主教练：理解与调度。模型给出调度方案，规则校验；不通过或模型不可用时按关键词调度。"""
+"""调度用的公共部分（Route、身体不适与特殊人群的判断、按关键词调度）。
+
+作答链路已改用 routing.py 的三路打分路由（spec [2026-10-23] §16）；这里的 route() 只留给路由测评做对照（原来的主教练调度）。
+"""
 
 from __future__ import annotations
 
@@ -41,7 +44,7 @@ class Route(ContractModel):
     primary: Role | None = None
     helpers: tuple[Role, ...] = ()
     reason: str = ""
-    by: Literal["model", "keywords", "rule"]
+    by: Literal["model", "keywords", "rule", "weighted"]
     problems: tuple[str, ...] = ()  # 模型方案没通过的原因（改按关键词时记下）
 
     def experts(self) -> tuple[Role, ...]:

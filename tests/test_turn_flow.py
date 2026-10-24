@@ -10,7 +10,7 @@ from ironm_agent.clarify import MARK
 from ironm_agent.llm import ModelUnavailable, Reply, Stage
 from ironm_agent.memory_store import Change, Item, MemoryBook
 from ironm_agent.metrics import Profile, Readings
-from tests.fakes import jsonr, system_of
+from tests.fakes import jsonr, route_reply, system_of
 from tests.test_plugin import agent, text_of
 
 TODAY = date(2026, 10, 23)
@@ -36,7 +36,7 @@ class Team:
     def __call__(self, stage: Stage, messages: Sequence[Mapping[str, Any]], tools: bool) -> Reply:
         self.stages.append(stage)
         if stage == "route":
-            return jsonr({"intent": "pro", "primary": self.primary, "helpers": self.helpers})
+            return route_reply("pro", self.primary, self.helpers)
         if stage == "expert":
             system = system_of(messages)
             role = next(v for k, v in NAMES.items() if f"「{k}」" in system)
