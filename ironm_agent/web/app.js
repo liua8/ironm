@@ -587,12 +587,38 @@ async function food(view) {
   const redraw = (d) => { summary.replaceChildren(daySummary(d, m)); list.replaceChildren(mealList(d, redraw)); };
   redraw(day);
   view.append(summary,
+    dietReviewCard(),
     section("记一餐", null, mealForm(redraw)),
     section("今天吃了什么", null, list),
     section("推荐这一餐", null, recommendBox(redraw)),
     section("减脂餐", null, await presetsBox(redraw)),
     section("问营养师", null, h("div", { class: "asks" },
       ["早餐怎么吃够蛋白质", "练前练后吃什么", "外卖怎么点更健康", "要不要吃肌酸", "减脂期饿了怎么办"].map((q) => askChip(q)))));
+}
+
+// 两周饮食复盘（spec [2026-10-23] §18 需求 2）：按体重趋势提出热量调整，确认后才生效，可以撤销
+function dietReviewCard() {
+  const box = h("div", { class: "card" }, ...skeleton(70));
+  const kcal = (n) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n)}`;
+  const act = async (path) => {
+    for (const b of box.querySelectorAll("button")) b.disabled = true;
+    try { draw(await api(path, { method: "POST" })); cache.metrics = null; render(); }
+    catch (err) { box.append(h("p", { class: "error" }, err.message)); for (const b of box.querySelectorAll("button")) b.disabled = false; }
+  };
+  const draw = (r) => {
+    const p = r.proposal, c = r.current;
+    box.replaceChildren(
+      c ? h("div", { class: "kv" }, h("span", {}, "现在的调整"), h("span", {}, `${kcal(c.kcal)} 千卡/天（${md(c.since)}起）`)) : null,
+      c ? h("p", { class: "caption" }, `原因：${c.reason}`) : null,
+      p ? h("p", { class: "lede" }, `${p.reason}：建议每天${p.delta > 0 ? "多" : "少"}吃约 ${Math.abs(p.delta)} 千卡，目标从 ${p.before} 调到 ${p.after} 千卡。`) : h("p", { class: "muted" }, r.message),
+      p ? h("p", { class: "caption" }, `依据：${p.basis}`) : null,
+      h("div", { class: "btn-row" },
+        p ? h("button", { class: "btn", type: "button", onclick: () => act("/iron/api/diet/adjust") }, icon("check", "sm"), "确认调整") : null,
+        c ? h("button", { class: "btn ghost", type: "button", onclick: () => act("/iron/api/diet/adjust/undo") }, "撤销上次调整") : null),
+      h("p", { class: "caption" }, "每两周按体重趋势复盘一次；调整后的目标不会低于基础代谢和安全下限。"));
+  };
+  api("/iron/api/diet/review").then(draw).catch((err) => box.replaceChildren(h("p", { class: "muted" }, err.message)));
+  return section("两周饮食复盘", null, box);
 }
 
 function meter(label, have, target, unit) {

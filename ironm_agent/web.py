@@ -26,7 +26,7 @@ from ironm_agent.memory_extract import MAX_CONTENT
 from ironm_agent.memory_prefs import refresh as refresh_prefs
 from ironm_agent.memory_store import CATEGORIES, ORIGINS, Item, MemoryStore, default_store
 from ironm_agent.memory_view import expired
-from ironm_agent.metrics import ACTIVITY, GOALS, Metric, compute_all
+from ironm_agent.metrics import ACTIVITY, GOALS, KcalAdjust, Metric, compute_all
 from ironm_agent.training import TrainingStore, WorkoutLog, default_training
 
 _log = logging.getLogger("ironm_agent.web")
@@ -56,7 +56,19 @@ async def snapshot_for(user_id: str, today: date | None = None) -> Snapshot:
     today = today or date.today()
     readings = await read_all(HealthIndicatorsService(), user_id, today)
     profile, _ = await profiles.load(user_id)
-    return Snapshot(profile, readings, tuple(compute_all(readings, profile, today)), today)
+    adjust = await kcal_adjust(user_id)
+    return Snapshot(profile, readings, tuple(compute_all(readings, profile, today, adjust)), today)
+
+
+async def kcal_adjust(user_id: str) -> KcalAdjust | None:
+    """两周饮食复盘确认过的热量调整量（spec [2026-10-23] §18）；读不到时当作没有调整。"""
+    from ironm_agent.diet_adjust import default_diet
+
+    try:
+        return await default_diet().current(user_id)
+    except Exception as e:
+        _log.warning("diet adjust unavailable: error_type=%s", type(e).__name__)
+        return None
 
 
 async def metrics_for(

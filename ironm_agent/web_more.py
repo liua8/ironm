@@ -601,3 +601,73 @@ async def review_proposal(
         if n > REVIEW_MAX_DAYS
         else "",
     }
+
+
+# ---- 两周饮食复盘（spec [2026-10-23] §18 需求 2）------------------------------------------------
+
+
+def diet_store() -> Any:
+    from ironm_agent.diet_adjust import default_diet
+
+    return default_diet()
+
+
+DIET = Depends(diet_store)  # 测试时用 dependency_overrides 换成内存版
+
+
+async def _diet_state(user_id: str, diet: Any) -> dict[str, Any]:
+    from ironm_agent.diet_adjust import propose
+
+    snap = await _web().snapshot_for(user_id)
+    current = await diet.current(user_id)
+    proposal, why = propose(snap.metrics, snap.profile, current, snap.today)
+    target = next((m for m in snap.metrics if m.key == "kcal_target"), None)
+    return {
+        "target": target.value if target else None,
+        "current": (
+            {"kcal": current.kcal, "since": current.since.isoformat(), "reason": current.reason}
+            if current
+            else None
+        ),
+        "proposal": (
+            {
+                "delta": proposal.delta,
+                "total": proposal.total,
+                "before": proposal.before,
+                "after": proposal.after,
+                "reason": proposal.reason,
+                "basis": proposal.basis,
+            }
+            if proposal
+            else None
+        ),
+        "message": why,
+    }
+
+
+@router.get("/iron/api/diet/review")
+async def diet_review(user_id: str = Depends(_verify()), diet: Any = DIET) -> dict[str, Any]:
+    return await _diet_state(user_id, diet)
+
+
+@router.post("/iron/api/diet/adjust")
+async def diet_apply(user_id: str = Depends(_verify()), diet: Any = DIET) -> dict[str, Any]:
+    """确认调整：服务端按当前数据重新算一遍方案再保存（不信任页面传来的数字）。"""
+    from ironm_agent.diet_adjust import propose
+    from ironm_agent.metrics import KcalAdjust
+
+    snap = await _web().snapshot_for(user_id)
+    proposal, why = propose(snap.metrics, snap.profile, await diet.current(user_id), snap.today)
+    if proposal is None:
+        raise HTTPException(409, why or "这次不需要调整")
+    await diet.apply(user_id, KcalAdjust(proposal.total, snap.today, proposal.reason))
+    _log.info("diet adjusted: delta=%d", proposal.delta)
+    return await _diet_state(user_id, diet)
+
+
+@router.post("/iron/api/diet/adjust/undo")
+async def diet_undo(user_id: str = Depends(_verify()), diet: Any = DIET) -> dict[str, Any]:
+    if await diet.current(user_id) is None:
+        raise HTTPException(404, "现在没有热量调整")
+    await diet.undo(user_id)
+    return await _diet_state(user_id, diet)

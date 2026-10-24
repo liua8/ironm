@@ -261,7 +261,23 @@ def tdee(base: Metric, p: Profile) -> Metric:
     )
 
 
-def calorie_target(total: Metric, base: Metric, p: Profile) -> Metric:
+@dataclass(frozen=True)
+class KcalAdjust:
+    """两周饮食复盘确认过的热量调整量（spec [2026-10-23] §18 需求 2）：加在公式算出的目标上。"""
+
+    kcal: int
+    since: date
+    reason: str
+
+
+def safe_floor(base: float, p: Profile) -> float:
+    """每日摄入的下限：不低于基础代谢，也不低于女 1200、男 1500 千卡。"""
+    return max(base, 1500 if p.sex == "male" else 1200)
+
+
+def calorie_target(
+    total: Metric, base: Metric, p: Profile, adjust: KcalAdjust | None = None
+) -> Metric:
     key, name, unit = "kcal_target", "每日热量目标", "千卡/天"
     if not total.ok or total.value is None or base.value is None:
         return missing(key, name, unit, *(total.missing or ("每日总消耗",)))
@@ -286,6 +302,17 @@ def calorie_target(total: Metric, base: Metric, p: Profile) -> Metric:
         how = f"等于每日总消耗 {round(t)}"
         why = "保持体重，按训练量和体重变化微调"
         ref = ""
+    if adjust is not None and adjust.kcal:
+        raw = value + adjust.kcal
+        value = max(raw, safe_floor(b, p))
+        how += (
+            f"；按两周饮食复盘调整 {adjust.kcal:+d}（{adjust.since.month}月{adjust.since.day}日起：{adjust.reason}）"
+            + (
+                f"，不低于基础代谢与安全下限，取 {round(value)}"
+                if value > raw
+                else f" = {round(value)}"
+            )
+        )
     return Metric(
         key,
         name,
@@ -477,7 +504,9 @@ class Readings:
     errors: tuple[str, ...] = field(default=())  # 哪些数据没读到
 
 
-def compute_all(r: Readings, p: Profile, today: date) -> list[Metric]:
+def compute_all(
+    r: Readings, p: Profile, today: date, adjust: KcalAdjust | None = None
+) -> list[Metric]:
     profile = (
         p
         if p.height_cm or r.height_cm is None
@@ -492,7 +521,7 @@ def compute_all(r: Readings, p: Profile, today: date) -> list[Metric]:
         bmi(latest_w, profile.height_cm),
         base,
         total,
-        calorie_target(total, base, profile),
+        calorie_target(total, base, profile, adjust),
         protein_target(latest_w, profile),
         resting_hr(r.resting_hr),
         sleep(r.sleep_hours),

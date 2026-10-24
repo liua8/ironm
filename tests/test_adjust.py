@@ -153,3 +153,116 @@ def test_chain_sends_back_a_review_plan_that_changes_too_much() -> None:
     )  # fmt: skip
     assert run["plan_check"] == "fixed" and changed_days(new, OLD) == 1
     assert "最多改 2 天" in str(llm.seen[0][1][-1]["content"])
+
+
+# ---- 需求 2：饮食目标能真正调整 ------------------------------------------------------------------
+
+from ironm_agent.diet_adjust import DietBook, propose  # noqa: E402
+from ironm_agent.metrics import KcalAdjust  # noqa: E402
+
+
+def snap_with(
+    goal: str,
+    per_week: float,
+    *,
+    sex: str = "male",
+    start: float = 80.0,
+    adjust: KcalAdjust | None = None,
+) -> Snapshot:
+    p = Profile(height_cm=175, birth=date(1995, 1, 1), sex=sex, goal=goal, activity="moderate")  # type: ignore[arg-type]
+    r = Readings(
+        weight=tuple(
+            (TODAY - timedelta(days=i), round(start + per_week / 7 * (27 - i), 2))
+            for i in range(28)
+        )
+    )
+    return Snapshot(p, r, tuple(compute_all(r, p, TODAY, adjust)), TODAY)
+
+
+def test_propose_rules() -> None:
+    s = snap_with("fat_loss", 0.0)
+    p, _ = propose(s.metrics, s.profile, None, TODAY)
+    assert (
+        p is not None and p.delta == -200 and "没有下降" in p.reason and p.after == p.before - 200
+    )
+    fast = snap_with("fat_loss", -1.2)  # 每周掉 1.2 公斤，超过 80 公斤的 1%
+    p2, _ = propose(fast.metrics, fast.profile, None, TODAY)
+    assert p2 is not None and p2.delta == 150 and "掉得太快" in p2.reason
+    ok = snap_with("fat_loss", -0.5)
+    assert propose(ok.metrics, ok.profile, None, TODAY)[0] is None
+    gain = snap_with("muscle", 0.0)
+    assert propose(gain.metrics, gain.profile, None, TODAY)[0].delta == 150  # type: ignore[union-attr]
+    quick = snap_with("muscle", 0.6)  # 超过 80 公斤的 0.5%
+    assert propose(quick.metrics, quick.profile, None, TODAY)[0].delta == -150  # type: ignore[union-attr]
+    health = snap_with("health", 0.0)
+    assert propose(health.metrics, health.profile, None, TODAY)[0] is None
+
+
+def test_propose_limits() -> None:
+    recent = KcalAdjust(-200, TODAY - timedelta(days=10), "x")
+    s = snap_with("fat_loss", 0.0, adjust=recent)
+    p, why = propose(s.metrics, s.profile, recent, TODAY)
+    assert p is None and "两周后再看" in why  # 14 天内不重复调整
+    near_cap = KcalAdjust(400, TODAY - timedelta(days=20), "x")
+    s2 = snap_with("muscle", 0.0, adjust=near_cap)
+    p2, _ = propose(s2.metrics, s2.profile, near_cap, TODAY)
+    assert p2 is not None and p2.total == 500 and p2.delta == 100  # 累计不超过 ±500
+    deep = KcalAdjust(-400, TODAY - timedelta(days=20), "x")
+    s3 = snap_with("fat_loss", 0.0, adjust=deep)
+    p4, _ = propose(s3.metrics, s3.profile, deep, TODAY)
+    floor = max(1500, round(next(m for m in s3.metrics if m.key == "bmr").value or 0))
+    assert p4 is None or (p4.total >= -500 and p4.after >= floor)  # 减到下限为止
+    small = snap_with("fat_loss", 0.0, sex="female", start=45.0)
+    p3, why3 = propose(small.metrics, small.profile, None, TODAY)
+    bmr = next(m for m in small.metrics if m.key == "bmr").value
+    assert p3 is None or p3.after >= max(1200, round(bmr or 0))  # 不低于基础代谢与安全下限
+    if p3 is None:
+        assert "下限" in why3
+
+
+def test_target_includes_adjustment() -> None:
+    adj = KcalAdjust(-200, TODAY, "减脂期体重这几周没有下降")
+    base = next(m for m in snap_with("fat_loss", 0.0).metrics if m.key == "kcal_target")
+    after = next(
+        m for m in snap_with("fat_loss", 0.0, adjust=adj).metrics if m.key == "kcal_target"
+    )
+    assert after.value is not None and base.value is not None and after.value == base.value - 200
+    assert "调整 -200" in after.how and "没有下降" in after.how
+
+
+def test_diet_book_apply_and_undo() -> None:
+    b = DietBook()
+    asyncio.run(b.apply("42", KcalAdjust(-200, TODAY, "a")))
+    asyncio.run(b.apply("42", KcalAdjust(-400, TODAY, "b")))
+    assert asyncio.run(b.current("42")).kcal == -400  # type: ignore[union-attr]
+    assert asyncio.run(b.undo("42")).kcal == -200  # type: ignore[union-attr]
+    assert asyncio.run(b.undo("42")) is None and asyncio.run(b.current("42")) is None
+    assert asyncio.run(b.current("7")) is None
+
+
+def test_diet_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mirobody.server.auth import verify_token
+
+    from ironm_agent import web, web_more
+
+    book = DietBook()
+
+    async def snap(user_id: str, today: date | None = None) -> Snapshot:
+        return snap_with("fat_loss", 0.0, adjust=await book.current(user_id))
+
+    monkeypatch.setattr(web, "snapshot_for", snap)
+    app = FastAPI()
+    app.include_router(web.router)
+    app.dependency_overrides[verify_token] = lambda: "42"
+    app.dependency_overrides[web_more.diet_store] = lambda: book
+    c = TestClient(app)
+    r = c.get("/iron/api/diet/review").json()
+    assert r["current"] is None and r["proposal"]["delta"] == -200
+    before = r["proposal"]["before"]
+    r2 = c.post("/iron/api/diet/adjust").json()
+    assert r2["current"]["kcal"] == -200 and r2["target"] == before - 200
+    assert r2["proposal"] is None and "两周后再看" in r2["message"]
+    assert c.post("/iron/api/diet/adjust").status_code == 409  # 不在复盘时间：不接受
+    r3 = c.post("/iron/api/diet/adjust/undo").json()
+    assert r3["current"] is None and r3["target"] == before
+    assert c.post("/iron/api/diet/adjust/undo").status_code == 404
