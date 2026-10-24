@@ -41,7 +41,7 @@ class Trigger:
     title: str
     detail: str  # 给用户看的一句话：发现了什么、建议怎么做
     action: Action  # proposal：生成调整方案；today：今天的版本已经按这个改了；info：只提醒
-    tip: str = ""  # 交给训练规划改计划时的说明（action 为 proposal 时）
+    tip: str = ""  # 交给训练教练改计划时的说明（action 为 proposal 时）
 
 
 def pain_parts(text: str) -> list[str]:

@@ -24,13 +24,14 @@ def box(role: Role) -> Toolbox:
     )
 
 
-def test_only_some_roles_can_compute_metrics() -> None:
-    assert any(s["function"]["name"] == METRICS for s in box(Role.NUTRITION).schemas())
-    assert not any(s["function"]["name"] == METRICS for s in box(Role.EXERCISE).schemas())
+def test_every_expert_can_compute_metrics() -> None:
+    """指标归各自领域解读，三个专业 Agent 都能算（spec [2026-10-23] §20）。"""
+    for role in (Role.TRAINER, Role.NUTRITION, Role.RECOVERY):
+        assert any(s["function"]["name"] == METRICS for s in box(role).schemas()), role
 
 
 def test_metrics_get_calc_ids_and_missing_ones_none() -> None:
-    tb = box(Role.DATA)
+    tb = box(Role.NUTRITION)
     text = asyncio.run(tb.run(ToolCall("c1", METRICS, {})))
     assert "[C1] BMI：22.6" in text and "睡眠时长：算不出来" in text
     assert list(tb.evidence.calcs) == ["C1"]

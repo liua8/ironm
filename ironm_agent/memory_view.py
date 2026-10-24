@@ -28,11 +28,9 @@ KEEP_ORDER: tuple[Category, ...] = (
 RESOLVED_KEEP = 5  # 记忆多时，已解决的最多留几条
 
 ROLE_CATEGORIES: dict[Role, tuple[Category, ...]] = {
-    Role.PLANNER: ("injury", "equipment", "schedule", "goal", "event"),
-    Role.EXERCISE: ("injury", "equipment"),
+    Role.TRAINER: ("injury", "equipment", "schedule", "goal", "event"),
     Role.NUTRITION: ("diet", "goal"),
     Role.RECOVERY: ("injury", "event", "schedule"),
-    Role.DATA: ("goal",),
     Role.GENERAL: ("injury", "equipment", "schedule", "diet", "goal", "event"),
 }
 EVERYONE: tuple[Category, ...] = ("preference", "style")

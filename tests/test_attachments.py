@@ -66,7 +66,7 @@ def test_meal_photo_goes_to_nutrition_with_the_image(monkeypatch: Any) -> None:
         ]
 
     blocks = asyncio.run(go())
-    assert "「营养」" in seen["system"] and "看照片估算一餐" in seen["system"]
+    assert "「营养师」" in seen["system"] and "看照片估算一餐" in seen["system"]
     content = seen["content"]
     assert isinstance(content, list) and content[1]["type"] == "image_url"
     assert "不要猜报告里写了什么" in content[0]["text"]

@@ -290,25 +290,22 @@ def test_trend_flat_and_missing() -> None:
 
 
 def test_tools_only_for_listed_roles() -> None:
-    assert {t.name for t in tools_for("planner")} == {
+    assert {t.name for t in tools_for("trainer")} == {
         "estimate_strength",
         "check_plan",
         "training_patterns",
         "find_substitutes",
+        "trend_analysis",
     }
-    assert {t.name for t in tools_for("exercise")} == {
-        "estimate_strength",
-        "find_substitutes",
-        "pain_check",
-    }
-    assert {t.name for t in tools_for("nutrition")} == {"nutrition_calc"}
+    assert {t.name for t in tools_for("nutrition")} == {"nutrition_calc", "trend_analysis"}
     assert {t.name for t in tools_for("recovery")} == {
         "training_patterns",
+        "find_substitutes",
         "pain_check",
         "trend_analysis",
     }
-    assert {t.name for t in tools_for("data")} == {"training_patterns", "trend_analysis"}
-    assert not allowed("nutrition", "check_plan") and allowed("planner", "check_plan")
+    assert not allowed("nutrition", "check_plan") and allowed("trainer", "check_plan")
+    assert not allowed("trainer", "pain_check")  # 疼痛由康复恢复师判断
     assert {t.name for t in tools_for("general")} == set(TOOLS)
 
 
@@ -320,18 +317,18 @@ def test_render_assigns_calc_ids_by_role() -> None:
     lib = {e.id: e for e in library_entries()}
     text = render(
         substitutes("杠铃深蹲", equipment=None),
-        role="exercise",
+        role="recovery",
         calcs=calcs,
         entries=entries,
         library=lib,
     )  # type: ignore[arg-type]
     assert "可以换成" in text and entries  # 动作库条目记为依据
-    text2 = render(one_rep_max(60, 8), role="exercise", calcs=calcs, entries=entries, library=lib)  # type: ignore[arg-type]
-    assert text2.startswith("[C36]") and "C36" in calcs  # 动作教练用自己的编号段
-    text3 = render(one_rep_max(60, 8), role="planner", calcs=calcs, entries=entries, library=lib)  # type: ignore[arg-type]
+    text2 = render(one_rep_max(60, 8), role="recovery", calcs=calcs, entries=entries, library=lib)  # type: ignore[arg-type]
+    assert text2.startswith("[C68]") and "C68" in calcs  # 康复恢复师用自己的编号段
+    text3 = render(one_rep_max(60, 8), role="trainer", calcs=calcs, entries=entries, library=lib)  # type: ignore[arg-type]
     assert text3.startswith("[C20]")
-    text4 = render(one_rep_max(50, 5), role="exercise", calcs=calcs, entries=entries, library=lib)  # type: ignore[arg-type]
-    assert text4.startswith("[C37]")
+    text4 = render(one_rep_max(50, 5), role="recovery", calcs=calcs, entries=entries, library=lib)  # type: ignore[arg-type]
+    assert text4.startswith("[C69]")
 
 
 def test_registry_runs_with_context() -> None:
@@ -366,9 +363,8 @@ def test_registry_runs_with_context() -> None:
 def test_each_role_has_its_own_framework() -> None:
     for role in EXPERTS:
         assert framework(role), role
-    assert "训练规划" in FRAMEWORKS[Role.PLANNER] and "check_plan" in FRAMEWORKS[Role.PLANNER]
-    assert "营养" not in FRAMEWORKS[Role.DATA].split("\n")[0]
-    assert "trend_analysis" in FRAMEWORKS[Role.DATA]
+    assert "训练计划" in FRAMEWORKS[Role.TRAINER] and "check_plan" in FRAMEWORKS[Role.TRAINER]
+    assert all("trend_analysis" in FRAMEWORKS[r] for r in EXPERTS)  # 数据归各自领域解读
     assert "pain_check" in FRAMEWORKS[Role.RECOVERY]
 
 

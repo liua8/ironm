@@ -4,6 +4,7 @@
 用真实模型（分类打分和现在的主教练调度各调一次）；关键字和语义向量在本机算：
     .venv/bin/python evals/route/run.py            # 全部标注题
     .venv/bin/python evals/route/run.py --no-llm   # 只测关键字和语义向量（不花钱）
+    .venv/bin/python evals/route/run.py --set heldout   # 留出题（spec [2026-10-23] §20，没用来调过路由）
 报告写在 evals/route/reports/：<日期>-<标签>.json 与同名 .md。
 """
 
@@ -184,9 +185,15 @@ async def main() -> None:
     parser.add_argument("--no-llm", action="store_true")
     parser.add_argument("--label", default="route")
     parser.add_argument("--jobs", type=int, default=4)
+    parser.add_argument("--set", choices=("labels", "heldout"), default="labels")
     args = parser.parse_args()
-    cases = {c["id"]: c for c in load_yaml(ROOT / "evals/qa/cases.yaml")["cases"]}
-    labels = load_yaml(HERE / "labels.yaml")["labels"]
+    if args.set == "heldout":
+        held = load_yaml(HERE / "heldout.yaml")["cases"]
+        cases = {c["id"]: c for c in held}
+        labels = {c["id"]: {k: v for k, v in c.items() if k not in ("id", "ask")} for c in held}
+    else:
+        cases = {c["id"]: c for c in load_yaml(ROOT / "evals/qa/cases.yaml")["cases"]}
+        labels = load_yaml(HERE / "labels.yaml")["labels"]
     kw, vec = KeywordScorer.build(), VectorScorer()
     env = None if args.no_llm else load_env()
     sem = asyncio.Semaphore(args.jobs)
@@ -194,7 +201,12 @@ async def main() -> None:
         *(one(cases[i], lb, kw=kw, vec=vec, env=env, sem=sem) for i, lb in labels.items())
     )
     summary = summarize(rows)
-    path = report(rows, summary, args.label + ("-nollm" if args.no_llm else ""))
+    tag = (
+        args.label
+        + ("-heldout" if args.set == "heldout" else "")
+        + ("-nollm" if args.no_llm else "")
+    )
+    path = report(rows, summary, tag)
     print(json.dumps(summary, ensure_ascii=False, indent=1))
     print(f"报告：{path}")
 

@@ -9,7 +9,7 @@ from ironm_agent.kb import default_kb
 from ironm_agent.llm import Reply, Stage
 from ironm_agent.roles import SPECS, Role
 from ironm_agent.tools import HEALTH, KNOWLEDGE, Toolbox
-from tests.fakes import FakeHealth, FakeLLM, call, jsonr, tool_results
+from tests.fakes import FakeHealth, FakeLLM, call, jsonr
 
 
 def box(role: Role, health: FakeHealth | None = None) -> Toolbox:
@@ -68,21 +68,21 @@ def test_no_evidence_still_answers_from_experience() -> None:
     answer = jsonr(
         {"conclusion": "先把动作做标准，再慢慢加重量〔经验〕", "how": "每次只加一点〔经验〕"}
     )
-    c, _ = run(Role.EXERCISE, scripted(call(KNOWLEDGE, query="壶铃摇摆"), answer))
+    c, _ = run(Role.TRAINER, scripted(call(KNOWLEDGE, query="壶铃摇摆"), answer))
     assert c.status == "spoke" and "〔经验〕" in c.opinion.conclusion
 
 
 def test_model_saying_it_wont_speak_is_not_accepted() -> None:
     silent = jsonr({"speak": False, "reason": "没有依据"})
     answer = jsonr({"conclusion": "可以练，注意循序渐进〔经验〕"})
-    c, _ = run(Role.PLANNER, scripted(silent, answer))
+    c, _ = run(Role.TRAINER, scripted(silent, answer))
     assert c.status == "spoke" and "循序渐进" in c.opinion.conclusion
 
 
 def test_data_numbers_come_from_health_rows() -> None:
     health = FakeHealth()
     c, tb = run(
-        Role.DATA,
+        Role.RECOVERY,
         scripted(
             call(HEALTH, indicators=["restingHeartRates"], view="stats"),
             jsonr(
@@ -98,20 +98,17 @@ def test_data_numbers_come_from_health_rows() -> None:
     assert health.asked[0]["user_info"] == {"user_id": "42", "session_id": "42:s1"}
 
 
-def test_planner_cannot_read_health_data() -> None:
-    health = FakeHealth()
-    seen: list[str] = []
-
-    def handler(stage: Stage, messages: Sequence[Mapping[str, Any]], has_tools: bool) -> Reply:
-        results = tool_results(messages)
-        if not results:
-            return call(HEALTH, view="stats")
-        seen.extend(results)
-        return jsonr({"conclusion": "按每周安排来练〔经验〕"})
-
-    c, _ = run(Role.PLANNER, handler, health)
-    assert health.asked == [] and "不能使用" in seen[0]
-    assert c.status == "spoke"
+def test_every_expert_reads_its_own_health_data() -> None:
+    """数据分析不再是 Agent，三个专业 Agent 都能查自己领域的健康数据（spec [2026-10-23] §20）。"""
+    for role, indicator in ((Role.TRAINER, "steps"), (Role.NUTRITION, "weight")):
+        health = FakeHealth()
+        c, _ = run(
+            role,
+            scripted(call(HEALTH, indicators=[indicator], view="stats"),
+                     jsonr({"conclusion": "按你最近的数据来〔经验〕"})),
+            health,
+        )  # fmt: skip
+        assert health.asked and c.status == "spoke", role
 
 
 def test_health_query_failure_is_reported_not_raised() -> None:

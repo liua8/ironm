@@ -158,6 +158,7 @@ class VectorScorer:
         self._model = model
         self._matrix: Any = None
         self._owner: list[str] = []
+        self._cands: dict[tuple[str, ...], Any] = {}
 
     def _load(self) -> None:
         if self._matrix is not None:
@@ -186,6 +187,18 @@ class VectorScorer:
             out[name] = max(out[name], float(sim))
         return out
 
+    def similar(self, text: str, candidates: Sequence[str]) -> list[float]:
+        """问题和几段文字各自的相似度（Skill 选择的兜底用，spec [2026-10-23] §20）；候选文字的向量算一次后记住。"""
+        import numpy as np
+
+        self._load()
+        key = tuple(candidates)
+        if key not in self._cands:
+            m = np.array(list(self._model.embed(list(key))), dtype="float32")
+            self._cands[key] = m / np.linalg.norm(m, axis=1, keepdims=True)
+        v = np.array(next(iter(self._model.embed([text]))), dtype="float32")
+        return [float(x) for x in (self._cands[key] @ (v / np.linalg.norm(v))).tolist()]
+
     def scores(self, text: str) -> dict[str, float]:
         """各角色之间按高低归一：最像的 1，最不像的 0。"""
         raw = self.raw(text)
@@ -203,6 +216,8 @@ _PROMPT = """你是健身 App "AI 健身管家"的问题分类器。只做分类
 请判断：
 1. intent：pro（训练、动作、饮食、恢复、身体数据、健康安全相关的专业问题）、chat（打招呼、闲聊、道谢）、app（问 App 怎么用、你是谁、用的什么模型）、out_of_scope（与健身健康无关）。拿不准时选 pro。
 2. scores：每个专业角色和这个问题的相关程度，0 到 1 之间：最该负责的接近 1；问题明确涉及它的领域就给 0.6 以上；只是沾边给 0.3 以下；无关给 0。
+   - 问到"我的"数据时按领域给分：体重、体脂给 nutrition；睡眠、心率、心率变异性、血压给 recovery；步数、力量进步给 trainer。
+   - 身体正疼、受伤、生病时，recovery 给 0.6 以上。
 
 最近的对话（用于理解指代，可能为空）：
 {history}
@@ -249,7 +264,7 @@ async def llm_scores(
 @dataclass(frozen=True)
 class Decision:
     intent: Intent
-    roles: tuple[Role, ...] = ()  # 主责在前；恢复排在训练规划之前
+    roles: tuple[Role, ...] = ()  # 主责在前；康复恢复师排在训练教练之前
     weighted: dict[str, float] = field(default_factory=dict)
     channels: dict[str, dict[str, float]] = field(
         default_factory=dict
@@ -307,12 +322,12 @@ def combine(
         n for n in ranked[1:] if weighted[n] >= JOIN_MIN and top - weighted[n] <= JOIN_GAP
     ]
     if "discomfort" in concerns and Role.RECOVERY.value not in chosen:
-        chosen.append(Role.RECOVERY.value)  # 身体正不舒服时一定请恢复
+        chosen.append(Role.RECOVERY.value)  # 身体正不舒服时一定请康复恢复师
     roles: list[Role] = [Role(n) for n in chosen]
-    if Role.RECOVERY in roles and Role.PLANNER in roles:  # 恢复排在训练规划之前（主责不动）
+    if Role.RECOVERY in roles and Role.TRAINER in roles:  # 康复恢复师排在训练教练之前（主责不动）
         rest: list[Role] = [r for r in roles[1:] if r is not Role.RECOVERY]
         if roles[0] is not Role.RECOVERY:
-            at = rest.index(Role.PLANNER) if Role.PLANNER in rest else len(rest)
+            at = rest.index(Role.TRAINER) if Role.TRAINER in rest else len(rest)
             rest.insert(at, Role.RECOVERY)
         roles = [roles[0], *rest]
     return Decision(intent, tuple(roles), weighted, channels, weights, concerns)
@@ -332,6 +347,15 @@ class Router:
             return self.vector.scores(text)
         except Exception as e:  # 本机模型不可用时这一路不参加
             _log.warning("vector channel unavailable: error_type=%s", type(e).__name__)
+            return None
+
+    def similar(self, text: str, candidates: Sequence[str]) -> list[float] | None:
+        if self.vector is None:
+            return None
+        try:
+            return self.vector.similar(text, candidates)
+        except Exception as e:  # 本机模型不可用时不用这个兜底
+            _log.warning("skill similarity unavailable: error_type=%s", type(e).__name__)
             return None
 
     def warm(self) -> None:

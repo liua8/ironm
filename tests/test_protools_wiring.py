@@ -48,14 +48,17 @@ def names(tb: Toolbox) -> set[str]:
 
 
 def test_each_role_sees_only_its_pro_tools() -> None:
-    assert {"check_plan", "estimate_strength"} <= names(box(Role.PLANNER))
-    assert "nutrition_calc" not in names(box(Role.PLANNER))
+    assert {"check_plan", "estimate_strength"} <= names(box(Role.TRAINER))
+    assert "nutrition_calc" not in names(box(Role.TRAINER))
     assert "nutrition_calc" in names(box(Role.NUTRITION)) and "check_plan" not in names(
         box(Role.NUTRITION)
     )
-    assert "trend_analysis" in names(box(Role.DATA)) and "pain_check" not in names(box(Role.DATA))
+    assert all("trend_analysis" in names(box(r)) for r in EXPERTS)  # 数据归各自领域解读
+    assert "pain_check" in names(box(Role.RECOVERY)) and "pain_check" not in names(
+        box(Role.TRAINER)
+    )
     no_ctx = Toolbox(
-        SPECS[Role.PLANNER], kb=default_kb(), health=None, user_id="42", session_id="s"
+        SPECS[Role.TRAINER], kb=default_kb(), health=None, user_id="42", session_id="s"
     )
     assert "check_plan" not in names(no_ctx)  # 没有这个人的情况时不提供专业工具
 
@@ -98,7 +101,7 @@ def test_number_not_in_tool_result_is_not_accepted() -> None:
 
 
 def test_substitutes_adopt_library_entries_for_citation() -> None:
-    tb = box(Role.EXERCISE, ctx(injured=["knee"], equipment_said=["家里有哑铃"]))
+    tb = box(Role.RECOVERY, ctx(injured=["knee"], equipment_said=["家里有哑铃"]))
     out = asyncio.run(tb.run(ToolCall("x", "find_substitutes", {"exercise": "杠铃深蹲"})))
     assert "箱式深蹲" in out
     assert any(e.title == "箱式深蹲" for e in tb.evidence.entries.values())
@@ -167,7 +170,7 @@ def test_plan_that_fails_check_is_sent_back_once() -> None:
     plan = parse_plan(too_long)[0]
     assert plan is not None
     llm = FakeLLM(scripted(jsonr({"plan": fits})))
-    lead = SimpleNamespace(opinion=Opinion(role=Role.PLANNER, speak=True, answer="三练全身"))
+    lead = SimpleNamespace(opinion=Opinion(role=Role.TRAINER, speak=True, answer="三练全身"))
     case = SimpleNamespace(text=lambda **_: "档案")
     run: dict[str, Any] = {}
     new, _ = asyncio.run(

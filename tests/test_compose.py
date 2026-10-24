@@ -71,11 +71,11 @@ def test_coach_cannot_add_numbers_no_expert_said() -> None:
 
 
 def test_experience_numbers_from_experts_survive_composing() -> None:
-    consults = [_consult(Role.PLANNER, conclusion="每周练 3 次就够〔经验〕")]
+    consults = [_consult(Role.TRAINER, conclusion="每周练 3 次就够〔经验〕")]
     composed = asyncio.run(
         compose(
             "一周练几次",
-            Role.PLANNER,
+            Role.TRAINER,
             consults,
             FakeLLM(lambda *_: Reply("每周练 3 次就够〔经验〕。")),
         )
@@ -86,7 +86,7 @@ def test_experience_numbers_from_experts_survive_composing() -> None:
 def test_failed_review_falls_back_to_primary_opinion() -> None:
     consults = [
         _consult(Role.NUTRITION, conclusion="每天 3–5 克〔K10〕", how="随餐吃", basis=("K10",)),
-        _consult(Role.PLANNER, conclusion="练前练后都行"),
+        _consult(Role.TRAINER, conclusion="练前练后都行"),
     ]
     composed = asyncio.run(
         compose("肌酸怎么吃", Role.NUTRITION, consults, FakeLLM(lambda *_: Reply("每天吃 99 克。")))

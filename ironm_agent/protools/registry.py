@@ -248,7 +248,7 @@ TOOLS: dict[str, ProTool] = {
     for t in (
         ProTool(
             "estimate_strength",
-            frozenset({"planner", "exercise", "general"}),
+            frozenset({"trainer", "general"}),
             "力量计算：给 weight_kg 和 reps 估算最大重量（1RM）；给 target_reps、reps_in_reserve（还剩几次）"
             "和 max_kg（或最近一组的 weight_kg、reps）推出这组该用多重。数字用户说过才能填，不要自己编。",
             _obj(
@@ -271,7 +271,7 @@ TOOLS: dict[str, ProTool] = {
         ),
         ProTool(
             "check_plan",
-            frozenset({"planner", "general"}),
+            frozenset({"trainer", "general"}),
             "检查一份训练计划：各肌群每周组数与练几次、新手的天数与组数、同一肌群是否连续两天、"
             "伤病部位的动作、器械是否齐、每次时长，以及和当前计划相比改了什么。写好计划后先检查，有问题就改。",
             _obj(
@@ -293,7 +293,7 @@ TOOLS: dict[str, ProTool] = {
         ),
         ProTool(
             "training_patterns",
-            frozenset({"planner", "recovery", "data", "general"}),
+            frozenset({"trainer", "recovery", "general"}),
             "汇总这个人最近 14、28 或 56 天的训练：次数、每周平均、常在周几、每次时长、感受、按计划的完成率、"
             "常练和常跳过的动作。记录太少时会说明数据不足。",
             _obj({"days": {"type": "integer", "enum": list(WINDOWS)}}),
@@ -301,7 +301,7 @@ TOOLS: dict[str, ProTool] = {
         ),
         ProTool(
             "find_substitutes",
-            frozenset({"exercise", "planner", "general"}),
+            frozenset({"trainer", "recovery", "general"}),
             "在动作库里找替代动作：按同一动作模式、他有的器械、有伤病的部位，找更容易、相近或更难的动作，并写明为什么。"
             "他的伤病和器械系统已经知道；这句话里新说到的疼痛部位放进 avoid_parts。",
             _obj(
@@ -339,7 +339,7 @@ TOOLS: dict[str, ProTool] = {
         ),
         ProTool(
             "pain_check",
-            frozenset({"recovery", "exercise", "general"}),
+            frozenset({"recovery", "general"}),
             "疼痛判断：按疼痛分数（0–10）和就医信号，给出可以继续、减量改动作，还是停下就医。他没说分数时不要填 score。",
             _obj(
                 {
@@ -352,7 +352,7 @@ TOOLS: dict[str, ProTool] = {
         ),
         ProTool(
             "trend_analysis",
-            frozenset({"data", "recovery", "general"}),
+            frozenset({"trainer", "nutrition", "recovery", "general"}),
             "按指定的指标和时间范围分析趋势：平均、最高最低、头尾一周的平均、每周变化、变化是否超过日常波动。"
             "按用户问的范围填 days（这周 7、这个月 30、两个月 60、三个月 90、半年 180）。",
             _obj(
@@ -380,8 +380,7 @@ def allowed(role: str, name: str) -> bool:
 # 工具结果的编号段：同一层的几位角色同时作答、各自编号，整合时合在一起，所以每个角色用自己的一段，
 # 不会撞号；档案里的计算结果用 C0 起的前十几个号（编号最多两位）
 CALC_RANGES: dict[str, tuple[int, int]] = {
-    "planner": (20, 35), "exercise": (36, 51), "nutrition": (52, 67), "recovery": (68, 83),
-    "data": (84, 99), "general": (20, 99),
+    "trainer": (20, 51), "nutrition": (52, 67), "recovery": (68, 99), "general": (20, 99),
 }  # fmt: skip
 
 

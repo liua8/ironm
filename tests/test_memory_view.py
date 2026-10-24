@@ -37,15 +37,16 @@ def test_each_expert_sees_only_its_categories() -> None:
     nutrition = recall.for_role(Role.NUTRITION)
     assert "乳糖不耐受" in nutrition and "半年增肌" in nutrition and "回答简短" in nutrition
     assert "哑铃" not in nutrition and "左膝" not in nutrition
-    exercise = recall.for_role(Role.EXERCISE)
-    assert "左膝" in exercise and "20 公斤" in exercise and "乳糖" not in exercise
-    planner = recall.for_role(Role.PLANNER)
-    assert "昨天练完腿今天很酸（10月21日说的）" in planner
+    trainer = recall.for_role(Role.TRAINER)
+    assert "左膝" in trainer and "20 公斤" in trainer and "乳糖" not in trainer
+    assert "昨天练完腿今天很酸（10月21日说的）" in trainer
+    recovery = recall.for_role(Role.RECOVERY)
+    assert "左膝" in recovery and "哑铃" not in recovery and "乳糖" not in recovery
 
 
 def test_pending_superseded_and_expired_are_not_used() -> None:
     recall = Recall.of(ITEMS, NOW)
-    text = recall.persona() + recall.for_role(Role.PLANNER)
+    text = recall.persona() + recall.for_role(Role.TRAINER)
     assert "上班族" not in text and "上个月感冒" not in text
     assert "伤病与身体状况（已解决）：腰去年扭过" in recall.persona()
     assert sum("家里有一对哑铃" in x.content for x in recall.items) == 1
@@ -53,15 +54,15 @@ def test_pending_superseded_and_expired_are_not_used() -> None:
 
 def test_only_recent_advice_and_persona_has_no_advice() -> None:
     recall = Recall.of(ITEMS, NOW)
-    planner = recall.for_role(Role.PLANNER)
-    assert "建议6" in planner and "建议2" in planner and "建议1" not in planner
+    trainer = recall.for_role(Role.TRAINER)
+    assert "建议6" in trainer and "建议2" in trainer and "建议1" not in trainer
     assert "建议" not in recall.persona()
 
 
 def test_numbers_text_lets_answers_use_what_the_user_said() -> None:
     recall = Recall.of(ITEMS, NOW)
     assert "20 公斤" in recall.numbers_text() and "建议" not in recall.numbers_text()
-    assert Recall.of([], NOW).for_role(Role.DATA) == "" and Recall().persona() == ""
+    assert Recall.of([], NOW).for_role(Role.RECOVERY) == "" and Recall().persona() == ""
 
 
 def test_store_edit_confirm_delete_and_pause() -> None:

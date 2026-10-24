@@ -182,14 +182,14 @@ cases:
     cat: data
     ask: 我最近的静息心率正常吗
     path: answer
-    roles_any: [data, recovery]
+    roles_any: [recovery]
     must: [[正常, 波动范围, 稳定, 平稳]]
     must_not: [偏高, 过高]
   - id: D02
     cat: data
     ask: 我这两个月体重有变化吗
     path: answer
-    roles_any: [data]
+    roles_any: [nutrition]
     must: [[公斤, kg], [下降, 往下, 降, 减少, 变化不大, 变化很小, 小幅, 幅度很小]]
   - {id: D03, cat: data, ask: 我的 BMI 是多少, path: answer, must: ["24.5", 超重], max_chars: 220}
   - id: D04
@@ -221,24 +221,24 @@ cases:
   - {id: D10, cat: data, ask: 我的血压怎么样, path: answer, must: ["118", 正常], must_not: [你有高血压, 患有高血压]}
 
   # ---- 知识 15：训练、动作、营养、恢复 ----
-  - {id: K01, cat: knowledge, ask: 增肌一周练几次比较好, path: answer, roles: [planner], must: [[两次, 2 次, 2次, 两到三, 2–3, 2-3, 3 次, 三次]], max_chars: 320}
-  - {id: K02, cat: knowledge, ask: 增肌每组做几次比较合适, path: answer, roles_any: [planner, exercise], must: [次], max_chars: 320}
+  - {id: K01, cat: knowledge, ask: 增肌一周练几次比较好, path: answer, roles: [trainer], must: [[两次, 2 次, 2次, 两到三, 2–3, 2-3, 3 次, 三次]], max_chars: 320}
+  - {id: K02, cat: knowledge, ask: 增肌每组做几次比较合适, path: answer, roles_any: [trainer], must: [次], max_chars: 320}
   - {id: K03, cat: knowledge, ask: 力量训练组间休息多久, path: answer, must: [[分钟, 秒]], max_chars: 320}
   - {id: K04, cat: knowledge, ask: 跑步前要热身吗，怎么热身, path: answer, must: [热身, [慢跑, 快走, 动态, 激活, 关节]]}
-  - {id: K05, cat: knowledge, ask: 深蹲时膝盖内扣怎么纠正, path: answer, roles: [exercise], must: [[脚尖, 外推, 向外, 打开]]}
+  - {id: K05, cat: knowledge, ask: 深蹲时膝盖内扣怎么纠正, path: answer, roles: [trainer], must: [[脚尖, 外推, 向外, 打开]]}
   - id: K06
     cat: knowledge
     ask: 硬拉的时候腰疼，是不是姿势不对
     path: answer
-    roles_any: [exercise, recovery]
+    roles_any: [trainer, recovery]
     must: [[停, 减轻, 降低重量, 先别, 暂停, 减重量], [就医, 医生, 康复], [背, 腰背, 中立, 弓背, 挺直]]
   - id: K07
     cat: knowledge
     ask: 卧推的时候肩膀前面疼怎么办
     path: answer
-    roles_any: [exercise, recovery]
+    roles_any: [trainer, recovery]
     must: [[握距, 窄握, 哑铃, 地板卧推, 幅度, 肩胛], [停, 医生, 就医, 加重]]
-  - {id: K08, cat: knowledge, ask: 壶铃摇摆怎么做, path: answer, roles: [exercise], must: [[髋, 臀, 屁股], [背, 腰]]}  # 体感讲解用大白话说"屁股"
+  - {id: K08, cat: knowledge, ask: 壶铃摇摆怎么做, path: answer, roles: [trainer], must: [[髋, 臀, 屁股], [背, 腰]]}  # 体感讲解用大白话说"屁股"
   - id: K09
     cat: knowledge
     ask: 吃肌酸需要冲击期吗
@@ -260,13 +260,13 @@ cases:
   - {id: C05, cat: chat, ask: 今天股市怎么样, path: direct, must: [超出]}
 
   # ---- 多领域 5 ----
-  - {id: M01, cat: multi, ask: 我想减脂又不想掉肌肉，训练和饮食怎么安排, path: answer, roles: [planner, nutrition], must: [力量, 蛋白], max_chars: 450}
+  - {id: M01, cat: multi, ask: 我想减脂又不想掉肌肉，训练和饮食怎么安排, path: answer, roles: [trainer, nutrition], must: [力量, 蛋白], max_chars: 450}
   - id: M02
     cat: multi
     persona: knee
     ask: 今晚想练练腿，怎么安排
     path: answer
-    roles: [planner]
+    roles: [trainer]
     must: [哑铃, [膝, 深度, 幅度, 不疼, 箱]]
     must_not: [{term: 跑步}, {term: 波比}, {term: 开合跳}, {term: 跳绳}, {term: 深蹲跳}]
     ref: 用 20 公斤哑铃和弹力带，45 分钟内；深蹲控制在不疼的深度（箱式深蹲），多用臀桥、罗马尼亚硬拉等对膝盖友好的动作；不安排跑跳
@@ -278,7 +278,7 @@ cases:
     roles_any: [recovery]
     must: [[降低, 降到, 减量, 减轻, 减半, 轻松, 休息, 不建议, 不要, 别]]
     ref: 最近几晚睡眠都不够，静息心率偏高、心率变异性偏低；今天不练大重量，改轻松版或休息，优先补觉
-  - {id: M04, cat: multi, ask: 准备跑半马，跑步和力量训练怎么搭配，饮食上要注意什么, path: answer, roles: [planner, nutrition], must: [力量, 碳水]}
+  - {id: M04, cat: multi, ask: 准备跑半马，跑步和力量训练怎么搭配，饮食上要注意什么, path: answer, roles: [trainer, nutrition], must: [力量, 碳水]}
   - id: M05
     cat: multi
     ask: 练完肩膀有点疼，晚上吃什么有助于恢复
@@ -377,7 +377,7 @@ cases:
         coach: 先确认两件事，好给你排得准：①你一周能练几天、每次大概多久？②在家还是健身房，手边有什么器械？也可以直接说「你定」，我先按每周 3 天、每次 45 分钟、徒手加哑铃来排。
     ask: 你定吧
     path: answer
-    roles: [planner]
+    roles: [trainer]
     must: [[默认, 先按, 按每周 3, 每周 3 天, 每周三天, 一周三]]
     must_not: [你一周能练几天]
   - id: Q03
@@ -385,15 +385,15 @@ cases:
     persona: knee
     ask: 帮我做个训练计划
     path: answer
-    roles: [planner]
+    roles: [trainer]
     must: [哑铃]
     must_not: [你一周能练几天]
-  - {id: Q04, cat: clarify, persona: newbie, ask: 深蹲怎么做, path: answer, roles: [exercise], must_not: [你一周能练几天]}
+  - {id: Q04, cat: clarify, persona: newbie, ask: 深蹲怎么做, path: answer, roles: [trainer], must_not: [你一周能练几天]}
 
   # ---- 计划与训练记录（写入前要确认）----
-  - {id: P01, cat: plan, persona: knee, ask: 帮我排一个每周 3 练的计划, path: answer, roles: [planner], card: plan, must: [确认]}
-  - {id: P02, cat: plan, persona: planned, ask: 把周三改成练背, path: answer, roles: [planner], card: plan}
-  - {id: P03, cat: plan, persona: planned, ask: 这周末出差，周五练不了，帮我调整一下, path: answer, roles: [planner], card: plan}
+  - {id: P01, cat: plan, persona: knee, ask: 帮我排一个每周 3 练的计划, path: answer, roles: [trainer], card: plan, must: [确认]}
+  - {id: P02, cat: plan, persona: planned, ask: 把周三改成练背, path: answer, roles: [trainer], card: plan}
+  - {id: P03, cat: plan, persona: planned, ask: 这周末出差，周五练不了，帮我调整一下, path: answer, roles: [trainer], card: plan}
   - id: P04
     cat: plan
     persona: planned
@@ -401,15 +401,15 @@ cases:
     path: answer
     must: [[划船, 上肢拉, 拉]]
     ref: 今天周五，按计划练上肢拉与核心：单臂哑铃划船、弹力带坐姿划船、弯举、死虫式、平板支撑
-  - {id: L01, cat: log, persona: planned, ask: 今天练了单臂哑铃划船 4 组 10 次 20 公斤，弯举 3 组 12 次 10 公斤, path: answer, roles: [planner], card: log}
-  - {id: L02, cat: log, persona: planned, ask: 今天的计划练完了，有点累，感觉打 7 分, path: answer, roles: [planner], card: log}
+  - {id: L01, cat: log, persona: planned, ask: 今天练了单臂哑铃划船 4 组 10 次 20 公斤，弯举 3 组 12 次 10 公斤, path: answer, roles: [trainer], card: log}
+  - {id: L02, cat: log, persona: planned, ask: 今天的计划练完了，有点累，感觉打 7 分, path: answer, roles: [trainer], card: log}
 
   # ---- 体感讲解：问动作怎么做时用类比和体感描述，不用解剖术语（spec [2026-10-23] §8）----
   - id: F01
     cat: feel
     ask: 卧推的时候肩胛骨要怎么收紧
     path: answer
-    roles: [exercise]
+    roles: [trainer]
     must: [[想象, 像, 假装, 当成, 仿佛]]
     must_not: [后缩, 外旋, 内旋, 外展, 内收, 离心, 向心]  # 不查"前伸"："双臂往前伸"会误判
     ref: 用类比讲：躺下前两块肩胛骨像在背后夹住一支笔、往裤兜方向塞，或"想象腋下夹着一张纸，别让它掉下来"；整组都别松；不说"后缩下沉"这类术语
@@ -417,7 +417,7 @@ cases:
     cat: feel
     ask: 硬拉老是用腰发力，怎么找到用屁股发力的感觉
     path: answer
-    roles: [exercise]
+    roles: [trainer]
     must: [[想象, 像, 假装, 当成, 仿佛]]
     must_not: [伸髋, 屈髋, 髋铰链, 腘绳肌, 竖脊肌, 离心, 向心]
     ref: 用类比讲：像用屁股去关身后的车门（屁股往后推、不是弯腰）；用两只脚把地板推开；站直时屁股夹紧、别用腰往后仰；做对时屁股和大腿后面发酸，腰不酸
@@ -426,7 +426,7 @@ cases:
     persona: newbie
     ask: 引体向上怎么发力
     path: answer
-    roles: [exercise]
+    roles: [trainer]
     must: [[想象, 像, 假装, 当成, 仿佛]]
     must_not: [后缩, 下回旋, 外旋, 内旋, 内收, 离心, 向心]
     ref: 先把肩膀从耳朵边"拉下来"（像把单杠往下压一点），再用手肘往下、往后插裤兜，手只是钩子；想着把杠拉到胸口；拉不起来时先用弹力带辅助
@@ -435,7 +435,7 @@ cases:
     persona: knee
     ask: 膝盖有点不舒服，深蹲要怎么发力才不伤膝盖
     path: answer
-    roles: [exercise]
+    roles: [trainer]
     must: [[想象, 像, 假装, 当成, 仿佛]]
     must_not: [后缩, 外旋, 内旋, 外展, 内收, 离心, 向心, 伸髋, 屈髋, 髋铰链, 腘绳肌, 股四头肌]
     ref: 先只蹲到不疼的深度（如箱式深蹲）；用类比讲发力：像往后坐一把椅子、膝盖像车灯照着脚尖、脚底像三脚架踩稳；做对时大腿和屁股发酸、膝盖不疼；疼痛加重或出现肿胀、卡住、打软腿就停下就医

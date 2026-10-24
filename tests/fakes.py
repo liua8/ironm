@@ -45,7 +45,7 @@ def route_reply(
     intent: str = "pro", primary: str | None = None, helpers: Sequence[str] = ()
 ) -> Reply:
     """路由模型这一路的回答（spec [2026-10-23] §16）：主责 1.0、辅助 0.9，其余 0。"""
-    scores = {r: 0.0 for r in ("planner", "exercise", "nutrition", "recovery", "data")}
+    scores = {r: 0.0 for r in ("trainer", "nutrition", "recovery")}
     if primary:
         scores[primary] = 1.0
     for h in helpers:

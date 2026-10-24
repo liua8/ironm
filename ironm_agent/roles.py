@@ -8,11 +8,9 @@ from enum import StrEnum
 
 class Role(StrEnum):
     COACH = "coach"
-    PLANNER = "planner"
-    EXERCISE = "exercise"
+    TRAINER = "trainer"
     NUTRITION = "nutrition"
     RECOVERY = "recovery"
-    DATA = "data"
     GENERAL = "general"  # 单 Agent 对照组的"全能教练"，不参加调度
 
 
@@ -26,13 +24,15 @@ class RoleSpec:
     keywords: tuple[str, ...]  # 模型不可用时按关键词调度
 
 
+# 专业 Agent 按大领域分三个，小领域做成 Skill（spec [2026-10-23] §20）
 SPECS: dict[Role, RoleSpec] = {
-    Role.PLANNER: RoleSpec(
-        Role.PLANNER,
-        "训练规划",
-        "训练频率、组数次数、强度、有氧与力量的安排、进阶与减量；训练相关的风险与注意事项",
-        frozenset({"training", "safety"}),
-        False,
+    Role.TRAINER: RoleSpec(
+        Role.TRAINER,
+        "训练教练",
+        "怎么练：训练计划（频率、组数次数、强度、有氧与力量、进阶与减量、平台期）、动作做法与要点、"
+        "替代动作、热身、坚持训练；步数、力量进步等训练数据的解读",
+        frozenset({"training", "exercise", "safety", "data"}),
+        True,
         (
             "计划",
             "安排",
@@ -50,15 +50,6 @@ SPECS: dict[Role, RoleSpec] = {
             "多久练",
             "平台期",
             "训练量",
-        ),
-    ),
-    Role.EXERCISE: RoleSpec(
-        Role.EXERCISE,
-        "动作教练",
-        "动作做法与要点、常见错误、替代动作、热身",
-        frozenset({"exercise", "training", "safety"}),
-        False,
-        (
             "动作",
             "深蹲",
             "硬拉",
@@ -73,14 +64,17 @@ SPECS: dict[Role, RoleSpec] = {
             "拉伸",
             "划船",
             "弓步",
+            "步数",
+            "坚持",
         ),
     ),
     Role.NUTRITION: RoleSpec(
         Role.NUTRITION,
-        "营养",
-        "饮食原则、热量、蛋白质、补剂、减脂与增肌饮食、喝水；饮食与补剂的风险",
-        frozenset({"nutrition", "safety"}),
-        False,
+        "营养师",
+        "怎么吃：饮食原则、热量、蛋白质、补剂、减脂与增肌饮食、外卖外食、喝水、坚持饮食；"
+        "体重、体脂等身体成分数据的解读；饮食与补剂的风险",
+        frozenset({"nutrition", "safety", "data"}),
+        True,
         (
             "吃",
             "饮食",
@@ -98,13 +92,16 @@ SPECS: dict[Role, RoleSpec] = {
             "早餐",
             "晚餐",
             "外卖",
+            "体重",
+            "体脂",
         ),
     ),
     Role.RECOVERY: RoleSpec(
         Role.RECOVERY,
-        "恢复",
-        "睡眠、疲劳、肌肉酸痛、身体不适与伤痛、生病时的休息安排、心率变异性等恢复指标，以及什么情况要就医",
-        frozenset({"recovery", "safety"}),
+        "康复恢复师",
+        "身体状态：伤痛与带伤训练、伤后回归、动作引起的疼痛、睡眠、疲劳、肌肉酸痛、生病时的安排、"
+        "过度训练；睡眠、心率、心率变异性、血压等指标的解读，以及什么情况要就医",
+        frozenset({"recovery", "safety", "data"}),
         True,
         (
             "睡",
@@ -114,7 +111,7 @@ SPECS: dict[Role, RoleSpec] = {
             "酸痛",
             "恢复",
             "休息",
-            "心率变异",
+            "心率",
             "hrv",
             "过度训练",
             "疼",
@@ -127,15 +124,9 @@ SPECS: dict[Role, RoleSpec] = {
             "感冒",
             "发烧",
             "生病",
+            "血压",
+            "化验",
         ),
-    ),
-    Role.DATA: RoleSpec(
-        Role.DATA,
-        "数据分析",
-        "体重、心率、步数、血压、睡眠时长等指标的趋势与解读",
-        frozenset({"data"}),
-        True,
-        ("体重", "心率", "步数", "血压", "趋势", "数据", "指标", "最近", "变化", "体脂", "化验"),
     ),
 }
 

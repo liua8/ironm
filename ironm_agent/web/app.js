@@ -591,9 +591,9 @@ function weekCard(w) {
     w.tips.length && w.planned ? h("button", { class: "btn block", type: "button", onclick: () => proposalSheet() }, icon("check", "sm"), "生成调整方案") : null);
 }
 
-// 每周复盘直接出调整方案（spec [2026-10-23] §18 需求 1）：训练规划按复盘改计划，确认后才替换，可以撤销
+// 每周复盘直接出调整方案（spec [2026-10-23] §18 需求 1）：训练教练按复盘改计划，确认后才替换，可以撤销
 async function proposalSheet(trigger = null) {
-  const box = h("div", { class: "sheet-stack" }, h("p", { class: "muted" }, `训练规划在按${trigger ? "提醒" : "这周的复盘"}改计划，大约要半分钟…`));
+  const box = h("div", { class: "sheet-stack" }, h("p", { class: "muted" }, `训练教练在按${trigger ? "提醒" : "这周的复盘"}改计划，大约要半分钟…`));
   openSheet(trigger ? trigger.title : "按复盘调整计划", box);
   let r;
   try { r = await api(`/iron/api/review/proposal${trigger ? `?trigger=${trigger.kind}` : ""}`, { method: "POST" }); }
@@ -628,7 +628,7 @@ function draftView(box, d, answer, warning) {
     h("p", { class: "caption" }, "确认后才会替换现在的计划，之后可以撤销；这份方案 24 小时内有效。"));
 }
 
-// ---- 动作：卡片流，官方视频，"没看懂"请动作教练用大白话讲（spec [2026-10-23] §13）--------------------
+// ---- 动作：卡片流，官方视频，"没看懂"请训练教练用大白话讲（spec [2026-10-23] §13）--------------------
 const PART_MARK = { 腿臀: "腿", 胸: "胸", 背: "背", 肩: "肩", 手臂: "臂", 核心: "核", 全身: "全", 有氧: "氧" };
 const moveFilter = { part: "全部", equip: "全部器械", q: "" };
 const VIDEO_EXT = [".mp4", ".webm", ".mov"];
@@ -665,7 +665,7 @@ async function moves(view) {
       && (!q || `${x.name}${x.muscles}${x.part}`.includes(q)));
     count.textContent = `${items.length} 个动作${has.size ? ` · ${items.filter((x) => has.has(x.id)).length} 个有视频` : ""}`;
     grid.replaceChildren(...(items.length ? items.map((x) => moveCard(x, has.has(x.id), () => exerciseSheet(x, lib.note, has, me.admin, draw)))
-      : [h("div", { class: "card" }, h("div", { class: "empty" }, icon("search"), "没有符合的动作，换个条件试试，或者直接问动作教练。"))]));
+      : [h("div", { class: "card" }, h("div", { class: "empty" }, icon("search"), "没有符合的动作，换个条件试试，或者直接问训练教练。"))]));
   }
   input.addEventListener("input", () => { moveFilter.q = input.value; draw(); });
   draw();
@@ -676,7 +676,7 @@ async function moves(view) {
     count, grid,
     h("div", { class: "card plan-card" },
       h("div", { class: "plan-top" }, h("div", { class: "plan-icon" }, icon("coach")),
-        h("div", {}, h("h3", {}, "不知道练哪个？"), h("p", { class: "muted" }, "告诉动作教练你想练哪里、有什么器械、哪里不舒服。"))),
+        h("div", {}, h("h3", {}, "不知道练哪个？"), h("p", { class: "muted" }, "告诉训练教练你想练哪里、有什么器械、哪里不舒服。"))),
       h("div", { class: "asks" }, askChip("在家用哑铃练全身"), askChip("膝盖不好能练什么腿"), askChip("久坐圆肩怎么改善"))));
 }
 
@@ -1501,7 +1501,7 @@ async function me(view) {
   view.append(section("档案", edit, box, h("p", { class: "caption", style: "padding:0 2px" }, "用来计算 BMI、基础代谢、每日热量和蛋白质目标。")));
   view.append(goalSection());
   view.append(citySection());
-  view.append(section("说明", null, h("div", { class: "card" }, h("p", { class: "muted" }, "AI 健身管家会把你的问题交给最合适的专业角色（训练规划、动作教练、营养、恢复、数据分析），涉及几个方面时再把他们的意见整合起来。建议仅供参考，不能代替医生；身体不适请及时就医。"))));
+  view.append(section("说明", null, h("div", { class: "card" }, h("p", { class: "muted" }, "AI 健身管家会把你的问题交给最合适的专业角色（训练教练、营养师、康复恢复师），涉及几个方面时再把他们的意见整合起来。建议仅供参考，不能代替医生；身体不适请及时就医。"))));
   view.append(h("button", { class: "btn danger block", type: "button", onclick: signOut }, icon("logout", "sm"), "退出登录"));
 }
 // 城市：用来取实时天气（spec [2026-10-23] §13）
@@ -1604,9 +1604,9 @@ function askCoach(question) { chat.pending = question; closeSheet(); location.ha
 
 const STARTERS = [
   ["给我安排今天的训练", "按你的目标和状态"],
-  ["深蹲时膝盖疼怎么办", "动作教练 · 恢复"],
-  ["早餐怎么吃够蛋白质", "营养"],
-  ["我最近的静息心率正常吗", "数据分析"],
+  ["深蹲时膝盖疼怎么办", "康复恢复师 · 训练教练"],
+  ["早餐怎么吃够蛋白质", "营养师"],
+  ["我最近的静息心率正常吗", "康复恢复师"],
 ];
 
 function chatPage(view) {
@@ -1621,7 +1621,7 @@ function chatPage(view) {
   view.append(h("div", { class: "chat" },
     h("div", { class: "chat-bar" },
       h("a", { class: "icon-btn", href: `#${chat.back}`, "aria-label": "返回" }, icon("back", "sm")),
-      h("div", { class: "who" }, h("b", {}, "教练"), h("span", {}, "训练规划 · 动作教练 · 营养 · 恢复 · 数据分析")),
+      h("div", { class: "who" }, h("b", {}, "教练"), h("span", {}, "训练教练 · 营养师 · 康复恢复师")),
       fresh),
     thread, files, form));
   chat.els = { thread, input, send, files };

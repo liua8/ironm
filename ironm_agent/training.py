@@ -754,7 +754,7 @@ def case_lines(
     """共享档案里的计划与最近 7 天的训练记录（规则，不调用模型）。"""
     out: list[str] = []
     if plan is None:
-        out.append("当前计划：还没有（可以让训练规划排一份）")
+        out.append("当前计划：还没有（可以让训练教练排一份）")
     else:
         out.append("当前计划：" + "；".join(plan.lines()))
         s = plan.session_on(today)

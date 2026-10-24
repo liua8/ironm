@@ -38,10 +38,26 @@ def test_refs_exist_in_knowledge_base() -> None:
 
 
 def test_each_prompt_belongs_to_its_role() -> None:
-    assert "持证体能教练" in FRAMEWORKS[Role.PLANNER] and "运动营养师" in FRAMEWORKS[Role.NUTRITION]
-    assert "nutrition_calc" not in FRAMEWORKS[Role.PLANNER]
+    assert "持证体能教练" in FRAMEWORKS[Role.TRAINER] and "运动营养师" in FRAMEWORKS[Role.NUTRITION]
+    assert "nutrition_calc" not in FRAMEWORKS[Role.TRAINER]
     assert "check_plan" not in FRAMEWORKS[Role.NUTRITION]
     assert "照练、减量、休息、就医" in FRAMEWORKS[Role.RECOVERY]
+
+
+def test_each_prompt_says_what_it_owns_and_hands_off() -> None:
+    """负责什么、不负责什么、转给谁（spec [2026-10-23] §20）。"""
+    names = {r: SPECS[r].name for r in EXPERTS}
+    for role in EXPERTS:
+        text = FRAMEWORKS[role]
+        assert "【你负责】" in text and "【你不负责，转给谁】" in text, role
+        handoff = text[text.index("【你不负责，转给谁】") : text.index("【你的专业思考顺序")]
+        assert all(names[o] in handoff for o in EXPERTS if o is not role), role
+    # 数据归各自领域解读
+    assert "体重" in FRAMEWORKS[Role.NUTRITION].split("【你不负责")[0]
+    assert "心率变异性" in FRAMEWORKS[Role.RECOVERY].split("【你不负责")[0]
+    assert "步数" in FRAMEWORKS[Role.TRAINER].split("【你不负责")[0]
+    # 伤痛交给康复恢复师
+    assert "康复恢复师" in FRAMEWORKS[Role.TRAINER] and "pain_check" not in FRAMEWORKS[Role.TRAINER]
 
 
 def scripted(*replies: Reply) -> Any:
@@ -50,11 +66,11 @@ def scripted(*replies: Reply) -> Any:
 
 
 def test_copying_a_rule_from_the_prompt_passes_the_check() -> None:
-    tb = Toolbox(SPECS[Role.PLANNER], kb=default_kb(), health=None, user_id="42", session_id="s")
+    tb = Toolbox(SPECS[Role.TRAINER], kb=default_kb(), health=None, user_id="42", session_id="s")
     llm = FakeLLM(
         scripted(jsonr({"conclusion": "大动作组间休息 2–3 分钟〔K03〕，每周 10 组及以上〔K04〕"}))
     )
-    c = asyncio.run(consult(SPECS[Role.PLANNER], "组间休息多久", [], (), tb, llm))
+    c = asyncio.run(consult(SPECS[Role.TRAINER], "组间休息多久", [], (), tb, llm))
     assert (
         "〔K03〕" in c.opinion.conclusion and "〔K04〕" in c.opinion.conclusion
     )  # 没有被改标〔经验〕

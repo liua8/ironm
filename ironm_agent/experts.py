@@ -48,8 +48,8 @@ class Opinion(ContractModel):
     caution: str = ""
     uncertain: str = ""
     answer: str = ""  # 直接给用户的回答（solo 模式），有它时就不再整合
-    plan: dict[str, Any] | None = None  # 训练规划写的计划（要写计划的那一轮），系统校验后做成预览
-    log: dict[str, Any] | None = None  # 训练规划整理的训练记录（要记训练的那一轮）
+    plan: dict[str, Any] | None = None  # 训练教练写的计划（要写计划的那一轮），系统校验后做成预览
+    log: dict[str, Any] | None = None  # 训练教练整理的训练记录（要记训练的那一轮）
     basis: tuple[str, ...] = ()  # 意见里引用到的编号：K 开头为依据库条目，r 开头为健康数据行
     general: bool = False  # 没有资料依据，只给不带具体数字的一般建议
 
@@ -118,7 +118,7 @@ def _tool_hint(toolbox: Toolbox) -> str:
     return "；".join(hints) or "（没有可用的工具）"
 
 
-# 这一轮要写计划或整理训练记录时（spec [2026-10-23] §9），交给训练规划的额外要求；写在 JSON 里，由系统做成预览卡片
+# 这一轮要写计划或整理训练记录时（spec [2026-10-23] §9），交给训练教练的额外要求；写在 JSON 里，由系统做成预览卡片
 TASKS = {
     "plan": """
 
@@ -137,7 +137,7 @@ TASKS = {
 - 给用户的文字只写一两句话：简单反馈这次训练（按档案和计划说下一次怎么练），不要把记录再写一遍（系统会显示成预览卡片，用户确认后才记下）。""",
 }
 
-_WRITE = """你是健身 App 里的「训练规划」。你刚才已经回答了用户，但没有按格式写出{what}。请照你的回答和这个人的档案，把{what}写成 JSON。{rules}
+_WRITE = """你是健身 App 里的「训练教练」。你刚才已经回答了用户，但没有按格式写出{what}。请照你的回答和这个人的档案，把{what}写成 JSON。{rules}
 
 只输出 JSON。"""
 
@@ -145,7 +145,7 @@ _WRITE = """你是健身 App 里的「训练规划」。你刚才已经回答了
 async def write_task(
     llm: LLM, task: str, text: str, answer: str, case: str, current: str = ""
 ) -> dict[str, Any] | None:
-    """训练规划回答了、却没写出合格的计划或记录时，单独请它补写一次（只要 JSON，不要文字）。"""
+    """训练教练回答了、却没写出合格的计划或记录时，单独请它补写一次（只要 JSON，不要文字）。"""
     what = "计划（plan）" if task == "plan" else "训练记录（log）"
     rules = TASKS.get(task, "").replace("给用户的文字只写一两句话", "不用写给用户的文字")
     parts = [f"用户的话：{text}", f"你的回答：{answer}", case]
@@ -314,7 +314,7 @@ async def consult(
     和这次问题里的数字一样，作答时可以直接用。
     solo：这一轮只请到它一位，由它直接写给用户的回答（不再整合）。
     relay：前一层同事的结论（分层接力）；note：系统交代的话（如按默认值排）。
-    task：这一轮要写计划（plan）或整理训练记录（log），只交给训练规划；写出的计划或记录由系统校验后做成预览。
+    task：这一轮要写计划（plan）或整理训练记录（log），只交给训练教练；写出的计划或记录由系统校验后做成预览。
     images：用户这一轮附的图片（给模型看的图片段），只交给主责角色。
     """
     team = _SOLO if solo else (_RELAYED if relay else _ALONE)

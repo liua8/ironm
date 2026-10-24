@@ -40,8 +40,10 @@ def test_keyword_channel() -> None:
         sc = kw.scores(text)
         return max(sc, key=lambda k: sc[k])
 
-    assert top("我的体脂率是多少") == "data"
-    assert top("哑铃划船怎么做才能练到背") == "exercise"
+    assert top("我的体脂率是多少") == "nutrition"  # 体脂归营养师（spec [2026-10-23] §20）
+    assert top("哑铃划船怎么做才能练到背") == "trainer"
+    assert top("最近静息心率有点高") == "recovery"
+    assert top("这个月步数达标了吗") == "trainer"
     assert top("练前吃什么好") == "nutrition"
     assert max(kw.scores("asdf").values()) == 0.0
 
@@ -56,44 +58,46 @@ def test_keyword_intent() -> None:
 
 
 def test_top_role_and_join_threshold() -> None:
-    llm = ("pro", s(planner=0.9, nutrition=0.8, exercise=0.3))
+    llm = ("pro", s(trainer=0.9, nutrition=0.8, recovery=0.3))
     d = combine(
-        "x", llm=llm, keyword=s(planner=1.0, nutrition=0.7), vector=s(planner=1.0, nutrition=0.9)
+        "x", llm=llm, keyword=s(trainer=1.0, nutrition=0.7), vector=s(trainer=1.0, nutrition=0.9)
     )
-    assert [r.value for r in d.roles] == ["planner", "nutrition"]  # 营养 ≥ 0.6 且差距 ≤ 0.2
+    assert [r.value for r in d.roles] == ["trainer", "nutrition"]  # 营养 ≥ 0.6 且差距 ≤ 0.2
     far = combine(
         "x",
-        llm=("pro", s(planner=1.0, nutrition=0.7)),
-        keyword=s(planner=1.0),
-        vector=s(planner=1.0),
+        llm=("pro", s(trainer=1.0, nutrition=0.7)),
+        keyword=s(trainer=1.0),
+        vector=s(trainer=1.0),
     )
-    assert [r.value for r in far.roles] == ["planner"]  # 营养 0.49 不到 0.6
-    many = combine("x", llm=("pro", s(planner=0.9, nutrition=0.9, exercise=0.85, data=0.8)),
-                   keyword=s(planner=1, nutrition=1, exercise=1, data=1), vector=None)  # fmt: skip
-    assert len(many.roles) == 4  # 人数不设上限
+    assert [r.value for r in far.roles] == ["trainer"]  # 营养 0.49 不到 0.6
+    many = combine("x", llm=("pro", s(trainer=0.9, nutrition=0.9, recovery=0.85)),
+                   keyword=s(trainer=1, nutrition=1, recovery=1), vector=None)  # fmt: skip
+    assert len(many.roles) == 3  # 人数不设上限
 
 
 def test_fallback_weights() -> None:
-    d = combine("x", llm=None, keyword=s(data=1.0), vector=s(exercise=1.0))
-    assert d.weights == {"keyword": 2 / 3, "vector": 1 / 3} and d.primary is Role.DATA
-    e = combine("x", llm=("pro", s(exercise=1.0)), keyword=s(data=1.0), vector=None)
-    assert round(e.weights["llm"], 3) == round(7 / 9, 3) and e.primary is Role.EXERCISE
+    d = combine("x", llm=None, keyword=s(nutrition=1.0), vector=s(trainer=1.0))
+    assert d.weights == {"keyword": 2 / 3, "vector": 1 / 3} and d.primary is Role.NUTRITION
+    e = combine("x", llm=("pro", s(trainer=1.0)), keyword=s(nutrition=1.0), vector=None)
+    assert round(e.weights["llm"], 3) == round(7 / 9, 3) and e.primary is Role.TRAINER
 
 
 def test_intent_and_discomfort() -> None:
     chat = combine("你好", llm=("chat", ZERO), keyword=ZERO, vector=ZERO)
     assert chat.intent == "chat" and chat.roles == ()
     hurt = combine(
-        "练完腿膝盖疼", llm=("chat", s(planner=1.0)), keyword=s(planner=1.0), vector=None
+        "练完腿膝盖疼", llm=("chat", s(trainer=1.0)), keyword=s(trainer=1.0), vector=None
     )
-    assert hurt.intent == "pro" and Role.RECOVERY in hurt.roles  # 身体不适一律按专业问题，并请恢复
+    assert (
+        hurt.intent == "pro" and Role.RECOVERY in hurt.roles
+    )  # 身体不适一律按专业问题，并请康复恢复师
     order = combine(
         "x",
-        llm=("pro", s(planner=1.0, recovery=0.95)),
-        keyword=s(planner=1.0, recovery=1.0),
+        llm=("pro", s(trainer=1.0, recovery=0.95)),
+        keyword=s(trainer=1.0, recovery=1.0),
         vector=None,
     )
-    assert order.primary is Role.PLANNER and order.roles == (Role.PLANNER, Role.RECOVERY)
+    assert order.primary is Role.TRAINER and order.roles == (Role.TRAINER, Role.RECOVERY)
 
 
 def test_log_has_scores_not_text() -> None:
@@ -126,11 +130,14 @@ def test_vector_channel_with_fake_model() -> None:
 
 def test_llm_channel_parses_and_falls_back() -> None:
     llm = FakeLLM(
-        lambda *_: jsonr({"intent": "pro", "scores": {"planner": 0.9, "data": 2, "x": 1}})
+        lambda *_: jsonr({"intent": "pro", "scores": {"trainer": 0.9, "nutrition": 2, "x": 1}})
     )
     got = asyncio.run(llm_scores("一周练几次", llm))
     assert (
-        got is not None and got[0] == "pro" and got[1]["planner"] == 0.9 and got[1]["data"] == 1.0
+        got is not None
+        and got[0] == "pro"
+        and got[1]["trainer"] == 0.9
+        and got[1]["nutrition"] == 1.0
     )
     assert asyncio.run(llm_scores("x", FakeLLM(down))) is None
     assert asyncio.run(llm_scores("x", FakeLLM(lambda *_: jsonr({"intent": "什么"})))) is None
@@ -140,11 +147,11 @@ def test_as_route_and_summary_for_the_chain() -> None:
     from ironm_agent.compose import _PROMPT as COMPOSE
     from ironm_agent.plugin import as_route, route_summary
 
-    d = combine("x", llm=("pro", s(nutrition=1.0, planner=0.9)), keyword=None, vector=None)
+    d = combine("x", llm=("pro", s(nutrition=1.0, trainer=0.9)), keyword=None, vector=None)
     r = as_route(d)
-    assert r.by == "weighted" and r.primary is Role.NUTRITION and r.helpers == (Role.PLANNER,)
+    assert r.by == "weighted" and r.primary is Role.NUTRITION and r.helpers == (Role.TRAINER,)
     text = route_summary(r)
-    assert "三路打分" in text and "营养 1.00" in text and "模型 1.0" in text
+    assert "三路打分" in text and "营养师 1.00" in text and "模型 1.0" in text
     assert "管家直接回答" in route_summary(
         as_route(combine("你好", llm=("chat", ZERO), keyword=None, vector=None))
     )
@@ -155,7 +162,7 @@ def test_chain_logs_route_scores(monkeypatch: Any) -> None:
     """作答链路的运行记录里有三路的得分（这里只有模型一路），不含用户原话。"""
     from tests.test_turn_flow import Team, agent, run
 
-    a = agent(Team("nutrition", ["planner"]), monkeypatch=monkeypatch)
+    a = agent(Team("nutrition", ["trainer"]), monkeypatch=monkeypatch)
     _, seen = run(a, "增肌期练完吃什么比较好")
-    assert seen["route_by"] == "weighted" and seen["route"]["roles"] == ["nutrition", "planner"]
+    assert seen["route_by"] == "weighted" and seen["route"]["roles"] == ["nutrition", "trainer"]
     assert "llm" in seen["route"]["channels"] and "增肌" not in str(seen["route"])

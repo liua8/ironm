@@ -1,0 +1,49 @@
+# Skill 选择考题（spec [2026-10-23] §20）：问题交给这个角色时，应该装载哪份规程。
+# expect：装载的讲内容的规程里有其中任一份就算对；on：这一轮的情况（poor 状态差、injury 有伤病、plan 要写计划、
+# log 要记训练、image 附了图片、move 点到了动作库里的动作）。
+# 写完再跑，没有照这些题改规程的 when；以后改 when 时不要只为了让这里的题通过。内容由 Claude 撰写，待审定。
+version: "0.1"
+cases:
+  # ---- 训练教练 ----
+  - {role: trainer, ask: 刚开始健身，什么都不懂，该从哪练起, expect: [新手入门]}
+  - {role: trainer, ask: 想把胳膊练粗一点，怎么安排, expect: [增肌]}
+  - {role: trainer, ask: 硬拉想冲一百五十公斤，怎么练, expect: [提升力量]}
+  - {role: trainer, ask: 减脂期力量训练还要不要做, expect: [减脂期训练]}
+  - {role: trainer, ask: 在宿舍没有器械，每天二十分钟怎么练, expect: [居家与时间有限]}
+  - {role: trainer, ask: 今天浑身没劲，还按计划练吗, on: [poor], expect: [按今天的状态调整]}
+  - {role: trainer, ask: 练了两个月感觉卡住了，重量加不上去, expect: [减量与平台期]}
+  - {role: trainer, ask: 出差回来一个多月没练了, expect: [中断后回归]}
+  - {role: trainer, ask: 帮我排一个下周的训练, on: [plan], expect: [排每周计划]}
+  - {role: trainer, ask: 罗马尼亚硬拉的要点是什么, on: [move], expect: [动作教学]}
+  - {role: trainer, ask: 家里没有卧推凳，可以换成什么, expect: [替代动作选择]}
+  - {role: trainer, ask: 练腿之前要做哪些准备活动, expect: [热身]}
+  - {role: trainer, ask: 每周跑几次步对减脂最好, expect: [有氧耐力, 减脂期训练]}
+  - {role: trainer, ask: 骑动感单车多久算有效, expect: [有氧耐力]}
+  - {role: trainer, ask: 工作太忙，总是练两周就断了, expect: [坚持与习惯]}
+  - {role: trainer, ask: 一点都不想动，怎么让自己有动力, expect: [坚持与习惯]}
+  - {role: trainer, ask: 这周想练胸和背，帮我改一下计划, on: [plan], expect: [排每周计划]}
+  - {role: trainer, ask: 引体向上一个都拉不上去怎么办, expect: [动作教学, 替代动作选择, 新手入门]}
+  # ---- 营养师 ----
+  - {role: nutrition, ask: 我一天该吃多少卡路里, expect: [热量与蛋白质目标]}
+  - {role: nutrition, ask: 增肌期一天要吃几顿, expect: [增肌饮食]}
+  - {role: nutrition, ask: 想减脂，晚饭怎么吃, expect: [减脂饮食]}
+  - {role: nutrition, ask: 早上空腹练完多久吃早饭, expect: [训练前后吃什么]}
+  - {role: nutrition, ask: 鱼油和维生素D有必要吃吗, expect: [补剂评估]}
+  - {role: nutrition, ask: 点外卖怎么选比较健康, expect: [外卖与食堂怎么选]}
+  - {role: nutrition, ask: 帮我看看这碗面多少热量, on: [image], expect: [看照片估算一餐]}
+  - {role: nutrition, ask: 一节食就暴饮暴食，怎么办, expect: [饮食坚持]}
+  - {role: nutrition, ask: 应酬喝酒多，还能减脂吗, expect: [饮食坚持, 减脂饮食]}
+  - {role: nutrition, ask: 我最近体重的变化趋势怎么样, expect: [趋势解读]}
+  - {role: nutrition, ask: 健身要吃多少蛋白质, expect: [热量与蛋白质目标]}
+  # ---- 康复恢复师 ----
+  - {role: recovery, ask: 今天要不要练，帮我看看状态, expect: [今天状态判断]}
+  - {role: recovery, ask: 最近每天凌晨三点醒，睡不着, expect: [睡眠改善]}
+  - {role: recovery, ask: 练完大腿酸得下不了楼梯，是不是拉伤了, expect: [酸痛还是受伤]}
+  - {role: recovery, ask: 嗓子疼流鼻涕，今天能练吗, expect: [生病时练不练]}
+  - {role: recovery, ask: 越练越累，成绩还在退步, expect: [过度训练]}
+  - {role: recovery, ask: 推举的时候肩膀疼，要怎么改, on: [injury], expect: [疼痛时怎么改动作]}
+  - {role: recovery, ask: 脚踝扭伤好了，可以开始跑步了吗, on: [injury], expect: [伤后回到训练]}
+  - {role: recovery, ask: 练的时候胳膊发麻，要去医院吗, expect: [就医信号]}
+  - {role: recovery, ask: 膝盖肿了而且越来越疼, on: [injury], expect: [就医信号, 疼痛时怎么改动作, 酸痛还是受伤]}
+  - {role: recovery, ask: 我最近的静息心率有变化吗, expect: [趋势解读, 今天状态判断]}
+  - {role: recovery, ask: 我的睡眠数据怎么没有, expect: [数据缺失时怎么说]}

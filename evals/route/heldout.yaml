@@ -1,0 +1,62 @@
+# 路由留出题（spec [2026-10-23] §20）：在改完路由例句和关键字之后新写的，没有用来调过例句、关键字或权重，
+# 用来检查路由在没见过的问法上准不准。以后调路由时不要照这些题改例句，否则这套题就不再是留出题。
+# 标注规则同 labels.yaml：primary 任一个当主责都算对；required 必须请到；allowed 请到也合理。
+# 角色：trainer 训练教练、nutrition 营养师、recovery 康复恢复师。内容由 Claude 撰写，待审定。
+version: "0.1"
+cases:
+  # ---- 训练教练：计划 ----
+  - {id: T01, ask: 一周只能抽出两个晚上，怎么练效果最好, primary: [trainer]}
+  - {id: T02, ask: 练了三个月卧推一直卡在六十公斤上不去, primary: [trainer]}
+  - {id: T03, ask: 下周想安排一次减量，该怎么减, primary: [trainer], allowed: [recovery]}
+  - {id: T04, ask: 女生想练出翘臀，每周练几次臀, primary: [trainer]}
+  - {id: T05, ask: 只有一根弹力带，能练全身吗, primary: [trainer]}
+  - {id: T06, ask: 春节放假停了三周，回来第一次练什么, primary: [trainer], allowed: [recovery]}
+  - {id: T07, ask: 力量训练和游泳放在同一天可以吗, primary: [trainer]}
+  - {id: T08, ask: 想跑进五公里二十五分钟，平时怎么练, primary: [trainer]}
+  # ---- 训练教练：动作 ----
+  - {id: T09, ask: 保加利亚分腿蹲总是站不稳, primary: [trainer]}
+  - {id: T10, ask: 高位下拉怎么才能感觉到背在用力, primary: [trainer]}
+  - {id: T11, ask: 没有单杠，引体向上可以用什么代替, primary: [trainer]}
+  - {id: T12, ask: 农夫行走是练哪里的, primary: [trainer]}
+  # ---- 训练教练：坚持与数据 ----
+  - {id: T13, ask: 每次办了卡都去不了几次，怎么才能坚持下来, primary: [trainer]}
+  - {id: T14, ask: 我这个月平均每天走了多少步, primary: [trainer]}
+  - {id: T15, ask: 我的深蹲这一个月有没有进步, primary: [trainer]}
+  # ---- 营养师 ----
+  - {id: N01, ask: 健身后喝蛋白粉还是吃鸡胸肉好, primary: [nutrition]}
+  - {id: N02, ask: 公司食堂中午怎么搭配比较健康, primary: [nutrition]}
+  - {id: N03, ask: 晚上八点以后吃东西会胖吗, primary: [nutrition]}
+  - {id: N04, ask: 素食者怎么吃够蛋白质, primary: [nutrition]}
+  - {id: N05, ask: 左旋肉碱真的能减肥吗, primary: [nutrition]}
+  - {id: N06, ask: 周末聚餐吃火锅怎么点不会吃超, primary: [nutrition]}
+  - {id: N07, ask: 我这一个月掉了几斤, primary: [nutrition]}
+  - {id: N08, ask: 体脂率从二十五降到二十要多久, primary: [nutrition], allowed: [trainer]}
+  - {id: N09, ask: 一到晚上就特别想吃甜的，忍不住, primary: [nutrition]}
+  - {id: N10, ask: 夏天跑步出汗多要不要补电解质, primary: [nutrition], allowed: [trainer]}
+  # ---- 康复恢复师：伤痛与就医 ----
+  - {id: R01, ask: 跑完步脚后跟一踩地就疼, primary: [recovery], allowed: [trainer]}
+  - {id: R02, ask: 网球肘还能练上肢吗, primary: [recovery, trainer], required: [recovery], allowed: [trainer, recovery]}
+  - {id: R03, ask: 落枕了今天还能去健身房吗, primary: [recovery], allowed: [trainer]}
+  - {id: R04, ask: 踝关节扭伤一周了，什么时候能恢复跑步, primary: [recovery], allowed: [trainer]}
+  - {id: R05, ask: 跑步时突然胸口发闷要紧吗, primary: [recovery]}
+  - {id: R06, ask: 做完臀桥腰有点酸是正常的吗, primary: [recovery, trainer], required: [recovery], allowed: [trainer, recovery]}
+  # ---- 康复恢复师：状态与数据 ----
+  - {id: R07, ask: 最近总是睡不醒，白天没精神, primary: [recovery]}
+  - {id: R08, ask: 手表说我身体电量很低，今天要不要休息, primary: [recovery], allowed: [trainer]}
+  - {id: R09, ask: 我上周的睡眠平均几个小时, primary: [recovery]}
+  - {id: R10, ask: 我早上的心跳比平时快了十几下, primary: [recovery]}
+  - {id: R11, ask: 来例假的时候能不能练, primary: [recovery], allowed: [trainer]}
+  - {id: R12, ask: 连续练了两周，浑身没劲是不是练过头了, primary: [recovery], allowed: [trainer]}
+  # ---- 跨领域 ----
+  - {id: X01, ask: 想增肌，每周怎么练、每天吃多少, primary: [trainer, nutrition], required: [trainer, nutrition]}
+  - {id: X02, ask: 膝盖做过手术，现在想减肥，怎么运动怎么吃, primary: [recovery, trainer, nutrition], required: [recovery, nutrition], allowed: [trainer]}
+  - {id: X03, ask: 熬夜加班后第二天还去健身，练前吃点什么好, primary: [recovery, nutrition, trainer], required: [nutrition], allowed: [recovery, trainer]}
+  - {id: X04, ask: 准备参加健美比赛，备赛期怎么练怎么吃, primary: [trainer, nutrition], required: [trainer, nutrition]}
+  - {id: X05, ask: 体重一个月没动了，是训练还是饮食的问题, primary: [nutrition, trainer], required: [nutrition], allowed: [trainer]}
+  # ---- 不请专业角色 ----
+  - {id: O01, ask: 早上好呀, intent: chat}
+  - {id: O02, ask: 你们这个是怎么收费的, intent: app}
+  - {id: O03, ask: 帮我写一首关于春天的诗, intent: out_of_scope}
+  - {id: O04, ask: 辛苦啦，今天就到这, intent: chat}
+  - {id: O05, ask: 我的数据你们存在哪里, intent: app}
+  - {id: O06, ask: 明天天气怎么样, intent: out_of_scope}

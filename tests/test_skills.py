@@ -1,6 +1,7 @@
 """规程与动作库（spec [2026-10-23] §8）。"""
 
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -13,14 +14,15 @@ from ironm_agent.skills import pick, prompt_of, skills
 from ironm_agent.tools import EXERCISES, Toolbox
 
 FIRST_BATCH = {
-    Role.PLANNER: {"新手入门", "增肌", "提升力量", "减脂期训练", "居家与时间有限", "按今天的状态调整",
-                   "减量与平台期", "伤后回到训练", "排每周计划"},
-    Role.EXERCISE: {"动作教学", "替代动作选择", "疼痛时怎么改动作", "热身"},
+    Role.TRAINER: {"新手入门", "增肌", "提升力量", "减脂期训练", "居家与时间有限", "按今天的状态调整",
+                   "减量与平台期", "中断后回归", "排每周计划", "动作教学", "替代动作选择", "热身", "有氧耐力",
+                   "坚持与习惯"},
     Role.NUTRITION: {"热量与蛋白质目标", "增肌饮食", "减脂饮食", "训练前后吃什么", "补剂评估",
-                     "外卖与食堂怎么选", "看照片估算一餐"},
-    Role.RECOVERY: {"今天状态判断", "睡眠改善", "酸痛还是受伤", "生病时练不练", "过度训练"},
-    Role.DATA: {"趋势解读", "数据缺失时怎么说"},
+                     "外卖与食堂怎么选", "看照片估算一餐", "饮食坚持"},
+    Role.RECOVERY: {"今天状态判断", "睡眠改善", "酸痛还是受伤", "生病时练不练", "过度训练",
+                    "疼痛时怎么改动作", "伤后回到训练", "就医信号"},
 }  # fmt: skip
+SHARED = {"趋势解读", "数据缺失时怎么说"}
 
 
 def test_first_batch_is_there_and_every_number_has_a_source() -> None:
@@ -29,6 +31,8 @@ def test_first_batch_is_there_and_every_number_has_a_source() -> None:
         mine = [x for x in skills() if x.role == role]
         assert {x.name for x in mine} >= names
         assert sum(x.default for x in mine) == 1, role
+    assert {x.name for x in skills() if x.shared} == SHARED
+    assert len({x.name for x in skills()}) == len(skills())  # 名字不重复
     for x in skills():
         assert x.steps and all(kb.get(r) is not None for r in x.refs), x.id
         for line in (*x.steps, *x.rules, *x.output, *x.avoid):
@@ -39,15 +43,25 @@ def test_first_batch_is_there_and_every_number_has_a_source() -> None:
 
 
 def test_the_right_skills_are_loaded() -> None:
-    assert pick(Role.PLANNER, "增肌一周练几次比较好")[0].name == "增肌"
-    assert "疼痛时怎么改动作" in [x.name for x in pick(Role.EXERCISE, "膝盖疼还能练腿吗")]
-    assert "按今天的状态调整" in [x.name for x in pick(Role.PLANNER, "今天练什么", {"poor"})]
-    assert pick(Role.PLANNER, "帮我做个计划", {"plan"})[0].name == "排每周计划"
+    assert pick(Role.TRAINER, "增肌一周练几次比较好")[0].name == "增肌"
+    assert "疼痛时怎么改动作" in [x.name for x in pick(Role.RECOVERY, "膝盖疼还能练腿吗")]
+    assert "按今天的状态调整" in [x.name for x in pick(Role.TRAINER, "今天练什么", {"poor"})]
+    assert pick(Role.TRAINER, "帮我做个计划", {"plan"})[0].name == "排每周计划"
     assert pick(Role.NUTRITION, "这顿多少热量", {"image"})[0].name == "看照片估算一餐"
-    assert len(pick(Role.PLANNER, "帮我排一个增肌计划，今天有点累", {"poor", "plan"})) == 2
+    assert len(pick(Role.TRAINER, "帮我排一个增肌计划，今天有点累", {"poor", "plan"})) == 2
+    # 新增的小领域
+    assert pick(Role.TRAINER, "跑步一周跑几次")[0].name == "有氧耐力"
+    assert pick(Role.TRAINER, "总是坚持不下去怎么办")[0].name == "坚持与习惯"
+    assert pick(Role.TRAINER, "停了一个月，好久没练了")[0].name == "中断后回归"
+    assert pick(Role.NUTRITION, "晚上总是管不住嘴")[0].name == "饮食坚持"
+    assert "伤后回到训练" in [x.name for x in pick(Role.RECOVERY, "伤好了什么时候能练")]
+    assert pick(Role.RECOVERY, "跑步时胸闷心慌要去医院吗")[0].name == "就医信号"
+    # 共享的数据解读三个角色都能装载，全能教练（对照组）不装
+    assert all("趋势解读" in [x.name for x in pick(r, "我最近体重的趋势")] for r in EXPERTS)
+    assert pick(Role.GENERAL, "我最近体重的趋势") == []
     # 都对不上时用默认规程
-    assert [x.name for x in pick(Role.DATA, "嗯")] == ["趋势解读"]
-    assert "本次装载的规程" in prompt_of(pick(Role.PLANNER, "增肌")) and prompt_of([]) == ""
+    assert [x.name for x in pick(Role.RECOVERY, "嗯")] == ["今天状态判断"]
+    assert "本次装载的规程" in prompt_of(pick(Role.TRAINER, "增肌")) and prompt_of([]) == ""
 
 
 def test_library_is_citable_like_the_knowledge_base() -> None:
@@ -64,7 +78,7 @@ def test_library_is_citable_like_the_knowledge_base() -> None:
 
 def test_exercise_roles_get_the_library_tool_and_prefetch() -> None:
     kb = default_kb()
-    coach = Toolbox(SPECS[Role.EXERCISE], kb=kb, health=None, user_id="1", session_id="")
+    coach = Toolbox(SPECS[Role.TRAINER], kb=kb, health=None, user_id="1", session_id="")
     assert EXERCISES in [s["function"]["name"] for s in coach.schemas()]
     prefetched = coach.prefetch("壶铃摇摆怎么做")
     assert "壶铃摇摆" in prefetched and any(i.startswith("K9") for i in coach.evidence.entries)
@@ -90,22 +104,25 @@ JARGON = ("后缩", "前伸", "回旋", "外旋", "内旋", "外展", "内收", 
 
 def test_how_to_questions_load_the_feel_skill_on_top() -> None:
     def names(text: str, triggers: frozenset[str] = frozenset()) -> list[str]:
-        return [x.name for x in pick(Role.EXERCISE, text, triggers)]
+        return [x.name for x in pick(Role.TRAINER, text, triggers)]
 
     for text in ("卧推时肩胛骨怎么收紧", "引体向上怎么发力", "深蹲怎么做",
                  "深蹲我没看懂，请用大白话、打个比方再给我讲讲怎么做，最容易做错的地方是什么"):  # fmt: skip
         assert "体感讲解" in names(text), text
-    # 讲法规程不占名额：疼痛改动作、动作教学两份讲内容的规程照样装载
+    # 讲法规程不占名额；疼痛怎么改动作归康复恢复师（spec [2026-10-23] §20）
     both = names("膝盖疼的时候深蹲怎么做", frozenset({"injury"}))
-    assert both[:2] == ["疼痛时怎么改动作", "动作教学"] and both[-1] == "体感讲解"
-    # 问题里点到了动作库里的动作（move）：讲怎么改动作时也用体感描述
+    assert "动作教学" in both and both[-1] == "体感讲解" and "疼痛时怎么改动作" not in both
+    rehab = [x.name for x in pick(Role.RECOVERY, "膝盖疼的时候深蹲怎么做", {"injury"})]
+    assert rehab[0] == "疼痛时怎么改动作" and "体感讲解" not in rehab
+    # 问题里点到了动作库里的动作（move）：训练教练讲动作时也用体感描述
     sore = names("卧推的时候肩膀前面疼怎么办", frozenset({"injury", "move"}))
-    assert sore[0] == "疼痛时怎么改动作" and sore[-1] == "体感讲解"
+    assert sore[-1] == "体感讲解"
     for text in ("膝盖疼换什么动作", "练前热身做什么"):
         assert "体感讲解" not in names(text), text
-    assert names("嗯") == ["动作教学"]  # 都对不上时仍是默认规程，体感讲解不当默认
-    assert "体感讲解" not in [x.name for x in pick(Role.PLANNER, "深蹲怎么做")]  # 只给动作教练
-    prompt = prompt_of(pick(Role.EXERCISE, "卧推时肩胛骨怎么收紧"))
+    assert names("嗯") == ["按今天的状态调整"]  # 都对不上时仍是默认规程，体感讲解不当默认
+    for other in (Role.NUTRITION, Role.RECOVERY):  # 只给训练教练
+        assert "体感讲解" not in [x.name for x in pick(other, "深蹲怎么做")]
+    prompt = prompt_of(pick(Role.TRAINER, "卧推时肩胛骨怎么收紧"))
     assert "【体感讲解】" in prompt and "腋下夹着一张纸" in prompt
 
 
@@ -135,3 +152,19 @@ def test_feel_cues_must_match_the_library(tmp_path: Path) -> None:
 def test_compose_and_revise_keep_the_analogies() -> None:
     assert "类比和体感描述" in _PROMPT and "不要改回解剖术语" in _PROMPT
     assert "类比和体感描述" in _REVISE and "不改回解剖术语" in _REVISE
+
+
+def test_similar_picks_when_no_phrase_matches() -> None:
+    """说法都对不上时，用本机向量模型选最像的一份（spec [2026-10-23] §20）；模型不可用时仍用默认规程。"""
+    asked: list[list[str]] = []
+
+    def similar(text: str, candidates: Sequence[str]) -> list[float]:
+        asked.append(list(candidates))
+        return [1.0 if c.startswith("增肌：") else 0.1 for c in candidates]
+
+    assert [x.name for x in pick(Role.TRAINER, "想把胳膊练粗一点", (), similar)] == ["增肌"]
+    assert all("：" in c for c in asked[0]) and not any(c.startswith("体感讲解") for c in asked[0])
+    assert pick(Role.TRAINER, "增肌一周练几次", (), similar)[0].name == "增肌" and len(asked) == 1
+    assert [x.name for x in pick(Role.TRAINER, "想把胳膊练粗一点", (), lambda *_: None)] == [
+        "按今天的状态调整"
+    ]

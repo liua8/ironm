@@ -33,10 +33,10 @@ class Scripted:
             raise ModelUnavailable("missing_key")
         system = system_of(messages)
         if stage == "route":
-            return route_reply("pro", "data", self.helpers)
+            return route_reply("pro", "recovery", self.helpers)
         if stage == "expert":
             stated = "<statement>近 30 天静息心率平均 58 次/分<cite>[r1]</cite></statement>"
-            if "数据分析" in system:
+            if "「康复恢复师」" in system:
                 if not tool_results(messages):
                     return call(HEALTH, indicators=["restingHeartRates"], view="stats")
                 if "这一轮只请了你一位" in system:  # 只请到一位：它直接写给用户的回答
@@ -105,7 +105,7 @@ def test_data_question_answers_plainly_and_attaches_sources(monkeypatch: Any) ->
     answer = "你近 30 天静息心率很稳。<statement>平均 58 次/分<cite>[r1]</cite></statement>，在正常范围。"
     blocks = collect(agent(Scripted(answer), monkeypatch=monkeypatch), "我最近的静息心率怎么样")
     names = [b["name"] for b in blocks if b["type"] == "tool_call"]
-    assert names == ["管家", "数据分析", "依据与来源"]
+    assert names == ["管家", "康复恢复师", "依据与来源"]
     text = text_of(blocks)
     assert (
         "平均 58 次/分" in text
@@ -140,7 +140,7 @@ def test_failed_review_degrades_with_notice(monkeypatch: Any) -> None:
     """请了两位、需要整合时：整合两次都没通过核对，给出主责角色核对过的意见并提示受限。"""
     blocks = collect(
         agent(
-            Scripted("你的静息心率平均 99 次/分。", helpers=["recovery"]), monkeypatch=monkeypatch
+            Scripted("你的静息心率平均 99 次/分。", helpers=["trainer"]), monkeypatch=monkeypatch
         ),
         "我最近的静息心率怎么样",
     )
@@ -271,4 +271,4 @@ def test_observer_gets_the_run_record(monkeypatch: Any) -> None:
     a = agent(Scripted("你近 30 天静息心率很稳。"), monkeypatch=monkeypatch)
     a._observe = seen.update
     collect(a, "我最近的静息心率怎么样")
-    assert seen["path"] == "answer" and seen["roles"] == ["data"] and seen["model_calls"] >= 3
+    assert seen["path"] == "answer" and seen["roles"] == ["recovery"] and seen["model_calls"] >= 3

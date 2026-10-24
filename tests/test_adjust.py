@@ -141,7 +141,7 @@ def test_chain_sends_back_a_review_plan_that_changes_too_much() -> None:
     too_much = plan_of((2, "a"), (4, "b"), (6, "c"))
     ok = plan_of((1, "全身A"), (3, "上肢"), (5, "全身C"))
     llm = FakeLLM(lambda *_: jsonr({"plan": ok.model_dump(mode="json")}))
-    lead = SimpleNamespace(opinion=Opinion(role=Role.PLANNER, speak=True, answer="改好了"))
+    lead = SimpleNamespace(opinion=Opinion(role=Role.TRAINER, speak=True, answer="改好了"))
     run: dict[str, Any] = {}
     tools = ToolContext.build(
         TODAY, goal="muscle", weight_kg=70, readings=None, injured=[], equipment_said=[]
@@ -593,7 +593,7 @@ def test_trigger_endpoints_and_pain_records(monkeypatch: pytest.MonkeyPatch) -> 
 def test_chat_pain_is_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
     from tests.test_turn_flow import Team, agent
 
-    a = agent(Team("exercise"), monkeypatch=monkeypatch, memory=MemoryBook())
+    a = agent(Team("recovery"), monkeypatch=monkeypatch, memory=MemoryBook())
     a._pain = book = trig.PainBook()
 
     async def go() -> None:

@@ -48,13 +48,13 @@ class Route(ContractModel):
     problems: tuple[str, ...] = ()  # 模型方案没通过的原因（改按关键词时记下）
 
     def experts(self) -> tuple[Role, ...]:
-        """这一轮要请的专业 Agent：主责与辅助；恢复排在训练规划之前。"""
+        """这一轮要请的专业 Agent：主责与辅助；康复恢复师排在训练教练之前。"""
         if self.intent != "pro" or self.primary is None:
             return ()
         roles = [self.primary, *self.helpers]
-        if Role.RECOVERY in roles and Role.PLANNER in roles:
+        if Role.RECOVERY in roles and Role.TRAINER in roles:
             roles.remove(Role.RECOVERY)
-            roles.insert(roles.index(Role.PLANNER), Role.RECOVERY)
+            roles.insert(roles.index(Role.TRAINER), Role.RECOVERY)
         return tuple(roles)
 
 
@@ -81,7 +81,7 @@ def keyword_route(text: str, problems: Sequence[str] = ()) -> Route:
         if any(w in lowered for w in _CHAT_WORDS) and len(lowered) <= 12:
             return Route(intent="chat", by="keywords", problems=tuple(problems))
     if not ranked:
-        ranked = [Role.RECOVERY if concerns else Role.PLANNER]
+        ranked = [Role.RECOVERY if concerns else Role.TRAINER]
     return Route(
         intent="pro",
         concerns=concerns,
@@ -150,9 +150,9 @@ _PROMPT = """你是健身 App 的主教练，负责理解用户的问题，并�
 2. concerns：这句话是否涉及 discomfort（身体不适、疼痛、受伤）或 special（怀孕、慢病、用药、未成年、老人等特殊人群），可以为空列表。
 3. intent 为 pro 时：primary 选 1 个最该负责的角色；helpers 只在问题明确跨到另一个领域时才加（比如同时问训练和饮食），一般为空，最多 2 个——每多请一位，用户就要多等。
    - 身体正不舒服、正疼、生病的问题，primary 或 helpers 里要有 recovery；
-   - 问到"我的"数据（体重、心率、睡眠、步数、血压等）时选 data（问恢复、睡眠时选 recovery）；
+   - 问到"我的"数据时按领域选：体重、体脂选 nutrition；睡眠、心率、心率变异性、血压选 recovery；步数、力量进步选 trainer；
    - 这个人的伤病史、今天的身体状态、器械和时间，系统已经整理成档案交给每位角色，不需要为此多请 recovery；
-   - 安排训练、排计划由 planner 负责，它会自己选动作；只有问到某个动作怎么做、要点、替代动作时才请 exercise。
+   - 安排训练、排计划、动作怎么做、替代动作都由 trainer 负责。
 4. reason：一句话说明理由。
 
 最近的对话（用于理解指代，可能为空）：
@@ -164,7 +164,7 @@ _PROMPT = """你是健身 App 的主教练，负责理解用户的问题，并�
 
 
 async def route(text: str, history: Sequence[str], llm: LLM, persona: str = "") -> Route:
-    """persona：这个人的画像（长期记忆排成的清单），帮助判断该请谁，比如有伤病时请恢复。"""
+    """persona：这个人的画像（长期记忆排成的清单），帮助判断该请谁，比如有伤病时请康复恢复师。"""
     roles = "\n".join(f"- {r.value}：{SPECS[r].name}，{SPECS[r].duty}" for r in EXPERTS)
     prompt = _PROMPT.format(
         roles=roles,

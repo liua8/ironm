@@ -34,12 +34,14 @@ class Script:
     def __call__(self, stage: Stage, messages: Sequence[Mapping[str, Any]], tools: bool) -> Reply:
         system = system_of(messages)
         user = str(messages[1]["content"]) if len(messages) > 1 else ""
-        key = stage if stage != "expert" else ("exercise" if "动作教练" in system else "nutrition")
+        key = (
+            stage if stage != "expert" else ("trainer" if "「训练教练」" in system else "nutrition")
+        )
         self.calls[key] = self.calls.get(key, 0) + 1
         self.seen[key] = system + "\n" + user
         if stage == "route":
-            return route_reply("pro", "exercise", ["nutrition"])
-        if key == "exercise":
+            return route_reply("pro", "trainer", ["nutrition"])
+        if key == "trainer":
             return jsonr({"conclusion": ANSWER})
         if key == "nutrition":
             return jsonr({"conclusion": "练后吃点无乳糖的蛋白质〔经验〕"})
@@ -64,7 +66,7 @@ def test_every_expert_sees_the_same_limits_in_the_shared_case_file(
     s = Script()
     blocks = collect(agent(s, monkeypatch=monkeypatch, memory=with_memory(KNOWN)), QUESTION)
     assert "左膝有旧伤" in s.seen["route"]  # 主教练调度时看画像
-    for role in ("exercise", "nutrition"):
+    for role in ("trainer", "nutrition"):
         assert all(x in s.seen[role] for x in ("左膝有旧伤", "最重 20 公斤", "乳糖不耐受"))
     # 记忆不在前端显示：对话过程里既不列出记忆条目，也没有用了哪几类记忆的提示（回答本身照常用上记忆）
     shown = json.dumps(blocks, ensure_ascii=False)
@@ -91,10 +93,10 @@ def test_numbers_the_user_said_before_can_be_used_without_a_source(monkeypatch: 
     s = Script()
     blocks = collect(agent(s, monkeypatch=monkeypatch, memory=with_memory(KNOWN)), QUESTION)
     assert "最重 20 公斤的哑铃" in text_of(blocks)
-    assert s.calls["exercise"] == 1  # 一次通过核对，不用改
+    assert s.calls["trainer"] == 1  # 一次通过核对，不用改
     s2 = Script()
     collect(agent(s2, monkeypatch=monkeypatch, memory=MemoryBook()), QUESTION)
-    assert s2.calls["exercise"] == 2  # 没有这条记忆时，20 公斤对不上出处，要改一次
+    assert s2.calls["trainer"] == 2  # 没有这条记忆时，20 公斤对不上出处，要改一次
 
 
 def test_memory_is_extracted_after_the_answer(monkeypatch: Any) -> None:
@@ -113,7 +115,7 @@ def test_paused_memory_extracts_nothing_but_still_answers_with_it(monkeypatch: A
     asyncio.run(book.set_paused("42", True))
     s = Script([{"op": "add", "category": "event", "content": "在家练腿", "quote": "在家练腿"}])
     collect(agent(s, monkeypatch=monkeypatch, memory=book), QUESTION)
-    assert "memory" not in s.calls and "哑铃" in s.seen["exercise"]
+    assert "memory" not in s.calls and "哑铃" in s.seen["trainer"]
     assert len(asyncio.run(book.items("42"))) == len(KNOWN)
 
 

@@ -46,9 +46,9 @@ _QUESTIONS = {
 
 @dataclass(frozen=True)
 class Decision:
-    plan: bool = False  # 这一轮是要排训练（含回答追问的那一轮），一定请训练规划
+    plan: bool = False  # 这一轮是要排训练（含回答追问的那一轮），一定请训练教练
     ask: str = ""  # 要追问时的固定句子
-    note: str = ""  # 不追问时交给训练规划的说明（如按默认值排）
+    note: str = ""  # 不追问时交给训练教练的说明（如按默认值排）
     missing: tuple[str, ...] = ()
     origin: str = ""  # 回答追问时：用户当初问的是什么（据此决定要不要出计划预览）
 

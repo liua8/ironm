@@ -24,7 +24,7 @@ METRICS = "compute_metrics"
 EXERCISES = "search_exercises"
 
 # 能查动作库的角色（做法、要点、常见错误、替代、什么情况先别做）
-LIBRARY_ROLES = frozenset({"exercise", "planner", "general"})
+LIBRARY_ROLES = frozenset({"trainer", "recovery", "general"})
 
 EXERCISES_SCHEMA: dict[str, Any] = {
     "type": "function",
@@ -46,7 +46,7 @@ EXERCISES_SCHEMA: dict[str, Any] = {
 }
 
 # 能调用指标计算的角色（BMI、基础代谢、热量与蛋白质目标、体重趋势、与本人基线的比较）
-METRIC_ROLES = frozenset({"data", "nutrition", "recovery", "planner", "general"})
+METRIC_ROLES = frozenset({"trainer", "nutrition", "recovery", "general"})
 
 METRICS_SCHEMA: dict[str, Any] = {
     "type": "function",

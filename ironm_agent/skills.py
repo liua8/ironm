@@ -2,12 +2,12 @@
 
 规程写在 skills.yaml：做事步骤、判断规则、输出要点、禁忌；规程里的数字带依据库编号，装载时把这些资料
 一起交给角色（引用编号能通过核对）。规程只指导怎么作答，本身不作为出处。
-讲法规程（如动作教练的"体感讲解"）只管怎么讲，对得上就和讲内容的规程一起装载，不占 1–2 份的名额。
+讲法规程（如训练教练的"体感讲解"）只管怎么讲，对得上就和讲内容的规程一起装载，不占 1–2 份的名额。
 """
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from functools import cache
 from pathlib import Path
 from typing import Literal
@@ -15,7 +15,7 @@ from typing import Literal
 from pydantic import Field
 
 from ironm_agent.common import ContractModel
-from ironm_agent.roles import Role
+from ironm_agent.roles import EXPERTS, Role
 from ironm_agent.yamlfile import load_yaml
 
 SKILLS_PATH = Path(__file__).with_name("skills.yaml")
@@ -26,7 +26,8 @@ TRIGGER_BONUS = 2  # 这一轮的情况对得上时加的分（比问题里一�
 
 class Skill(ContractModel):
     id: str = Field(pattern=r"^[a-z]+(-[a-z]+)*$")
-    role: Role
+    role: Role | None = None
+    shared: bool = False  # 三个专业 Agent 都能装载（如数据解读，spec [2026-10-23] §20）
     name: str = Field(min_length=1, max_length=12)
     when: tuple[str, ...] = ()
     on: tuple[Trigger, ...] = ()
@@ -65,19 +66,31 @@ def skills(path: Path = SKILLS_PATH) -> tuple[Skill, ...]:
         raise ValueError("规程编号重复")
     if any(x.style and x.default for x in data.skills):
         raise ValueError("讲法规程不能当默认规程")
+    if any((x.role is None) != x.shared or (x.shared and x.default) for x in data.skills):
+        raise ValueError("规程要么属于一个角色，要么是共享的（共享规程不能当默认规程）")
     return data.skills
 
 
-def pick(role: Role, text: str, triggers: Collection[str] = ()) -> list[Skill]:
-    """这一轮给这个角色装载的规程：讲内容的取得分最高的 1–2 份，都对不上时用这个角色的默认规程；
+type Similar = Callable[[str, Sequence[str]], list[float] | None]
+
+
+def pick(
+    role: Role, text: str, triggers: Collection[str] = (), similar: Similar | None = None
+) -> list[Skill]:
+    """这一轮给这个角色装载的规程：讲内容的取得分最高的 1–2 份；说法都对不上时，用本机向量模型选
+    名称和说法最像的一份（similar，spec [2026-10-23] §20），还不行用这个角色的默认规程；
     讲法规程对得上就一起装载，不占名额。"""
-    mine = [x for x in skills() if x.role == role]
+    mine = [x for x in skills() if x.role == role or (x.shared and role in EXPERTS)]
     content = [x for x in mine if not x.style]
     scored = sorted(
         ((x.score(text, triggers), i, x) for i, x in enumerate(content)),
         key=lambda t: (-t[0], t[1]),
     )
     chosen = [x for s, _, x in scored if s > 0][:MAX_SKILLS]
+    if not chosen and similar is not None and content:
+        sims = similar(text, [f"{x.name}：{'、'.join(x.when)}" for x in content])
+        if sims:
+            chosen = [content[max(range(len(sims)), key=lambda i: sims[i])]]
     if not chosen:
         chosen = [x for x in content if x.default][:1]
     return chosen + [x for x in mine if x.style and x.score(text, triggers) > 0]

@@ -123,15 +123,12 @@ def question_of(messages: list[dict[str, Any]]) -> str:
     return ""
 
 
-# 分层接力（spec [2026-10-23] §3）：评估 → 方案 → 动作细节，后一层拿到前一层的结论
+# 分层接力（spec [2026-10-23] §3、§20）：先评估身体状态，再出训练和饮食方案，后一层拿到前一层的结论
 LAYERS: tuple[frozenset[Role], ...] = (
-    frozenset({Role.RECOVERY, Role.DATA}),
-    frozenset({Role.PLANNER, Role.NUTRITION, Role.GENERAL}),
-    frozenset({Role.EXERCISE}),
+    frozenset({Role.RECOVERY}),
+    frozenset({Role.TRAINER, Role.NUTRITION, Role.GENERAL}),
 )
-TRAINING_ROLES = frozenset(
-    {Role.PLANNER, Role.EXERCISE}
-)  # 请到它们就是在问训练（恢复也管睡眠，不算）
+TRAINING_ROLES = frozenset({Role.TRAINER})  # 请到它就是在问训练（康复恢复师也管睡眠，不算）
 _TRAINING = re.compile(r"练|训练|运动|健身|跑|深蹲|卧推|硬拉|动作|计划")
 RISK_BLOCK = "这一轮先不给训练安排。饮食、睡眠或者你的数据，可以照常问我。"
 CONFIRM_NOTE = {
@@ -623,8 +620,8 @@ class IronMAgent:
             job = "plan"  # 回答"帮我做个训练计划"的追问（"你定吧"）：这一轮把计划排出来
         run["task"] = job
         needs_planner = decision.plan or job is not None
-        if needs_planner and r.primary is not Role.GENERAL and Role.PLANNER not in r.experts():
-            r = r.model_copy(update={"primary": Role.PLANNER, "helpers": r.experts()[:MAX_HELPERS]})
+        if needs_planner and r.primary is not Role.GENERAL and Role.TRAINER not in r.experts():
+            r = r.model_copy(update={"primary": Role.TRAINER, "helpers": r.experts()[:MAX_HELPERS]})
         roles = list(r.experts())
         training = decision.plan or (
             bool(set(roles) & TRAINING_ROLES)
@@ -654,7 +651,8 @@ class IronMAgent:
         ) if on}  # fmt: skip
         pictures = [x.part() for x in files.images]
         seeing = r.primary or roles[0]  # 图片只交给主责角色
-        loaded = {role: pick(role, text, triggers) for role in roles}
+        similar = default_router().similar  # 说法对不上时按语义选规程（spec [2026-10-23] §20）
+        loaded = {role: pick(role, text, triggers, similar) for role in roles}
         tools_ctx = self._tool_context(user_id, snapshot, case, recall)
         run["skills"] = {role.value: [x.id for x in loaded[role]] for role in roles}
         results: dict[int, Consultation] = {}
@@ -687,7 +685,7 @@ class IronMAgent:
                 )
                 for c in before:
                     toolbox.evidence.absorb(c.evidence)
-                lead = role in (Role.PLANNER, Role.GENERAL)
+                lead = role in (Role.TRAINER, Role.GENERAL)
                 note = "\n".join(x for x in (decision.note if lead else "",
                                               files.note_for_experts() if role is seeing else "") if x)  # fmt: skip
                 task = asyncio.create_task(
@@ -754,7 +752,7 @@ class IronMAgent:
                                      constraints=rules, annotate=mark, state=case.readiness.line())  # fmt: skip
         run.update(constraints=list(composed.violations), constraint_fixed=composed.fixed)
         writer = next(
-            (c for c in consultations if c.opinion.role in (Role.PLANNER, Role.GENERAL)), None
+            (c for c in consultations if c.opinion.role in (Role.TRAINER, Role.GENERAL)), None
         )
         cards = await self._preview(
             user_id, job, writer, text, plan, ctx, snapshot.today, run, llm, case, tools_ctx
@@ -783,10 +781,10 @@ class IronMAgent:
         case: CaseFile,
         tools: ToolContext | None = None,
     ) -> list[dict[str, Any]]:
-        """训练规划写出的计划或记录：校验、按约束注明限制，存成预览（草稿），给出预览卡片（§9）。
+        """训练教练写出的计划或记录：校验、按约束注明限制，存成预览（草稿），给出预览卡片（§9）。
 
-        回答里没写出合格的计划或记录时，单独请训练规划补写一次（只要 JSON）。计划还要过计划检查
-        （spec [2026-10-23] §12）：有问题时带着问题请训练规划改一次。
+        回答里没写出合格的计划或记录时，单独请训练教练补写一次（只要 JSON）。计划还要过计划检查
+        （spec [2026-10-23] §12）：有问题时带着问题请训练教练改一次。
         """
         if job is None or lead is None or not lead.opinion.speak:
             return []
@@ -846,7 +844,7 @@ class IronMAgent:
         case: CaseFile,
         run: dict[str, Any],
     ) -> tuple[Plan, Any]:
-        """计划检查不过时，带着问题请训练规划改一次；改后问题更少才换上。日志只记结果，不记内容。"""
+        """计划检查不过时，带着问题请训练教练改一次；改后问题更少才换上。日志只记结果，不记内容。"""
 
         limit = REVIEW_MAX_DAYS if text.startswith(REVIEW_ASK) else None
 
