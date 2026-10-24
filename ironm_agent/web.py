@@ -27,6 +27,7 @@ from ironm_agent.memory_prefs import refresh as refresh_prefs
 from ironm_agent.memory_store import CATEGORIES, ORIGINS, Item, MemoryStore, default_store
 from ironm_agent.memory_view import expired
 from ironm_agent.metrics import ACTIVITY, GOALS, KcalAdjust, Metric, compute_all
+from ironm_agent.progression import targets
 from ironm_agent.training import LogItem, TrainingStore, WorkoutLog, default_training
 
 _log = logging.getLogger("ironm_agent.web")
@@ -415,13 +416,26 @@ async def get_training(
 ) -> dict[str, Any]:
     today = date.today()
     plan = await store.plan(user_id)
-    logs = await store.workouts(user_id, today - timedelta(days=30))
+    logs = await store.workouts(user_id, today - timedelta(days=42))
+    found = targets(plan.plan if plan else None, [x.log for x in logs])
     return {
         "plan": plan.plan.model_dump(mode="json") if plan else None,
         "plan_lines": plan.plan.lines() if plan else [],
+        "targets": {  # 每个动作的下次目标（spec [2026-10-23] §18 需求 4）
+            k: {
+                "text": t.text(),
+                "why": t.why,
+                "action": t.action,
+                "weight_kg": t.weight_kg,
+                "reps": t.reps,
+                "sets": t.sets,
+            }
+            for k, t in found.items()
+        },
         "workouts": [
             {"id": x.id, **x.log.model_dump(mode="json"), "line": x.log.line()}
             for x in reversed(logs)
+            if (today - x.log.day).days <= 30
         ],
     }
 

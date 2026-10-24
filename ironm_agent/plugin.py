@@ -40,6 +40,7 @@ from ironm_agent.memory_prefs import refresh as refresh_prefs
 from ironm_agent.memory_store import MemoryStore, default_store
 from ironm_agent.memory_view import Recall
 from ironm_agent.personal import Personal, personal_basics
+from ironm_agent.progression import target_lines
 from ironm_agent.protools.plan_check import check_plan
 from ironm_agent.protools.registry import ToolContext
 from ironm_agent.provenance import explain, is_provenance
@@ -874,8 +875,9 @@ class IronMAgent:
     ) -> Prepared:
         """共享档案与要不要追问（都是规则，不调用模型）。数据、计划和天气在这一轮开始时就同时在读了。"""
         snapshot, (plan, logs, since) = await snap, await train
+        lines = case_lines(plan, logs, snapshot.today, since)
         case = build_case(
-            snapshot, recall, text, plan=case_lines(plan, logs, snapshot.today, since)
+            snapshot, recall, text, plan=lines + target_lines(plan, logs, snapshot.today)
         )
         current = await wx if wx is not None else None
         if current is not None:

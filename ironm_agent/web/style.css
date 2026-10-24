@@ -580,3 +580,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .tv-why { margin: 0; padding-left: 18px; font-size: 14px; }
 .tv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px; }
 .tv-grid .plan-items { padding-left: 16px; margin: 4px 0 0; }
+
+/* 每组的重量和次数、下次目标（spec [2026-10-23] §18 需求 4） */
+.sets-form { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.sets-form summary { cursor: pointer; font-size: 14px; color: var(--ink-2); }
+.sets-ex { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.sets-name { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; flex-wrap: wrap; }
+.sets-grid { display: flex; flex-direction: column; gap: 6px; }
+.sets-grid label { display: grid; grid-template-columns: 44px 1fr 14px 1fr; align-items: center; gap: 6px; font-size: 13px; }
+.sets-grid input { min-width: 0; padding: 8px; }
+.next-target { font-size: 13px; margin-top: 2px; color: var(--ink); }
+.next-target.up { color: var(--good, var(--ink)); font-weight: 600; }
+.next-target.down { color: var(--warn); }

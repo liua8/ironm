@@ -295,6 +295,7 @@ function weatherSheet(wx) {
     h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach("按今天的天气，我今天怎么练比较合适？") }, icon("coach", "sm"), "按天气问问教练"));
 }
 
+let planSessions = [], planTargets = {};
 function planTable(tr, brief) {
   const plan = tr?.plan, t = brief?.today?.training;
   if (!plan) {
@@ -304,6 +305,7 @@ function planTable(tr, brief) {
       h("button", { class: "btn block", type: "button", onclick: () => askCoach("帮我排一个每周训练计划") }, "让教练排一份计划"),
       h("div", { class: "asks" }, Object.entries(QUICK).map(([label, q]) => askChip(label, q))));
   }
+  planSessions = plan.sessions; planTargets = tr.targets || {};
   const todayNo = new Date().getDay() || 7;
   const byDay = Object.fromEntries(plan.sessions.map((x) => [x.day, x]));
   const rows = WEEK.map((w, i) => {
@@ -365,7 +367,10 @@ function todayVersion() {
 function sessionSheet(x, isToday, t) {
   openSheet(`${isToday ? "今天" : weekdayName(x.day)} · ${x.name}`,
     h("p", { class: "muted" }, `约 ${x.minutes} 分钟`),
-    h("ol", { class: "plan-items" }, x.items.map((it) => h("li", {}, itemLine(it)))),
+    h("ol", { class: "plan-items" }, x.items.map((it) => {
+      const tg = planTargets[it.exercise];
+      return h("li", {}, itemLine(it), tg ? h("div", { class: `next-target ${tg.action}` }, `下次：${tg.text}`, h("span", { class: "muted" }, `（${tg.why}）`)) : null);
+    })),
     isToday && !t?.done ? h("button", { class: "btn block", type: "button", onclick: () => doneSheet(x.name) }, icon("check", "sm"), "完成打卡") : null,
     h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`${x.name}这次训练怎么练？每个动作要注意什么？`) }, icon("coach", "sm"), "问教练怎么练"));
 }
@@ -412,24 +417,54 @@ function calendarCard(brief) {
   return section("训练日历", null, box);
 }
 
+// 打卡时可以按计划里的动作填每组的重量和次数（spec [2026-10-23] §18 需求 4，可不填）
+function setsForm(items) {
+  const rows = items.map((it) => {
+    const t = planTargets[it.exercise];
+    const sets = Array.from({ length: Math.min(it.sets || 1, 8) }, (_, i) => {
+      const w = h("input", { type: "number", inputmode: "decimal", min: "0", max: "500", step: "0.5", placeholder: t?.weight_kg ? String(t.weight_kg) : "公斤", "aria-label": `${it.exercise}第 ${i + 1} 组重量` });
+      const r = h("input", { type: "number", inputmode: "numeric", min: "0", max: "100", placeholder: "次", "aria-label": `${it.exercise}第 ${i + 1} 组次数` });
+      w.addEventListener("change", () => { // 后面几组没填重量时沿用这一组的
+        for (const x of sets.slice(i + 1)) if (!x.w.value) x.w.value = w.value;
+      });
+      return { w, r };
+    });
+    const el = h("div", { class: "sets-ex" },
+      h("div", { class: "sets-name" }, h("b", {}, it.exercise), h("span", { class: "muted" }, t ? `目标 ${t.text}` : `${it.sets}×${it.reps}`)),
+      h("div", { class: "sets-grid" }, sets.map((x, i) => h("label", {}, h("span", { class: "muted" }, `第${i + 1}组`), x.w, h("span", { class: "muted" }, "×"), x.r))));
+    return { it, sets, el };
+  });
+  const read = () => rows.map(({ it, sets }) => {
+    const done = sets.filter((x) => x.r.value !== "").map((x) => ({ reps: Number(x.r.value), weight_kg: x.w.value === "" ? null : Number(x.w.value) }));
+    return done.length ? { exercise: it.exercise, sets: done.length, done_sets: done } : null;
+  }).filter(Boolean);
+  return { el: h("details", { class: "sets-form" }, h("summary", {}, "填每组的重量和次数（可不填，用来算下次目标）"), rows.map((x) => x.el)), read };
+}
+
 function doneSheet(session, version = null) {
   let rpe = 0;
   const scale = h("div", { class: "rpe" });
   const draw = () => scale.replaceChildren(...Array.from({ length: 10 }, (_, i) => h("button", {
     type: "button", class: rpe === i + 1 ? "on" : "", "aria-pressed": String(rpe === i + 1), onclick: () => { rpe = i + 1; draw(); } }, String(i + 1))));
   draw();
+  const planned = version?.items || planSessions.find((x) => x.name === session)?.items || [];
+  const form = planned.length ? setsForm(planned) : null;
   const note = h("input", { type: "text", maxlength: "60", placeholder: "备注（可不填），比如有点累、膝盖没疼" });
   const msg = h("p", { class: "muted" });
   const save = h("button", { class: "btn block", type: "button", onclick: async () => {
     save.disabled = true; msg.textContent = "正在记下…";
+    const filled = form ? form.read() : [];
+    const byName = Object.fromEntries(filled.map((x) => [x.exercise, x]));
+    const items = version ? version.items.map((it) => byName[it.exercise] || { exercise: it.exercise, sets: it.sets, reps: it.reps }) : filled;
     try {
-      await api("/iron/api/workouts", { method: "POST", body: JSON.stringify({ session: session === "训练" ? "" : session, done: true, rpe: rpe || null, note: note.value.trim(),
-        ...(version ? { items: version.items.map((it) => ({ exercise: it.exercise, sets: it.sets, reps: it.reps })), minutes: version.minutes, note: [note.value.trim(), "按今天的版本"].filter(Boolean).join("；").slice(0, 80) } : {}) }) });
+      await api("/iron/api/workouts", { method: "POST", body: JSON.stringify({ session: session === "训练" ? "" : session, done: true, rpe: rpe || null,
+        note: (version ? [note.value.trim(), "按今天的版本"].filter(Boolean).join("；") : note.value.trim()).slice(0, 80),
+        items, ...(version ? { minutes: version.minutes } : {}) }) });
       closeSheet(); render();
     } catch (err) { msg.textContent = err.message; save.disabled = false; }
   } }, "打卡");
   openSheet(`打卡：${session}${version ? "（今天的版本）" : ""}`,
-    h("p", { class: "muted" }, "这次感觉怎么样？1 很轻松，10 到极限（可不选）"), scale, note, save, msg);
+    h("p", { class: "muted" }, "这次感觉怎么样？1 很轻松，10 到极限（可不选）"), scale, form?.el, note, save, msg);
 }
 
 function weekCard(w) {

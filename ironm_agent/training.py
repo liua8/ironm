@@ -104,18 +104,50 @@ class Plan(_Model):
         return [head, *(s.line() for s in self.sessions)]
 
 
+class SetDone(_Model):
+    """一组实际做了多少（spec [2026-10-23] §18 需求 4）。"""
+
+    reps: int = Field(ge=0, le=100)
+    weight_kg: float | None = Field(default=None, ge=0, le=500)
+
+
+_EACH = re.compile(r"\d+")
+
+
 class LogItem(_Model):
     exercise: str = Field(min_length=1, max_length=30)
     sets: int | None = Field(default=None, ge=1, le=20)
     reps: str = Field(default="", max_length=20)
     weight_kg: float | None = Field(default=None, ge=0, le=500)
+    done_sets: list[SetDone] = Field(
+        default_factory=list, max_length=20
+    )  # 每组的重量和次数（可不填）
 
     @field_validator("reps", mode="before")
     @classmethod
     def _reps(cls, v: Any) -> Any:
         return str(v) if isinstance(v, int | float) else (v or "")
 
+    def performed(self) -> list[SetDone]:
+        """每组做了多少：填了每组的用每组的；否则按"3 组 × 8 次"或"3 组，8、8、7 次"展开；看不出来时为空。"""
+        if self.done_sets:
+            return list(self.done_sets)
+        if not self.sets or not self.reps or re.search(r"秒|分钟|米|公里|[-–~～到至]", self.reps):
+            return []
+        each = [int(x) for x in _EACH.findall(self.reps)]
+        if len(each) == 1:
+            each = each * self.sets
+        if len(each) != self.sets:
+            return []
+        return [SetDone(reps=r, weight_kg=self.weight_kg) for r in each]
+
     def line(self) -> str:
+        if self.done_sets:
+            sets = "、".join(
+                (f"{x.weight_kg:g}×{x.reps}" if x.weight_kg is not None else f"{x.reps} 次")
+                for x in self.done_sets
+            )
+            return f"{self.exercise} {sets}"
         parts = [self.exercise]
         if self.sets:
             parts.append(f"{self.sets} 组" + (f" × {self.reps} 次" if self.reps else ""))
@@ -208,12 +240,14 @@ def trusted_log(log: WorkoutLog, said: str, plan: Plan | None) -> WorkoutLog:
     for x in log.items:
         pool = allowed | planned
         reps_ok = all(v in pool for v in written_numbers(x.reps))
+        done = [d for d in x.done_sets if d.reps in allowed and ok(d.weight_kg, allowed)]
         items.append(
             x.model_copy(
                 update={
                     "sets": x.sets if ok(x.sets, pool) else None,
                     "reps": x.reps if reps_ok else "",
                     "weight_kg": x.weight_kg if ok(x.weight_kg, allowed) else None,
+                    "done_sets": done if len(done) == len(x.done_sets) else [],
                 }
             )
         )

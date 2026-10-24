@@ -363,3 +363,121 @@ def test_today_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     w = c.post("/iron/api/workouts", json={"session": "下肢", "items": [
         {"exercise": "杠铃深蹲", "sets": 2, "reps": "6–8"}], "minutes": 30}).json()  # fmt: skip
     assert w["workout"]["items"][0]["sets"] == 2 and w["workout"]["minutes"] == 30
+
+
+# ---- 需求 4：每组的重量和次数、下次目标 ---------------------------------------------------------
+
+from ironm_agent.progression import next_target, rep_range, step_for, target_lines, targets  # noqa: E402
+from ironm_agent.training import LogItem, PlanItem, SetDone, WorkoutLog  # noqa: E402
+
+
+def did(exercise: str, reps: list[int], weight: float | None, back: int) -> WorkoutLog:
+    sets = [SetDone(reps=r, weight_kg=weight) for r in reps]
+    return WorkoutLog(
+        day=TODAY - timedelta(days=back), items=[LogItem(exercise=exercise, done_sets=sets)]
+    )
+
+
+SQUAT = PlanItem(exercise="杠铃深蹲", sets=3, reps="6–8")
+
+
+def test_performed_from_sets_or_text() -> None:
+    assert [x.reps for x in LogItem(exercise="x", sets=3, reps="8").performed()] == [8, 8, 8]
+    assert [x.reps for x in LogItem(exercise="x", sets=3, reps="8、8、7").performed()] == [8, 8, 7]
+    assert LogItem(exercise="x", sets=3, reps="8–12").performed() == []  # 范围是计划，不是实际
+    assert LogItem(exercise="x", sets=3, reps="30 秒").performed() == []
+    assert (
+        rep_range("8–12") == (8, 12) and rep_range("10") == (10, 10) and rep_range("30 秒") is None
+    )
+    assert (
+        step_for("杠铃深蹲", 60) == 2.5
+        and step_for("哑铃卧推", 8) == 1
+        and step_for("哑铃卧推", 16) == 2
+    )
+    assert step_for("俯卧撑", 0) is None and step_for("哑铃罗马尼亚硬拉", 20) == 2
+
+
+def test_two_sessions_above_range_adds_weight() -> None:
+    logs = [did("杠铃深蹲", [9, 9, 9], 60, 7), did("杠铃深蹲", [9, 10, 9], 60, 3)]
+    t = next_target(SQUAT, logs)
+    assert t is not None and t.action == "up" and t.weight_kg == 62.5  # 60 × 5% = 3 → 取整 2.5
+    assert "加重 2.5 公斤" in t.why and t.text() == "62.5 公斤 × 6–8 次 × 3 组"
+    once = next_target(SQUAT, logs[1:])
+    assert once is not None and once.action == "hold" and once.weight_kg == 60  # 只有一次：先保持
+
+
+def test_small_dumbbell_or_bodyweight_adds_reps() -> None:
+    press = PlanItem(exercise="哑铃卧推", sets=3, reps="8–10")
+    t = next_target(
+        press, [did("哑铃卧推", [11, 11, 11], 6, 7), did("哑铃卧推", [11, 12, 11], 6, 2)]
+    )
+    assert (
+        t is not None and t.action == "more" and t.reps == "10–12" and t.weight_kg == 6
+    )  # +1 公斤超过 10%
+    push = PlanItem(exercise="俯卧撑", sets=3, reps="10")
+    logs = [WorkoutLog(day=TODAY - timedelta(days=d), items=[LogItem(exercise="俯卧撑", sets=3, reps="12")])
+            for d in (6, 2)]  # fmt: skip
+    t2 = next_target(push, logs)
+    assert t2 is not None and t2.action == "more" and t2.reps == "12" and t2.weight_kg is None
+
+
+def test_missing_low_end_holds_then_drops() -> None:
+    once = next_target(SQUAT, [did("杠铃深蹲", [7, 6, 5], 70, 2)])
+    assert once is not None and once.action == "hold" and once.weight_kg == 70
+    twice = next_target(
+        SQUAT, [did("杠铃深蹲", [6, 5, 5], 70, 7), did("杠铃深蹲", [7, 6, 5], 70, 2)]
+    )
+    assert (
+        twice is not None and twice.action == "down" and twice.weight_kg == 62.5
+    )  # 63 → 取整 62.5
+    assert "减重约 10%" in twice.why
+
+
+def test_targets_reach_case_file_and_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mirobody.server.auth import verify_token
+
+    from ironm_agent import web
+
+    real = date.today()
+    session = Session.model_validate(
+        {"day": real.isoweekday(), "name": "下肢", "items": [SQUAT.model_dump()]}
+    )
+    plan = Plan.model_validate(
+        {"title": "x", "days_per_week": 1, "sessions": [session.model_dump()]}
+    )
+    logs = [did("杠铃深蹲", [9, 9, 9], 60, 7), did("杠铃深蹲", [9, 9, 9], 60, 3)]
+    logs = [x.model_copy(update={"day": real - (TODAY - x.day)}) for x in logs]
+    assert set(targets(plan, logs)) == {"杠铃深蹲"}
+    lines = target_lines(plan, logs, real)
+    assert lines and "杠铃深蹲 下次 62.5 公斤" in lines[0]
+    book = TrainingBook()
+    d = asyncio.run(book.add_draft("42", "plan", plan_content(plan)))
+    asyncio.run(book.confirm("42", d.id))
+    app = FastAPI()
+    app.include_router(web.router)
+    app.dependency_overrides[verify_token] = lambda: "42"
+    app.dependency_overrides[web.training_store] = lambda: book
+    app.dependency_overrides[web.memory_store] = MemoryBook
+    monkeypatch.setattr(web, "refresh_later", lambda *a: None)
+    c = TestClient(app)
+    sets = [{"reps": 9, "weight_kg": 60}] * 3
+    body = {"session": "下肢", "items": [{"exercise": "杠铃深蹲", "sets": 3, "done_sets": sets}]}
+    for _ in range(2):  # 打卡时填每组的重量和次数
+        w = c.post("/iron/api/workouts", json=body).json()["workout"]
+        assert w["items"][0]["done_sets"][0] == {"reps": 9, "weight_kg": 60} and "60×9" in w["line"]
+    r = c.get("/iron/api/training").json()
+    assert "杠铃深蹲" in r["targets"]  # 两次都在今天：同样按两次算
+    assert (
+        r["targets"]["杠铃深蹲"]["action"] == "up" and r["targets"]["杠铃深蹲"]["weight_kg"] == 62.5
+    )
+
+
+def test_chat_log_keeps_only_said_set_numbers() -> None:
+    from ironm_agent.training import trusted_log
+
+    log = WorkoutLog(day=TODAY, items=[LogItem(exercise="杠铃深蹲", done_sets=[
+        SetDone(reps=8, weight_kg=60), SetDone(reps=7, weight_kg=60)])])  # fmt: skip
+    kept = trusted_log(log, "深蹲 60 公斤做了 8 次和 7 次", None)
+    assert len(kept.items[0].done_sets) == 2
+    made_up = trusted_log(log, "深蹲做了 8 次和 7 次", None)  # 没说重量：整组不记，不编
+    assert made_up.items[0].done_sets == []
