@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import tempfile
@@ -22,6 +23,7 @@ from ironm_agent.casefile import Snapshot
 from ironm_agent.exercises import EQUIPMENT, NOTE, PARTS, library
 from ironm_agent.healthdata import read_all
 from ironm_agent.memory_extract import MAX_CONTENT
+from ironm_agent.memory_prefs import refresh as refresh_prefs
 from ironm_agent.memory_store import CATEGORIES, ORIGINS, Item, MemoryStore, default_store
 from ironm_agent.memory_view import expired
 from ironm_agent.metrics import ACTIVITY, GOALS, Metric, compute_all
@@ -315,11 +317,34 @@ async def _draft_action(
     return {"draft": done.json()}
 
 
+_BACKGROUND: set[asyncio.Task[Any]] = set()
+
+
+def refresh_later(user_id: str, memory: MemoryStore, training: TrainingStore) -> None:
+    """在后台更新训练记录得出的偏好；出错只记错误类型，不影响这次请求。"""
+
+    async def go() -> None:
+        try:
+            await refresh_prefs(user_id, memory, training)
+        except Exception as e:
+            _log.warning("prefs refresh failed: error_type=%s", type(e).__name__)
+
+    task = asyncio.create_task(go())
+    _BACKGROUND.add(task)
+    task.add_done_callback(_BACKGROUND.discard)
+
+
 @router.post("/iron/api/drafts/{draft_id}/confirm")
 async def confirm_draft(
-    draft_id: str, user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
+    draft_id: str,
+    user_id: str = Depends(_verify()),
+    store: TrainingStore = TRAINING,
+    memory: MemoryStore = STORE,
 ) -> dict[str, Any]:
-    return await _draft_action(store, user_id, draft_id, "confirm")
+    out = await _draft_action(store, user_id, draft_id, "confirm")
+    if out.get("draft", {}).get("kind") == "log":  # 记下了一次训练：后台更新训练记录得出的偏好
+        refresh_later(user_id, memory, store)
+    return out
 
 
 @router.post("/iron/api/drafts/{draft_id}/cancel")
@@ -349,9 +374,15 @@ class WorkoutIn(BaseModel):
 
 @router.post("/iron/api/workouts")
 async def add_workout(
-    body: WorkoutIn, user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
+    body: WorkoutIn,
+    user_id: str = Depends(_verify()),
+    store: TrainingStore = TRAINING,
+    memory: MemoryStore = STORE,
 ) -> dict[str, Any]:
     row = await store.log(user_id, WorkoutLog(day=date.today(), **body.model_dump()))
+    refresh_later(
+        user_id, memory, store
+    )  # 打卡后在后台更新训练记录得出的偏好（spec [2026-10-23] §17）
     return {"workout": {"id": row.id, **row.log.model_dump(mode="json"), "line": row.log.line()}}
 
 

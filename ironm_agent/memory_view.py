@@ -1,7 +1,8 @@
 """作答时怎么用记忆：L2 按类别分给各专业 Agent，L3 画像是有效记忆直接排成的清单（不经模型改写）。
 
-作答前把这个人的全部有效记忆读进来（一个人通常几十条），不靠关键词检索，避免漏召回。
-待确认的（系统推断、用户还没确认）和被取代的不用；近期事件过了 EVENT_DAYS 天不再用。
+作答前把这个人的全部有效记忆读进来（一个人通常几十条），不靠关键词检索，避免漏召回；超过 MAX_FACTS 条时
+按类别和优先级读取（spec [2026-10-23] §17）。待确认的（系统推断、用户还没确认）和被取代的不用；近期事件过了
+EVENT_DAYS 天、训练记录得出的偏好 DATA_DAYS 天没再被数据支持，不再用。
 """
 
 from __future__ import annotations
@@ -15,6 +16,16 @@ from ironm_agent.roles import Role
 
 EVENT_DAYS = 14  # 近期事件多少天后不再用于回答
 ADVICE_KEEP = 5  # 给过的建议只带最近几条
+DATA_DAYS = 56  # 训练记录得出的偏好多少天没再被数据支持就不用
+MAX_FACTS = 60  # 超过这么多条有效记忆时按类别和优先级读取
+CATEGORY_CAP: dict[str, int] = {
+    "injury": 15, "goal": 5, "style": 5, "equipment": 10, "schedule": 8, "diet": 10,
+    "preference": 12, "event": 5,
+}  # fmt: skip
+KEEP_ORDER: tuple[Category, ...] = (
+    "injury", "goal", "style", "equipment", "schedule", "diet", "preference", "event",
+)  # fmt: skip
+RESOLVED_KEEP = 5  # 记忆多时，已解决的最多留几条
 
 ROLE_CATEGORIES: dict[Role, tuple[Category, ...]] = {
     Role.PLANNER: ("injury", "equipment", "schedule", "goal", "event"),
@@ -29,7 +40,26 @@ ORDER = tuple(CATEGORIES)
 
 
 def expired(item: Item, at: datetime | None = None) -> bool:
-    return item.category == "event" and (at or now()) - item.created > timedelta(days=EVENT_DAYS)
+    at = at or now()
+    if item.origin == "data":  # 训练记录得出的偏好：每次还被数据支持时会刷新 updated
+        return at - item.updated > timedelta(days=DATA_DAYS)
+    return item.category == "event" and at - item.created > timedelta(days=EVENT_DAYS)
+
+
+def _trim(facts: list[Item]) -> list[Item]:
+    """记忆太多时：已解决的只留最近几条；每类留最近的若干条；再按优先级取满上限。"""
+    if len(facts) <= MAX_FACTS:
+        return facts
+    newest = sorted(facts, key=lambda x: x.updated, reverse=True)
+    resolved = [x for x in newest if x.status == "resolved"][:RESOLVED_KEEP]
+    kept: list[Item] = []
+    for cat in KEEP_ORDER:
+        mine = [x for x in newest if x.category == cat and x.status != "resolved"]
+        kept += mine[: CATEGORY_CAP.get(cat, 5)]
+    order = {c: i for i, c in enumerate(KEEP_ORDER)}
+    kept.sort(key=lambda x: order.get(x.category, len(order)))  # 稳定排序：同类里仍是新的在前
+    chosen = (kept + resolved)[:MAX_FACTS]
+    return [x for x in facts if x in chosen]
 
 
 def _day(item: Item) -> str:
@@ -49,14 +79,16 @@ class Recall:
     """这一轮可用的记忆。"""
 
     items: tuple[Item, ...] = ()
+    dropped: int = 0  # 因为超过上限没读的条数（运行记录用）
 
     @classmethod
     def of(cls, items: Sequence[Item], at: datetime | None = None) -> Recall:
         usable = [x for x in items if x.status in ("active", "resolved") and not expired(x, at)]
         advice = [x for x in usable if x.category == "advice"][-ADVICE_KEEP:]
         facts = [x for x in usable if x.category != "advice"]
-        facts.sort(key=lambda x: (ORDER.index(x.category), x.created))
-        return cls((*facts, *advice))
+        kept = _trim(facts)
+        kept.sort(key=lambda x: (ORDER.index(x.category), x.created))
+        return cls((*kept, *advice), len(facts) - len(kept))
 
     def _facts(self, categories: Sequence[Category]) -> list[Item]:
         return [x for x in self.items if x.category in categories and x.category != "advice"]

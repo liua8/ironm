@@ -20,7 +20,7 @@ type Category = Literal[
     "injury", "equipment", "schedule", "diet", "preference", "goal", "style", "event", "advice"
 ]
 type Status = Literal["active", "pending", "resolved", "superseded"]
-type Origin = Literal["said", "inferred", "advice", "edited"]
+type Origin = Literal["said", "inferred", "advice", "edited", "data"]
 
 CATEGORIES: dict[Category, str] = {
     "injury": "伤病与身体状况",
@@ -39,6 +39,7 @@ ORIGINS: dict[Origin, str] = {
     "inferred": "系统推断",
     "advice": "给过的建议",
     "edited": "你改过的",
+    "data": "训练记录",
 }
 
 

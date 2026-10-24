@@ -34,7 +34,9 @@ from ironm_agent.experts import Consultation, consult, write_task
 from ironm_agent.kb import KnowledgeBase, default_kb
 from ironm_agent.llm import ModelsConfig, TurnLLM, load_models
 from ironm_agent.memory import earlier, last_sources, recent, split_thread, user_lines
-from ironm_agent.memory_extract import extract
+from ironm_agent.memory_extract import extract, hold, take_held, worth_extracting
+from ironm_agent.memory_prefs import due as prefs_due
+from ironm_agent.memory_prefs import refresh as refresh_prefs
 from ironm_agent.memory_store import MemoryStore, default_store
 from ironm_agent.memory_view import Recall
 from ironm_agent.personal import Personal, personal_basics
@@ -354,7 +356,9 @@ class IronMAgent:
             _log.warning("memory unavailable: error_type=%s", type(e).__name__)
             return Recall()
 
-    async def _remember(self, user_id: str, text: str, answer: str, context: list[str]) -> None:
+    async def _remember(
+        self, user_id: str, text: str, answer: str, context: list[str], held: Sequence[str] = ()
+    ) -> None:
         """回答发出后提取这一轮的记忆；暂停记忆时不提取。日志只记条数和耗时，不记内容。"""
         start = time.perf_counter()
         store = self._memory_store()
@@ -364,7 +368,7 @@ class IronMAgent:
                     return
                 items = await store.items(user_id)
                 llm = TurnLLM(self._models, self._environ)
-                out = await extract(llm, items, text, answer, context)
+                out = await extract(llm, items, text, answer, context, held)
                 await store.apply(user_id, out.changes)
         except Exception as e:  # 提取失败不影响已经发出的回答
             _log.warning("memory extraction failed: error_type=%s", type(e).__name__)
@@ -377,6 +381,12 @@ class IronMAgent:
             "ms": int((time.perf_counter() - start) * 1000),
         }
         _log.info("ironm memory %s", json.dumps(stats))
+
+    async def _refresh_prefs(self, user_id: str) -> None:
+        try:
+            await refresh_prefs(user_id, self._memory_store(), self._training_store())
+        except Exception as e:  # 出错不影响已经发出的回答
+            _log.warning("prefs refresh failed: error_type=%s", type(e).__name__)
 
     async def settle(self) -> None:
         """等后台的记忆提取做完（测试与停机时用）。"""
@@ -414,11 +424,22 @@ class IronMAgent:
             async for block in self._turn(user_id, session_id, text, llm, run, said, file_list):
                 yield block
             if "answer" in said and self._remember_on:
-                task = asyncio.create_task(
-                    self._remember(user_id, text, said["answer"], user_lines(said["history"]))
-                )
-                self._tasks.add(task)
-                task.add_done_callback(self._tasks.discard)
+                if worth_extracting(text, run.get("task")):  # 按需提取（spec [2026-10-23] §17）
+                    held = take_held(session_id)
+                    task = asyncio.create_task(
+                        self._remember(
+                            user_id, text, said["answer"], user_lines(said["history"]), held
+                        )
+                    )
+                    self._tasks.add(task)
+                    task.add_done_callback(self._tasks.discard)
+                else:
+                    hold(session_id, text)
+                    run["memory_extract"] = "skipped"
+                if prefs_due(user_id):  # 每天第一次回答之后，后台更新训练记录得出的偏好
+                    task = asyncio.create_task(self._refresh_prefs(user_id))
+                    self._tasks.add(task)
+                    task.add_done_callback(self._tasks.discard)
         except Exception as e:  # 不把异常原文给用户
             _log.error("turn failed: error_type=%s", type(e).__name__)
             run["error_type"] = type(e).__name__
@@ -477,6 +498,10 @@ class IronMAgent:
             (self._history or recent)(session_id, text), self._recall(user_id)
         )
         run["memory"] = len(recall.items)
+        if recall.dropped:
+            run["memory_dropped"] = (
+                recall.dropped
+            )  # 记忆超过上限、按优先级没读的条数（spec [2026-10-23] §17）
         run["memory_ms"] = int((time.perf_counter() - read) * 1000)
         said["history"] = history
         snap = asyncio.create_task(self._read_snapshot(user_id))

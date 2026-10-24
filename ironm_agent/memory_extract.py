@@ -119,7 +119,11 @@ def handles(items: Sequence[Item]) -> dict[str, Item]:
 
 
 def messages_for(
-    items: Mapping[str, Item], user_text: str, answer: str, context: Sequence[str]
+    items: Mapping[str, Item],
+    user_text: str,
+    answer: str,
+    context: Sequence[str],
+    held: Sequence[str] = (),
 ) -> list[dict[str, Any]]:
     known = "\n".join(
         f"{h}：{x.category}｜{x.content}｜{_STATUS_NAMES.get(x.status, x.status)}"
@@ -129,6 +133,9 @@ def messages_for(
     if context:
         parts.append("这次会话里用户前面说过的话（只用来理解指代，不从这里摘 quote）：\n"
                      + "\n".join(context))  # fmt: skip
+    if held:
+        parts.append("用户前面说过、还没整理成记忆的话（也可以从这里摘 quote）：\n"
+                     + "\n".join(f"用户：{x}" for x in held))  # fmt: skip
     parts.append(f"这一轮：\n用户：{user_text}\n教练：{answer[:ANSWER_CHARS] or '（无）'}")
     return [
         {"role": "system", "content": _PROMPT},
@@ -137,7 +144,7 @@ def messages_for(
 
 
 def _problem(
-    raw: Mapping[str, Any], items: Mapping[str, Item], user_text: str, answer: str
+    raw: Mapping[str, Any], items: Mapping[str, Item], user_text: str, answer: str, held: str = ""
 ) -> tuple[Op | None, str]:
     kind = raw.get("op")
     if kind not in ("add", "update", "resolve"):
@@ -156,7 +163,7 @@ def _problem(
     if len(content) > MAX_CONTENT:
         return None, "内容太长"
     quote = str(raw.get("quote") or "").strip()
-    source = answer if category == "advice" else user_text
+    source = answer if category == "advice" else f"{user_text}\n{held}"
     if len(norm(quote)) < 2 or norm(quote) not in norm(source):
         return None, "原话片段在原文里找不到"
     allowed = digits(quote, chinese=True) | (
@@ -171,7 +178,11 @@ def _problem(
 
 
 def validate(
-    raw: Mapping[str, Any] | None, items: Mapping[str, Item], user_text: str, answer: str
+    raw: Mapping[str, Any] | None,
+    items: Mapping[str, Item],
+    user_text: str,
+    answer: str,
+    held: Sequence[str] = (),
 ) -> tuple[list[Op], list[str]]:
     """核对模型给出的操作，返回通过的操作与被拒的原因。"""
     ops_raw = raw.get("ops") if raw else None
@@ -184,7 +195,7 @@ def validate(
         if not isinstance(one, Mapping):
             rejected.append("操作不是对象")
             continue
-        op, problem = _problem(one, items, user_text, answer)
+        op, problem = _problem(one, items, user_text, answer, "\n".join(held))
         if op is None:
             rejected.append(problem)
             continue
@@ -226,16 +237,82 @@ def changes_of(ops: Sequence[Op], at: datetime | None = None) -> list[Change]:
 
 
 async def extract(
-    llm: LLM, items: Sequence[Item], user_text: str, answer: str, context: Sequence[str] = ()
+    llm: LLM,
+    items: Sequence[Item],
+    user_text: str,
+    answer: str,
+    context: Sequence[str] = (),
+    held: Sequence[str] = (),
 ) -> Extraction:
-    """调一次模型提取这一轮的记忆；模型不可用或输出不对时返回空结果，不向外抛。"""
+    """调一次模型提取这一轮的记忆；模型不可用或输出不对时返回空结果，不向外抛。
+
+    held：前几轮判断为不用提取、先留着的用户原话（spec [2026-10-23] §17），原话片段也可以出自这里。
+    """
     known = handles(items)
     try:
-        reply = await llm.chat("memory", messages_for(known, user_text, answer, context),
+        reply = await llm.chat("memory", messages_for(known, user_text, answer, context, held),
                                json_mode=True)  # fmt: skip
     except ModelUnavailable as e:
         return Extraction(failed=f"模型不可用：{e}")
-    ops, rejected = validate(parse_json(reply.content), known, user_text, answer)
+    ops, rejected = validate(parse_json(reply.content), known, user_text, answer, held)
     if rejected:
         _log.info("memory ops rejected: %s", json.dumps(rejected, ensure_ascii=False))
     return Extraction(changes_of(ops), rejected)
+
+
+# ---- 按需提取（spec [2026-10-23] §17）：先用规则判断这一轮可能含个人信息，才调用模型 ----------------
+
+# 中文常常省略"我"（"工作日只能晚上 8 点以后练"），所以不要求出现"我"：提到这些内容、又不是纯粹的知识提问，就提取
+_CUES = re.compile(
+    r"伤|疼|痛|(?<!肌)酸|麻|肿|扭|骨折|手术|膝|腰|肩|颈|脖子|踝|腕|髋|心脏|心律|血压|血糖|糖尿病|哮喘|怀孕|孕|产后"
+    r"|哑铃|杠铃|壶铃|弹力带|拉力带|器械|健身房|在家|家里|单杠|跑步机|单车|椭圆机|公斤|斤|kg|千克"
+    r"|点|分钟|小时|周末|工作日|早上|晚上|中午|下班|上班|每天|每周|周[一二三四五六日天]"
+    r"|素食|吃素|过敏|不耐受|忌口|不吃|不喝|补剂|肌酸|蛋白粉|鱼油|咖啡"
+    r"|喜欢|讨厌|不想|不爱|受不了|无聊|目标|想增|想减|增肌|减脂|减肥|减到|瘦到|练到|体重|身高|岁"
+    r"|出差|旅游|感冒|发烧|生病|没睡|熬夜|失眠|月经|经期|习惯|医生|诊断|好多了|好了"
+)
+# 说的是自己、而且是眼下或过去的情况
+_PERSONAL = re.compile(
+    r"我|俺|自己|咱|家里|家人|今天|昨天|前天|最近|这周|这个月|这两|现在|以前|之前|一直|刚|已经|更正|改成"
+)
+# 身体不适和近期状况：问句里也多半是在说自己（"感冒了还能去健身吗"）
+_HURT = re.compile(r"疼|痛|伤|肿|麻|扭|不舒服|(?<!肌)酸|感冒|发烧|生病|没睡|熬夜|失眠|月经|经期")
+_QUESTION = re.compile(
+    r"吗|呢|？|\?|怎么|如何|什么|多少|几[次组个天]|要不要|能不能|可不可以|是不是|该不该|哪"
+)
+# 没说"我"也是在讲自己的情况
+_STRONG = re.compile(r"旧伤|受过伤|做过.{0,4}手术|骨折过|过敏|不耐受|吃素|素食|怀孕|孕期|产后")
+# 对回答方式的要求
+_STYLE = re.compile(
+    r"(回答|说话|讲|回复|解释).{0,6}(简短|短点|短一点|详细|别太长|少点|多举例|直接|通俗)"
+    r"|别(给我)?列|说重点|简单点|太长了|啰嗦|别讲原理"
+)
+HELD_MAX = 4  # 一个会话最多留几句没提取的话
+_HELD: dict[str, list[str]] = {}
+_HELD_SESSIONS = 500
+
+
+def worth_extracting(text: str, task: str | None = None) -> bool:
+    """这一轮有没有可能含要记的个人信息；排计划、记训练时可能有"给过的建议"，也提取。"""
+    if task in ("plan", "log"):
+        return True
+    if _STYLE.search(text) or _STRONG.search(text) or _HURT.search(text):
+        return True
+    if not _CUES.search(text):
+        return False
+    return bool(_PERSONAL.search(text)) or not _QUESTION.search(text)
+
+
+def hold(session_id: str, text: str) -> None:
+    """判断为不用提取的话先留着，下次提取时一起交给模型（防止误判漏记）。"""
+    if not session_id:
+        return
+    lines = _HELD.pop(session_id, [])
+    lines = [*lines, text][-HELD_MAX:]
+    _HELD[session_id] = lines
+    while len(_HELD) > _HELD_SESSIONS:  # 只留最近活跃的会话
+        _HELD.pop(next(iter(_HELD)))
+
+
+def take_held(session_id: str) -> list[str]:
+    return _HELD.pop(session_id, []) if session_id else []
