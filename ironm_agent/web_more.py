@@ -390,6 +390,7 @@ async def add_meal(
         raise HTTPException(503, "这次没能估算，请稍后再试，或者换一张更清楚的照片")
     row = await store.add(user_id, date.today(), meal, data, mime)
     _log.info("meal added: photo=%s", data is not None)
+    coach_later(user_id, "记饮食")
     return {"meal": row.json(), **(await _day_json(user_id, row.day, store))}
 
 
@@ -416,6 +417,7 @@ async def add_preset(
     if found is None:
         raise HTTPException(404, "没有这个减脂餐")
     row = await store.add(user_id, date.today(), preset_meal(found, _kind(body.kind)))
+    coach_later(user_id, "记饮食")
     return {"meal": row.json(), **(await _day_json(user_id, row.day, store))}
 
 
@@ -425,6 +427,7 @@ async def delete_meal(
 ) -> dict[str, Any]:
     if not await store.delete(user_id, meal_id):
         raise HTTPException(404, "这条记录不存在")
+    coach_later(user_id, "记饮食")
     return {"deleted": meal_id}
 
 
@@ -533,6 +536,7 @@ async def record_meal(
         note="按推荐记下，营养是估算的",
     )
     row = await store.add(user_id, date.today(), meal)
+    coach_later(user_id, "记饮食")
     return {"meal": row.json(), **(await _day_json(user_id, row.day, store))}
 
 
@@ -710,6 +714,7 @@ async def diet_apply(user_id: str = Depends(_verify()), diet: Any = DIET) -> dic
         raise HTTPException(409, why or "这次不需要调整")
     await diet.apply(user_id, KcalAdjust(proposal.total, snap.today, proposal.reason))
     _log.info("diet adjusted: delta=%d", proposal.delta)
+    coach_later(user_id, "确认方案")
     return await _diet_state(user_id, diet)
 
 
@@ -718,6 +723,7 @@ async def diet_undo(user_id: str = Depends(_verify()), diet: Any = DIET) -> dict
     if await diet.current(user_id) is None:
         raise HTTPException(404, "现在没有热量调整")
     await diet.undo(user_id)
+    coach_later(user_id, "撤销方案")
     return await _diet_state(user_id, diet)
 
 
@@ -824,12 +830,14 @@ async def put_goal(
     start = weights[-1][1] if weights else None
     retest_day = old.retest_day if old is not None else None
     await goals.set(user_id, Goal(body.value, body.by, today, start, retest_day))
+    coach_later(user_id, "改目标")
     return await _goal_state(user_id, goals)
 
 
 @router.delete("/iron/api/goal")
 async def delete_goal(user_id: str = Depends(_verify()), goals: Any = GOAL) -> dict[str, Any]:
     await goals.clear(user_id)
+    coach_later(user_id, "改目标")
     return {"goal": None, "progress": None}
 
 
@@ -842,4 +850,68 @@ async def goal_retest(user_id: str = Depends(_verify()), goals: Any = GOAL) -> d
     if g is None:
         raise HTTPException(404, "还没有设目标")
     await goals.set(user_id, retested(g, date.today()))
+    coach_later(user_id, "复测")
     return await _goal_state(user_id, goals)
+
+
+# ---- 管家的当前方案与调整经历（spec [2026-10-23] §23）---------------------------------------------
+
+
+def coach_deps() -> Any:
+    """重新评估要读的存储（测试时整个换掉）。"""
+    from ironm_agent.coach_state import Deps, default_coach
+
+    return Deps(
+        snapshot=_web().snapshot_for,
+        training=training_store(),
+        pain=pain_store(),
+        goals=goal_store(),
+        diet=diet_store(),
+        store=default_coach(),
+        weather=weather.for_user,
+    )
+
+
+def coach_later(user_id: str, reason: str) -> None:
+    """有新情况时在后台重新评估当前方案（打卡、记饮食、说疼、改目标、确认或撤销方案）。"""
+    from ironm_agent.coach_state import evaluate_later
+
+    try:
+        evaluate_later(user_id, coach_deps(), reason)
+    except Exception as e:  # 不影响这次请求
+        _log.warning("coach schedule failed: error_type=%s", type(e).__name__)
+
+
+def _coach_json(state: Any, changes: list[Any]) -> dict[str, Any]:
+    return {
+        "version": state.version,
+        "day": state.day.isoformat(),
+        "reason": state.reason,
+        "items": [x.model_dump(mode="json") for x in state.items],
+        "changes": [c.model_dump(mode="json") for c in changes],
+        "pending": [x.model_dump(mode="json") for x in state.items if x.action == "confirm"],
+    }
+
+
+@router.get("/iron/api/coach")
+async def get_coach(user_id: str = Depends(_verify())) -> dict[str, Any]:
+    """管家今日调整：当前方案、今天改了什么、待确认的方案。每天第一次打开时评估一次。"""
+    from ironm_agent.coach_state import evaluate
+
+    deps = coach_deps()
+    try:
+        state, _ = await evaluate(user_id, deps, reason="每天第一次打开", force=False)
+    except Exception as e:
+        _log.error("coach failed: error_type=%s", type(e).__name__)
+        raise HTTPException(503, "管家的方案暂时算不出来，请稍后再试") from e
+    order = {x.key: i for i, x in enumerate(state.items)}  # 按方案里的顺序：今天、提醒、待确认、饮食、目标……
+    today = [c for c in await deps.store.history(user_id, 60) if c.day == state.day]
+    latest = {c.key: c for c in reversed(today)}  # 同一项今天改了几次只显示最后一次
+    shown = sorted(latest.values(), key=lambda c: order.get(c.key, len(order)))
+    return _coach_json(state, shown)
+
+
+@router.get("/iron/api/coach/history")
+async def get_coach_history(user_id: str = Depends(_verify())) -> dict[str, Any]:
+    deps = coach_deps()
+    return {"changes": [c.model_dump(mode="json") for c in await deps.store.history(user_id, 60)]}

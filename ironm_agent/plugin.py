@@ -123,6 +123,14 @@ def question_of(messages: list[dict[str, Any]]) -> str:
     return ""
 
 
+async def default_coach_eval(user_id: str, reason: str, force: bool) -> None:
+    """管家重新评估当前方案，用线上的存储（测试里换掉）。"""
+    from ironm_agent.coach_state import evaluate
+    from ironm_agent.web_more import coach_deps
+
+    await evaluate(user_id, coach_deps(), reason=reason, force=force)
+
+
 # 分层接力（spec [2026-10-23] §3、§20）：先评估身体状态，再出训练和饮食方案，后一层拿到前一层的结论
 LAYERS: tuple[frozenset[Role], ...] = (
     frozenset({Role.RECOVERY}),
@@ -332,6 +340,13 @@ class IronMAgent:
             self._pain = default_pain()
         return self._pain
 
+    async def _coach(self, user_id: str, reason: str, force: bool) -> None:
+        """管家重新评估当前方案（spec [2026-10-23] §23）；出错不影响已经发出的回答。"""
+        try:
+            await default_coach_eval(user_id, reason, force)
+        except Exception as e:
+            _log.warning("coach evaluate failed: error_type=%s", type(e).__name__)
+
     async def _record_pain(self, user_id: str, parts: list[str]) -> None:
         """记下这句话里说疼的部位（spec [2026-10-23] §18 需求 5）；暂停记忆时不记。"""
         try:
@@ -341,6 +356,8 @@ class IronMAgent:
                 await self._pain_store().add(user_id, part, date.today())
         except Exception as e:  # 出错不影响已经发出的回答
             _log.warning("pain record failed: error_type=%s", type(e).__name__)
+            return
+        await self._coach(user_id, "说疼", True)
 
     def _training_store(self) -> TrainingStore:
         if self._training is None:
@@ -460,6 +477,9 @@ class IronMAgent:
                     task = asyncio.create_task(self._record_pain(user_id, parts))
                     self._tasks.add(task)
                     task.add_done_callback(self._tasks.discard)
+                task = asyncio.create_task(self._coach(user_id, "每天第一次提问", False))
+                self._tasks.add(task)  # 每天第一次提问时管家评估一次（今天评估过就不再算）
+                task.add_done_callback(self._tasks.discard)
                 if prefs_due(user_id):  # 每天第一次回答之后，后台更新训练记录得出的偏好
                     task = asyncio.create_task(self._refresh_prefs(user_id))
                     self._tasks.add(task)

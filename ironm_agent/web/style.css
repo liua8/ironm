@@ -756,3 +756,19 @@ input, select, textarea { background: #0f1113; border-color: var(--line); }
 .cheer p { font-size: 16px; color: var(--accent); font-weight: 750; }
 @keyframes cheer-pop { from { transform: scale(.3); opacity: 0; } }
 @keyframes cheer-out { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+
+/* 管家今日调整（spec [2026-10-23] §23） */
+.coach-box:empty { display: none; }
+.coach-card { gap: 12px; border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.cc-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.cc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.cc-row { display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-items: start; }
+.cc-tag { font-size: 11px; font-weight: 850; text-align: center; padding: 3px 0; border-radius: 4px; transform: var(--slant); background: var(--accent-soft); color: var(--accent); }
+.cc-row.changed .cc-tag { background: var(--heat-soft); color: var(--heat); }
+.cc-row.removed .cc-tag { background: var(--sunken); color: var(--muted); }
+.cc-row.removed b { color: var(--muted); text-decoration: line-through; font-weight: 600; }
+.cc-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cc-main p { margin: 0; }
+.cc-pending { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+.cc-item { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; }
+.cc-item .btn { flex: none; }

@@ -16,3 +16,19 @@ def model_only_router(monkeypatch: pytest.MonkeyPatch) -> Iterator[Router]:
     router = Router(keyword=None, vector=None)
     monkeypatch.setattr(plugin, "default_router", lambda: router)
     yield router
+
+
+@pytest.fixture(autouse=True)
+def coach_in_memory(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[tuple[str, str]]]:
+    """管家重新评估（spec [2026-10-23] §23）：测试里默认只记下被触发了，不连数据库；要测评估本身的测试自己换掉。"""
+    from ironm_agent import web, web_more
+
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(web_more, "coach_later", lambda uid, reason: calls.append((uid, reason)))
+    monkeypatch.setattr(web, "coach_later", lambda uid, reason: calls.append((uid, reason)))
+
+    async def coach(uid: str, reason: str, force: bool) -> None:
+        calls.append((uid, reason))
+
+    monkeypatch.setattr(plugin, "default_coach_eval", coach)
+    yield calls

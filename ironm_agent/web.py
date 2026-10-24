@@ -30,7 +30,7 @@ from ironm_agent.metrics import ACTIVITY, GOALS, KcalAdjust, Metric, compute_all
 from ironm_agent.progression import targets
 from ironm_agent.training import LogItem, TrainingStore, WorkoutLog, default_training
 from ironm_agent.triggers import pain_parts
-from ironm_agent.web_more import PAIN
+from ironm_agent.web_more import PAIN, coach_later
 
 _log = logging.getLogger("ironm_agent.web")
 
@@ -359,6 +359,7 @@ async def confirm_draft(
     out = await _draft_action(store, user_id, draft_id, "confirm")
     if out.get("draft", {}).get("kind") == "log":  # 记下了一次训练：后台更新训练记录得出的偏好
         refresh_later(user_id, memory, store)
+    coach_later(user_id, "确认方案")  # 计划或记录变了：管家重新评估（spec [2026-10-23] §23）
     return out
 
 
@@ -373,7 +374,9 @@ async def cancel_draft(
 async def undo_draft(
     draft_id: str, user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
 ) -> dict[str, Any]:
-    return await _draft_action(store, user_id, draft_id, "undo")
+    out = await _draft_action(store, user_id, draft_id, "undo")
+    coach_later(user_id, "撤销方案")
+    return out
 
 
 class WorkoutIn(BaseModel):
@@ -410,6 +413,7 @@ async def add_workout(
     refresh_later(
         user_id, memory, store
     )  # 打卡后在后台更新训练记录得出的偏好（spec [2026-10-23] §17）
+    coach_later(user_id, "打卡")  # 管家重新评估当前方案（spec [2026-10-23] §23）
     return {"workout": {"id": row.id, **row.log.model_dump(mode="json"), "line": row.log.line()}}
 
 

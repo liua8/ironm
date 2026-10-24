@@ -249,7 +249,7 @@ async function home(view) {
     api("/iron/api/training").catch(() => null),
     api("/iron/api/calendar").catch(() => null),
   ]);
-  view.append(statusCard(brief, wx, cal), triggersCard(), goalCard(), planTable(training, brief), calendarCard(brief));
+  view.append(statusCard(brief, wx, cal), coachCard(), goalCard(), planTable(training, brief), calendarCard(brief));
 }
 
 // 本周进度环（spec [2026-10-23] §19）
@@ -333,14 +333,44 @@ function goalSection() {
   return section("目标", null, box, h("p", { class: "caption", style: "padding:0 2px" }, "首页和数据页会显示起点、当前、目标和按体重趋势预计达成的日期；每 4 周提醒复测一次。"));
 }
 
-// 触发型调整（spec [2026-10-23] §18 需求 5）：满足条件就提醒，一键生成调整方案；中断后回来的降量已经在今天的版本里
-function triggersCard() {
-  const box = h("div", { class: "triggers" });
-  api("/iron/api/triggers").then((r) => {
-    box.replaceChildren(...r.triggers.map((t) => h("div", { class: "card trigger" },
-      h("div", { class: "notice-line" }, icon("alert", "xs"), h("div", {}, h("b", {}, t.title), h("p", {}, t.detail))),
-      t.action === "proposal" ? h("button", { class: "btn ghost block", type: "button", onclick: () => proposalSheet(t) }, icon("check", "sm"), "生成调整方案") : null)));
-  }).catch(() => box.replaceChildren());
+// 管家今日调整（spec [2026-10-23] §23）：当前方案和上一版比改了什么、为什么、依据；待确认的方案在这里确认。
+// 提醒（§18 需求 5）也是当前方案的一部分，在这里一起显示
+const CHANGE_WORD = { added: "新增", changed: "调整", removed: "解除" };
+function coachCard() {
+  const box = h("div", { class: "coach-box" });
+  const act = async (x, btn) => {
+    btn.disabled = true;
+    try {
+      if (x.key === "proposal:diet") { await api("/iron/api/diet/adjust", { method: "POST" }); cache.metrics = null; render(); return; }
+      if (x.key === "proposal:review") { await proposalSheet(); return; }
+      if (x.kind === "alert") { await proposalSheet({ kind: x.value.trigger, title: x.title }); return; }
+    } catch (err) { box.append(h("p", { class: "error" }, err.message)); }
+    btn.disabled = false;
+  };
+  const draw = (r) => {
+    const waiting = new Set(r.pending.map((x) => x.key));
+    const changed = r.changes.filter((c) => !waiting.has(c.key));
+    const row = (c) => h("li", { class: `cc-row ${c.change}` },
+      h("span", { class: "cc-tag" }, r.version === 1 ? "方案" : CHANGE_WORD[c.change]),
+      h("div", { class: "cc-main" },
+        h("b", {}, c.change === "removed" ? c.before : c.after),
+        c.why && c.change !== "removed" ? h("p", { class: "muted" }, c.why) : null,
+        c.basis && c.change !== "removed" ? h("p", { class: "caption" }, `依据：${c.basis}`) : null));
+    box.replaceChildren(h("div", { class: "card coach-card" },
+      h("div", { class: "cc-head" }, h("span", { class: "hero-tag" }, "管家今日调整"), h("span", { class: "muted" }, `方案第 ${r.version} 版`)),
+      r.version === 1 ? h("p", { class: "muted" }, "管家按你现在的数据建好了第一份方案，之后数据一变就会重新评估。") : null,
+      changed.length ? h("ul", { class: "cc-list" }, changed.slice(0, 5).map(row)) : h("p", { class: "muted" }, "今天没有新的调整，按当前方案继续。"),
+      changed.length > 5 ? h("p", { class: "caption" }, `另有 ${changed.length - 5} 项小调整（多是动作的下次目标），在计划表里能看到。`) : null,
+      r.pending.length ? h("div", { class: "cc-pending" }, h("b", {}, "等你确认"),
+        r.pending.map((x) => {
+          const btn = h("button", { class: "btn small", type: "button" }, x.key === "proposal:diet" ? "确认调整" : "生成方案");
+          btn.addEventListener("click", () => act(x, btn));
+          return h("div", { class: "cc-item" },
+            h("div", { class: "cc-main" }, h("b", {}, x.title), x.why ? h("p", { class: "muted" }, x.why) : null,
+              x.basis ? h("p", { class: "caption" }, `依据：${x.basis}`) : null), btn);
+        })) : null));
+  };
+  api("/iron/api/coach").then(draw).catch(() => box.replaceChildren());
   return box;
 }
 
