@@ -1,0 +1,28 @@
+"""An agent from a plugin — the REPLACEMENT slot (`mirobody/agent/registry.py`).
+
+Two methods are the whole contract. This one answers without a model so the
+replacement path can be exercised with no key; a real harness would build a
+model client in `load_llm_clients` from the `MODELS` table it is handed.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+class EchoAgent:
+    def __init__(self, **kwargs):
+        pass
+
+    @classmethod
+    def load_llm_clients(cls, models: dict[str, Any]) -> dict[str, Any]:
+        return {}
+
+    async def generate_response(self, user_id: str, messages: list[dict], **kwargs):
+        """Blocks, named the way LangChain names them: see
+        `mirobody/agent/wire/blocks.py`. `**kwargs` is not optional: the chat
+        layer passes `language`, `session_id`, `file_list`, `provider`,
+        `prompt_name`, `timezone`, `record_owner` and `may_write`, and may add
+        one."""
+        last = messages[-1]["content"] if messages else ""
+        yield {"type": "text", "text": f"You said: {last}"}

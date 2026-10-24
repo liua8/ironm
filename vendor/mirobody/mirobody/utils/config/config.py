@@ -1,0 +1,849 @@
+import base64
+import dotenv
+import io
+import json
+import logging
+import os
+import re
+
+from collections.abc import Collection
+from ruamel.yaml import YAML
+from typing import Any
+
+from mirobody import __version__
+from mirobody.kernel.ops import is_driver_exception
+from typing import TYPE_CHECKING
+
+from .encrypt import FernetEncrypter
+from .log import LogConfig
+from .http import HttpConfig
+
+if TYPE_CHECKING:  # heavy drivers: imported lazily inside the accessors below
+    from .postgresql import PostgreSQLConfig
+    from mirobody.utils.ephemeral import EphemeralStore
+
+logger = logging.getLogger(__name__)
+
+#-----------------------------------------------------------------------------
+
+_global_config = None
+
+#: The value shipped in place of every secret that a real deployment must
+#: replace. Named in one place because two behaviors key on it: the auto-
+#: encryption pass skips it (encrypting the placeholder would hide that it was
+#: never changed), and `PRODUCTION: true` refuses to start while any key still
+#: carries it (see `server/bootstrap.py`).
+PLACEHOLDER_SENTINEL = "REPLACE_THIS_VALUE_IN_PRODUCTION"
+
+#: Keys no longer read, with what to write instead. Each one present is named
+#: once at boot, because an upgrade that drops a key without a word looks fine
+#: while behaving differently: a 1.3.x overlay still saying `PROVIDERS_DEEP`
+#: booted the agent with zero models. The renamed spellings were read as their
+#: successors from 1.4.0 to 1.5.4; they are named and ignored like the rest.
+#: `SSE_HEARTBEAT_SECONDS` is not `HEARTBEAT_INTERVAL` renamed: the old pair
+#: multiplied to a first ping at 40 s, the new one fires on silence.
+_REMOVED_KEYS = {
+    "PROVIDERS_DEEP": "renamed `MODELS`",
+    "PROMPTS_DEEP": "renamed `PROMPTS`",
+    "ALLOWED_TOOLS_DEEP": "renamed `ALLOWED_TOOLS`",
+    "DISALLOWED_TOOLS_DEEP": "renamed `DISALLOWED_TOOLS`",
+    "DEFAULT_PROVIDER_DEEP": "renamed `DEFAULT_MODEL`",
+    "PROVIDERS": "renamed `MODELS` (a provider is a device)",
+    "DEFAULT_PROVIDER": "renamed `DEFAULT_MODEL`",
+    "UTILS_EMBEDDING_MODEL": "removed; nothing embeds (the semantic tier went in 1.5.0)",
+    "EMBEDDING_PROVIDER": "removed; nothing embeds (the semantic tier went in 1.5.0)",
+    "PRIVATE_AGENT_DIRS": "removed; `AGENT_DIRS` is the one agent search path",
+    "MCP_RESOURCE_DIRS": "removed with the MCP `resources` capability",
+    "HEARTBEAT_INTERVAL": "replaced by `SSE_HEARTBEAT_SECONDS` (seconds of silence, default 8)",
+    "HEARTBEAT_COUNTER_THRESHOLD": "replaced by `SSE_HEARTBEAT_SECONDS`",
+}
+
+#: Keys already warned about, so an overlay layered over three files says it
+#: once. Module-level because `Config` is instantiated more than once in a
+#: process (tests, and the worker's own reload).
+_warned_keys: set[str] = set()
+
+
+def _warn_removed(key: str, reason: str) -> None:
+    """`reason` is passed in rather than looked up here: `phi_lint` flags every
+    subscript inside a `logger.*` call, and a table lookup at the call site is
+    not a log statement."""
+    if key in _warned_keys:
+        return
+    _warned_keys.add(key)
+    logger.warning("config key %s is %s; it is being ignored.", key, reason)  # phi: ok `_REMOVED_KEYS` text
+
+
+#-----------------------------------------------------------------------------
+
+class Config:
+
+    yaml = YAML()
+
+    #-------------------------------------------------
+
+    def __init__(
+        self,
+        yaml_filenames: str | list[str | io.StringIO] | None = None,
+        encrypter: FernetEncrypter | None = None,
+        read_only: Collection[str] = (),
+    ):
+        """`read_only` names files never written back, and their INCLUDEs: the
+        defaults `Config.init` adds. Every other file named here has a secret
+        it holds in plaintext encrypted in place."""
+        if isinstance(yaml_filenames, str | io.StringIO):
+            self._yaml_filenames = [yaml_filenames]
+        elif isinstance(yaml_filenames, list):
+            self._yaml_filenames = yaml_filenames
+        else:
+            self._yaml_filenames = []
+
+        #-------------------------------------------------
+
+        self._raw = {}
+
+        self._postgresqls = {}
+        self._ephemeral = None
+
+        self._agent_options = {}
+
+        #-------------------------------------------------
+
+        self._encrypter = encrypter
+        if not self._encrypter:
+            self._encrypter = FernetEncrypter(self.get_fernet_key("CONFIG_ENCRYPTION_KEY"))
+
+        #-------------------------------------------------
+
+        # Load YAML files. A file's INCLUDE list loads right after it and
+        # before the next file, so a later overlay still wins over everything
+        # an earlier file pulled in.
+        for yaml_filename in self._yaml_filenames:
+            self._load_with_includes(yaml_filename, write_back=yaml_filename not in read_only)
+        # `.env` reaches us as the environment; a removed key set there was
+        # ignored without a word.
+        for key, reason in _REMOVED_KEYS.items():
+            if key in os.environ:
+                _warn_removed(key, reason)
+
+        self.refresh()
+
+        global _global_config
+        _global_config = self
+
+    #-----------------------------------------------------
+
+    def refresh(self) -> None:
+        """Rebuild the derived settings from the current keys and environment."""
+        # Clear cached configuration objects to ensure they use updated _raw values
+        self._postgresqls = {}
+        self._ephemeral = None
+
+        self.log = LogConfig(
+            name        = self.get_str("LOG_NAME"),
+            dir         = self.get_str("LOG_DIR"),
+            level       = logging.getLevelNamesMapping().get(self.get_str("LOG_LEVEL").strip().upper(), logging.INFO),
+        )
+
+        self.http = HttpConfig(
+            name        = self.get_str("HTTP_SERVER_NAME"),
+            version     = self.get_str("HTTP_SERVER_VERSION") or __version__,
+            host        = self.get_str("HTTP_HOST"),
+            port        = self.get_int("HTTP_PORT"),
+            uri_prefix  = self.get_str("HTTP_URI_PREFIX"),
+            htdoc       = self.get_str("HTTP_ROOT"),
+            headers     = self.get_dict("HTTP_HEADERS", {})
+        )
+
+        self.jwt_key            = self.get_str("JWT_KEY")
+        self.jwt_private_key    = self.get_str("JWT_PRIVATE_KEY")
+
+        self.mcp_tool_dirs      = self.get_dirs("MCP_TOOL_DIRS", [])
+        self.agent_dirs         = self.get_dirs("AGENT_DIRS", [])
+        self.task_dirs          = self.get_dirs("TASK_DIRS", [])
+
+        self.mcp_server_url = self.get_str("MCP_PUBLIC_URL")
+
+        self.api_keys = self.get_api_keys()
+
+
+    def _load_with_includes(self, file: str | io.StringIO, depth: int = 0, write_back: bool = True) -> None:
+        from .yaml_files import include_paths
+
+        includes = self.load_yaml(file, write_back=write_back)
+        if depth >= 3:
+            if includes:
+                logger.warning("INCLUDE nesting deeper than 3 in %s is ignored", file)
+            return
+        for path in include_paths(file if isinstance(file, str) else None, includes):
+            if not os.path.exists(path):
+                logger.warning("INCLUDE names %s, which does not exist; skipped", path)  # phi: ok a filename from our own INCLUDE list
+                continue
+            self._load_with_includes(path, depth + 1, write_back)
+
+    def load_yaml(self, file: str | io.StringIO, write_back: bool = True) -> list:
+        """Merge one YAML document into the configuration. Returns the file's
+        `INCLUDE` list (empty when it has none) for the caller to load next.
+        With `write_back`, a secret the file holds in plaintext is encrypted
+        in the file itself."""
+        if not file:
+            return []
+
+        stream = None
+
+        if isinstance(file, str):
+            # Filename.
+            try:
+                with open(file, encoding="utf-8") as f:
+                    s = f.read()
+                    stream = io.StringIO(s)
+
+            except Exception as e:
+                logger.warning("config file %s not read: error_type=%s", file, type(e).__name__,  # phi: ok a config path
+                               exc_info=not is_driver_exception(e))
+                return []
+
+        elif isinstance(file, io.StringIO):
+            # An overlay built in memory (`mirobody dev`).
+            stream = file
+
+        if stream is None:
+            return []
+
+        #-------------------------------------------------
+
+        Config.yaml = YAML()
+
+        modified = False
+
+        data = Config.yaml.load(stream)
+        if not isinstance(data, dict):
+            return []
+
+        includes: list = []
+        for key, value in data.items():
+            if not isinstance(key, str):
+                continue
+
+            upper_key = key.upper()
+
+            if upper_key == "INCLUDE":
+                # A loading instruction, not a setting: consumed here, never
+                # stored, so an overlay's own INCLUDE adds files rather than
+                # "overriding" a value nothing reads.
+                includes = list(value) if isinstance(value, list) else []
+                continue
+
+            if upper_key in _REMOVED_KEYS:
+                _warn_removed(upper_key, _REMOVED_KEYS[upper_key])
+                continue
+
+            if self._encrypter and isinstance(value, str) and len(value) > 0:
+                # Check non-empty strings.
+
+                if self._encrypter.is_encrypted(value):
+                    # Decrypt it.
+                    self._raw[upper_key] = self._encrypter.decrypt(value, upper_key)
+                    continue
+
+                if write_back and isinstance(file, str) and \
+                    re.search(r"_KEY|_PASSWORD|_PASS|_PWD|_SECRET|_SK|_TOKEN", upper_key) and \
+                    not upper_key.endswith("_URL") and \
+                    value != PLACEHOLDER_SENTINEL:
+
+                    # An empty result means the encrypter is a no-op (an
+                    # unusable key: see `get_fernet_key`). Writing that back
+                    # would REPLACE the user's real secret with "" in the config
+                    # file, and since `self._raw` keeps the plaintext the
+                    # process keeps working, so the loss would only surface on
+                    # the next restart with nothing to point at. Leave the file
+                    # alone and say so.
+                    encrypted = self._encrypter.encrypt(value)
+                    if not encrypted:
+                        logger.error(
+                            "refusing to write config: %s could not be "
+                            "encrypted (encryption key unusable). The value on "
+                            "disk is left untouched and remains in plaintext.",
+                            upper_key,
+                        )
+                    else:
+                        data[key] = encrypted
+                        if not modified:
+                            modified = (data[key] != value)
+
+            self._raw[upper_key] = value
+
+        #-------------------------------------------------
+
+        if isinstance(file, str) and modified:
+            try:
+                with open(file, "w+", encoding="utf-8") as f:
+                    if f.writable():
+                        Config.yaml.dump(data, f)
+
+            except Exception as e:
+                logger.warning("config file %s not rewritten: error_type=%s", file, type(e).__name__,  # phi: ok a config path
+                               exc_info=not is_driver_exception(e))
+
+        return includes
+
+    #-----------------------------------------------------
+
+    def get(self, key: str, default: Any = None) -> Any:
+        stripped_key = key.strip()
+        if not stripped_key:
+            return default
+
+        # Check environment variables beforehand.
+        s = os.environ.get(stripped_key)
+        if s is not None:
+            return s
+
+        # Check key in upper case again.
+        upper_key = stripped_key.upper()
+        s = os.environ.get(upper_key)
+        if s is not None:
+            return s
+
+        # Then check the configuration variables.
+        return self._raw.get(upper_key, default)
+
+
+    def get_str(self, key: str, default: str = "") -> str:
+        stripped_key = key.strip()
+        if not stripped_key:
+            return default
+
+        # Check environment variables beforehand.
+        s = os.environ.get(stripped_key)
+        if s is not None:
+            return s
+
+        # Check key in upper case again.
+        upper_key = stripped_key.upper()
+        s = os.environ.get(upper_key)
+        if s is not None:
+            return s
+
+        # Then check the configuration variables. A key written with no value
+        # (`LOG_NAME:`) loads as None, which became the string "None": a log
+        # file by that name, `None/files/...` links, a `None/1.5.3` banner.
+        s = self._raw.get(upper_key)
+        if s is None:
+            return default
+        return s if isinstance(s, str) else str(s)
+
+
+    def get_int(self, key: str, default: int = 0) -> int:
+        obj = self.get(key)
+
+        if isinstance(obj, int):
+            return obj
+
+        try:
+            n = int(obj)
+            return n
+        except Exception:
+            return default
+
+
+    def get_bool(self, key: str, default: bool = False) -> bool:
+        obj = self.get(key)
+
+        if isinstance(obj, bool):
+            return obj
+
+        if isinstance(obj, str):
+            # Same truthy set as `demo.enabled()`: environment variables
+            # arrive as strings, and "1"/"yes"/"on" must not silently read
+            # as False (a flag set to 1 once did).
+            return obj.strip().upper() in ("TRUE", "1", "YES", "ON")
+
+        if isinstance(obj, int):
+            return obj != 0
+
+        return default
+
+
+    def placeholder_keys(self) -> list[str]:
+        """Config keys whose value is still the shipped placeholder sentinel.
+
+        The demo runs fine on placeholders; a deployment that declared
+        `PRODUCTION: true` must not: `server/bootstrap.py` refuses to start
+        while this list is non-empty.
+        """
+        return sorted(
+            key for key, value in self._raw.items()
+            if value == PLACEHOLDER_SENTINEL
+        )
+
+
+    def get_dict(self, key: str, default: dict | None = None) -> dict:
+        obj = self.get(key)
+
+        if isinstance(obj, dict):
+            return obj
+
+        if isinstance(obj, str | bytes | bytearray):
+            try:
+                l = json.loads(obj)
+                if isinstance(l, dict):
+                    return l
+            except Exception:
+                return default
+
+        return default
+
+
+    def get_list(self, key: str, default: list | None = None) -> list:
+        obj = self.get(key)
+
+        if isinstance(obj, list):
+            return obj
+
+        if isinstance(obj, str | bytes | bytearray):
+            try:
+                l = json.loads(obj)
+                if isinstance(l, list):
+                    return l
+            except Exception:
+                return default
+
+        return default
+
+
+    def get_dirs(self, key: str, default: list | None = None) -> list[str]:
+        l = self.get_list(key, default)
+
+        dirs = []
+        for s in l:
+            if not s or not isinstance(s, str):
+                continue
+
+            s = s.strip()
+            if not s:
+                continue
+
+            s = s.replace("/", os.sep)
+            dirs.append(s)
+
+        return dirs if dirs else default
+
+
+    def get_fernet_key(self, key: str) -> str:
+        """Derive a Fernet key from the configured passphrase.
+
+        Fernet needs exactly 32 raw BYTES, urlsafe-base64 encoded. This used to
+        truncate to 32 CHARACTERS and then pad to 32 BYTES, which are the same
+        operation only for ASCII. A passphrase with any CJK, accented or emoji
+        character produced 33-96 bytes, `ljust(32)` padded nothing, `Fernet()`
+        rejected the result, and the encrypter silently became a no-op: see
+        `FernetEncrypter.__init__`, and `load_yaml` for what a no-op encrypter
+        then did to the config file.
+
+        Slicing the ENCODED bytes fixes it and changes nothing for an ASCII
+        passphrase, so no existing deployment has to re-encrypt.
+
+        The all-zeros fallback when the passphrase is empty is kept (changing
+        the derivation would strand every config already encrypted under it) 
+        but it is no longer silent. It is a publicly known key; anything
+        "encrypted" with it is plaintext with extra steps.
+        """
+        s = self.get_str(key).strip()
+
+        if not s:
+            logger.error(
+                "%s is not set. Config secrets will be 'encrypted' with a "
+                "fixed, publicly-known key and are effectively plaintext. Set "
+                "it to a random 32-character value.", key,
+            )
+
+        try:
+            # Slice AFTER encoding: `s[:32].encode()` can exceed 32 bytes.
+            raw = s.encode("utf-8")[:32].ljust(32, b"0")
+            return base64.urlsafe_b64encode(raw).decode()
+
+        except Exception as e:
+            # Neither `s` nor the error nor a traceback: `s` is the passphrase,
+            # and an encoding error quotes the characters it failed on.
+            logger.error("could not derive a Fernet key from %s: error_type=%s", key, type(e).__name__)
+            return ""
+
+
+    #-----------------------------------------------------
+
+    def get_jwt_options(self) -> dict[str, str]:
+        return {
+            "jwt_key"           : self.get_str("JWT_KEY"),
+            "jwt_iss"           : self.get_str("JWT_ISS"),
+            "jwt_aud"           : self.get_str("JWT_AUD"),
+            "jwt_client_id"     : self.get_str("JWT_CLIENT_ID"),
+            "jwt_scope"         : self.get_str("JWT_SCOPE"),
+            "jwt_expires_in"    : self.get_int("JWT_EXPIRES_IN")
+        }
+
+    #-----------------------------------------------------
+
+    def get_api_keys(self) -> dict[str, str]:
+        results = {}
+
+        for key, value in self._raw.items():
+            if key.endswith("_API_KEY") and value and isinstance(value, str):
+                results[key] = value
+                os.environ.setdefault(key, value)
+
+        for key in [
+            "AZURE_TENANT_ID",
+            "AZURE_CLIENT_ID",
+            "AZURE_FEDERATED_TOKEN_FILE",
+
+            "GOOGLE_CLOUD_PROJECT",
+            "GOOGLE_CLOUD_LOCATION",
+            "GOOGLE_GENAI_USE_VERTEXAI",
+        ]:
+            value = self.get_str(key)
+            if value:
+                results[key] = value
+                os.environ.setdefault(key, value)
+
+        return results
+
+    #-----------------------------------------------------
+
+    def get_agent_settings(self) -> dict[str, Any]:
+        """The agent's runtime settings from the four plain keys, cached.
+
+        `MODELS`, `PROMPTS`, `ALLOWED_TOOLS`, `DISALLOWED_TOOLS`: one agent,
+        one set of keys (they used to carry the agent's name as a suffix). The
+        two halves that do real work (resolving `PROMPTS` path references into
+        template text, and normalising the three accepted shapes of `MODELS`
+) live in `agent_options.py`, testable without a Config or a
+        filesystem. What is left here is the caching.
+        """
+        if self._agent_options:
+            return self._agent_options
+
+        from .agent_options import load_prompt_templates, parse_providers
+
+        options = {
+            "allowed_tools"     : self.get_list("ALLOWED_TOOLS", []),
+            "disallowed_tools"  : self.get_list("DISALLOWED_TOOLS", []),
+            "prompt_templates"  : load_prompt_templates(self),
+            "providers"         : parse_providers(self),
+        }
+
+        self._agent_options = options
+        return options
+
+    #-----------------------------------------------------
+
+    def get_email_options(self) -> dict[str, str | int | dict[str, str]]:
+        return {
+            "email_from"        : self.get_str("EMAIL_FROM"),
+            "email_from_name"   : self.get_str("EMAIL_FROM_NAME"),
+            "email_template"    : self.get_str("EMAIL_TEMPLATE"),
+            "email_password"    : self.get_str("EMAIL_SMTP_PASS"),
+            "email_predefined"  : self.get_dict("EMAIL_PREDEFINE_CODES", {}),
+            "email_smtp_host"   : self.get_str("EMAIL_SMTP_HOST"),
+            "email_smtp_port"   : self.get_int("EMAIL_SMTP_PORT", 0),
+            "email_smtp_user"   : self.get_str("EMAIL_SMTP_USER"),
+        }
+
+
+    def get_webauthn_options(self) -> dict:
+        return {
+            "webauthn_rp_id"            : self.get_str("WEBAUTHN_RP_ID"),
+            "webauthn_rp_name"          : self.get_str("WEBAUTHN_RP_NAME"),
+            "webauthn_origin"           : self.get_str("WEBAUTHN_ORIGIN"),
+            "webauthn_mfa_ticket_ttl"   : self.get_int("WEBAUTHN_MFA_TICKET_TTL", 300),
+        }
+
+    def get_postgresql(self, key: str="") -> "PostgreSQLConfig":
+        # Imported here, not at module scope. `mirobody.utils.config` is on the
+        # import path of the whole ENGINE (`mirobody.engine`, `indicator`,
+        # `pulse`) so a module-level `from .postgresql import …` made psycopg +
+        # SQLAlchemy a hard requirement of `resolve()`, which touches no
+        # database at all. Only a caller that actually wants a DB handle pays.
+        from .postgresql import PostgreSQLConfig
+
+        upper_key = key.strip().upper()
+        if upper_key in self._postgresqls:
+            return self._postgresqls[upper_key]
+
+        #-------------------------------------------------
+
+        suffix = upper_key
+        if suffix:
+            suffix = "_" + suffix
+
+        pg_config = PostgreSQLConfig(
+            host        = self.get_str(f"PG_HOST{suffix}"),
+            port        = self.get_int(f"PG_PORT{suffix}"),
+            user        = self.get_str(f"PG_USER{suffix}"),
+            password    = self.get_str(f"PG_PASSWORD{suffix}"),
+            database    = self.get_str(f"PG_DBNAME{suffix}"),
+            schema      = self.get_str(f"PG_SCHEMA{suffix}"),
+            minconn     = self.get_int(f"PG_MIN_CONNECTION{suffix}"),
+            maxconn     = self.get_int(f"PG_MAX_CONNECTION{suffix}"),
+            timeout     = self.get_int(f"PG_TIMEOUT{suffix}"),
+            encrypt_key = self.get_str("PG_ENCRYPTION_KEY"),
+        )
+
+        self._postgresqls[upper_key] = pg_config
+        return pg_config
+
+    #-----------------------------------------------------
+
+    def get_ephemeral(self) -> "EphemeralStore":
+        if self._ephemeral is None:
+            from mirobody.utils.ephemeral import EphemeralStore
+            self._ephemeral = EphemeralStore(
+                self.get_postgresql(), self.get_fernet_key("CONFIG_ENCRYPTION_KEY")
+            )
+        return self._ephemeral
+
+    #-----------------------------------------------------
+
+    #-----------------------------------------------------
+
+    def print(self):
+        print(f"Configuration loaded from {self._yaml_filenames}:")
+        print("----------------------------------------------------------")
+        print(f"env             : {os.environ.get("ENV", "").strip().lower()}")
+        print(f"debug           : {self.log.level <= logging.DEBUG}")
+
+        self.log.print()
+        self.http.print()
+
+        self.get_postgresql().print()
+
+        if self.jwt_key:
+            print(f"jwt             : {Config.to_masked_str(self.jwt_key)}")
+        if self.mcp_server_url:
+            print(f"mcp             : {self.mcp_server_url}")
+        if self.mcp_tool_dirs:
+            print(f"tools           : {self.mcp_tool_dirs}")
+        if self.agent_dirs:
+            print(f"agents          : {self.agent_dirs}")
+        if self.task_dirs:
+            print(f"tasks           : {self.task_dirs}")
+
+        if self.api_keys:
+            print()
+            for key in self.api_keys:
+                print(f"{key.lower():<32}: {Config.to_masked_str(self.api_keys[key].lower())}")
+
+        print("----------------------------------------------------------")
+
+
+    def print_predefined_codes(self):
+        codes = self.get_dict("EMAIL_PREDEFINE_CODES", {})
+        if codes:
+            BOLD = "\033[1m"
+            GREEN = "\033[32m"
+            RESET = "\033[0m"
+
+            mcp_public_url = self.get_str("MCP_PUBLIC_URL")
+
+            # Use MCP_PUBLIC_URL if set, otherwise construct URL from HTTP config
+            default_url = f"http://localhost:{self.http.port}" if self.http.port != 80 else "http://localhost"
+            print(f"\nNow you can open {BOLD}{GREEN}{mcp_public_url if mcp_public_url else default_url}{RESET} in browser, and then\n  login with the following:")
+            print("------------------------------------------------")
+            print(f"{"EMAIL":<25} | VERIFICATION CODE")
+            print("------------------------------------------------")
+
+            i = 0
+            n = len(codes)
+            printed_dots = False
+            for email, verification_code in codes.items():
+                if i >= 10 and i < n-1:
+                    if not printed_dots:
+                        print(f"{"...":<25} | ...")
+                        printed_dots = True
+                else:
+                    print(f"{BOLD}{GREEN}{email:<25}{RESET} | {BOLD}{GREEN}{verification_code}{RESET}")
+                i += 1
+            print("------------------------------------------------\n")
+
+    #-------------------------------------------------------------------------
+
+    @staticmethod
+    def to_masked_str(s: str) -> str:
+        """Report presence without exposing even a short credential fragment."""
+        return "[configured]" if s else ""
+
+    #-------------------------------------------------------------------------
+
+    @staticmethod
+    def load_dotenv(filenames: str | list[str] | None = None):
+        if isinstance(filenames, str):
+            l = [filenames]
+        elif isinstance(filenames, list):
+            l = filenames
+        else:
+            return
+
+        for filename in l:
+            filename = filename.strip()
+            if not filename:
+                continue
+
+            for key, value in dotenv.dotenv_values(filename).items():
+                if value:
+                    value = value.strip()
+                if not value:
+                    continue
+
+                key = key.strip()
+                if not key:
+                    continue
+
+                os.environ.setdefault(key.upper(), value)
+
+    #-------------------------------------------------------------------------
+    @staticmethod
+    async def init(
+        yaml_filenames  : str | list[str] | None = None,
+        dotenv_filenames: str | list[str] | None = None,
+        log_extra       : dict | None = None
+    ):
+        if dotenv_filenames is None:
+            dotenv_filenames = [".env"]
+        log_extra = dict(log_extra) if log_extra else {}
+
+        # `.env` first, because ENV feeds the log fields below and the formatter
+        # has to be built with them already in place. ENV tagged nothing while
+        # this also required a caller's `log_extra`, which no caller passes.
+        Config.load_dotenv(dotenv_filenames)
+
+        env = os.environ.get("ENV", "").strip().lower()
+        if env:
+            log_extra["env"] = env
+
+        from mirobody.utils.log import init_log_console
+        init_log_console(extra=log_extra)
+
+        #-----------------------------------------------------
+
+        class URLFilter(logging.Filter):
+            def __init__(self, blocked_urls):
+                super().__init__()
+                self.blocked_urls = blocked_urls
+
+            def filter(self, record: logging.LogRecord) -> bool:
+                # The URL is typically found in record.args at index 2 for uvicorn access logs
+                if record.args and len(record.args) >= 3:
+                    requested_url = record.args[2]
+                    if requested_url in self.blocked_urls:
+                        return False  # Do not log this record
+                return True  # Log all other records
+
+        logging.getLogger("uvicorn.access").addFilter(
+            URLFilter(["/api/health"])
+        )
+
+        #-----------------------------------------------------
+        # Which files to look for: each requested `x.yaml` also brings its
+        # `x.key.yaml` secret sibling and their `{env}` variants. That
+        # expansion is pure and lives in `yaml_files.py`, where it is tested;
+        # existence is checked below because a stream (an overlay built in
+        # memory) has no path.
+
+        from .yaml_files import expand_yaml_filenames
+
+        yaml_file_list = expand_yaml_filenames(yaml_filenames, env)
+
+        #-------------------------------------------------
+
+        final_yaml_file_list = []
+
+        # The working directory's config.yaml is the defaults only when it is
+        # Mirobody's, with its config.llm.yaml beside it: `mirobody parse` run
+        # in another project read that project's config.yaml, and encrypted
+        # its secrets in place. Defaults are read, never written.
+        if os.path.isfile("config.yaml") and os.path.isfile("config.llm.yaml"):
+            default_yaml = "config.yaml"
+        else:
+            default_yaml = _shipped_defaults()
+        read_only = []
+        if default_yaml and default_yaml not in yaml_file_list:
+            final_yaml_file_list.append(default_yaml)
+            read_only.append(default_yaml)
+
+        for yaml_filename in yaml_file_list:
+            # A stream (config built in memory) has no path to stat. Only a
+            # filename is checked for existence: dropping the stream here was
+            # the second half of why an in-memory overlay never applied.
+            if not isinstance(yaml_filename, str) or os.path.exists(yaml_filename):
+                final_yaml_file_list.append(yaml_filename)
+
+        config = Config(yaml_filenames=final_yaml_file_list, read_only=read_only)
+
+        #-----------------------------------------------------
+
+        from mirobody.utils.log import init_log
+        init_log(
+            name        = config.log.name,
+            dir         = config.log.dir,
+            level       = config.log.level,
+            extra       = log_extra,
+        )
+
+        return config
+
+#-----------------------------------------------------------------------------
+
+def _shipped_defaults() -> str | None:
+    """The `config.yaml` this installation came with, for a run outside a
+    checkout. Without it `pip install 'mirobody[parse]'` plus one key, run
+    from any other directory, had no MODELS table and so no model: the build
+    copies the three default files into `mirobody/_defaults/`, and an
+    editable install still has them at the checkout root."""
+    package = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    shipped = os.path.join(package, "_defaults", "config.yaml")
+    if os.path.isfile(shipped):
+        return shipped
+    root = os.path.dirname(package)
+    checkout = os.path.join(root, "config.yaml")
+    if os.path.isfile(checkout) and os.path.isfile(os.path.join(root, "pyproject.toml")):
+        return checkout
+    return None
+
+#-----------------------------------------------------------------------------
+
+def global_config() -> Config | None:
+    """The process-wide Config, or None if `Config.init()` has not run.
+
+    Took `*args, **kargs` and discarded them. That is not harmless: callers
+    reasonably read `global_config(path)` as "load this config file", and one
+    did: `collect/setup.py` threaded a `config_file_path` parameter down from its
+    public signature into this call, where it evaporated. Accepting arguments
+    you ignore turns a wrong call into a silent no-op instead of a TypeError.
+    """
+    return _global_config
+
+#-----------------------------------------------------------------------------
+
+def safe_read_cfg(key: str, default: str = "") -> str:
+    """A config value as a string, or `default`.
+
+    With no Config loaded (a library caller, `mirobody parse`, a test) the
+    ENVIRONMENT still answers, as it does first when a Config is loaded
+    (`Config.get_str`). Before this the no-Config case returned the default
+    outright, so `OPENROUTER_API_KEY=... mirobody parse x.pdf` needed a
+    second lookup path in every caller that wanted to work without config.yaml
+    (`_default_provider` among them grew its own
+    `os.environ.get(...) or safe_read_cfg(...)`). One rule, here.
+    """
+    if not _global_config:
+        value = os.environ.get(key.strip()) or os.environ.get(key.strip().upper())
+        return value.strip() if value is not None else default
+
+    return _global_config.get_str(key, default).strip()
+
+
+def get_default_timezone() -> str:
+    tz = safe_read_cfg("DEFAULT_TIMEZONE") or safe_read_cfg("_DEFAULT_TIMEZONE")
+    return tz if tz else "America/Los_Angeles"
+
+#-----------------------------------------------------------------------------

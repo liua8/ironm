@@ -1,0 +1,186 @@
+"""The plausible range a device reading must fall in.
+
+Rules live in the `indicator_valid_rules` table, one row per (rule set,
+indicator), each a list of expressions like ">0", "<=100" or "=10"; a value
+must satisfy all of them. `ingestion_filter` is the only rule set read: the
+seed in `schema/41_device_rules.sql` writes no other.
+
+What a failed check means is the caller's. The device upload path refuses an
+out-of-range summary and keeps an out-of-range series point in `series_data`
+under `task_id = "filtered_out_of_range"`, which the aggregation skips
+(`collect/ingest/services/upload_health.py`); the observation writer refuses a
+typed reading outside the range of a catalogue metric with its code.
+"""
+
+import json
+import logging
+import re
+from dataclasses import dataclass
+from typing import Any
+from collections.abc import Callable
+
+from mirobody.kernel.ops import is_driver_exception
+from mirobody.utils import execute_query
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ValidationResult:
+    """Result of a value range validation check."""
+
+    is_valid: bool
+    indicator: str
+    value: float | None = None
+    reason: str = ""
+
+
+class ValueRangeValidator:
+    """Validates health data values against rules loaded from indicator_valid_rules table.
+
+    Usage:
+        validator = ValueRangeValidator()
+        await validator.load()  # Load rules from DB at startup
+        result = validator.validate("heartRates", 300000.1)
+        # result.is_valid = False, result.value = 300000.1, result.reason = "violates rule <=350"
+
+    Passthrough cases (always valid):
+    - Indicator has no rules loaded
+    - Value cannot be converted to float (non-numeric)
+    """
+
+    _RULE_PATTERN = re.compile(r'^(>=|<=|>|<|=)\s*(-?[\d.]+)$')
+
+    _OPS: dict[str, Callable[[float, float], bool]] = {
+        '>':  lambda v, t: v > t,
+        '>=': lambda v, t: v >= t,
+        '<':  lambda v, t: v < t,
+        '<=': lambda v, t: v <= t,
+        '=':  lambda v, t: v == t,
+    }
+
+    def __init__(self, rule_set: str = "ingestion_filter"):
+        self._rule_set = rule_set
+        # indicator_name → list of (rule_str, op_fn, threshold)
+        self._rules: dict[str, list[tuple[str, Callable, float]]] = {}
+        self._loaded = False
+
+    async def load(self, db_config=None) -> int:
+        """Load rules from indicator_valid_rules table.
+
+        Should be called once at startup. After loading, validate() is pure
+        in-memory and requires no DB access.
+
+        Returns:
+            Number of indicators loaded
+        """
+        query = """
+            SELECT indicator, rules
+            FROM indicator_valid_rules
+            WHERE rule_set = :rule_set AND enabled = true
+        """
+        try:
+            rows = await execute_query(query, {"rule_set": self._rule_set}, db_config=db_config or "")
+        except Exception as e:
+            logger.error("value range rules not loaded, every value passes: error_type=%s", type(e).__name__,
+                         exc_info=not is_driver_exception(e))
+            self._loaded = True
+            return 0
+
+        self._rules.clear()
+        loaded = 0
+        skipped_count = 0
+
+        for row in rows:
+            indicator = row["indicator"]
+            raw_rules = row["rules"]
+
+            # A row that does not parse is skipped and counted; the log names no
+            # indicator, since the name is what was measured.
+            if isinstance(raw_rules, str):
+                try:
+                    raw_rules = json.loads(raw_rules)
+                except json.JSONDecodeError:
+                    skipped_count += 1
+                    continue
+
+            if not isinstance(raw_rules, list):
+                skipped_count += 1
+                continue
+
+            parsed = []
+            for rule_str in raw_rules:
+                result = self._parse_rule(rule_str)
+                if result is None:
+                    skipped_count += 1
+                    continue
+                op_str, threshold = result
+                parsed.append((rule_str, self._OPS[op_str], threshold))
+
+            if parsed:
+                self._rules[indicator] = parsed
+                loaded += 1
+
+        self._loaded = True
+        indicators_count = loaded
+        logger.info("value range rules loaded: indicators_count=%d skipped_count=%d", indicators_count, skipped_count)
+        return loaded
+
+    def validate(self, indicator: str, value: Any) -> ValidationResult:
+        """Check if value satisfies all rules for the given indicator.
+
+        This is a pure in-memory operation, no DB access. Rules must be
+        loaded via load() before calling this method.
+
+        Args:
+            indicator: Indicator name (e.g. "heartRates")
+            value: The value to validate (will be converted to float)
+
+        Returns:
+            ValidationResult with is_valid=True if valid or passthrough
+        """
+        parsed_rules = self._rules.get(indicator)
+        if parsed_rules is None:
+            return ValidationResult(is_valid=True, indicator=indicator)
+
+        try:
+            num_val = float(value)
+        except (ValueError, TypeError):
+            return ValidationResult(is_valid=True, indicator=indicator)
+
+        for rule_str, op_fn, threshold in parsed_rules:
+            if not op_fn(num_val, threshold):
+                return ValidationResult(
+                    is_valid=False,
+                    indicator=indicator,
+                    value=num_val,
+                    reason=f"violates rule {rule_str}",
+                )
+
+        return ValidationResult(is_valid=True, indicator=indicator, value=num_val)
+
+    @property
+    def is_loaded(self) -> bool:
+        return self._loaded
+
+    @property
+    def indicator_count(self) -> int:
+        return len(self._rules)
+
+    def _parse_rule(self, rule: str) -> tuple[str, float] | None:
+        """Parse a rule string like '>0' into ('>', 0.0).
+
+        Total: returns None for ANYTHING it cannot parse. `indicator_valid_rules`
+        is a hand-edited table and the character class `[\\d.]+` happily matches
+        `1.2.3` or a lone `.`: strings `float()` then rejects. That ValueError
+        used to escape load()'s loop, so one typo'd rule for one indicator
+        killed rule loading for ALL indicators, the opposite of the
+        skip-and-warn contract the surrounding code keeps.
+        """
+        try:
+            match = self._RULE_PATTERN.match(rule.strip())
+            if not match:
+                return None
+            return match.group(1), float(match.group(2))
+        except (ValueError, TypeError, AttributeError):
+            return None

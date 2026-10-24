@@ -1,0 +1,174 @@
+name: Docker Hub image
+
+# Publishes thetahealth4mirobody/mirobody for a version, on linux/amd64 and
+# linux/arm64. Three triggers: a GitHub Release, a manual dispatch, and
+# workflow_call from pypi-release.yml. The default GITHUB_TOKEN that creates
+# a release can never itself trigger another workflow, so `release:
+# published` alone never fires after an automated release; workflow_call is
+# what lets the PyPI workflow chain this one. A bare X.Y.Z tag also gets
+# `latest`; a pre-release publishes only its own tag.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version tag to publish, for example 1.5.3
+        required: true
+        type: string
+      source_ref:
+        description: Checkout ref for a repair rebuild; leave empty to use the tag
+        required: false
+        default: ""
+        type: string
+      page_only:
+        description: Sync the repository page without rebuilding the image
+        required: false
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      tag:
+        description: Version tag to publish, for example 1.5.3
+        required: true
+        type: string
+      source_ref:
+        description: Checkout ref for a repair rebuild; leave empty to use the tag
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: ${{ !inputs.page_only }}
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: thetahealth4mirobody/mirobody
+    steps:
+      # Release builds use their tag; an explicit source_ref lets a repair
+      # rebuild use a reviewed commit without moving the Git release tag.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.event.release.tag_name || inputs.tag }}
+          lfs: true
+
+      - name: Validate release tag and credentials
+        id: release
+        env:
+          RAW_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          tag="${RAW_TAG#v}"
+          if [[ ! "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][a-zA-Z0-9.-]+)?$ ]]; then
+            echo 'Expected a version tag such as 1.5.3 or 1.5.3-rc1' >&2
+            exit 1
+          fi
+          if [[ -z "$DOCKERHUB_USERNAME" || -z "$DOCKERHUB_TOKEN" ]]; then
+            echo 'Set DOCKERHUB_USERNAME as a repository variable and DOCKERHUB_TOKEN as a repository secret.' >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          # A pre-release suffix (1.5.3-rc1) is not a bare X.Y.Z, so it never
+          # moves the `latest` tag onto a release that is not final.
+          tags="$IMAGE:$tag"
+          if [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            tags="$tags"$'\n'"$IMAGE:latest"
+          fi
+          {
+            echo "tags<<EOF"
+            echo "$tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and publish
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.release.outputs.tags }}
+          build-args: MIROBODY_VERSION=${{ steps.release.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Inspect published platforms
+        run: docker buildx imagetools inspect "$IMAGE:${{ steps.release.outputs.tag }}"
+
+  repository-page:
+    needs: publish
+    if: ${{ always() && !cancelled() && (needs.publish.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.page_only)) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update Docker Hub repository page
+        id: page
+        # A publish must not be reported as failed after both platform images
+        # are already on Docker Hub. `page_only=true` stays strict so a manual
+        # metadata retry makes a missing admin scope visible.
+        continue-on-error: ${{ !inputs.page_only }}
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          page = Path("docs/docker-hub-description.md").read_text(encoding="utf-8")
+          short = page.split("## Short description", 1)[1].split("## Full description", 1)[0].strip()
+          full = page.split("## Full description", 1)[1].strip()
+          credentials = json.dumps({
+              "identifier": os.environ["DOCKERHUB_USERNAME"],
+              "secret": os.environ["DOCKERHUB_TOKEN"],
+          }).encode()
+          login = Request(
+              "https://hub.docker.com/v2/auth/token",
+              data=credentials,
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urlopen(login, timeout=30) as response:
+              bearer = json.load(response).get("access_token")
+          if not bearer:
+              raise RuntimeError("Docker Hub authentication returned no bearer token")
+          print(f"::add-mask::{bearer}")
+
+          payload = json.dumps({
+              "description": short,
+              "full_description": full,
+          }).encode()
+          update = Request(
+              "https://hub.docker.com/v2/repositories/thetahealth4mirobody/mirobody",
+              data=payload,
+              headers={
+                  "Accept": "application/json",
+                  "Authorization": f"Bearer {bearer}",
+                  "Content-Type": "application/json",
+              },
+              method="PATCH",
+          )
+          with urlopen(update, timeout=30) as response:
+              if response.status not in (200, 204):
+                  raise RuntimeError(f"Docker Hub repository update returned {response.status}")
+          print("Docker Hub repository description updated")
+          PY
+
+      - name: Explain repository page permission failure
+        if: steps.page.outcome == 'failure'
+        run: |
+          echo '::warning::Docker image publishing succeeded, but Docker Hub refused the repository page update.'
+          echo '::warning::Give DOCKERHUB_TOKEN repository-admin metadata permission, then rerun this workflow with page_only=true.'

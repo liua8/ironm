@@ -1,0 +1,72 @@
+"""Profile-refresh task.
+
+Producer (pulse): `await ProfileRefreshTask.enqueue(user_id)` on ingest.
+Consumer (`consume` below): drains a burst, dedupes user_ids, and calls
+`UserProfileService.create_user_profile` for each unique user. It used to live
+in a separate service, and this docstring still said so long after the worker
+here took it over.
+
+Coalescing: a burst of ingests for one person becomes one refresh, and the
+next signal for that person picks up anything a refresh in flight missed.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from .base import BaseTask
+
+logger = logging.getLogger(__name__)
+
+#-----------------------------------------------------------------------------
+
+class ProfileRefreshTask(BaseTask):
+    """Queue payload: ``user_id`` (plain string)."""
+
+    queue_key = "profile_refresh_queue"
+
+    async def consume(self, messages: list[str]) -> None:
+        # Lazy import breaks mirobody.task ↔ mirobody.agent.chat/pulse cycle.
+        from mirobody.user.profile import UserProfileService
+
+        user_ids = {m for m in messages if m}
+        if not user_ids:
+            return
+
+        logger.info(f"profile_refresh batch start: {len(user_ids)} user(s)")
+        failures = 0
+        for uid in user_ids:
+            try:
+                result = await UserProfileService.create_user_profile(uid)
+            except Exception as e:
+                from mirobody.kernel.ops import is_driver_exception
+                logger.error("profile_refresh crashed: user_id=%s error_type=%s", uid,
+                             type(e).__name__, exc_info=not is_driver_exception(e))
+                failures += 1
+                continue
+
+            status = result.get("status")
+            if status == "success":
+                logger.info(
+                    f"profile_refresh done: user_id={uid}, status=success, "
+                    f"profile_id={result.get('profile_id')}, "
+                    f"version={result.get('version')}, "
+                    f"last_execute_doc_id={result.get('last_execute_doc_id')}"
+                )
+            elif status == "no_incremental_data":
+                logger.info(
+                    f"profile_refresh skipped: user_id={uid}, status=no_incremental_data, "
+                    f"current_version={result.get('current_version')}, "
+                    f"last_execute_doc_id={result.get('last_execute_doc_id')}"
+                )
+            elif status == "error":
+                logger.error("profile_refresh error: user_id=%s", uid)
+                failures += 1
+            else:
+                logger.warning("profile_refresh unexpected status: user_id=%s status=%s", uid, status)
+                failures += 1
+        logger.info(f"profile_refresh batch done: {len(user_ids)} user(s)")
+        if failures:
+            raise RuntimeError(f"profile_refresh failed for {failures} user(s)")
+
+#-----------------------------------------------------------------------------

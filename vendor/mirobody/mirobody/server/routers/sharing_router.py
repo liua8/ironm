@@ -1,0 +1,263 @@
+"""HTTP surface for the care circle (`/invitation/*`).
+
+Seven endpoints where there were seventeen. The seventeen were a symptom of the
+model underneath: because a share was a DIRECTED row (owner O grants member M),
+every operation needed a "by me" copy and a "with me" copy, and nicknames needed
+three (`shared-by-me/update-nickname`, `shared-with-me/update-nickname`,
+`shared/update-nickname`) for one job. A circle is symmetric: the row that says
+"you were invited" is the row that says "you are a member", so one endpoint
+answers where two did.
+
+**The endpoint this adds is the one the product always promised.**
+The four promises in `docs/walkthrough.md#the-four-promises` are "health stays off
+until you allow it", "your switch, off by default", "on your own row" and
+"each member controls their own". There
+was no API for that switch. The only way permissions were ever set was
+`shared-by-me/authorize`, where the INVITER chose them, defaulting to
+`{"all": 1}`: read everything. `POST /invitation/health-access` is the member's
+own switch, and `care_circle_members.health_access` defaults to 0.
+
+The web client calls four of them: `shared-by-me/list`, `shared-by-me/remove`,
+`shared-with-me/list` and `health-access` (a grep of its source). The first
+two are the ones it called before the rewrite, and their response fields
+(`status: "authorized"`, `share_id`, `query_user_id`) are the client's
+vocabulary, mapped here from the integers the table stores. The wire stays;
+the storage got fixed.
+"""
+
+import logging
+
+
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
+
+from mirobody.kernel.ops import is_driver_exception
+from mirobody.server.auth import verify_token
+from mirobody.server.envelope import err, ok
+from fastapi import Depends
+
+from mirobody.user import care_circle as cc
+from mirobody.user.user import addresses_provable, ensure_user, get_user
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/invitation", tags=["invitation"])
+
+
+# ── request models ───────────────────────────────────────────────────────────
+
+class InviteRequest(BaseModel):
+    email: str = Field(..., description="Address to invite; a shell account is created if new")
+    nickname: str | None = Field(None, description="Label this member carries in the circle")
+
+
+class RemoveRequest(BaseModel):
+    # `share_id` is the client's name for the membership handle. It used to be a
+    # uuid on `th_share_relationship`; it is now `care_circle_members.id`.
+    share_id: str | None = None
+    query_user_id: str | None = None
+
+
+class RespondRequest(BaseModel):
+    circle_id: int
+    accept: bool = True
+
+
+class HealthAccessRequest(BaseModel):
+    circle_id: int
+    access: int = Field(..., ge=0, le=2, description="0 none, 1 read, 2 read-write")
+
+
+class NicknameRequest(BaseModel):
+    share_id: str
+    nickname: str | None = None
+    avatar_key: str | None = None
+
+
+# ── the two the web client calls ─────────────────────────────────────────────
+
+@router.post("/shared-by-me/list")
+async def shared_by_me_list(user_id: str = Depends(verify_token)):
+    """Members of the circles I belong to, in the client's vocabulary.
+
+    `status: "authorized"` rather than 2, because the client filters on that
+    string. Keeping the mapping here rather than in the table is the point: a
+    varchar status with no CHECK is what let `'pending'` (the column default)
+    and `'authorized'` (the only value that worked) drift apart.
+    """
+    try:
+        rows = await cc.circle_members(user_id)
+        me = int(user_id)
+        # Under a NAMED key, like shared-with-me/list's `invitations`:
+        # `StandardResponse.data` is `dict[str, Any]`, so a bare list failed
+        # validation, the `except` below caught it, and every single call
+        # answered `code: -1, "Could not list your circle."`: invisible
+        # because on an empty circle a failure and a success look alike.
+        return ok({"members": [
+            {
+                "share_id": str(r["member_row_id"]),
+                "query_user_id": str(r["user_id"]),
+                "owner_user_id": str(r["owner_user_id"]),
+                "circle_id": r["circle_id"],
+                "status": cc.STATUS_NAMES[r["status"]].replace("accepted", "authorized"),
+                "role": cc.ROLE_NAMES[r["role"]],
+                "health_access": r["health_access"],
+                "nickname": r.get("nickname"),
+                "name": r.get("name"),
+                # A managed member's address is a placeholder; `managed` is
+                # what says so, and who may send the activation link.
+                "email": "" if r.get("managed_by") else r.get("email"),
+                "managed": bool(r.get("managed_by")),
+                "can_invite_to_sign_in": r.get("managed_by") == me,
+            }
+            for r in rows if int(r["user_id"]) != me
+        ]})
+    except Exception as e:
+        logger.error("circle member list failed: error_type=%s", type(e).__name__,
+                     exc_info=not is_driver_exception(e))
+        return err(-1, "Could not list your circle.")
+
+
+@router.post("/shared-by-me/remove")
+async def shared_by_me_remove(request: RemoveRequest, user_id: str = Depends(verify_token)):
+    """Remove a member from a circle I administer.
+
+    Authorization is not "did you send a share_id": the row that the handle
+    resolves to names its circle, and the caller must be a maintainer of THAT
+    circle. The endpoint this replaces ran `UPDATE ... WHERE share_id = :id`
+    with no predicate naming the caller.
+    """
+    handle = (request.share_id or "").strip()
+    if not handle.isdigit():
+        return err(-1, "A membership handle is required.")
+    resolved = await cc.resolve_member_row(int(handle))
+    if resolved is None:
+        return err(-2, "No such membership.")
+    circle_id, member_user_id = resolved
+    try:
+        await cc.require_maintainer(user_id, circle_id)
+    except cc.CareCircleDenied:
+        # Same answer for "not yours" and "does not exist", so the endpoint is
+        # not an oracle for which handles are real.
+        logger.info("member removal refused: user_id=%s member_row_id=%s", user_id, handle)  # phi: ok ids
+        return err(-2, "No such membership.")
+    if member_user_id == int(user_id):
+        return err(-3, "Leave the circle from your own side instead.")
+    return ok({"removed": await cc.remove_member(int(handle))})
+
+
+# ── invite and respond ───────────────────────────────────────────────────────
+
+@router.post("/shared-by-me/send")
+async def invite_member(request: InviteRequest, user_id: str = Depends(verify_token)):
+    """Invite an address into my circle, creating the circle on first use.
+
+    The invitee's account is minted here if the address is new, because that is
+    what an invitation is for. Their `health_access` starts at 0 either way: an
+    invitation asks someone to join, it does not decide what they share.
+    """
+    member_id = await ensure_user(request.email)
+    if member_id is None:
+        return err(-1, "A valid email address is required.")
+    if member_id == int(user_id):
+        return err(-2, "You are already in your own circle.")
+    circle_id = await cc.ensure_own_circle(user_id)
+    handle = await cc.invite(circle_id, member_id, nickname=request.nickname)
+    return ok({"share_id": str(handle), "circle_id": circle_id,
+                "query_user_id": str(member_id), "status": "pending"})
+
+
+@router.post("/shared-with-me/list")
+async def shared_with_me_list(user_id: str = Depends(verify_token)):
+    """Circles I am in or have been invited to, and who shares with me.
+
+    One endpoint for both because it is one query: a pending row and a member
+    row are the same row at different statuses.
+    """
+    rows = await cc.circle_members(user_id)
+    me = int(user_id)
+    mine = [r for r in rows if int(r["user_id"]) == me]
+    owners = {r["owner_user_id"]: r.get("name") or r.get("nickname") or ""
+              for r in rows if r["user_id"] == r["owner_user_id"]}
+    return ok({
+        "invitations": [
+            {"circle_id": r["circle_id"], "owner_user_id": str(r["owner_user_id"]),
+             "status": cc.STATUS_NAMES[r["status"]], "nickname": r.get("nickname")}
+            for r in mine if r["status"] == cc.STATUS_PENDING
+        ],
+        "circles": [
+            {"circle_id": r["circle_id"], "name": r["circle_name"],
+             "owner_user_id": str(r["owner_user_id"]), "owner_name": owners.get(r["owner_user_id"], ""),
+             "role": cc.ROLE_NAMES[r["role"]], "health_access": r["health_access"]}
+            for r in mine if r["status"] == cc.STATUS_ACCEPTED
+        ],
+        "sharing_with_me": [
+            {"user_id": str(r["user_id"]), "name": r.get("name"),
+             "nickname": r.get("nickname"), "health_access": r["health_access"]}
+            for r in await cc.shared_with_me(user_id)
+        ],
+    })
+
+
+@router.post("/shared-with-me/authorize")
+async def respond(request: RespondRequest, user_id: str = Depends(verify_token)):
+    """Accept or decline an invitation addressed to me.
+
+    Scoped to the caller's own pending row, so this cannot accept on anyone
+    else's behalf, which the endpoint it replaces could, for any `share_id`.
+    """
+    # An invitation goes to an address. Where addresses can be proven, an
+    # account whose password nobody proved may be someone else's claim on it.
+    if request.accept and addresses_provable():
+        me = await get_user(user_id=int(user_id))
+        if me and me.get("unproven"):
+            return err(-2, "Confirm your email first: sign in with a code sent to it, then accept.")
+    moved = await cc.respond_to_invitation(user_id, request.circle_id, accept=request.accept)
+    if not moved:
+        return err(-1, "No pending invitation for you in that circle.")
+    return ok({"status": "accepted" if request.accept else "declined"})
+
+
+# ── the switch the product promised ──────────────────────────────────────────
+
+@router.post("/health-access")
+async def set_health_access(request: HealthAccessRequest, user_id: str = Depends(verify_token)):
+    """Choose what MY record shows to one circle. 0 none, 1 read, 2 read-write.
+
+    Always the caller's own row: there is no parameter for whose access this
+    sets. Before this endpoint existed, the level lived on a row the *other*
+    party wrote, defaulting to read-everything.
+    """
+    updated = await cc.set_health_access(user_id, request.circle_id, request.access)
+    if not updated:
+        return err(-1, "You are not an accepted member of that circle.")
+    return ok({"circle_id": request.circle_id,
+                "health_access": request.access,
+                "meaning": cc.ACCESS_NAMES[request.access]})
+
+
+# ── labels ───────────────────────────────────────────────────────────────────
+
+@router.post("/shared/update-nickname")
+async def update_label(request: NicknameRequest, user_id: str = Depends(verify_token)):
+    """Set the label or picture a member carries in the circle.
+
+    One endpoint. There were three, for one job, because `th_share_user_config`
+    keyed nicknames by (setter, target, context): a nickname per viewer, with a
+    `context` column nothing ever set to anything but `'default'`.
+    """
+    if not (request.share_id or "").strip().isdigit():
+        return err(-1, "A membership handle is required.")
+    resolved = await cc.resolve_member_row(int(request.share_id))
+    if resolved is None:
+        return err(-2, "No such membership.")
+    circle_id, member_user_id = resolved
+    if member_user_id != int(user_id):
+        try:
+            await cc.require_maintainer(user_id, circle_id)
+        except cc.CareCircleDenied:
+            return err(-2, "No such membership.")
+    updated = await cc.set_member_label(
+        int(request.share_id), nickname=request.nickname, avatar_key=request.avatar_key
+    )
+    return ok({"updated": updated})

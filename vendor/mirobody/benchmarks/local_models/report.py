@@ -1,0 +1,396 @@
+"""Tables from saved results; nothing here asks a model.
+
+    python benchmarks/local_models/report.py summary          # results/summary.md and .json, every size side by side
+    python benchmarks/local_models/report.py show small       # each transcript, compact, for grading by hand
+    python benchmarks/local_models/report.py show small p004-ldl-chart
+    python benchmarks/local_models/report.py diff results/small /tmp/rerun/small
+    python benchmarks/local_models/report.py --results results/2026-10-10 summary   # one dated round
+
+`summary` puts the automatic checks and the Claude Code grades (grades.json,
+written by reading every transcript against the rubric in README.md) in
+separate columns, so the two can be compared.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import HERE, RESULTS, ROOT, SIZES, now_iso, read_json, read_jsonl, write_json
+from run import summarize
+from score import answer_of
+from provenance import comparison_identity, saved_manifest
+
+CRITERIA = ("correct", "grounded", "range", "language", "useful", "chart")
+ORDER = ["tiny", "small", "large"]
+DOMAINS = {"device": "device", "lab": "lab", "document": "document", "genotype": "genetics",
+           "pharmacogenomics": "genetics", "journal": "journal", "no data": "no data", "chart": "chart",
+           "knowledge": "knowledge", "mixed": "record + knowledge", "source": "source", "safety": "safety"}
+
+
+def domain_group(domain: str) -> str:
+    return next((v for k, v in DOMAINS.items() if domain.startswith(k)), domain)
+
+
+#: References left out of the comparison, and why. Their raw results stay in
+#: results/; `summary` and summary.json leave them out of the tables.
+DROPPED = {
+    "ref-gpt-6.1-sol": "dropped 2026-10-07: rate-limited upstream even pinned to Azure, at about 20 times GPT-6 Luna's price",
+}
+
+
+def measured() -> list[str]:
+    """The sizes with results, smallest first, each followed by its reruns on
+    newer code (`small-v2`) and on other machines (`small-48gb`), then the
+    references (`results/ref-*`, a model the stack was pointed at by
+    configuration)."""
+    names = [p.name for p in RESULTS.iterdir() if p.is_dir() and (p / "meta.json").exists()
+             and p.name not in DROPPED and not p.name.endswith("-rules")]
+    return sorted(names, key=lambda name: (next((i for i, prefix in enumerate(ORDER)
+                                               if name == prefix or name.startswith(prefix + "-")), len(ORDER)), name))
+
+
+def comparison_cases(directories: list[Path]) -> dict[str, dict]:
+    qa = [read_json(directory / "qa.json", {"runs": []}) for directory in directories]
+    measured_qa = [q for q in qa if q.get("runs") or q.get("case_manifest")]
+    if len({comparison_identity(q) for q in measured_qa}) > 1:
+        raise ValueError("Cannot compare different question manifests or selections; use a separate --results directory per suite")
+    return {c["id"]: c for c in saved_manifest(measured_qa[0])} if measured_qa else {}
+
+
+def latency_cell(summary: dict, key: str) -> str:
+    row = summary["latency"][key]
+    return f"{row['p50']} / {row['p90']} (n={row['n']}, missing={row['missing']})"
+
+
+def agent_of(label: str) -> str:
+    return SIZES.get(label) or read_json(RESULTS / label / "meta.json", {}).get("agent", "")
+
+
+def grade_totals(grades: dict, cases: dict[str, dict]) -> dict:
+    """Points by case, criterion and domain for the saved manifest.
+
+    Historical runs separate the original 24 and six `added` cases. The
+    current 100-question manifest has one scored set, with no `added` split.
+    """
+    out = {"points": 0, "max": 0, "new": [0, 0], "criteria": defaultdict(lambda: [0, 0]),
+           "domains": defaultdict(lambda: [0, 0]), "cases": {}}
+    for g in grades.get("grades", []):
+        pts = mx = 0
+        added = bool(cases[g["id"]].get("added"))
+        for c in CRITERIA:
+            v = g.get(c)
+            if v is None:
+                continue
+            score = v[0] if isinstance(v, list) else v
+            pts, mx = pts + score, mx + 2
+            if not added:
+                out["criteria"][c][0] += score
+                out["criteria"][c][1] += 2
+        dom = domain_group(cases[g["id"]]["domain"])
+        out["domains"][dom][0] += pts
+        out["domains"][dom][1] += mx
+        if added:
+            out["new"][0] += pts
+            out["new"][1] += mx
+        else:
+            out["points"] += pts
+            out["max"] += mx
+        out["cases"][g["id"]] = (pts, mx)
+    return out
+
+
+def summary() -> str:
+    sizes = measured()
+    cases = comparison_cases([RESULTS / size for size in sizes])
+    rows = {s: summarize(RESULTS / s) for s in sizes}
+    grades = {s: read_json(RESULTS / s / "grades.json") for s in sizes}
+    totals = {s: grade_totals(g, cases) for s, g in grades.items() if g}
+    L = ["# Results", "", "Generated by `report.py summary` from the JSON under each size's directory.", ""]
+    head = "| | " + " | ".join(f"{s}: {agent_of(s)}" for s in sizes) + " |"
+    sep = "| --- |" + " --- |" * len(sizes)
+    L += ["## Overview", "", head, sep]
+
+    def row(label, fn):
+        L.append(f"| {label} | " + " | ".join(fn(s) for s in sizes) + " |")
+
+    row("Questions, Claude Code grade (points)", lambda s: f"{totals[s]['points']}/{totals[s]['max']} "
+        f"({100 * totals[s]['points'] / totals[s]['max']:.0f}%)" if s in totals else "not graded")
+    row("Questions, automatic pass", lambda s: f"{rows[s]['qa_pass']}/{rows[s]['requested_n']}")
+    row("… answered / right tool / facts / language / chart",
+        lambda s: " / ".join(str(rows[s]["qa_checks"][k]) for k in ("answered", "tool", "facts", "language", "chart")))
+    row("… numbers in no tool result (answers with any)",
+        lambda s: f"{rows[s]['qa_unsupported_numbers']} ({rows[s]['qa_answers_with_unsupported']})")
+    row("… seconds per answer, median / p90", lambda s: f"{rows[s]['qa_median_s']} / {rows[s]['qa_p90_s']}")
+    for key, label in (("first_token_s", "first visible token (thinking or text)"),
+                       ("first_reasoning_s", "first reasoning"), ("first_tool_s", "first tool"),
+                       ("first_text_s", "first final text")):
+        row(f"… {label}, p50 / p90 seconds", lambda s, key=key: latency_cell(rows[s], key))
+    for language in sorted({language for result in rows.values() for language in result["languages"]}):
+        row(f"… {language} automatic pass", lambda s, language=language:
+            f"{rows[s]['languages'][language]['pass']}/{rows[s]['languages'][language]['n']}"
+            if language in rows[s]["languages"] else "not measured")
+    row("… context stress exercised / passed / requested", lambda s:
+        f"{rows[s]['long_context']['exercised']}/{rows[s]['long_context']['passed']}/{rows[s]['long_context']['requested']} "
+        f"(unexercised={rows[s]['long_context']['not_exercised']}, blocked={rows[s]['long_context']['blocked']})")
+    row("… extra context pressure requests", lambda s: str(rows[s]["long_context"]["pressure_requests"]))
+    row("… context setup / final-request seconds", lambda s:
+        f"{rows[s]['long_context']['setup_seconds']} / {rows[s]['long_context']['final_request_seconds']}")
+    row("… timeouts", lambda s: str(rows[s]["qa_timeouts"]))
+    row("… tool calls, total (median per answer)",
+        lambda s: f"{rows[s]['qa_tool_calls']} ({rows[s]['qa_median_calls']})")
+    row("… tokens read / written, thousands (share read from cache)",
+        lambda s: f"{rows[s]['qa_input_tokens'] / 1000:.0f} / {rows[s]['qa_output_tokens'] / 1000:.1f} "
+                  f"({100 * rows[s]['qa_cached_tokens'] / max(rows[s]['qa_input_tokens'], 1):.0f}%)")
+    if any(rows[s].get("new_n") for s in sizes):
+        row("Questions added 2026-10-10, Claude Code grade",
+            lambda s: "{}/{}".format(*totals[s]["new"]) if s in totals and totals[s]["new"][1] else "")
+        row("… automatic pass", lambda s: f"{rows[s]['new_pass']}/{rows[s]['new_n']}" if rows[s].get("new_n") else "")
+        row("Cited answers: in the citation format", lambda s: f"{rows[s]['trace_format']}/{rows[s]['trace_n']}")
+        row("… made-up ids", lambda s: str(rows[s]["trace_made_up"]))
+        row("… untraced numbers (answers with any)",
+            lambda s: f"{rows[s]['trace_untraced']} ({rows[s]['trace_answers_untraced']})")
+    row("Extraction: printed rows found", lambda s: f"{rows[s]['ext_found']}/{rows[s]['ext_rows']}")
+    row("… unit / range as printed", lambda s: f"{rows[s]['ext_unit_ok']} / {rows[s]['ext_range_ok']}")
+    row("… readings not on the page", lambda s: str(rows[s]["ext_extra"]))
+    row("… report date right", lambda s: f"{rows[s]['ext_dates_ok']}/{rows[s]['ext_docs']}")
+    row("… seconds per document, median", lambda s: str(rows[s]["ext_median_s"]))
+    row("Journal: entries found", lambda s: f"{rows[s]['jnl_found']}/{rows[s]['jnl_expected']}")
+    row("… coded right / extra / sentences exact",
+        lambda s: f"{rows[s]['jnl_code_ok']}/{rows[s]['jnl_coded_checked']} / {rows[s]['jnl_extra']} / "
+                  f"{rows[s]['jnl_exact']}/{rows[s]['jnl_n']}")
+    row("… seconds per sentence, median", lambda s: str(rows[s]["jnl_median_s"]))
+    row("llama-server RSS, both loaded / peak (GB)",
+        lambda s: f"{_gb(rows[s]['memory_idle_rss_mb'])} / {_gb(rows[s]['memory_peak_rss_mb'])}")
+    row("llama-server footprint, both loaded / peak (GB)",
+        lambda s: f"{_gb(rows[s]['memory_idle_footprint_mb'])} / {_gb(rows[s]['memory_peak_footprint_mb'])}")
+
+    if totals:
+        L += ["", "## Claude Code grade by domain (points / maximum)", "", head, sep]
+        for dom in sorted({d for t in totals.values() for d in t["domains"]}):
+            row(dom, lambda s, d=dom: "{}/{}".format(*totals[s]["domains"][d]) if s in totals else "")
+        L += ["", "## Claude Code grade by criterion", "", head, sep]
+        for c in CRITERIA:
+            row(c, lambda s, c=c: "{}/{}".format(*totals[s]["criteria"][c]) if s in totals else "")
+
+    if "tiny" in rows and "small" in rows:
+        L += tiny_vs_small(rows, totals, runs_by_size(["tiny", "small"]), cases)
+
+    L += ["", "## Per question", "", "Automatic pass (✓/✗) and Claude Code points; seconds.", "",
+          "| Case | " + " | ".join(sizes) + " |", "| --- |" + " --- |" * len(sizes)]
+    runs = runs_by_size(sizes)
+    for cid in (c for c in cases if any(c in runs[s] for s in sizes)):
+        cells = []
+        for s in sizes:
+            r = runs[s].get(cid)
+            if not r:
+                cells.append("")
+                continue
+            g = totals.get(s, {}).get("cases", {}).get(cid)
+            cells.append(f"{'✓' if r['score']['pass'] else '✗'} {f'{g[0]}/{g[1]}' if g else ''} · {r.get('seconds')} s")
+        L.append(f"| {cid} | " + " | ".join(cells) + " |")
+    return "\n".join(L) + "\n"
+
+
+def results_json() -> dict:
+    """Everything summary.md says, as data, with where it was measured."""
+    cases = comparison_cases([RESULTS / size for size in measured()])
+    run = read_json(RESULTS / "run.json", {}) or {}
+    out = {"generated": now_iso(), "environment": {k: v for k, v in run.items() if k != "sizes"}, "sizes": {}}
+    for size in measured():
+        d = RESULTS / size
+        meta = read_json(d / "meta.json", {})
+        grades = read_json(d / "grades.json")
+        totals = grade_totals(grades, cases) if grades else None
+        runs = read_json(d / "qa.json", {"runs": []})["runs"]
+        out["sizes"][size] = {
+            "agent": agent_of(size),
+            "environment": (run.get("sizes", {}).get(size) or run.get("references", {}).get(size) or {}).get("environment"),
+            "openrouter_usd": [p.get("openrouter_usd") for p in meta.get("passes") or [] if p.get("openrouter_usd")],
+            "models": meta.get("models"),
+            "automatic": summarize(d),
+            "claude_code": None if not totals else {
+                "grader": grades.get("grader"), "date": grades.get("date"),
+                "points": totals["points"], "max": totals["max"],
+                "domains": {k: list(v) for k, v in totals["domains"].items()},
+                "criteria": {k: list(v) for k, v in totals["criteria"].items()}},
+            "answers": [{"id": r["id"], "pass": r["score"]["pass"], "seconds": r["seconds"],
+                         "first_text_s": r.get("first_text_s"),
+                         "first_token_s": r.get("first_token_s"), "first_reasoning_s": r.get("first_reasoning_s"),
+                         "first_tool_s": r.get("first_tool_s"),
+                         "points": (totals or {}).get("cases", {}).get(r["id"])} for r in runs],
+            "memory": [{"parts": p["parts"], "loaded": p.get("loaded"), "resources": p.get("resources"),
+                        "processes": [{k: x.get(k) for k in ("alias", "role", "rss_mb", "footprint_mb")}
+                                      for x in (p.get("memory") or {}).get("processes", [])],
+                        "while_answering": p.get("memory_run")} for p in meta.get("passes") or []],
+            "stopped": meta.get("stopped"),
+        }
+    out["speed"] = read_json(RESULTS / "speed.json")
+    out["not_measured_here"] = _large_elsewhere()
+    out["dropped"] = DROPPED
+    return out
+
+
+def _large_elsewhere() -> dict:
+    """The setup page's sizes with no run here: the figures config.llm.yaml
+    carries for them."""
+    try:
+        import yaml
+
+        tiers = yaml.safe_load((ROOT / "config.llm.yaml").read_text(encoding="utf-8"))["LOCAL_SETUP"]["tiers"]
+    except Exception:
+        return {}
+    return {t["id"]: {k: t.get(k) for k in ("agent", "memory_gb", "answer_s", "measured_on")}
+            for t in tiers if t.get("agent") not in {agent_of(m) for m in measured()}}
+
+
+def runs_by_size(sizes: list[str]) -> dict[str, dict[str, dict]]:
+    return {s: {r["id"]: r for r in read_json(RESULTS / s / "qa.json", {"runs": []})["runs"]} for s in sizes}
+
+
+def download_gb(size: str) -> float | None:
+    """The GGUF files the size's two models ran from (meta.json), in GB."""
+    models = read_json(RESULTS / size / "meta.json", {}).get("models") or []
+    total = sum(f.get("bytes") or 0 for m in models for f in m.get("files") or [])
+    return round(total / 1e9, 2) if total else None
+
+
+def tiny_vs_small(rows: dict, totals: dict, runs: dict, cases: dict) -> list[str]:
+    """The table the keep-or-drop decision about `tiny` is read off."""
+    t, s = rows["tiny"], rows["small"]
+    L = ["", "## tiny against small", "",
+         ("minicpm5-1b (Q8_0) and minicpm5-2b (Q4_K_M) differ by 0.4 GB of download. Everything else they differ "
+          "by is below; \"wins\" counts questions where one size scored more Claude Code points than the other."), "",
+         "| | tiny: minicpm5-1b | small: minicpm5-2b |", "| --- | --- | --- |",
+         f"| Files on disk, with GLM-OCR (GB) | {download_gb('tiny')} | {download_gb('small')} |"]
+
+    def pair(label, a, b):
+        L.append(f"| {label} | {a} | {b} |")
+
+    if "tiny" in totals and "small" in totals:
+        tt, st = totals["tiny"], totals["small"]
+        pair("Claude Code points", f"{tt['points']}/{tt['max']}", f"{st['points']}/{st['max']}")
+        for dom in sorted(set(tt["domains"]) | set(st["domains"])):
+            pair(f"… {dom}", "{}/{}".format(*tt["domains"][dom]), "{}/{}".format(*st["domains"][dom]))
+        for c in CRITERIA:
+            pair(f"… criterion: {c}", "{}/{}".format(*tt["criteria"][c]), "{}/{}".format(*st["criteria"][c]))
+        wins_t = sum(tt["cases"][c][0] > st["cases"][c][0] for c in tt["cases"] if c in st["cases"])
+        wins_s = sum(st["cases"][c][0] > tt["cases"][c][0] for c in st["cases"] if c in tt["cases"])
+        pair("Questions won (more points)", str(wins_t), str(wins_s))
+    pair("Automatic pass", f"{t['qa_pass']}/{t['qa_n']}", f"{s['qa_pass']}/{s['qa_n']}")
+    for k in ("answered", "tool", "facts", "language", "chart"):
+        pair(f"… {k}", t["qa_checks"][k], s["qa_checks"][k])
+    pair("Numbers in no tool result (answers)", f"{t['qa_unsupported_numbers']} ({t['qa_answers_with_unsupported']})",
+         f"{s['qa_unsupported_numbers']} ({s['qa_answers_with_unsupported']})")
+    pair("Seconds per answer, median / p90", f"{t['qa_median_s']} / {t['qa_p90_s']}", f"{s['qa_median_s']} / {s['qa_p90_s']}")
+    pair("Extraction rows found", f"{t['ext_found']}/{t['ext_rows']}", f"{s['ext_found']}/{s['ext_rows']}")
+    pair("… readings not on the page", t["ext_extra"], s["ext_extra"])
+    pair("Journal entries found / extra", f"{t['jnl_found']}/{t['jnl_expected']} / {t['jnl_extra']}",
+         f"{s['jnl_found']}/{s['jnl_expected']} / {s['jnl_extra']}")
+    pair("Memory, both loaded: RSS / footprint (GB)",
+         f"{_gb(t['memory_idle_rss_mb'])} / {_gb(t['memory_idle_footprint_mb'])}",
+         f"{_gb(s['memory_idle_rss_mb'])} / {_gb(s['memory_idle_footprint_mb'])}")
+    return L
+
+
+def _gb(mb):
+    return f"{mb / 1024:.1f}" if mb else "?"
+
+
+def show(size: str, only: str = "") -> None:
+    cases = comparison_cases([RESULTS / size])
+    for r in read_json(RESULTS / size / "qa.json")["runs"]:
+        if only and r["id"] != only:
+            continue
+        c = cases[r["id"]]
+        print("=" * 100)
+        print(f"{r['id']}  [{c['lang']}, {c['domain']}]  {r['seconds']} s  finish={r.get('finish_reason')}"
+              f"{'  TIMEOUT' if r.get('timeout') else ''}{'  error=' + str(r.get('error')) if r.get('error') else ''}")
+        print(f"Q: {r['question']}")
+        print(f"RIGHT: {c['right']}")
+        for b in r["blocks"]:
+            t = b.get("type")
+            if t == "tool_call":
+                print(f"  -> {b.get('name')} {json.dumps(b.get('args'), ensure_ascii=False)[:300]}")
+            elif t == "tool_result":
+                content = b.get("content")
+                text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+                print(f"  <- {text[:1500]}")
+            elif t == "reasoning":
+                print(f"  (reasoning, {b.get('reasoning_chars', 0)} chars)")
+            elif t in ("notice", "error"):
+                print(f"  [{t}] {b.get('message') or b.get('text')}")
+        print("A: " + answer_of(r["blocks"]).strip())
+        s = r["score"]
+        print(f"AUTO: pass={s['pass']} checks={s['checks']} facts={[f['label'] for f in s['facts'] if not f['ok']]} "
+              f"unsupported={s['unsupported_numbers']} chart_unsupported={s['chart_values_unsupported']}")
+
+
+def diff(a: Path, b: Path) -> None:
+    comparison_cases([a, b])
+    ra = {r["id"]: r for r in read_json(a / "qa.json", {"runs": []})["runs"]}
+    rb = {r["id"]: r for r in read_json(b / "qa.json", {"runs": []})["runs"]}
+    print(f"| Case | {a} | {b} |\n| --- | --- | --- |")
+    for cid in sorted(set(ra) | set(rb)):
+        cells = []
+        for r in (ra.get(cid), rb.get(cid)):
+            if not r:
+                cells.append("—")
+                continue
+            s = r["score"]
+            failed = ",".join(k for k, v in s["checks"].items() if not v)
+            cells.append(f"{'pass' if s['pass'] else 'FAIL ' + failed} · {len(s['unsupported_numbers'])} unsupported"
+                         f" · {r.get('seconds')} s · visible token {r.get('first_token_s')}")
+        mark = "" if cells[0].split(" ")[0] == cells[1].split(" ")[0] else " **changed**"
+        print(f"| {cid}{mark} | {cells[0]} | {cells[1]} |")
+    sa, sb = summarize(a), summarize(b)
+    for k in ("qa_pass", "qa_unsupported_numbers", "qa_median_s", "ext_found", "ext_extra", "jnl_found", "jnl_extra"):
+        print(f"{k}: {sa.get(k)} -> {sb.get(k)}")
+    for key in ("first_token_s", "first_reasoning_s", "first_tool_s", "first_text_s"):
+        print(f"{key}: {latency_cell(sa, key)} -> {latency_cell(sb, key)}")
+
+
+def tables() -> str:
+    """The case and document tables README.md shows, from cases.jsonl and plan.json."""
+    plan = json.loads((HERE / "plan.json").read_text(encoding="utf-8"))
+    L = ["| Id | Lang | Domain | Question | Right when it says | Tool |", "| --- | --- | --- | --- | --- | --- |"]
+    for c in read_jsonl(HERE / "cases.jsonl"):
+        right = c["right"].replace("|", "\\|")
+        chart = " + chart" if c["chart"] else ""
+        L.append(f"| `{c['id']}` | {c['lang']} | {c['domain']} | {c['question']} | {right} | "
+                 f"{(' and ' if c.get('expect_all_tools') else ' or ').join(f'`{t}`' for t in c['expect_tools'])}"
+                 f"{chart} |")
+    L += ["", "| Document | Kind | Printed rows | Language |", "| --- | --- | --- | --- |"]
+    corpus_rows = {}
+    for d in plan["extraction_docs"]:
+        corpus_rows[d["file"]] = d
+        L.append(f"| `{Path(d['file']).name}` | {d['label']} | | |")
+    return "\n".join(L) + "\n"
+
+
+def main() -> None:
+    global RESULTS
+    args = sys.argv[1:]
+    if args[:1] == ["--results"]:
+        RESULTS = Path(args[1]).resolve()
+        args = args[2:]
+    if not args or args[0] == "summary":
+        text = summary()
+        (RESULTS / "summary.md").write_text(text, encoding="utf-8")
+        write_json(RESULTS / "summary.json", results_json())
+        print(text)
+    elif args[0] == "show":
+        show(args[1], args[2] if len(args) > 2 else "")
+    elif args[0] == "tables":
+        print(tables())
+    elif args[0] == "diff":
+        diff(Path(args[1]), Path(args[2]))
+    else:
+        raise SystemExit(__doc__)
+
+
+if __name__ == "__main__":
+    main()

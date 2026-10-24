@@ -1,0 +1,88 @@
+name: A report uploaded, and no indicators came out
+description: "The Data page (or /api/v1/files) accepted a file and the Indicators tab stayed empty, or the count was wrong."
+title: "upload: <file kind> → <what you saw>"
+labels: ["extraction"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most common way the engine disappoints someone, and it has
+        several different causes that look identical from the UI. The three
+        fields marked required below distinguish them in one round trip instead
+        of three — please do not skip them.
+
+        **Run this first.** It prints which model each surface selected and what
+        is missing; it needs no key and touches no data:
+
+        ```bash
+        docker compose exec mirobody python -m mirobody doctor    # Docker
+        mirobody doctor                                           # local install
+        ```
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`mirobody doctor` output"
+      description: Paste it whole. It carries no secrets — keys are shown as present/absent only.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: key
+    attributes:
+      label: Which key is in your `.env`
+      options:
+        - OPENROUTER_API_KEY
+        - DASHSCOPE_API_KEY
+        - GOOGLE_API_KEY / GEMINI_API_KEY
+        - OPENAI_API_KEY
+        - ANTHROPIC_API_KEY
+        - DEEPSEEK_API_KEY
+        - Another OpenAI-compatible endpoint via <PREFIX>_BASE_URL
+        - None
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What did you upload
+      options:
+        - PDF with a text layer (selectable text)
+        - PDF that is a scan (no text layer)
+        - Photo of a report
+        - Excel / CSV
+        - Word / PowerPoint
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: file_row
+    attributes:
+      label: "The file's row from `GET /api/v1/data/uploaded-files`"
+      description: >-
+        `upload_status` and `error` specifically. A row can read
+        `upload_status: complete` with an empty `error` and still have extracted
+        nothing — that combination is itself the bug report.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Container log lines
+      description: "`docker compose logs mirobody | grep -iE 'extraction|API error|failed'` — last 30 lines is plenty."
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`mirobody --version`, or the release tag you deployed."
+      placeholder: "1.4.1"
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: "`mirobody doctor` shows a model for the *vision* surface (a text-only model cannot read a scan or a photo)"
+        - label: I restarted after editing `.env` (`docker compose restart` — a shell `export` does not reach the containers)

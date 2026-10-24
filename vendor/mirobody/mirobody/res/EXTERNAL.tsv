@@ -1,0 +1,35 @@
+# Terminology data that is NOT in the git checkout, and where to get it.
+#
+# These three used to be tracked here through Git LFS. Nothing the wheel ships
+# reads them — `scripts/check_wheel_data.py` has forbidden all three since
+# 1.3.0 — and together they were 29 MB that every `git clone` paid for over
+# LFS, which is the slow half of cloning this repository.
+#
+# `scripts/fetch_data.sh` reads this file. `./deploy.sh` calls it for the
+# `runtime` rows; pass `--all` for the `build` rows too.
+#
+# The checksum is each file's Git LFS object id, because git-lfs names objects
+# by their sha256 — so a download can be checked against the history the file
+# came from, not just against this table.
+#
+# To publish a new version: upload to a new `data-YYYY-MM-DD` release, then
+# change RELEASE and the rows below in one commit. Old deployments keep
+# working; they pin the tag they were checked out with.
+#
+# columns: name <TAB> sha256 <TAB> bytes <TAB> need <TAB> what reads it
+#   need = runtime  a deployment wants it; deploy.sh fetches it
+#   need = build    only the bundle-build passes read it
+#   need = archive  nothing reads it any more; kept so an older tag resolves
+
+RELEASE	data-2026-09-10
+
+# 1.5.0 reads NONE of these. The semantic tier that opened the concept graph
+# was deleted with `mirobody/indicator/`, and the bundle is now cut straight
+# from a LOINC release by `translate_build/`, which reads `Loinc.csv` and the
+# LinguisticVariants files and nothing here. They stay listed, with `need =
+# archive`, so the checksums that name them survive and an older deployment
+# pinned to its own tag keeps working; `fetch_data.sh` no longer downloads
+# them. Delete the rows once no supported version wants them.
+fhir_concept_graph.bin	0779ade751bd2a4ecedfe693cd7150628fc31bf75845298f6f50e0c3d6912ddb	22445042	archive	nothing (was: semantic recall, deleted in 1.5.0)
+fhir_meta.csv.gz	3aeb649100dcd7b2d29d2947a34443cb943c4669a15dd953c789a8e9adb89d57	6899326	archive	nothing (was: the 677k-name corpus, replaced by corpus_names.bin cut from LOINC 2.83)
+fhir_snomed_ct_bundle.tar.gz	e287f202dff8634bbf746d6bd58335645d19467de850718a8dafd0c19247c250	137700	archive	nothing (was: the SNOMED bridge in the old bundle build)

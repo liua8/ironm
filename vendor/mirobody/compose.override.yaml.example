@@ -1,0 +1,24 @@
+# Copy to compose.override.yaml if your Docker daemon rejects named volumes.
+# Create the two host directories first; keep uploaded health files outside
+# the checkout. The file is gitignored.
+#
+#   cp compose.override.yaml.example compose.override.yaml
+#   mkdir -p ../mirobody-data/{pgdata,upload}
+#   ./deploy.sh
+
+services:
+  pg:
+    volumes:
+      - ${MIROBODY_DATA:-../mirobody-data}/pgdata:/var/lib/postgresql/data
+
+  mirobody_init:
+    volumes:
+      - ${MIROBODY_DATA:-../mirobody-data}/upload:/app/.theta/mcp/upload
+
+  mirobody:
+    volumes:
+      - ${MIROBODY_DATA:-../mirobody-data}/upload:/app/.theta/mcp/upload
+
+  mirobody_worker:
+    volumes:
+      - ${MIROBODY_DATA:-../mirobody-data}/upload:/app/.theta/mcp/upload

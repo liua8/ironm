@@ -1,0 +1,196 @@
+"""
+Apple Health platform implementation
+"""
+
+import logging
+
+from typing import Any
+
+from .provider import AppleHealthProvider, CDAProvider
+from .services.database_service import AppleDatabaseService
+from mirobody.collect.base import LinkRequest, Platform, ProviderInfo
+from mirobody.collect.core import CacheConfig, UserProvider
+from mirobody.translate import AggregateIndicatorService
+from mirobody.utils.distributed_lock import pull_task_lock_manager
+from mirobody.collect.ingest import FormatDataContext, FormatDataInput
+from mirobody.collect.ingest import StandardHealthService
+from mirobody.utils.tasks import spawn
+from mirobody.kernel.ops import is_driver_exception
+
+logger = logging.getLogger(__name__)
+
+
+class AppleHealthPlatform(Platform):
+    """
+    Apple Health Platform implementation
+
+    Handles Apple Health data import, supporting two data sources:
+    1. Apple Health export data
+    2. CDA (Clinical Document Architecture) documents
+    """
+
+    def __init__(self):
+        """Initialize Apple Health Platform"""
+        super().__init__()
+        self.db_service = AppleDatabaseService()
+        self.health_service = StandardHealthService()
+
+        self._register_built_in_providers()
+
+        self._cache = None
+        self._cache_time = None
+        self.cache_ttl = CacheConfig.PROVIDER_CACHE_TTL
+
+    @property
+    def name(self) -> str:
+        """Platform name"""
+        return "apple"
+
+    @property
+    def supports_registration(self) -> bool:
+        return False
+
+    def _register_built_in_providers(self) -> None:
+        apple_provider = AppleHealthProvider(self)
+        self._providers[apple_provider.info.slug] = apple_provider
+
+        # The /apple/cda endpoint routes to slug "cda". This registration was
+        # missing, so `post_data(provider_slug="cda", ...)` failed the provider
+        # lookup on EVERY request and the endpoint answered a permanent
+        # `200 {"success": false}`: total unavailability dressed up as an
+        # ordinary soft failure.
+        cda_provider = CDAProvider(self)
+        self._providers[cda_provider.info.slug] = cda_provider
+
+
+    async def get_providers(self, nocache: bool = False) -> list[ProviderInfo]:
+        return []
+
+    async def get_user_providers(self, user_id: str) -> list[UserProvider]:
+        return []
+
+    async def link(self, request: LinkRequest) -> dict[str, Any]:
+        provider_slug = request.provider_slug
+
+        provider = self.get_provider(provider_slug)
+        if not provider:
+            raise ValueError(f"Provider {provider_slug} not found in apple platform")
+
+        result = await provider.link(request)
+        return result
+
+    async def unlink(self, user_id: str, provider_slug: str) -> dict[str, Any]:
+        provider = self.get_provider(provider_slug)
+        if not provider:
+            raise ValueError(f"Provider {provider_slug} not found in apple platform")
+
+        result = await provider.unlink(user_id)
+        return result
+
+    async def post_data(self, provider_slug: str, data: dict[str, Any], msg_id: str) -> bool:
+        try:
+            provider = self.get_provider(provider_slug)
+            if not provider:
+                logger.error("post_data for an unregistered provider: provider=%s", provider_slug)
+                return False
+
+            user_id = data.get("user_id")
+
+            if not user_id:
+                logger.error("Missing user_id in data")
+                return False
+
+            try:
+                fmt_input = FormatDataInput(
+                    context=FormatDataContext(theta_user_id=str(user_id), msg_id=msg_id),
+                    payload=data,
+                )
+                standard_data = await provider.format_data(fmt_input)
+
+                if not standard_data or not standard_data.healthData:
+                    return True
+
+                success = await self.health_service.process_standard_data(standard_data, user_id)
+                record_count = len(standard_data.healthData)
+                logger.info("Apple data stored: provider=%s user_id=%s record_count=%d success=%s",
+                            provider_slug, user_id, record_count, success)
+
+                # Fire-and-forget: kick incremental aggregation so the frontend
+                # sees fresh daily summaries without waiting for the 4-min
+                # scheduled AggregateIndicatorTask. Errors are swallowed in the
+                # background task; the scheduled task is the safety net.
+                if success:
+                    spawn(self._trigger_aggregation_after_ingest(user_id))
+
+                return success
+
+            except Exception as e:
+                logger.error("Apple data processing failed: provider=%s msg_id=%s error_type=%s", provider_slug,
+                             msg_id, type(e).__name__, exc_info=not is_driver_exception(e))
+                return False
+
+        except Exception as e:
+            logger.error("Apple post_data failed: provider=%s msg_id=%s error_type=%s", provider_slug, msg_id,
+                         type(e).__name__, exc_info=not is_driver_exception(e))
+            return False
+
+    async def _trigger_aggregation_after_ingest(self, user_id: str) -> None:
+        """Run an incremental aggregation in the background after an apple_health ingest.
+
+        Runs all-users incremental aggregation to keep the call path simple;
+        the distributed lock inside AggregateIndicatorService de-duplicates
+        concurrent ingest bursts. Any failure here is logged and swallowed:
+        AggregateIndicatorTask (every 4 min) will catch up.
+        """
+        # Not debounced. If concurrent uploads from many users ever back the
+        # distributed lock up, a short Postgres advisory lock would coalesce them:
+        # keyed globally, since this runs a global incremental, or by user_id
+        # if it ever becomes per-user.
+
+        try:
+            service = AggregateIndicatorService()
+            # Reuse AggregateIndicatorTask's cursor so we run an actual
+            # incremental delta. Without this, process_incremental falls
+            # back to a 24h cold_start scan (see service.py: last_timestamp
+            # is None branch), which on dev volume costs ~150s instead of
+            # the <2s a normal incremental cycle takes.
+            # We deliberately do NOT update the cursor here; the scheduled
+            # AggregateIndicatorTask owns it. Re-running the same window
+            # is idempotent (an equal summary is skipped, a changed one amends).
+            last_ts = await pull_task_lock_manager.get_last_execution_timestamp(
+                "aggregate_indicator"
+            )
+            result = await service.process_incremental(last_timestamp=last_ts)
+            summary_count = result.get("summaries_created", 0)
+            user_count = result.get("users_affected", 0)
+            logger.info("post-ingest aggregation done: user_id=%s status=%s summary_count=%d user_count=%d "  # phi: ok status is the service's own result code
+                        "duration_ms=%.1f", user_id, result.get("status"), summary_count, user_count,
+                        result.get("execution_time_ms", 0))
+        except Exception as e:
+            # The scheduled AggregateIndicatorTask catches up; nothing is lost.
+            logger.warning("post-ingest aggregation failed: user_id=%s error_type=%s", user_id, type(e).__name__,
+                           exc_info=not is_driver_exception(e))
+
+    async def update_llm_access(self, user_id: str, provider_slug: str, llm_access: int) -> dict[str, Any]:
+        """
+        Update LLM access permission for a apple provider
+
+        Args:
+            user_id: User ID
+            provider_slug: Provider identifier
+            llm_access: Access level (0: no access, 1: limited access, 2: full access)
+
+        Returns:
+            Update result data
+        """
+        success = await self.db_service.update_llm_access(user_id, provider_slug, llm_access)
+
+        if not success:
+            raise RuntimeError(f"Failed to update LLM access for provider {provider_slug}")
+
+        return {
+            "provider_slug": provider_slug,
+            "platform": self.name,
+            "llm_access": llm_access,
+            "updated": True,
+        }

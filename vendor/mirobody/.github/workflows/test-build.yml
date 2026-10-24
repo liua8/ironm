@@ -1,0 +1,266 @@
+name: Test Build
+
+# The comment here used to say "or on push" while no push trigger existed, so
+# every commit landing on main went unchecked and had to be dispatched by hand.
+#
+# No paths filter, deliberately. The old one listed '**.py', pyproject.toml and
+# this file, which already missed config.yaml (the demo credential test reads
+# it) and mirobody/res/, whose data the shipped gates read. A filter that is
+# wrong is worse than no filter, and a full run is three minutes.
+on:
+  workflow_dispatch:
+    inputs:
+      test_version:
+        description: 'Test version number (e.g., 1.0.0a1, 1.0.0b1, 1.0.0rc1)'
+        required: false
+        default: '0.0.0a1'
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13']
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: mirobody_regression
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mirobody_regression"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+    # lfs: true is load-bearing here for the same reason it is in
+    # pypi-release.yml, and this job was missing it. A plain checkout leaves
+    # 133-byte pointer files where mirobody/res/*.gz lives, so:
+    #   * the engine tests fail with `BadGzipFile: Not a gzipped file (b've')`
+    #     — that `ve` is the start of `version https://git-lfs...`
+    #   * `python -m build` below happily packages the pointers, which is
+    #     exactly how 1.0.62 shipped a wheel whose `resolve` could never work
+    - uses: actions/checkout@v4
+      with:
+        lfs: true
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine setuptools wheel
+
+    # The suite and the layering contract, actually run.
+    #
+    # `pytest` was in the install line above and was never invoked, so every
+    # claim the tests carry, the resolver score the README prints first, was
+    # unguarded on every PR. An
+    # external reviewer found a `[test]`-only install aborting at collection;
+    # a CI run would have caught it the day it appeared.
+    #
+    # `[test]` alone here on purpose, NOT `[app,test]`: this job is the
+    # closest thing to a fresh contributor's machine, and it is where a missing
+    # or newly-eager dependency shows up. The full run happens below.
+    - name: Engine tests on a minimal install
+      run: |
+        pip install -e '.[test]'
+        pytest -q
+
+    - name: Full suite and the import contracts
+      run: |
+        pip install -e '.[app,test]'
+        pytest -q
+        python -m unittest discover -s benchmarks/genomics -p 'test_*.py'
+        python -m unittest discover -s benchmarks/health_records -p 'test_*.py'
+        # Must run against the repo source. In a venv holding an installed
+        # older wheel it passes vacuously.
+        lint-imports
+
+    - name: PostgreSQL regression gate
+      env:
+        MIROBODY_TEST_POSTGRES_DSN: postgresql://postgres@127.0.0.1:5432/mirobody_regression
+      run: pytest -q mirobody/tests/test_postgres_regressions.py
+
+    # The lint gate. The rule set lives in pyproject.toml ([tool.ruff]) and is
+    # narrow by design: undefined names, unused imports, duplicate definitions,
+    # mutable defaults, and the PEP 585/604 spellings the 3.12 floor makes
+    # unambiguous. It passes on this tree today; a new finding is a new defect.
+    - name: Lint gate
+      run: |
+        pip install ruff
+        # `examples` as well as the package: those files are the README's
+        # walkthrough, so a broken one is documentation that does not run, and
+        # `tests/test_examples.py` executes them. The local battery has always
+        # linted both; CI checking only `mirobody` meant an examples-only
+        # regression was invisible here.
+        ruff check mirobody examples benchmarks/windows
+
+    # Comment style, which ruff cannot see: block length and em-dashes in
+    # prose. The thresholds and what they were measured against are in the
+    # script's own docstring.
+    - name: Comment style gate
+      run: python scripts/check_comment_style.py mirobody
+
+    # The four files a release cut bumps name one version (the script's
+    # docstring lists them).
+    - name: Version gate
+      run: python scripts/check_versions.py
+
+    # Log lines carry ids, counts, durations, status codes and type names,
+    # never a value. With no tree arguments the CLI scans
+    # `phi_lint.DEFAULT_TREES`, the trees the baseline covers, and fails on
+    # any finding the baseline does not list.
+    - name: PHI log gate
+      run: python -m mirobody.testing.phi_lint --root . --baseline mirobody/testing/phi_baseline.txt
+
+    - name: Set test version
+      run: |
+        VERSION="${{ github.event.inputs.test_version || '0.0.0a1' }}"
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+        # mirobody/__init__.py reads MIROBODY_VERSION at build time (see its docstring).
+        echo "MIROBODY_VERSION=$VERSION" >> $GITHUB_ENV
+        echo "Testing with version: $VERSION"
+
+    - name: Build package
+      run: |
+        python -m build
+        ls -la dist/
+        echo "Built packages:"
+        ls -1 dist/
+
+    # The gate that would have caught the missing lfs above on its own: it
+    # opens each artifact and refuses pointer-sized members. pypi-release.yml
+    # has run this since 1.0.62; the test workflow never did, so CI could build
+    # a hollow wheel and call it green.
+    - name: Verify artifacts carry the engine data bundles
+      run: python scripts/check_wheel_data.py dist/*
+
+    - name: Check package with twine
+      run: |
+        twine check dist/*
+
+    # From outside the checkout: in it, the working directory is on sys.path
+    # and `import mirobody` loads the source tree, not the wheel.
+    - name: Test package installation
+      run: |
+        # Test wheel installation
+        pip install dist/*.whl
+        cd "$RUNNER_TEMP"
+        python -c "import mirobody; assert mirobody.__version__ == '${{ env.VERSION }}', f'Version mismatch: {mirobody.__version__} != ${{ env.VERSION }}'"
+        pip show mirobody
+        pip uninstall -y mirobody
+
+        # Test sdist installation
+        cd "$GITHUB_WORKSPACE"
+        pip install dist/*.tar.gz
+        cd "$RUNNER_TEMP"
+        python -c "import mirobody; print(f'Successfully installed version: {mirobody.__version__}')"
+        pip uninstall -y mirobody
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist-python-${{ matrix.python-version }}
+        path: dist/
+        retention-days: 7
+
+  windows-benchmark:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Source benchmark regressions without model downloads
+      run: |
+        python -m pip install numpy pytest pytest-asyncio
+        python -m pytest -q mirobody/tests/test_windows_probe_regressions.py mirobody/tests/test_local_model_contract.py
+    - name: Native runner checks (PowerShell)
+      shell: pwsh
+      run: ./benchmarks/windows/test-native.ps1
+    - name: Native runner checks (Windows PowerShell 5.1)
+      shell: powershell
+      run: ./benchmarks/windows/test-native.ps1
+
+  test-import:
+    needs: test-build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.12']
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: dist-python-${{ matrix.python-version }}
+        path: dist/
+
+    - name: Install and test package (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        pip install dist/*.whl
+        cd "$RUNNER_TEMP"
+        python -c "import mirobody; print(f'Mirobody {mirobody.__version__} works on ${{ matrix.os }}')"
+
+    - name: Install and test package (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        $wheel = Get-ChildItem -Path "dist" -Filter "*.whl" | Select-Object -First 1
+        pip install $wheel.FullName
+        Set-Location $env:RUNNER_TEMP
+        python -c "import mirobody; print(f'Mirobody {mirobody.__version__} works on ${{ matrix.os }}')"
+
+  summary:
+    permissions: {}
+    needs: [test-build, test-import, windows-benchmark]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+    - name: Test Summary
+      run: |
+        echo "## 📊 Test Build Summary"
+        echo ""
+        if [ "${{ needs.test-build.result }}" == "success" ]; then
+          echo "✅ Build tests passed for all Python versions"
+        else
+          echo "❌ Build tests failed"
+        fi
+
+        if [ "${{ needs.test-import.result }}" == "success" ]; then
+          echo "✅ Import tests passed for all OS platforms"
+        else
+          echo "❌ Import tests failed"
+        fi
+
+        if [ "${{ needs.windows-benchmark.result }}" == "success" ]; then
+          echo "✅ Windows benchmark tooling checks passed"
+        else
+          echo "❌ Windows benchmark tooling checks failed"
+        fi
+
+        echo ""
+        echo "Ready for release: ${{ needs.test-build.result == 'success' && needs.test-import.result == 'success' && needs.windows-benchmark.result == 'success' }}"

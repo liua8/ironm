@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question about using it
+    url: https://github.com/thetahealth/mirobody/discussions
+    about: How do I deploy it, connect a device, point it at my own gateway — ask in Discussions.
+  - name: Documentation
+    url: https://docs.mirobody.ai
+    about: Quickstart, configuration, the engine as a library, and the MCP surface.
+  - name: Security issue
+    url: https://github.com/thetahealth/mirobody/blob/main/SECURITY.md
+    about: Do not open a public issue for a vulnerability — SECURITY.md says where to send it.

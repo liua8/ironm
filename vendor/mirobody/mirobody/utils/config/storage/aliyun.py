@@ -1,0 +1,257 @@
+import asyncio
+import logging
+
+from typing import IO
+from functools import partial
+
+from mirobody.kernel.ops import is_driver_exception
+from mirobody.utils.log import secret_fingerprint
+
+from .abstract import AbstractStorage, storage_failure
+
+logger = logging.getLogger(__name__)
+
+#-----------------------------------------------------------------------------
+
+class AliyunStorage(AbstractStorage):
+    """Aliyun OSS storage implementation"""
+    
+    def __init__(
+        self,
+        access_key_id       : str = "",
+        secret_access_key   : str = "",
+        region              : str = "",
+        bucket              : str = "",
+        prefix              : str = "",
+        cdn                 : str = "",
+        endpoint            : str = ""
+    ):
+        if not access_key_id or \
+            not secret_access_key or \
+            not endpoint or \
+            not bucket:
+
+            from mirobody.utils.config.config import global_config
+            config = global_config()
+            if config:
+                if not access_key_id:
+                    access_key_id = config.get_str("ALI_OSS_ACCESS_KEY")
+                if not secret_access_key:
+                    secret_access_key = config.get_str("ALI_OSS_SECRET_KEY")
+                if not endpoint:
+                    endpoint = config.get_str("ALI_OSS_ENDPOINT")
+                if not bucket:
+                    bucket = config.get_str("ALI_OSS_BUCKET_NAME")
+                if not prefix:
+                    prefix = config.get_str("ALI_OSS_PREFIX")
+                if not cdn:
+                    cdn = config.get_str("ALI_OSS_DOMAIN")
+
+        super().__init__(access_key_id, secret_access_key, region, bucket, prefix, cdn, endpoint)
+
+        # Validate required fields
+        missing = [k for k, v in {
+            "access_key_id": self.access_key_id,
+            "secret_access_key": self.secret_access_key,
+            "endpoint": self.endpoint,
+            "bucket": self.bucket,
+        }.items() if not v]
+        if missing:
+            raise ValueError(f"AliyunStorage missing required config: {', '.join(missing)}")
+
+        # Lazy import and initialization
+        self._oss2 = None
+        self._auth = None
+        self._bucket = None
+        self._cdn_bucket = None  # Bucket instance using custom domain for signed URLs
+        self._endpoint_url = None
+        self._initialized = False
+    
+    #-----------------------------------------------------
+    
+    def _ensure_initialized(self):
+        """Ensure OSS client is initialized"""
+        if self._initialized:
+            return
+        
+        try:
+            import warnings
+            warnings.filterwarnings("ignore", category=SyntaxWarning, module="oss2")
+            import oss2
+            self._oss2 = oss2
+            
+            # Build endpoint URL
+            protocol = "https"
+            self._endpoint_url = f"{protocol}://{self.endpoint}"
+            
+            # Use V2 signature (AuthV2)
+            # Content-Disposition is set to inline during upload (in put() method),
+            # so we don't rely on response-content-disposition override in signed URLs.
+            self._auth = oss2.AuthV2(self.access_key_id, self.secret_access_key)
+            
+            # Create Bucket instance for API operations (upload, delete, etc.)
+            self._bucket = oss2.Bucket(self._auth, self._endpoint_url, self.bucket)
+
+            # If custom domain (cdn) is configured, create a CNAME bucket for signed URLs.
+            # Custom domain bypasses OSS's x-oss-force-download restriction.
+            if self.cdn:
+                cdn_url = self.cdn if self.cdn.startswith("http") else f"https://{self.cdn}"
+                self._cdn_bucket = oss2.Bucket(self._auth, cdn_url, self.bucket, is_cname=True)
+                logger.info(f"CDN bucket initialized with custom domain: {self.cdn}")
+            else:
+                self._cdn_bucket = self._bucket
+
+            self._initialized = True
+            logger.info(f"Aliyun OSS client initialized: bucket={self.bucket}, endpoint={self.endpoint}, cdn={self.cdn or 'none'}")
+        except Exception as e:
+            logger.error("Aliyun OSS client not initialized: error_type=%s", type(e).__name__,
+                         exc_info=not is_driver_exception(e))
+            raise
+    
+    #-----------------------------------------------------
+
+    async def put(
+        self, 
+        key: str, 
+        content: bytes | IO,
+        content_type: str | None = None,
+        metadata: dict[str, str] | None = None,
+        expires: int = 7200
+    ) -> tuple[str | None, str | None]:
+        """Upload file to Aliyun OSS"""
+        try:
+            self._ensure_initialized()
+            
+            # Build full object key with prefix
+            object_key = self._build_object_key(key)
+            
+            headers = {}
+            if content_type:
+                headers["Content-Type"] = content_type
+            else:
+                headers["Content-Type"] = self.get_content_type_from_filename(key)
+
+            # Set Content-Disposition to inline so browsers preview instead of download
+            headers["Content-Disposition"] = "inline"
+            
+            if metadata:
+                for k, v in metadata.items():
+                    headers[f"x-oss-meta-{k}"] = str(v)
+            
+            # Execute upload in thread pool (oss2 is synchronous)
+            loop = asyncio.get_running_loop()
+            
+            if isinstance(content, bytes):
+                await loop.run_in_executor(
+                    None,
+                    partial(self._bucket.put_object, object_key, content, headers=headers)
+                )
+            elif isinstance(content, bytearray):
+                await loop.run_in_executor(
+                    None,
+                    partial(self._bucket.put_object, object_key, bytes(content), headers=headers)
+                )
+            elif hasattr(content, "read"):
+                await loop.run_in_executor(
+                    None,
+                    partial(self._bucket.put_object, object_key, content, headers=headers)
+                )
+            else:
+                return None, "Unsupported content type"
+
+            # Force update object metadata to ensure Content-Disposition is stored.
+            # put_object headers may not reliably persist Content-Disposition,
+            # so we use update_object_meta with REPLACE directive as a guarantee.
+            meta_headers = {
+                "Content-Type": headers.get("Content-Type", "application/octet-stream"),
+                "Content-Disposition": "inline",
+            }
+            await loop.run_in_executor(
+                None,
+                partial(self._bucket.update_object_meta, object_key, meta_headers)
+            )
+
+            # Generate signed URL via custom domain (bypasses x-oss-force-download)
+            url = await loop.run_in_executor(
+                None,
+                partial(self._cdn_bucket.sign_url, "GET", object_key, expires)
+            )
+
+            logger.info("file uploaded to OSS: key=%s", secret_fingerprint(key))
+            
+            return url, None
+            
+        except Exception as e:
+            return None, storage_failure("OSS upload", key, e)
+
+    #-----------------------------------------------------
+
+    async def get(self, key: str) -> tuple[bytes | None, str | None]:
+        """Get file from Aliyun OSS"""
+        try:
+            self._ensure_initialized()
+
+            object_key = self._build_object_key(key)
+
+            def fetch() -> bytes:
+                # `get_object` returns a stream: `read()` is the download, and
+                # it blocks, so it runs in the executor too, not on the loop.
+                return self._bucket.get_object(object_key).read()
+
+            content = await asyncio.get_running_loop().run_in_executor(None, fetch)
+            return content, None
+
+        except Exception as e:
+            return None, storage_failure("OSS download", key, e)
+    
+    #-----------------------------------------------------
+
+    async def delete(self, key: str) -> str | None:
+        """Delete file from Aliyun OSS"""
+        try:
+            self._ensure_initialized()
+
+            object_key = self._build_object_key(key)
+
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None,
+                partial(self._bucket.delete_object, object_key)
+            )
+
+            logger.info("file deleted from OSS: key=%s", secret_fingerprint(key))
+
+            return None
+
+        except Exception as e:
+            return storage_failure("OSS delete", key, e)
+
+    #-----------------------------------------------------
+
+    async def generate_signed_url(
+        self,
+        key: str,
+        expires: int = 7200,
+        content_type: str | None = None
+    ) -> tuple[str | None, str | None]:
+        """Generate signed URL for OSS file"""
+        try:
+            self._ensure_initialized()
+
+            object_key = self._build_object_key(key)
+
+            loop = asyncio.get_running_loop()
+            # Generate signed URL via custom domain
+            url = await loop.run_in_executor(
+                None,
+                partial(self._cdn_bucket.sign_url, "GET", object_key, expires)
+            )
+
+            return url, None
+
+        except Exception as e:
+            return None, storage_failure("OSS signed URL", key, e)
+
+    #-----------------------------------------------------
+
+#-----------------------------------------------------------------------------

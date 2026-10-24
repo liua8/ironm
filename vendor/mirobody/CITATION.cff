@@ -1,0 +1,60 @@
+cff-version: 1.2.0
+title: "Mirobody: the AI-native health data engine"
+message: >-
+  If you use this software or its benchmarks, please cite the ESL-Bench paper
+  below. To cite a specific release, add its version and the DOI-free tag from
+  https://github.com/thetahealth/mirobody/releases.
+type: software
+authors:
+  - name: "Theta Health, Inc."
+    website: "https://thetahealth.ai"
+repository-code: "https://github.com/thetahealth/mirobody"
+url: "https://docs.mirobody.ai"
+abstract: >-
+  Mirobody collects readings from labs, wearables and genetic tests, translates
+  them to canonical codes (LOINC, UCUM, FHIR-recognized code systems), and
+  answers questions over them with an agent. The resolver runs offline against a
+  shipped LOINC 2.82 bundle with 49,253 multilingual aliases.
+keywords:
+  - health data
+  - LOINC
+  - UCUM
+  - FHIR
+  - terminology
+  - clinical NLP
+  - wearables
+  - MCP
+license: Apache-2.0
+preferred-citation:
+  type: article
+  title: >-
+    ESL-Bench: An Event-Driven Synthetic Longitudinal Benchmark for Health
+    Agents
+  authors:
+    - family-names: Li
+      given-names: Chao
+    - family-names: Liu
+      given-names: Cailiang
+    - family-names: Gao
+      given-names: Ang
+    - family-names: Deng
+      given-names: Kexin
+    - family-names: Zhang
+      given-names: Shu
+    - family-names: Xu
+      given-names: Langping
+    - family-names: Shi
+      given-names: Xiaotong
+    - family-names: Ding
+      given-names: Xionghao
+    - family-names: Pei
+      given-names: Jian
+    - family-names: Jiang
+      given-names: Xun
+  year: 2026
+  journal: arXiv
+  url: "https://arxiv.org/abs/2604.02834"
+  identifiers:
+    - type: other
+      value: "arXiv:2604.02834"
+      description: arXiv preprint

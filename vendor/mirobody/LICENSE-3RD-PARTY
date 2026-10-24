@@ -1,0 +1,249 @@
+Third-Party Data Licenses
+=========================
+
+`mirobody/res/` holds the shipped terminology and genomics artifacts. Most are derived from
+third-party datasets and are covered by the licenses below; a few are our own
+hand-written overlays and are Apache-2.0 like the rest of the project. The
+table marks which is which — nothing else lives in that directory.
+
+(Our schema DDL used to sit beside them in `res/sql/`, which made an earlier
+version of this sentence untrue. It now lives in `mirobody/schema/` and is
+covered by the project's Apache-2.0 license.)
+
+These artifacts ship in the git repository (some via Git LFS) and in the PyPI wheel;
+use of each is subject to the license terms of its sources:
+
+  Artifact                          Derived from                Notice
+  --------------------------------  --------------------------  -----------------------------
+  loinc/fhir_loinc_bundle.tar.gz    LOINC 2.83                  res/loinc/fhir_loinc_bundle.NOTICE
+  loinc/aliases_src/zh.tsv          LOINC Linguistic Variants   section 1 below
+                                    (claimed; see the note below)
+  loinc/aliases_src/zh_curated.tsv  hand-written (Apache-2.0)   —
+  loinc/resolver_overrides.tsv      hand-written (Apache-2.0)   —
+  loinc/recall_synonyms.tsv         hand-written (Apache-2.0)   —
+  icpc3/icpc3.tsv                   ICPC-3 S and D components,  res/icpc3/icpc3.NOTICE
+                                    verbatim (CC BY-ND)
+  icpc3/symptoms_zh.tsv             hand-written (Apache-2.0)   —
+  icpc3/symptoms_en.tsv             hand-written (Apache-2.0)   —
+  icpc3/conditions_zh.tsv           hand-written (Apache-2.0)   —
+  icpc3/conditions_en.tsv           hand-written (Apache-2.0)   —
+  icpc3/symptoms_ja.tsv             hand-written (Apache-2.0)   —
+  icpc3/symptoms_ru.tsv             hand-written (Apache-2.0)   —
+  icpc3/conditions_ja.tsv           hand-written (Apache-2.0)   —
+  icpc3/conditions_ru.tsv           hand-written (Apache-2.0)   —
+  catalog/metrics.tsv               LOINC codes in the `loinc`  section 1 below
+                                    column; the rest is ours
+  catalog/labels/zh.tsv             hand-written (Apache-2.0)   —
+  crosswalks/*.tsv                  LOINC codes; the mapping    section 1 below
+                                    judgements are ours         docs/device-crosswalk.md
+  ucum/ucum-essence.xml             UCUM 2.2, verbatim          res/ucum/ucum-essence.NOTICE
+  ucum/UCUM-LICENSE.md              the UCUM License 1.1        section 2 below
+  dose_forms.tsv                    UCUM annotations; the       section 2 below
+                                    spellings are ours
+  genomics/cpic-v1.60.0.json.gz     CPIC database v1.60.0      res/genomics/cpic-v1.60.0.NOTICE
+                                    (CC0 curated content)
+  genomics/cpic-v1.60.0.NOTICE      CPIC attribution           res/genomics/cpic-v1.60.0.NOTICE
+  genomics/genotype_sites.sqlite3   UCSC dbSNP 155 Common;      res/genomics/genotype_sites.NOTICE
+                                    PGP rsIDs; CPIC (CC0)
+  genomics/genotype_sites.NOTICE    hand-written (Apache-2.0)   —
+  EXTERNAL.tsv                      a manifest, no content      —
+
+1.5.0 cut the corpus to LOINC only. `fhir_concept_graph.bin`,
+`fhir_meta.csv.gz`, `fhir_snomed_ct_bundle.tar.gz` and `fhir_id_map.npy` are
+gone from the tree and refused by `scripts/check_wheel_data.py`, and with them
+every derivative of UMLS, SNOMED CT, RxNorm and ICD-10-CM. Nothing in this
+tree now requires a SNOMED CT Affiliate License or a UMLS Metathesaurus
+License. Releases up to 1.4.x did; their sections are kept at the end of this
+file for anyone reading one of those wheels.
+
+1.5.1 adds ONE new third-party dataset: the S and D components of ICPC-3, under
+Creative Commons Attribution-NoDerivatives (CC BY-ND), redistributable
+verbatim including for commercial use. It needs no signed agreement and no
+account. `res/icpc3/icpc3.NOTICE` carries the attribution, the code system URI
+and what "verbatim" means here; the short version is that no ICPC-3
+term is translated or re-worded anywhere in this package, and the Chinese,
+Japanese and Russian phrase tables are our own writing about which phrase
+points at which code.
+
+1.5.1 also ships UCUM's own machine-readable table, `res/ucum/ucum-essence.xml`,
+byte for byte as Regenstrief publishes it, with its notice and licence text
+(section 2). UCUM was already the unit vocabulary; what is new is that the
+specification itself now travels with the tables that implement it.
+
+The genotype site catalog, `res/genomics/genotype_sites.sqlite3`, holds 489
+dual-build SNV sites in twelve public pharmacogene regions. Positions and
+alleles come from UCSC's dbSNP 155 Common tracks, derived from NCBI dbSNP,
+which UCSC makes freely available for public and commercial use. Sites were
+selected by the rsID columns of two Harvard PGP open-consent exports and by
+CPIC v1.60.0 (CC0); no participant genotype is in the file.
+`genotype_sites.NOTICE` records every source URL and hash. It covers those
+regions only, not a consumer array. `scripts/check_wheel_data.py` verifies the
+catalog and its notice in both the wheel and source distribution.
+
+A NOTE ON `aliases_src/`, ADDED 2026-09-13, REVISED 2026-09-20
+--------------------------------------------------------------
+`ja.tsv` (16,809 rows) was removed in 1.5.0. LOINC publishes 22 linguistic
+variants and Japanese is not one of them; the build-time lexicon
+(`indicator/fhir/embeddings/lexicon.py`) records the file as a UMLS MRCONSO
+derivation (MSHJPN / MDRJPN), and its content was organisms, disorders and
+procedures rather than laboratory tests. Measured before removal: 2% of its
+rows produced a LOINC code; on the 7,354-case evaluation the loose file
+alone answered 51 cases correctly (organism and drug names) and 35 wrongly.
+The alias index inside `fhir_loinc_bundle.tar.gz` was built with that file
+among its inputs and carried the surfaces it contributed. **The LOINC-only
+re-cut has happened (1.5.0) and they are gone**: the index is now built from
+`Loinc.csv` and `AccessoryFiles/LinguisticVariants/` alone, and a scan of
+`alias_keys.bin` finds zero kana characters. Section 1 (UMLS) no longer
+covers anything in this package. Japanese report spellings still resolve —
+through `res/loinc/resolver_overrides.tsv`, this project's own Apache-2.0 file,
+which maps a Japanese surface to an English name that LOINC's own index
+then answers.
+
+`de.tsv`, `es.tsv`, `fr.tsv`, `ko.tsv` and `ru.tsv` (9,866 rows) were removed
+in 1.5.0, for the reason the note above was opened. Measured against the
+LOINC 2.83 LinguisticVariants they claimed, term by term (NFKC-folded,
+against COMPONENT, SHORTNAME, LONG_COMMON_NAME, RELATEDNAMES2, the display
+name and the consumer name of every variant for that language):
+
+  de  708/1033 = 68.5%   (deDE15, deAT24)
+  es  2001/2315 = 86.4%  (esES12, esAR7, esMX28)
+  fr  1472/1934 = 76.1%  (frFR18, frBE23, frCA8)
+  ko  1458/1810 = 80.6%  (koKR13)
+  ru  2086/2774 = 75.2%  (ruRU20)
+
+The claim did not hold, and the unmatched German rows were largely allergen
+names (Taubenfeder, Hunde-Serumalbumin, Rehepithel) that LOINC's German
+variant does not carry and a UMLS derivation would. That is the evidence
+that removed `ja.tsv`. This release resolves English first and Chinese
+beside it, so rather than carry five files whose upstream nobody could name,
+they are gone. What LOINC itself publishes for those languages is unaffected: its 21
+variants are inputs to the alias index, and 7,612 of the 9,866 removed terms
+still resolve through it. `scripts/check_wheel_data.py` refuses an artifact
+that carries any of the six again.
+
+`zh.tsv` (22,578 rows) stays, and this note stays with it. The same count
+gives 7,997/22,578 = 35.4% against zhCN5, but the method does not settle it:
+the file's rows are transformed renderings rather than verbatim designations
+(`Alpha生育酚与 Beta+Gamma 生育酚` → the English component `Alpha tocopherol
+& Beta+gamma tocopherol`, generated in Simplified and Traditional and in two
+letter cases), so a non-match is not evidence of a different upstream, and a
+match is not evidence of the claimed one. Folding Traditional to Simplified
+adds zero matches, which rules that out as the explanation. Treat this row as
+asserted rather than audited until the generator is identified.
+
+The per-file NOTICE documents next to the bundles carry the full reproduction
+statements; this file lists the upstream licenses those statements rest on.
+
+
+1. LOINC
+--------
+Provider  : Regenstrief Institute
+License   : LOINC License (free, requires attribution)
+            https://loinc.org/kb/license/
+Scope     : LOINC 2.83. `fhir_loinc_bundle.tar.gz` carries 63,416 of the
+            99,737 ACTIVE codes, cut by the rule in
+            translate_build/loinc_cut.py; every column in it is a LOINC
+            column with its content unchanged, rows are dropped and never
+            edited (section 3 of the LOINC licence itself), and the 153 rows
+            carrying a third party's EXTERNAL_COPYRIGHT_NOTICE are dropped
+            rather than reproduced. Designations come from Loinc.csv and
+            the 21 LinguisticVariants files. Also: the codes and long common
+            names in res/crosswalks/ and res/catalog/metrics.tsv.
+Attribution: This product includes all or a portion of the LOINC(R) table,
+            LOINC panels and forms file, LOINC document ontology file,
+            and/or LOINC hierarchies file, or is derived from one or more of
+            the foregoing, subject to a license from Regenstrief Institute,
+            Inc. LOINC is a registered United States trademark of Regenstrief
+            Institute, Inc.
+
+
+2. UCUM (Unified Code for Units of Measure)
+-------------------------------------------
+Provider  : Regenstrief Institute, Inc. and the UCUM Organization
+Source    : https://github.com/ucum-org/ucum (tag v2.2)
+Copyright : Copyright 1999-2024 Regenstrief Institute, Inc. All rights
+            reserved.
+License   : UCUM License, Version 1.1 (June 2024),
+            https://unitsofmeasure.org/license; full text in
+            res/ucum/UCUM-LICENSE.md. Reproduction and distribution of the
+            Work are granted on condition that it is not modified and that a
+            copyright notice, a reference to the License, a reference to its
+            disclaimer of warranties and the License's text or URL travel with
+            it (Section 3); res/ucum/ucum-essence.NOTICE carries all four. Software
+            that interoperates with an unmodified instance of the Work is not
+            a Derivative Work (Section 1.3).
+Scope     : `mirobody/units/` implements UCUM. `tokens.py` maps printed unit
+            spellings to canonical UCUM expressions, `families.py` maps a
+            canonical unit to the LOINC PROPERTY axis, and `convert.py` does
+            dimensional analysis over UCUM unit atoms. The UCUM unit atoms and
+            their canonical spellings are UCUM's; the printed-spelling variants
+            (`Thousand/uL`, `个/HP`, `uIU/mL`, `10⁴/μL` and the multilingual
+            morphemes) are hand-written and Apache-2.0.
+Bundled   : `res/ucum/ucum-essence.xml`, UCUM 2.2, unmodified (SHA-256
+            dfccea1b5dc284245ebae97edd1dc03c45864da4e87df55bc9851797b4fd0b61,
+            refused at read time and at build time if it differs). The tables
+            above are hand-written and interoperate with it: a check reads the
+            file and requires every unit they name to be one UCUM defines and
+            every conversion factor to equal UCUM's. The one exception,
+            `k[arb'U]/L`, is LOINC's own spelling and is named as such.
+
+
+NO LONGER APPLICABLE TO THIS TREE
+=================================
+
+The sections below cover vocabularies this project distributed up to 1.4.x and
+does not distribute now. They are kept because a 1.4.x wheel is still on PyPI
+and its data is still governed by them. Nothing in the current tree derives
+from any of them: `mirobody/kernel/meds.py` defines the SNOMED and RxNorm FHIR
+system URIs so that a CALLER can supply a code under them, which is a string
+constant, not content.
+
+
+3. UMLS Metathesaurus
+---------------------
+Provider  : U.S. National Library of Medicine (NLM)
+License   : UMLS Metathesaurus License Agreement
+            https://uts.nlm.nih.gov/uts/license
+Scope     : MRREL relationship data used to build cross-vocabulary bridges
+            (SNOMED <-> LOINC, SNOMED <-> RxNorm) and CUI-based sibling groups.
+Note      : A free UMLS account is required.  The license covers original data
+            AND derivative works.
+
+
+4. SNOMED CT (US Edition)
+-------------------------
+Provider  : SNOMED International / NLM (US Edition distributor)
+License   : SNOMED CT Affiliate License
+            https://www.snomed.org/get-snomed
+Scope     : IS-A hierarchy used for SNOMED sibling groups; concept codes used
+            in bridge mappings (ICD, MRREL, Jaccard).
+Note      : Use in production requires an affiliate license or membership
+            through a national release center.
+
+
+5. RxNorm
+---------
+Provider  : U.S. National Library of Medicine (NLM)
+License   : Public domain (no restrictions)
+            https://www.nlm.nih.gov/research/umls/rxnorm/docs/termsofservice.html
+Scope     : RXNCONSO and RXNREL used for RxNorm sibling groups and bridge
+            mappings to SNOMED/LOINC.
+
+
+6. ICD-10-CM
+------------
+Provider  : U.S. Centers for Medicare & Medicaid Services (CMS) / WHO
+License   : ICD-10-CM is in the public domain in the United States.
+            International use of ICD-10 is subject to WHO terms.
+            https://www.who.int/standards/classifications/classification-of-diseases/licensing
+Scope     : ICD-to-SNOMED mappings used for transitive bridge building.
+
+
+7. NHSA Drug Catalog (medicine_data.json)
+-----------------------------------------
+Provider  : National Healthcare Security Administration
+Source    : https://github.com/badman200/medicine
+License   : Government public information; no formal license specified.
+Scope     : Optional input for enriching RxNorm sibling groups with Chinese
+            drug names (via --nhsa-catalog flag during pipeline build).
+Note      : Not bundled in the binary; used only at build time when provided.

@@ -1,0 +1,171 @@
+# Defaults. DO NOT EDIT — put your changes in a 'config.{ENV}.yaml' overlay
+# (./deploy.sh generates one and points ENV at it).
+#
+# Files load in this order, later wins (a dict key replaces the whole value):
+#   config.yaml            this file — server, database, login (containers wire these)
+#   config.llm.yaml        THE ONE TO OPEN: models, and which model each surface uses
+#   config.devices.yaml    Garmin / Oura / Whoop, Google / Apple sign-in (optional)
+#   config.{ENV}.yaml      your overlay
+#   environment / .env     the API key goes in .env, next to compose.yaml
+INCLUDE:
+  - config.llm.yaml
+  - config.devices.yaml
+
+#-----------------------------------------------------------------------------
+# Logging. Console only by default; set LOG_NAME + LOG_DIR in your overlay for
+# files ({date}_{name}_{time}.log). INFO: DEBUG lines carry request/response
+# details a health-data deployment should not accumulate on disk.
+# LOG_NAME: ''
+# LOG_DIR: ''
+LOG_LEVEL: INFO
+
+#-----------------------------------------------------------------------------
+# Deployment posture. Two switches, not environment names — `ENV` only picks
+# the overlay file and tags log lines.
+
+# Replay mirobody/schema/*.sql at every boot (right for the demo; real
+# deployments provision the schema themselves and set false).
+BOOTSTRAP_SCHEMA: true
+
+# true = this deployment faces real users: the server REFUSES to start while
+# EMAIL_PREDEFINE_CODES is set or any REPLACE_THIS_VALUE_IN_PRODUCTION remains,
+# and never seeds demo data. First item of SECURITY.md's checklist.
+PRODUCTION: false
+
+# Default timezone for users who have not set one (IANA name).
+DEFAULT_TIMEZONE: America/Los_Angeles
+
+#-----------------------------------------------------------------------------
+# HTTP server.
+
+HTTP_SERVER_NAME: mirobody
+# HTTP_HOST: 0.0.0.0
+# HTTP_PORT: 80
+# HTTP_URI_PREFIX: ''
+HTTP_ROOT: frontend
+
+# Where a device vendor's OAuth callback may send the browser back to, besides
+# this server's origin and the Access-Control-Allow-Origin below: an origin,
+# or an app's own scheme. See SECURITY.md.
+# OAUTH_RETURN_ORIGINS: ['https://app.example.com', 'theta:']
+
+# Passkeys and MFA: your domain. Without it there is no WebAuthn service.
+# WEBAUTHN_RP_ID: example.com
+
+# HTTP_HEADERS:
+#   Access-Control-Allow-Origin: 'http://localhost:18080'  # CHANGE FOR PRODUCTION
+#   Access-Control-Allow-Credentials: 'true'
+#   Access-Control-Allow-Methods: 'GET, POST, PUT, DELETE, OPTIONS'
+#   Access-Control-Allow-Headers: 'Authorization, Content-Type'
+#   Access-Control-Max-Age: '600'
+
+# MCP_FRONTEND_URL: ''
+# MCP_PUBLIC_URL: ''
+# DATA_PUBLIC_URL: ''
+# QR_LOGIN_URL: ''
+
+# {url_path: requests_per_minute}; pre-auth paths counted per client IP, the
+# rest per user. The login paths are the online-guessing surfaces.
+REQUEST_RATE_LIMITER:
+  /api/chat: 6
+  /api/session: 6
+  /password/login: 10
+  /password/register: 5
+  /email/login: 5
+  /email/verify: 10
+  /account/activation/info: 20
+  /account/activation/complete: 10
+
+# [url_path]
+# USER_INFO_UPDATER:
+
+#-----------------------------------------------------------------------------
+# PostgreSQL. Compose overrides PG_HOST with the pg service name.
+
+PG_HOST: 10.108.0.2
+PG_PORT: 5432
+PG_USER: holistic_user
+PG_PASSWORD: REPLACE_THIS_VALUE_IN_PRODUCTION
+PG_DBNAME: holistic_db
+PG_SCHEMA: theta_ai
+PG_ENCRYPTION_KEY: REPLACE_THIS_VALUE_IN_PRODUCTION
+PG_MIN_CONNECTION: 5
+PG_MAX_CONNECTION: 20
+
+# A second database under a suffix, reached with config.get_postgresql('LOG'):
+# PG_HOST_LOG: ''
+# PG_PORT_LOG: 18082
+# PG_USER_LOG: ''
+# PG_PASSWORD_LOG: ''
+# PG_DBNAME_LOG: 'mirobody'
+# PG_SCHEMA_LOG: 'theta_ai'
+# PG_ENCRYPTION_KEY_LOG: ''
+# PG_MIN_CONNECTION_LOG: 5
+# PG_MAX_CONNECTION_LOG: 20
+
+#-----------------------------------------------------------------------------
+# Object storage (S3). Unset = local disk.
+
+# S3_KEY: ''
+# S3_TOKEN: ''
+# S3_REGION: ''
+# S3_BUCKET: ''
+# S3_PREFIX: ''
+# S3_CDN: ''
+
+#-----------------------------------------------------------------------------
+# Login.
+
+# EMAIL_FROM: ''
+# EMAIL_FROM_NAME: ''
+# EMAIL_TEMPLATE: ''
+# EMAIL_SMTP_PASS: ''
+
+# The demo accounts (SEED_DEMO_DATA). You sign in as `you` and read `mom`'s
+# record, shared view-only. The codes are listed here, so they need no mail
+# provider, and they are public. Your own account: POST /password/register.
+# Two accounts on purpose: the seed gives each a DIFFERENT record
+# (`server/demo.py:_PROFILES`), so the same question, "how has my HbA1c been",
+# answers differently depending on who signed in. One account cannot show that.
+EMAIL_PREDEFINE_CODES:
+  you@mirobody.ai: '111111'
+  mom@mirobody.ai: '111111'
+
+# JWT (HS256). JWT_PRIVATE_KEY switches to RS256.
+JWT_KEY: REPLACE_THIS_VALUE_IN_PRODUCTION
+JWT_ISS: mirobody
+JWT_AUD: mirobody_aud
+JWT_CLIENT_ID: mirobody_data
+JWT_SCOPE: "mcp:read mcp:write"
+# JWT_PRIVATE_KEY: 'REPLACE_THIS_VALUE_IN_PRODUCTION'
+
+# Google / Apple sign-in and the mobile clients' settings: config.devices.yaml.
+
+#-----------------------------------------------------------------------------
+# How long a personal MCP link stays valid, in days from when it is made
+# (default 10), never extended by use.
+#
+# `POST /personal/mcp` mints `{origin}/mcp/{secret}`, and that secret is the
+# WHOLE credential: `/mcp/{secret}` needs no JWT and reads that person's
+# health record. It is a bearer token carried in a URL, so it ends up in
+# desktop-client config files, screenshots and shell history. Every use checks
+# the link again (who made it, whether they may still read that record);
+# `DELETE /personal/mcp` or `/personal/mcp/{id}` revokes one, and making a new
+# one replaces the old.
+MCP_URL_TTL_DAYS: 10
+
+# Plug-in directories: MCP tools, the agent class, device pull providers.
+# Add your own directory to extend.
+MCP_TOOL_DIRS:
+  - mirobody/agent/tools
+AGENT_DIRS:
+  - mirobody/agent
+PROVIDER_DIRS:
+  - mirobody/collect/providers
+
+#-----------------------------------------------------------------------------
+# File processing.
+
+# 0 skips the LLM indicator extraction on uploads (the file is still stored).
+ENABLE_INDICATOR_EXTRACTION: 1
+

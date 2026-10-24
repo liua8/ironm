@@ -1,0 +1,162 @@
+"""File-type / extension constants + helpers shared across the codebase.
+
+Single source of truth for "what kind of file is this extension" lookups:
+including :func:`guess_mime`, which every layer now calls: object storage when it
+sets `Content-Type` on a PUT and the agent's VFS when it decides whether to
+serve a row as text or base64. Those were three implementations of the same
+question (the third was the presigned-URL helper, since deleted), and they
+disagreed.
+
+A FIFTH implementation turned up after the first four were merged, and it was
+the one that mattered most: `db_utils.get_mime_type`, read at five sites to
+decide the `content_type` a stored file carries and the type the model is
+handed. It disagreed with this table on `.flac`, `.m4a`, `.rar` and `.wav`
+(modern IANA names against the legacy `x-` forms) so within a single deployment
+the storage path and the agent path described the same bytes differently. It
+was made to delegate here, then deleted: every one of those sites calls
+`guess_mime` now. This table wins because its values are already written into
+stored objects.
+
+They can only agree if the answer does not come from `mimetypes` alone.
+`mimetypes` merges the interpreter's built-in table with the host's
+`/etc/mime.types`, so its answers are a property of the MACHINE: measured on
+this repo's 41 accepted-or-served extensions, 13 change between a developer
+laptop and a bare container, and 9 of those become `application/octet-stream`:
+`.docx`, `.pptx`, `.flac`, `.m4a`, `.ogg`, `.flv`, `.wmv`, `.rar`, `.aac`.
+`Content-Type` is written into the stored object at PUT time, so that turns the
+build host into part of the data: the same upload is served as a spreadsheet
+from one deployment and as a download from another.
+
+`MIME_BY_EXT` therefore pins every extension this project accepts (uploads:
+`collect/files/services/file_uploader.SUPPORTED_EXTENSIONS`; agent serving:
+`agent/filesystem/naming.MULTIMODAL_EXTS`) and `mimetypes` is only the fallback for
+everything else. The values are the ones this project already stores: the
+legacy `x-` forms (`audio/x-aac`, `video/x-flv`) are kept rather than modernized
+to their newer IANA names, because changing one would leave a deployment serving
+two different content-types for the same extension depending on upload date.
+"""
+
+import mimetypes
+import os
+from pathlib import PurePosixPath
+
+
+# Extension → MIME, pinned so the answer does not depend on the host's
+# /etc/mime.types. Covers every extension in SUPPORTED_EXTENSIONS and
+# MULTIMODAL_EXTS; `test_content_type.py` fails if one is added there without
+# landing here.
+MIME_BY_EXT: dict[str, str] = {
+    # images
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+    ".tiff": "image/tiff", ".svg": "image/svg+xml",
+    ".heic": "image/heic", ".heif": "image/heif",
+    # documents
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
+    ".xlsb": "application/vnd.ms-excel.sheet.binary.macroEnabled.12",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    # text
+    ".txt": "text/plain", ".md": "text/markdown", ".markdown": "text/markdown",
+    ".log": "text/plain", ".csv": "text/csv", ".html": "text/html",
+    ".htm": "text/html", ".json": "application/json", ".xml": "application/xml",
+    ".vcf": "text/vcf",
+    # audio
+    ".wav": "audio/x-wav", ".mp3": "audio/mpeg", ".aiff": "audio/x-aiff",
+    ".aac": "audio/x-aac", ".ogg": "audio/ogg", ".flac": "audio/x-flac",
+    ".m4a": "audio/mp4a-latm",
+    # video
+    ".mp4": "video/mp4", ".mpeg": "video/mpeg", ".mpg": "video/mpeg",
+    ".mov": "video/quicktime", ".avi": "video/x-msvideo", ".webm": "video/webm",
+    ".flv": "video/x-flv", ".wmv": "video/x-ms-wmv", ".3gpp": "video/3gpp",
+    # archives
+    ".zip": "application/zip", ".rar": "application/x-rar-compressed",
+    ".7z": "application/x-7z-compressed", ".gz": "application/gzip",
+    ".bgz": "application/gzip", ".bgzf": "application/gzip",  # BGZF is gzip-compatible
+    ".tar": "application/x-tar",
+    # types that only the files package's own table used to carry
+    ".ico": "image/x-icon", ".tif": "image/tiff", ".mkv": "video/x-matroska",
+}
+
+
+def guess_mime(filename_or_ext: str | None) -> str:
+    """MIME type for a filename, a suffix, or a bare extension.
+
+    All three shapes reach this in the codebase (a full path from the VFS, a
+    `PurePosixPath.suffix`, and a bare extension from callers that only hold
+    the suffix text) so all three are accepted. Unknown types get
+    `application/octet-stream`, which is the right answer when there is no
+    answer; it was only wrong as a catch-all for extensions we do know.
+    """
+    raw = str(filename_or_ext or "").strip()
+    if not raw:
+        return "application/octet-stream"
+    ext = PurePosixPath(raw).suffix.lower()
+    if not ext:                       # a bare extension, with or without the dot
+        ext = "." + raw.lstrip(".").lower()
+    if ext in MIME_BY_EXT:
+        return MIME_BY_EXT[ext]
+    return mimetypes.guess_type("x" + ext)[0] or "application/octet-stream"
+
+
+# Image-extension set for vision / multimodal branches.
+IMAGE_EXTENSIONS: set[str] = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+
+
+#: What `documents.detect` decodes as text without a parser, by extension and
+#: by declared type.
+TEXT_EXTENSIONS: set[str] = {".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm", ".log"}
+TEXT_MIME_TYPES: set[str] = {
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+    "application/json",
+    "text/xml",
+    "application/xml",
+    "text/html",
+}
+
+
+#: What a model writes where a file's extension goes when it was never told
+#: which one, beside the real ones in `MIME_BY_EXT`.
+_PLACEHOLDER_EXTS = {".ext", ".extension", ".file"}
+
+
+def with_extension(generated: str, extension: str) -> str:
+    """A model's name for an upload, ending in the upload's own `extension`
+    (`.pdf`, or "" for none) whatever extension the model wrote. The model is
+    asked for a name, never for a file type: MiniCPM5-2B named a re-read PDF
+    `2026-08-28_体检报告_摘要.ext` and another `…_摘要.txt` (the text it was
+    shown came as a .txt), and two models then took the name for a second
+    file and tried to open it (benchmarks/local_models, 2026-10-07)."""
+    stem = generated.strip()
+    root, ext = os.path.splitext(stem)
+    if root and (ext.lower() in MIME_BY_EXT or ext.lower() in _PLACEHOLDER_EXTS):
+        stem = root.rstrip(". ")
+    return f"{stem}{extension.lower()}" if stem else ""
+
+
+def simple_file_type(file_type: str) -> str:
+    """A MIME type or extension reduced to the bucket the drive list shows.
+
+    "image", "pdf", "excel" or "csv"; anything else comes back unchanged. The
+    frontend picks an icon and a filter off this, so the answer has to be
+    stable whether the caller holds a long Office MIME or a bare extension.
+    """
+    if not file_type:
+        return ""
+    t = file_type.lower()
+    if "image" in t or t in ("png", "jpg", "jpeg", "gif"):
+        return "image"
+    if "pdf" in t:
+        return "pdf"
+    if "spreadsheet" in t or "excel" in t or t in ("xlsx", "xls", "xlsm", "xlsb"):
+        return "excel"
+    if "csv" in t:
+        return "csv"
+    return file_type

@@ -1,0 +1,114 @@
+# IDEs
+.claude
+.cursor
+.cursorindexingignore
+.specstory
+.idea
+.vscode
+
+# python
+*.pyc
+__pycache__
+.pytest_cache
+.venv
+venv
+*.egg-info
+out
+.theta
+
+# macOS
+.DS_Store
+
+# runtime
+logs
+.next
+.turbo
+dist
+build
+node_modules
+package-lock.json
+
+# config
+.env
+*.*.yaml
+!config.devices.yaml
+!config.llm.yaml
+*.env
+# `*.*.yaml` is here for `config.{env}.yaml` and its `.key.yaml` sibling — the
+# per-deployment overlays that carry secrets. It also matched
+# `.pre-commit-config.yaml`, which is the opposite kind of file: the gate every
+# contributor is meant to install. It was written, ignored, and invisible in
+# `git status` until someone thought to run `git check-ignore` on it.
+!.pre-commit-config.yaml
+
+# AI assistant working notes (local only, never published).
+# Bare `CLAUDE.md` at the root is the intended one; the `**/` pattern is because
+# a `mirobody/collect/CLAUDE.md` was committed once and shipped to PyPI inside the
+# wheel — an internal notes file, under a filename that tells open-source
+# readers to skip it. Its content was real module documentation and now lives at
+# mirobody/collect/README.md.
+CLAUDE.md
+**/CLAUDE.md
+
+# Internal notes — LOCAL ONLY, deliberately. One directory, one rule.
+#
+# Our own measurements are not what an open-source reader needs. What they need
+# is a demo they can run (`examples/`) and a claim they can check themselves
+# (`pytest mirobody/tests/test_engine_coverage.py -s` prints the published
+# score). The rule for which side a number falls on: backed by a test in the repo that
+# anyone can run -> publishable; produced by `eval/` -> not.
+#
+# The same rule sorts prose. `internal/` holds what is addressed to US:
+# `internal-testing.md` (our measurements), `library-surface-feedback.md` (a
+# defect list against our own release), `frontend-shipping.md` (a gap/bug
+# inventory of the current setup). A defect list is not documentation an
+# outside reader needs handed to them, and `docs/` is published.
+#
+# These used to be three separate decisions in three places, and only one of
+# them worked: `internal-testing.md` was ignored, while `frontend-shipping.md`
+# sat in `docs/` and shipped, and the header of `internal-testing.md` claimed
+# "Gitignored on purpose" for a rule that covered only itself. One directory
+# now, so the question is never asked per file again. The archive form too:
+# `internal/` as a rule does not cover `internal.zip`, and a `git add -A`
+# pushed 12 of those documents to a public remote once (2026-09-06).
+internal/
+internal*.zip
+internal*.tar.gz
+
+# Resolver evaluation harness — the DATA is local only, the RUNNER is not.
+#
+# The two used to be one decision and they are not the same thing. The test set
+# is derived in part from a sibling private repo's curated seed, and a
+# published benchmark shipped alongside the thing it grades is an invitation to
+# tune against it — so `testset.jsonl`, `build_testset.py` and every
+# timestamped result stay out.
+#
+# The runner ships (now `benchmarks/run_eval.py`), and only it. It is the part other people need and cannot
+# write for themselves: it defines the four metrics, the analyte-level grading
+# rule and the strata, and it takes `--testset <path>`, so a downstream team can
+# grade the same resolver against their own distribution without their cases
+# ever reaching this repository. A harness nobody else can run is not a shared
+# harness.
+#
+# `README.md` stays out with the data: it names the set's provenance and prints
+# per-stratum result tables, both of which are exactly the "not a public claim"
+# half. The runner's own docstring carries what a user of it needs.
+eval/*
+
+# Local regression suite. Not published: the repository keeps only the tests
+# that are evidence for something it claims (see [tool.pytest.ini_options] in
+# pyproject.toml). Everything else lives here so it can be thorough without
+# being public API.
+#
+# This rule was deleted once, on `refactor/deep-agent-only`, when the suite
+# moved out of the package: 92 test files went to the public remote, 73 of them
+# never public before. Nothing secret was in them — but the local suite is
+# where a gate may name a customer, a hospital's report shape or an unreleased
+# defect, and "nothing secret THIS time" is not a policy. The move itself was
+# right (a test module inside `mirobody/` drags pytest into the library layer);
+# what was wrong was un-ignoring the destination. Evidence tests live inside
+# `mirobody/` and are pruned from the artifact by `scripts/build_backend.py`.
+/tests/
+
+# Local virtualenvs under any suffix (.venv-dev, .venv-py313, ...).
+.venv*/

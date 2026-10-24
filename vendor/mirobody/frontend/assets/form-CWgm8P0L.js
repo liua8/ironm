@@ -1,0 +1,1 @@
+const e=[{label:"male",value:"male"},{label:"female",value:"female"},{label:"gender_other",value:"other"}],l=[{label:"A",value:"A"},{label:"B",value:"B"},{label:"AB",value:"AB"},{label:"O",value:"O"}];export{l as B,e as G};

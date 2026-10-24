@@ -1,0 +1,333 @@
+name: PyPI Release
+
+# Trigger conditions: push tag, create release on GitHub, or manual trigger
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-*'  # Support pre-release versions like 1.0.0-beta1
+  release:
+    types: [created]  # Trigger when release is created on github.com
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      test_mode:
+        description: 'Test mode (do not publish to PyPI, do not create Release)'
+        required: false
+        default: 'true'  # Default to test mode
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      target_branch:
+        description: 'Display current running branch (for reference only, select branch on Actions page)'
+        required: false
+        default: 'Select branch on Actions page'
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    # Job-level, not step-level: a step's `if:` cannot see an `env:` defined
+    # on that same step, only one set at the job or workflow level.
+    env:
+      DOCS_DISPATCH_TOKEN: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+
+    steps:
+    # lfs: true is load-bearing, not hygiene. The engine's data bundles
+    # (mirobody/res/*.gz, *.npy, *.bin) live in Git LFS; a plain checkout
+    # substitutes 133-byte pointer files, and the build happily packages those.
+    # That is how 1.0.62 shipped a wheel whose `resolve` could never work.
+    - uses: actions/checkout@v4
+      with:
+        lfs: true
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine setuptools wheel
+
+    # Install package dependencies for testing
+    # The quality gate. Both steps below used to carry `continue-on-error: true`,
+    # and so did the PyPI upload itself until 1.3.0 — see the note beside the
+    # verify step at the bottom for how that one played out.
+    # so nothing in this workflow could fail a release on a code defect — the
+    # only hard gates were packaging ones (LFS bundles, langchain-free wheel).
+    # 1.0.62 shipped a wheel that resolved no indicators at all; the suite is
+    # what stands between that and PyPI, so it runs, and it can fail.
+    - name: Install package dependencies
+      run: |
+        pip install -e '.[app,test]'
+
+    - name: Test suite and import contracts
+      run: |
+        pytest -q
+        python -m unittest discover -s benchmarks/genomics -p 'test_*.py'
+        python -m unittest discover -s benchmarks/health_records -p 'test_*.py'
+        # Must run against the repo source, not an installed wheel.
+        lint-imports
+
+    # Get version from tag or use test version
+    - name: Set version from tag or manual trigger
+      id: version
+      run: |
+        if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+          # If triggered by release creation on github.com
+          VERSION="${{ github.event.release.tag_name }}"
+          echo "🎯 Running on release: $VERSION"
+        elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          # If it's a tag push, use tag name as version
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "🎯 Running on tag: $VERSION"
+        else
+          # If manually triggered, generate PEP 440 compliant test version
+          # Format: 0.0.0.devYYYYMMDDHHMMSS (dev number must be pure digits)
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          VERSION="0.0.0.dev${TIMESTAMP}"
+
+          echo "🧪 Manual test trigger on branch: $BRANCH_NAME"
+          echo "📦 Test version: $VERSION"
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+        # mirobody/__init__.py reads MIROBODY_VERSION at build time (see its docstring).
+        echo "MIROBODY_VERSION=$VERSION" >> $GITHUB_ENV
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "Setting version to $VERSION"
+
+        # A real release tag must match the version the source tree calls
+        # itself (mirobody/__init__.py, kept in step with compose.yaml,
+        # server.json and the Dockerfile by scripts/check_versions.py) —
+        # otherwise the wheel's metadata and the package's own __version__
+        # disagree forever. Pre-release suffixes
+        # (1.2.1-rc1) compare on their X.Y.Z prefix; timestamped 0.0.0.dev*
+        # test builds are exempt: they exist to not collide.
+        if [[ "$VERSION" != 0.0.0.dev* ]]; then
+          SOURCE_VERSION=$(python -c "import re; print(re.search(r'or \"(\d+\.\d+\.\d+)\"', open('mirobody/__init__.py').read()).group(1))")
+          if [[ "${VERSION%%-*}" != "$SOURCE_VERSION" ]]; then
+            echo "::error::Tag $VERSION does not match mirobody/__init__.py version $SOURCE_VERSION — bump it with the other release files (scripts/check_versions.py) before tagging."
+            exit 1
+          fi
+        fi
+
+    # Build Python package
+    - name: Build package
+      run: |
+        python -m build
+        ls -la dist/
+
+    # Both artifacts must carry the real data bundles, not LFS pointers —
+    # twine uploads the sdist too, and pip serves it wherever the wheel doesn't
+    # match. Without this gate a broken artifact reaches PyPI silently (1.0.62).
+    - name: Verify artifacts carry the engine data bundles
+      run: python scripts/check_wheel_data.py dist/*
+
+    # Install from the SDIST, not only the wheel. The sdist must build itself,
+    # and this project uses a custom `backend-path` backend to prune test
+    # modules — if MANIFEST.in stops shipping it, `pip install <sdist>` dies at
+    # "backend-path entry 'scripts' does not exist" before any of our code runs.
+    # No wheel test can catch that; this one did.
+    - name: Test sdist installs and runs
+      run: |
+        python -m venv "$RUNNER_TEMP/sdist-venv"
+        "$RUNNER_TEMP/sdist-venv/bin/pip" install dist/*.tar.gz
+        cd "$RUNNER_TEMP"
+        "$RUNNER_TEMP/sdist-venv/bin/mirobody" resolve "hemoglobin" "血红蛋白" 
+
+    # Verify package contents
+    - name: Check package
+      run: |
+        pip install twine
+        twine check dist/*
+
+    # Test package installation. `import mirobody` alone is not a test: it
+    # passes on a wheel with pointer-file data. Exercise the front door the
+    # README promises, from a directory that is NOT the source checkout.
+    #
+    # A FRESH venv is load-bearing here. The earlier "Install package
+    # dependencies" step did `pip install -e '.[app,test]'` into the job's
+    # global environment, so FastAPI and langchain are already importable
+    # there — the bare-install gates below would be vacuous (and their own
+    # asserts fail) if they ran against it. The sdist step isolates for the
+    # same reason.
+    - name: Test package installation
+      run: |
+        WHEEL="$(ls "$PWD"/dist/*.whl)"   # absolute: the checks below run from $RUNNER_TEMP
+        python -m venv "$RUNNER_TEMP/wheel-venv"
+        VPY="$RUNNER_TEMP/wheel-venv/bin/python"
+        VPIP="$RUNNER_TEMP/wheel-venv/bin/pip"
+        VBIN="$RUNNER_TEMP/wheel-venv/bin"
+        "$VPIP" install --quiet --upgrade pip
+        "$VPIP" install "$WHEEL"
+        cd "$RUNNER_TEMP"
+        "$VPY" -c "import mirobody; print(f'Version: {mirobody.__version__}')"
+        "$VBIN/mirobody" resolve "LDL cholesterol" "hemoglobin" "血糖"
+        "$VPY" -c "
+        from mirobody.engine import resolve
+        r = resolve('hemoglobin')
+        assert r.resolved and r.loinc, f'offline resolve is broken in the wheel: {r}'
+        print('offline resolve OK:', r.loinc, r.canonical)
+        "
+        # ① The BARE install is the LIBRARY, and the gate says exactly that:
+        # numpy is the only third-party package it may reach for. This replaced
+        # a weaker check that only asserted "FastAPI is absent" while importing
+        # `mirobody.utils` / `collect.files` / `mcp` — modules that now need
+        # the [parse] and [app] extras, and that were only importable before
+        # because base carried 93 packages.
+        "$VPY" -c "
+        import sys
+        import mirobody, mirobody.engine, mirobody.units, mirobody.lexical
+        import mirobody.value_scale, mirobody.zh_fold
+        third = sorted({
+            m.split('.')[0] for m in sys.modules
+            if m.split('.')[0] not in sys.stdlib_module_names
+            and not m.startswith('_') and m.split('.')[0] != 'mirobody'
+        })
+        assert third in ([], ['numpy']), f'library install reaches beyond numpy: {third}'
+        assert mirobody.resolve('hemoglobin').loinc == '718-7'
+        assert mirobody.BUNDLE_VERSION, 'the shipped bundle carries no VERSION member'
+        print('library install clean; corpus', mirobody.BUNDLE_VERSION, '| deps', third)
+        "
+        # ② [parse] must import the ① Collect surface without pulling the
+        # server in — the extraction stack and the model clients, no FastAPI.
+        "$VPIP" install "${WHEEL}[parse]"
+        "$VPY" -c "
+        import importlib.util
+        assert importlib.util.find_spec('fastapi') is None, (
+            'gate is vacuous: FastAPI is installed, so this cannot prove [parse] '
+            'stands on its own'
+        )
+        import mirobody.utils, mirobody.utils.llm
+        import mirobody.collect, mirobody.collect.files
+        import mirobody.translate
+        print('[parse] imports clean on a FastAPI-free install')
+        "
+        # ③ The engine/agent boundary, which needs the server stores but must
+        # stay langchain-free. This catches the break import-linter provably
+        # cannot see: a module-scope import of mirobody.agent.chat.* executes
+        # agent/__init__, and if that __init__ is eager it drags langchain into
+        # an engine import. Exactly this happened to the file pipeline once.
+        #
+        # The server packages are spelled out rather than installed via an
+        # extra, and that is deliberate: [app] is everything INCLUDING the agent
+        # framework, so using it here would make the gate vacuous, and there is
+        # no longer a [server] extra to reach for — nothing ever installed one,
+        # and `serve`/`worker` refuse without the agent layer anyway. Keep this
+        # list in step with the store/HTTP half of [app] in pyproject.toml.
+        "$VPIP" install "${WHEEL}[parse]" \
+            fastapi python-multipart uvicorn \
+            "psycopg[binary]" "psycopg[pool]" sqlalchemy greenlet \
+            aioboto3 boto3 oss2 "mcp>=2.0.0" pyjwt "webauthn>=2.0.0" mandrill \
+            requests-oauthlib
+        "$VPY" -c "
+        import importlib.util
+        assert importlib.util.find_spec('langchain_core') is None, (
+            'gate is vacuous: langchain is installed, so this cannot prove the '
+            'agent layer stays out of engine imports'
+        )
+        import mirobody.task.profile_refresh, mirobody.user, mirobody.mcp
+        import mirobody.user.profile
+        print('engine/agent boundary holds on a langchain-free server install')
+        "
+
+    # Upload to TestPyPI
+    - name: Publish to TestPyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+      run: |
+        echo "Uploading to TestPyPI..."
+        twine upload --repository testpypi dist/* || echo "TestPyPI upload failed (may already exist)"
+      continue-on-error: true
+
+    # Upload to PyPI (only for official tags or release events, and not in test mode)
+    - name: Publish to PyPI
+      if: (startsWith(github.ref, 'refs/tags/') || github.event_name == 'release') && github.event.inputs.test_mode != 'true'
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: |
+        echo "Uploading to PyPI..."
+        twine upload --repository pypi dist/*
+
+    # The upload having "succeeded" is twine's opinion. This asks PyPI.
+    #
+    # 1.2.1 was released twice and neither release existed. Both runs were
+    # GREEN: the upload failed, `continue-on-error` swallowed it, the workflow
+    # carried on and reported success, and the only way anyone found out was
+    # querying PyPI by hand. That `continue-on-error` is gone from the step
+    # above — an upload that fails now fails the job, so no GitHub Release is
+    # cut for a version that is not on PyPI — but "the step exited 0" is still
+    # a weaker claim than "the version is there". Ask for the strong one.
+    - name: Verify the version is actually on PyPI
+      if: (startsWith(github.ref, 'refs/tags/') || github.event_name == 'release') && github.event.inputs.test_mode != 'true'
+      run: |
+        for i in $(seq 1 12); do
+          if curl -sfo /dev/null "https://pypi.org/pypi/mirobody/$VERSION/json"; then
+            echo "PyPI has mirobody $VERSION"
+            exit 0
+          fi
+          echo "not visible yet, retrying in 10s ($i/12)"
+          sleep 10
+        done
+        echo "::error::mirobody $VERSION is not on PyPI two minutes after upload"
+        exit 1
+
+    # Create or update GitHub Release (upload build artifacts)
+    - name: Upload to GitHub Release
+      if: (startsWith(github.ref, 'refs/tags/') || github.event_name == 'release') && github.event.inputs.test_mode != 'true'
+      uses: softprops/action-gh-release@v3
+      with:
+        files: dist/*
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ contains(env.VERSION, 'a') || contains(env.VERSION, 'b') || contains(env.VERSION, 'rc') || contains(env.VERSION, 'dev') }}
+        tag_name: ${{ env.VERSION }}
+        name: "Release v${{ env.VERSION }}"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # Tells mirobody-health-docs to open a PR pinning this version, same day
+    # instead of waiting for its daily PyPI poll. Skipped when the secret is
+    # unset: the default GITHUB_TOKEN cannot reach another repository, so
+    # this needs its own fine-grained token, and there is none until the
+    # owner adds one.
+    - name: Notify the docs site
+      if: (startsWith(github.ref, 'refs/tags/') || github.event_name == 'release') && github.event.inputs.test_mode != 'true' && env.DOCS_DISPATCH_TOKEN != ''
+      env:
+        GH_TOKEN: ${{ env.DOCS_DISPATCH_TOKEN }}
+      run: gh api repos/thetahealth/mirobody-health-docs/dispatches -f event_type=mirobody-release
+
+    # Optional: Print installation instructions
+    - name: Print installation instructions
+      run: |
+        echo "🎉 Release $VERSION completed!"
+        echo ""
+        echo "📦 Install from TestPyPI:"
+        echo "pip install -i https://test.pypi.org/simple/ mirobody==$VERSION"
+        echo ""
+        echo "📦 Install from PyPI:"
+        echo "pip install mirobody==$VERSION"
+        echo ""
+        echo "📦 Or download from GitHub Release:"
+        echo "https://github.com/${{ github.repository }}/releases/tag/$VERSION"
+
+  # Runs only after the PyPI upload and the "is it actually there" check both
+  # succeeded, so an image is never published for a version that is not on
+  # PyPI. Same condition as the Publish to PyPI step above.
+  docker-image:
+    needs: build-and-publish
+    if: (startsWith(github.ref, 'refs/tags/') || github.event_name == 'release') && github.event.inputs.test_mode != 'true'
+    uses: ./.github/workflows/docker-hub.yml
+    with:
+      tag: ${{ needs.build-and-publish.outputs.version }}
+    secrets: inherit
+    permissions:
+      contents: read

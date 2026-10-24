@@ -1,0 +1,784 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+# A thin wrapper over setuptools that drops checkout-only test modules from the
+# built distribution. `test_skills.py` is retained as public release evidence;
+# `exclude-package-data` cannot do this split because `test_*.py` files are
+# package CODE, not data. See scripts/build_backend.py.
+build-backend = "build_backend"
+backend-path = ["scripts"]
+
+[project]
+name = "mirobody"
+dynamic = ["version"]
+authors = [
+    {name = "Theta AI Team", email = "developer@thetahealth.ai"},
+]
+# The PyPI storefront line: keep it in step with the README's opening lines.
+description = "Self-hosted AI health data engine: lab reports, wearables and genetics in one standardized record, with answers that cite their sources."
+readme = "README.md"
+# 3.12+ is a hard floor, not a preference: the codebase uses PEP 701 f-strings
+# (nested same-type quotes, e.g. utils/config/config.py), which are a SyntaxError
+# on 3.11 — the package cannot even be imported there.
+requires-python = ">=3.12"
+# What people actually search PyPI for; the vocabulary names are the moat.
+keywords = [
+    "health", "health-data", "FHIR", "LOINC", "SNOMED", "wearables",
+    "lab-reports", "genomics", "MCP", "agent", "AI", "LLM",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+# Constraint policy (this is a LIBRARY): floors only. An upper cap needs a
+# reproduced breakage documented next to it — unjustified caps just create
+# resolver conflicts downstream.
+#
+# ── Why base is one line ─────────────────────────────────────────────────────
+#
+# This project ships in two forms and they want opposite things. The PyPI
+# package is a LIBRARY and wants to be small enough that nobody has to think
+# about it. The Docker application is a PRODUCT and wants everything in the
+# box. Until 1.3.0 the pyproject described only the second: base carried the
+# whole ① Collect extraction stack and three LLM SDKs, so a consumer who wanted
+# ② Translate — offline name → LOINC, UCUM units — installed 93 packages and
+# 245 MB, of which mirobody itself was 29 MB.
+#
+# That was not merely wasteful. `mcp>=2.0.0` in base made the package
+# UNINSTALLABLE alongside `langchain-mcp-adapters` (which caps `mcp<2.0.0`),
+# and the downstream fix was to override this file's metadata in the consumer's
+# lockfile — i.e. the contract was wrong enough that using the library required
+# lying about it.
+#
+# So: base is what `resolve()` and the vocabulary modules actually need, which
+# is numpy and nothing else (measured — `import mirobody.engine` pulls zero
+# third-party packages; numpy is imported inside `OfflineResolver.__init__`).
+dependencies = [
+    # ② Translate. `_bundle` and `_strtab` read the shipped offset arrays with
+    # it, and the resolver builds its lookup orders from them. It went
+    # undeclared for a long time and worked only because pandas (since
+    # removed) happened to pull it in, i.e. `mirobody resolve` depended on a
+    # transitive accident.
+    "numpy",
+]
+
+[project.scripts]
+# The single entry point, source checkout and PyPI install alike:
+# `mirobody serve|worker|parse|resolve`, or `python -m mirobody …` where a
+# console
+# script may not survive (compose persists site-packages but not the venv's
+# bin/). Replaces the former repo-root main.py / main_worker.py, which were
+# not shipped in the wheel — a PyPI install had no way to start the server.
+mirobody = "mirobody.cli:main"
+# The stdio MCP server alone, for `uvx --from mirobody mirobody-mcp`; the same
+# as `mirobody mcp`, which is what the MCP Registry entry (server.json) runs.
+mirobody-mcp = "mirobody.mcp.stdio:main"
+
+# ── Extras: one bracket a human types, one bucket the image installs ─────────
+#
+# The test for whether something deserves an extra is not "is it a separable
+# concern" — it is "will somebody choose it". 1.2.2 had six extras and exactly
+# one of them was ever installed by anything: `requirements.txt` reads
+# `-e .[agents]`, one line, no choice. `[server]` was referenced nowhere and
+# could not usefully be installed alone anyway (`mirobody serve` and `worker`
+# both refuse without the agent layer). `[cn]` was referenced nowhere at all,
+# and was not an axis: it bundled an object-storage backend with an LLM vendor
+# SDK under a country name, while their siblings (aws.py, the OpenAI/Anthropic/
+# Gemini clients) sat in `[server]` and base. `storage/factory.py` iterates
+# `AbstractStorage.__subclasses__()` — aws and aliyun are peers in the code and
+# were split by geography only in the packaging.
+#
+# Three runtime extras remain, one per question (plus [test] for working on it):
+#
+#   [parse]  do you also want to read documents?   <- the one real choice
+#   [agent]  the agent harness as a library, without the server (1.4.0)
+#   [app]    everything; this is what the image installs
+[project.optional-dependencies]
+# ① Collect, single-file surface: `mirobody parse labs.pdf` — a lab report in,
+# standardized LOINC readings out, one model key, no database and no server.
+# The extraction formats and the model clients are one extra rather than two
+# because `parse` needs both and nothing else needs either: an extraction
+# backend with no model cannot read a scan, and the client factory exists to
+# feed the extractor.
+#
+# `mirobody parse` checks for this extra up front and prints what to install,
+# the same way `serve`/`worker` already do for the agent layer — see
+# `cli._require_extra`.
+parse = [
+    # Documents. Every entry here is imported by name somewhere under
+    # mirobody/; a package that only *typed* a file (rarfile, py7zr — archives
+    # are recognised, never opened), a second library for a job one already
+    # does (pypdf beside pypdfium2 + pdfplumber), or a
+    # 68 MB dependency for two functions (pandas, for turning a sheet into
+    # text) has been removed — see CHANGELOG 1.4.0.
+    # The one PDF library: text layer AND page rendering (`documents/extract.py`).
+    "pypdfium2>=4.30.0",
+    "Pillow>=11.1.0",
+    # `.xlsx` read directly (file_abstract_extractor.py); the pre-2007 binary
+    # `.xls` is not supported, and never was — the old xlrd fallback was not
+    # installed either.
+    "openpyxl>=3.1",
+    # Word and PowerPoint. Both read only the modern zip-based formats, which is
+    # exactly the honest boundary: `.docx`/`.pptx` are supported, and legacy
+    # binary `.doc`/`.ppt` stay OUT of `SUPPORTED_EXTENSIONS` rather than being
+    # accepted and then refused after the upload — which is what they used to do.
+    "python-docx>=1.1",
+    "python-pptx>=1.0",
+    # The engine's own model access, via direct SDKs. The agent FRAMEWORK stack
+    # (LangChain, deepagents) is a different thing and lives in [app].
+    "azure-identity>=1.15.0",  # Azure OpenAI WIF token provider (utils/config/llm.py)
+    "openai>=2.11.0",
+    # `_build_anthropic` did a bare `import anthropic` that only resolved
+    # because langchain-anthropic dragged it in, so configuring an Anthropic key
+    # without the agent layer failed at client construction.
+    # Floor at 1.5, and deliberately no upper cap: the newest SDK is where the
+    # newest models are supported. 1.x REMOVED `temperature`, `top_p` and
+    # `top_k` from the messages API, which turned every extraction call into a
+    # TypeError before a request was built — so `backends_anthropic` filters
+    # parameters against the installed signature rather than a hardcoded list,
+    # and the next removal costs a DEBUG line instead of an outage.
+    "anthropic>=1.5",
+    # Floor at 2.0: the Interactions API server dropped the legacy turn-list
+    # schema (breaking change, May 2026) and now requires the 2.x 'steps' schema,
+    # which only the >=2.0 SDK can send/parse. No upper cap.
+    "google-genai>=2.0.0",
+    # `utils/config` is on the parse path (the client factory reads config), and
+    # it needs these three.
+    "python-dotenv",
+    # Uses only the modern YAML() API (utils/config/config.py); load+dump of
+    # the real config.yaml verified on 0.19, so no upper cap.
+    "ruamel.yaml>=0.17",
+    "cryptography",
+    # `utils/net.fetch_bounded`, the bounded downloader a library consumer
+    # fetches caller-supplied URLs with.
+    "aiohttp",
+    # `utils/http.py` is built on Starlette's Request/Response and
+    # `utils/__init__` re-exports them, so importing anything under utils needs
+    # it. (FastAPI is a web *framework* and stays in [app].)
+    "starlette",
+    "pydantic",
+    # `utils/prompts.py` — the strict Jinja renderer every prompt package uses.
+    "jinja2",
+]
+
+# ③a The agent layer as a LIBRARY: the harness middleware (fault containment,
+# retry governance, invalid-call repair, prompt caching), the virtual-filesystem
+# backends, the checkpointer, the LLM client factory, `hitl`, the prompt renderer,
+# and the tool surface (`mirobody.mcp.tool` publishes the same tools an MCP client
+# sees; its schemas come from the `mcp` SDK). A consumer that runs its own
+# deepagents agent installs this and nothing else — no HTTP server, no object
+# stores, no mail. `mirobody.mcp.service` (serving those tools over HTTP) is [app].
+agent = [
+    # Local calculation containers, through the maintained Docker SDK. Code
+    # never runs in the app process or uses a remote sandbox provider.
+    "docker>=7.1.0",
+    # The checkpointer (langgraph-checkpoint-postgres) and the file-system
+    # projections talk to Postgres directly.
+    "psycopg[binary]",
+    # 3.2 is the first with `check=`, which replaces a connection a Postgres
+    # restart killed instead of failing the request that drew it.
+    "psycopg[pool]",
+    "psycopg-pool>=3.2",
+    "jinja2",
+    # `utils/config` — the client factory, the checkpointer and the registry
+    # read configuration through it. `mirobody.utils` itself resolves its
+    # re-exports lazily, so importing one helper (`utils.sse`, `utils.prompts`,
+    # …) pulls none of this.
+    "ruamel.yaml",
+    "python-dotenv",
+    "cryptography",
+    # `utils/net.fetch_bounded` (see [parse]).
+    "aiohttp",
+    # Model clients: the two families the shipped config.yaml uses. Every other
+    # family is one `pip install` away and NOT declared here: `init_chat_model`
+    # imports a provider package lazily and names it in the error when it is
+    # missing. So a deployment that configures `llm_type: anthropic` (deepagents
+    # brings langchain-anthropic anyway), a Vertex-hosted model
+    # (`langchain-google-vertexai`, which drags the 170 MB
+    # `google-cloud-aiplatform` behind it) or an Azure OpenAI WIF login
+    # (`azure-identity`, which [parse] carries) adds that one package — instead
+    # of every install carrying all of them for a configuration it never has.
+    # `langchain_community` was declared and never imported; gone.
+    # 1.4.0 is deepagents 0.7.14's floor.
+    "langchain>=1.4.0",
+    "langchain-openai>=1.4.3",
+    # 4.2.4 relaxed its google-genai cap to <3.0.0 (earlier 4.x pinned <2.0.0,
+    # which would block the google-genai>=2.0 required by [parse]).
+    # 4.4.0 is the version verified to round-trip Gemini 3.x's
+    # `thought_signature` through a tool loop (see `gemini-flash` in
+    # config.llm.yaml). No upper cap: newer packages support newer models, and
+    # the one time a floor without a verified lower bound bit us, `anthropic`
+    # 1.x had silently removed `temperature` from `messages.create`.
+    "langchain-google-genai>=4.4.0",
+    # Floor at 0.7.5. 0.7 is where the BackendProtocol settled: the deprecated
+    # `*_info` / `grep_raw` shims are gone (we never used them), `glob`/`grep`
+    # take `path: str | None`, `grep` gained a `max_count` cap that
+    # CompositeBackend splits across mounts, and `delete` arrived as an optional
+    # protocol method (PgFilesystemBackend does not implement it; the tool is
+    # excluded by name — see agent/agent.py `_EXCLUDED_NATIVE_TOOLS`).
+    # NOTE 0.7 also DROPPED `TodoListMiddleware` from the default middleware
+    # stack, so `write_todos` no longer exists unless a caller adds it back.
+    # the agent intentionally does not — see agent/agent.py `_build_agent`.
+    # Floor raised to 0.7.14 on 2026-09-16; the API this repository binds
+    # (`create_deep_agent`, `HarnessProfile`, the backends, `get_model_provider`)
+    # is byte-identical across 0.7.5..0.7.14, and 0.7.14 pulls langchain 1.4.
+    "deepagents>=0.7.19",
+    # Conversation memory: the agent graph is compiled with an AsyncPostgresSaver
+    # keyed on thread_id = session_id, so LangGraph replays the real message
+    # objects. This replaced a hand-rolled rebuild of history from persisted UI
+    # chunks (the deleted chat/history_replay.rebuild_canonical_messages) —
+    # see agent/checkpointer.py.
+    "langgraph-checkpoint-postgres>=3.1.2",
+    # Floor at 2.0 for two reasons, both verified against the installed source
+    # rather than release notes:
+    #   1. 2.0.0 is the first release implementing protocol revision 2026-07-28
+    #      (DiscoverRequest/Result, InputRequiredResult/MRTR, CacheHint);
+    #      1.29.0 tops out at 2025-11-25.
+    #   2. Its `func_metadata` generates our tool inputSchemas. The hand-rolled
+    #      parser it replaced got Literal, Enum, bare dict and Annotated wrong.
+    # NOTE `mcp.server.fastmcp` was REMOVED in 2.0 (it is `mcp.server.mcpserver`
+    # now), and the third-party `fastmcp` package does not yet import against
+    # 2.0 at all (`McpError` was renamed `MCPError`), so it is not an option.
+    "mcp>=2.0.0",
+]
+
+# ③ Everything — the HTTP/chat/MCP server, its stores, and the agent layer.
+# `requirements.txt` is `-e .[app]` and that is the only thing that installs
+# it: `docker compose` mounts the checkout and pip-installs from it, so PyPI is
+# not a deployment path and this extra never asks anyone to choose a backend.
+# Both object stores and every model vendor go in, unconditionally — oss2 is
+# 0.3 MB and aioboto3 0.2 MB, and a decision point costs more than that.
+app = [
+    "mirobody[parse]",
+    "mirobody[agent]",
+    # HTTP surface.
+    "fastapi",
+    "python-multipart",
+    "uvicorn",
+    # Stores.
+    "sqlalchemy",
+    # SQLAlchemy declares greenlet only under platform markers and extras, so
+    # its async engine can be missing it on an otherwise-correct install.
+    "greenlet",
+    # Object storage — `storage/factory.py` tries every AbstractStorage
+    # subclass and falls back to local, so which one is a config question at
+    # runtime, never an install-time one.
+    "aioboto3",
+    "oss2",
+    # boto3 is the SYNC half of `utils/config/llm.py::_build_bedrock`, and it
+    # was never declared anywhere: it arrived transitively via aioboto3, which
+    # is the same class of bug as the undeclared python-multipart / starlette /
+    # anthropic before it. Named here so it stops being an accident.
+    "boto3",
+    # Identity and mail.
+    "pyjwt",
+    "webauthn>=2.0.0",
+    "mandrill",
+    # OAuth1 — among the shipped providers, only Garmin still speaks it.
+    "requests-oauthlib",
+]
+
+# The suite a clone runs. CI's first job is `pip install -e '.[test]'` followed
+# by `pytest -q`, which is how a minimal install that aborts at collection is
+# caught; without this extra that job installs numpy and exits 127 on a missing
+# pytest, which is what happened when `indicator-build` was deleted beside it.
+test = ["pytest", "pytest-asyncio", "pytest-sugar", "import-linter", "ruff", "build"]
+
+
+[project.urls]
+"Homepage" = "https://github.com/thetahealth/mirobody"
+"Bug Reports" = "https://github.com/thetahealth/mirobody/issues"
+"Source" = "https://github.com/thetahealth/mirobody"
+
+[tool.setuptools.packages.find]
+include = ["mirobody", "mirobody.*"]
+# `mirobody/tests/` is the part of the suite in git: the resolver score the
+# README publishes, the cross-language identity checks a terminology
+# contributor runs, the server's security gates, and `test_skills.py`, the
+# public evidence for the agent skills. The build backend ships only that evidence module and prunes the
+# checkout-only gates; `scripts/check_wheel_data.py` enforces the split.
+#
+# Everything else lives in a gitignored `tests/` at the repo root, so the local
+# regression suite can be thorough without becoming public API. That rule was
+# briefly dropped on `refactor/deep-agent-only` and 92 test files reached the
+# public remote; `.gitignore` carries the account.
+
+[tool.setuptools.package-data]
+"mirobody" = [
+    # PEP 561: without this marker every type checker ignores the annotations
+    # in this package entirely, so a consumer gets `Any` for `Resolution`,
+    # `ParsedQuantity` and everything else no matter how well typed it is.
+    "py.typed",
+    "**/*.md",
+    "**/*.sql",
+    "**/*.json",
+    "**/*.yaml",
+    "**/*.jinja",
+    "**/*.so",
+    # ── engine data bundles (Git LFS) ────────────────────────────────────────
+    # These are not optional extras: `mirobody.engine.resolve` — the front door
+    # of ② Translate, and the one line the README leads with — reads
+    # res/loinc/fhir_loinc_bundle.tar.gz and res/loinc/aliases_src/*.tsv
+    # at import time. Until 1.0.62 only *.bin was listed here, so every published
+    # wheel shipped an engine that could not resolve anything. Keep .gz/.npy/.tsv
+    # in this list; scripts/check_wheel_data.py enforces it at build time.
+    "**/*.bin",
+    "**/*.gz",
+    # Public, small genotype examples ship with the testing toolbox; keep
+    # these globs narrow so a raw personal upload cannot enter a wheel.
+    "testing/genomics/*.vcf",
+    "testing/genomics/*.txt",
+    "testing/genomics/*.csv",
+    "testing/genomics/*.bgz",
+    "testing/genomics/*.zip",
+    # The read-only dbSNP site index is queried on genotype import.
+    "**/*.sqlite3",
+    # res/ucum/ucum-essence.xml: UCUM's own table, verbatim (its NOTICE says why).
+    "**/*.xml",
+    "**/*.npy",
+    "**/*.tsv",
+    "**/*.NOTICE",
+    "**/*.html",
+    "**/*.htm",
+    "**/*.js",
+    "**/*.css",
+    "**/*.png",
+    "**/*.jpg",
+    "**/*.jpeg",
+    "**/*.svg",
+    "**/*.ico",
+]
+# NOTE: there is deliberately no [tool.setuptools.exclude-package-data] here.
+# It does not work against the broad `**/*.bin` / `**/*.npy` includes above —
+# setuptools keeps files the include globs matched — and a stanza that looks
+# like it prunes 28 MB while pruning nothing is worse than none. The pruning
+# lives in scripts/build_backend.py::_BUILD_ONLY_DATA (wheel) and MANIFEST.in
+# (sdist), and scripts/check_wheel_data.py fails the build if it stops working.
+
+# (The web client's static assets live at repo-root frontend/ — outside the
+# package on purpose. A pip install serves API + MCP; the UI comes from a
+# checkout (Docker/source) or the hosted client at mirobody.ai. This is what
+# took the wheel from ~57MB of which 8MB was JavaScript, to engine + data only.)
+
+[tool.setuptools.dynamic]
+version = {attr = "mirobody.__version__"}
+
+[tool.pytest.ini_options]
+disable_test_id_escaping_and_forfeit_all_rights_to_community_support = true
+# Collect bare `async def` tests via pytest-asyncio (already in the [test]
+# extra). Without this the async tests fail with "async def functions are not
+# natively supported" on every machine.
+asyncio_mode = "auto"
+# Two roots. `mirobody/tests/` holds the gates that ship: the resolver
+# benchmark the README scores itself against, cross-language identity and the
+# server's security gates. `tests/` is the local regression
+# suite and is gitignored: internal quality control that can be as detailed as
+# it needs to be without becoming part of the project's public surface. It is simply absent from a clone, and
+# pytest skips a testpath that does not exist. (Historical note: the README
+# once documented a tests/ directory along with `-m mcp` / `-m chat` and other
+# markers, none of which existed — following it produced "0 tests collected".)
+testpaths = ["mirobody", "tests"]
+# Scratch and artifact directories are never test roots. `out/` in particular
+# holds review artifacts that may include a full clone of this repo — recursing
+# into one collides every test module with its twin ("import file mismatch").
+norecursedirs = [".*", "build", "dist", "node_modules", "out", "frontend", "__pycache__"]
+markers = [
+    "needs_db: requires a live PostgreSQL (deselect with -m 'not needs_db')",
+    "needs_llm: calls a real model provider and costs money",
+]
+
+# ── Architectural boundary, machine-enforced (run: lint-imports) ─────────────
+#
+# The engine follows the langchain / langchain-core layering: the DATA ENGINE
+# (① Collect: collect · ② Translate: translate, plus the shared utils/user/mcp/task
+# infra) must stay importable without any agent framework, while the AGENT
+# LAYER (③ Agent: agent, server) is the only place LangChain and friends
+# may appear. These contracts turn that rule from a convention into a CI check.
+# import-linter parses function-local imports too, so lazy imports can't sneak
+# a violation past it.
+[tool.importlinter]
+root_packages = ["mirobody"]
+# Required for contracts that forbid EXTERNAL packages (the langchain family).
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "engine is agent-framework-free (the langchain-core rule)"
+type = "forbidden"
+source_modules = [
+    # The LIBRARY — what `pip install mirobody` ships and a consumer imports.
+    "mirobody._bundle",
+    "mirobody._strtab",
+    "mirobody.engine",
+    "mirobody.lexical",
+    "mirobody.kernel",
+    "mirobody.kernel.citations",
+    "mirobody.kernel.connect",
+    "mirobody.kernel.events",
+    "mirobody.kernel.evidence",
+    "mirobody.kernel.meds",
+    "mirobody.kernel.memory",
+    "mirobody.kernel.metrics",
+    "mirobody.kernel.ops",
+    "mirobody.kernel.query",
+    "mirobody.kernel.overlay",
+    "mirobody.kernel.quality",
+    "mirobody.kernel.series",
+    "mirobody.kernel.sink",
+    "mirobody.kernel.tools",
+    "mirobody.units",
+    "mirobody.kernel.decoders",
+    "mirobody.value_scale",
+    "mirobody.zh_fold",
+    "mirobody.translate",
+    # The rest of the engine.
+    "mirobody.collect",
+    "mirobody.documents",
+    "mirobody.utils",
+    "mirobody.user",
+    "mirobody.task",
+    "mirobody.mcp",
+]
+forbidden_modules = [
+    "langchain",
+    "langchain_core",
+    "langchain_openai",
+    "langchain_anthropic",
+    "langchain_google_genai",
+    "langgraph",
+    "deepagents",
+]
+# (The former router seam is gone: pulse/router moved to server/routers, where
+# importing the agent layer is legal. The engine list needs no exemptions here.)
+
+[[tool.importlinter.contracts]]
+name = "the library layer stands alone (the numpy-only rule)"
+# What makes `dependencies = ["numpy"]` true, and the only way to keep it true.
+# These modules are everything a default `pip install mirobody` is for, and
+# every import they add is a package somebody who only wanted `unit_family` has
+# to download. They may import each other and nothing else in this package —
+# `mirobody.utils` alone would put starlette, ruamel, aiohttp and cryptography
+# back in base.
+#
+# `mirobody.engine` is deliberately NOT in this list: `parse_file` reaches into
+# `utils.llm`, which is the [parse] extra, and does so inside the function so
+# `resolve` never pays for it. That seam is the exception that needs the rule
+# written down. `mirobody.translate` codes through the engine and inherits
+# the same exemption; it is held to the agent-framework rule above instead.
+type = "forbidden"
+source_modules = [
+    "mirobody._bundle",
+    "mirobody._strtab",
+    "mirobody.lexical",
+    "mirobody.kernel",
+    "mirobody.kernel.citations",
+    "mirobody.kernel.connect",
+    "mirobody.kernel.events",
+    "mirobody.kernel.evidence",
+    "mirobody.kernel.meds",
+    "mirobody.kernel.memory",
+    "mirobody.kernel.metrics",
+    "mirobody.kernel.ops",
+    "mirobody.kernel.query",
+    "mirobody.kernel.overlay",
+    "mirobody.kernel.quality",
+    "mirobody.kernel.series",
+    "mirobody.kernel.sink",
+    "mirobody.kernel.tools",
+    "mirobody.units",
+    "mirobody.kernel.decoders",
+    "mirobody.value_scale",
+    "mirobody.zh_fold",
+]
+forbidden_modules = [
+    "mirobody.agent",
+    "mirobody.engine",
+    "mirobody.mcp",
+    "mirobody.collect",
+    "mirobody.documents",
+    "mirobody.server",
+    "mirobody.task",
+    "mirobody.user",
+    "mirobody.utils",
+]
+
+[[tool.importlinter.contracts]]
+name = "the library layer is stdlib + numpy (third-party packages are forbidden)"
+# import-linter has no allow-list contract, so "only stdlib and numpy" is
+# spelled as "every third-party distribution this project declares, except
+# numpy, is forbidden here". `tests/test_library_layer.py` regenerates this
+# list from [project.dependencies] and [project.optional-dependencies] and
+# fails when a new dependency is missing below.
+type = "forbidden"
+source_modules = [
+    "mirobody._bundle",
+    "mirobody._strtab",
+    "mirobody.kernel",
+    "mirobody.kernel.citations",
+    "mirobody.kernel.connect",
+    "mirobody.kernel.events",
+    "mirobody.kernel.evidence",
+    "mirobody.lexical",
+    "mirobody.kernel.meds",
+    "mirobody.kernel.memory",
+    "mirobody.kernel.metrics",
+    "mirobody.kernel.ops",
+    "mirobody.kernel.overlay",
+    "mirobody.kernel.quality",
+    "mirobody.kernel.query",
+    "mirobody.kernel.series",
+    "mirobody.kernel.sink",
+    "mirobody.kernel.tools",
+    "mirobody.units",
+    "mirobody.value_scale",
+    "mirobody.kernel.decoders",
+    "mirobody.zh_fold",
+]
+forbidden_modules = [
+    "PIL",
+    "aioboto3",
+    "aiohttp",
+    "anthropic",
+    "asyncpg",
+    "azure",
+    "boto3",
+    "build",
+    "cryptography",
+    "deepagents",
+    "docx",
+    "docker",
+    "dotenv",
+    "fastapi",
+    "google",
+    "greenlet",
+    "importlinter",
+    "jinja2",
+    "jwt",
+    "langchain",
+    "langchain_anthropic",
+    "langchain_google_genai",
+    "langchain_openai",
+    "langgraph",
+    "mandrill",
+    "mcp",
+    "multipart",
+    "openai",
+    "openpyxl",
+    "oss2",
+    "pgvector",
+    "polars",
+    "pptx",
+    "psycopg",
+    "psycopg_pool",
+    "pydantic",
+    "pypdfium2",
+    "pytest",
+    "pytest_asyncio",
+    "pytest_sugar",
+    "redis",
+    "requests",
+    "requests_oauthlib",
+    "ruamel",
+    "ruff",
+    "sentry_sdk",
+    "sqlalchemy",
+    "starlette",
+    "tqdm",
+    "uvicorn",
+    "webauthn",
+    "yaml",
+    "zhconv",
+]
+
+[[tool.importlinter.contracts]]
+name = "engine does not import the agent layer"
+type = "forbidden"
+source_modules = [
+    # The LIBRARY — what `pip install mirobody` ships and a consumer imports.
+    "mirobody._bundle",
+    "mirobody._strtab",
+    "mirobody.engine",
+    "mirobody.lexical",
+    "mirobody.kernel",
+    "mirobody.kernel.citations",
+    "mirobody.kernel.connect",
+    "mirobody.kernel.events",
+    "mirobody.kernel.evidence",
+    "mirobody.kernel.meds",
+    "mirobody.kernel.memory",
+    "mirobody.kernel.metrics",
+    "mirobody.kernel.ops",
+    "mirobody.kernel.query",
+    "mirobody.kernel.overlay",
+    "mirobody.kernel.quality",
+    "mirobody.kernel.series",
+    "mirobody.kernel.sink",
+    "mirobody.kernel.tools",
+    "mirobody.units",
+    "mirobody.kernel.decoders",
+    "mirobody.value_scale",
+    "mirobody.zh_fold",
+    "mirobody.collect",
+    "mirobody.documents",
+    "mirobody.utils",
+    "mirobody.task",
+]
+forbidden_modules = [
+    "mirobody.agent",
+    "mirobody.server",
+]
+# No documented seams remain. The health profile (`user/profile.py`) used to
+# live under agent/chat and needed two ignore entries here; it reaches the
+# model through `utils.llm`, which is engine-side, so it moved.
+ignore_imports = []
+
+[[tool.importlinter.contracts]]
+name = "collect has one front door (the answer layer imports mirobody.collect)"
+type = "forbidden"
+# DIRECT imports only. `mirobody.collect` imports its own submodules to
+# re-export them, so following the chain would flag the front door itself.
+allow_indirect_imports = true
+# ③ Agent reads what ① Collect stored, so the edge is legitimate. What is not
+# legitimate is reaching past the package into whichever module happens to hold
+# the symbol today: 33 such imports named 19 submodules, and 1.4.4 moved four of
+# them (`core/user.py`, `db_utils.py`, `database_services.py`,
+# `providers/platform/`). Every one would have been a router edit.
+#
+# `mirobody.collect` re-exports what these two layers need, lazily (PEP 562),
+# so nothing is imported that was not going to be. Adding a name to `_EXPORTS`
+# is the way to widen this, and it is one line.
+#
+# Tests are exempt by construction: they live in `tests/`, outside the graph.
+# That is the right privilege for them. A regression test for `readings.py`
+# should import `readings.py`, including its underscore-private names.
+source_modules = [
+    "mirobody.agent",
+    "mirobody.server",
+]
+forbidden_modules = [
+    "mirobody.collect.backfill",
+    "mirobody.collect.base",
+    "mirobody.collect.citations",
+    "mirobody.collect.core",
+    "mirobody.collect.files",
+    "mirobody.collect.ingest",
+    "mirobody.collect.manager",
+    "mirobody.collect.meds",
+    "mirobody.collect.providers",
+    "mirobody.collect.query",
+    "mirobody.collect.readings",
+    "mirobody.collect.setup",
+]
+ignore_imports = []
+
+[[tool.importlinter.contracts]]
+name = "translate has one front door (② Translate is imported as a package)"
+type = "forbidden"
+allow_indirect_imports = true
+# `standardize/` moved out of `collect/` in 1.4.4 and became this package, so
+# "collect only collects" is something the tree shows rather than a sentence in
+# a document. Naming the crossing symbols in `translate/__init__` means a
+# module behind them can move without touching a caller.
+#
+# `collect` is a source here on purpose. It imports this package throughout (a
+# provider declares metrics with `StandardIndicator`, `ingest` converts units
+# before writing) and those are legitimate; reaching past the package to
+# whichever module holds the symbol today is not.
+source_modules = [
+    "mirobody.agent",
+    "mirobody.collect",
+    "mirobody.server",
+]
+forbidden_modules = [
+    "mirobody.translate.aggregate",
+    "mirobody.translate.derive",
+    "mirobody.translate.indicators_info",
+    "mirobody.translate.canonical_units",
+    "mirobody.translate.value_range_validator",
+]
+ignore_imports = []
+
+# ── Lint gate (run: ruff check mirobody) ─────────────────────────────────────
+#
+# Narrow on purpose: every rule here is either a real defect class (F: undefined
+# names, unused imports/variables, duplicate definitions; B905: a zip that
+# silently truncates; B006: a mutable default) or a modernisation the 3.12 floor
+# makes unambiguous (UP: PEP 585/604 annotations, datetime.UTC). Style rules
+# that would generate churn without catching anything (import sorting, line
+# length, quote style) are deliberately absent — add one only with the diff that
+# applies it.
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = ["frontend"]
+
+[tool.ruff.lint]
+# Narrow by design, and every addition below earns its place by catching a class
+# of DEFECT rather than a style preference:
+#   B    flake8-bugbear — late-binding closures, mutable defaults, mutable
+#        class attributes. B904 and B007 are ignored below.
+#   ISC  implicit string concatenation — the missing comma in a list literal.
+#   PLE  pylint errors. PLE0604 is excluded below: it cannot see through a
+#        dynamically built `__all__`, which is how the lazy (PEP 562) packages
+#        here export.
+#   RUF100  a `noqa` that no longer suppresses anything. A stale one silently
+#        swallows the NEXT finding on that line.
+#   C4, PIE  comprehension and simplification defects, three findings between them.
+#   TID  a relative import that leaves its directory (TID252, at ruff's default
+#        `parents` level; plain `from .sibling` stays legal). See CLAUDE.md:
+#        the same dependency was being spelled two ways, so grep stopped
+#        answering "who imports kernel".
+select = [
+    "E4", "E7", "E9", "F", "UP",
+    "B", "ISC", "C4", "PIE", "PLE", "RUF100",
+    "RET505", "RET507", "PLW0602", "TID",
+]
+ignore = [
+    "B007",   # unused loop variable. `for k, v in d.items()` when only `v` is read
+              # names the key for a reader even when the code does not use it;
+              # rewriting it to `.values()` is churn, not a fix. (owner, 2026-09-08)
+    "B904",   # `raise ... from` inside `except`. It only changes what a traceback
+              # PRINTS ("during handling of the above" vs "direct cause"), and the
+              # original is in the chain either way — not worth 33 mechanical
+              # edits across the tree. (owner, 2026-09-08)
+    "E402",   # imports after code: three routers register models before importing helpers on purpose
+    "E701",   # `if x: return` one-liners in the strtab/bundle readers
+    "E741",   # `l` as a variable in a few tight loops
+    "UP042",  # (str, Enum) -> StrEnum: the enum values are persisted wire strings; not worth the diff
+    "PLE0604",  # `__all__` built with `*_EXPORTS`: the lazy packages compute it, and
+                # the linter cannot prove the members are strings.
+]
+# NOT selected, each for a reason, so the next person does not re-litigate it:
+#   G004 (1,110 findings) f-string in a log call. Worth doing — lazy formatting
+#        and the PHI policy both want %-style — but 1,110 mechanical edits would
+#        bury any real change in the same commit. Its own PR.
+#   DTZ  (68) `datetime.now()` without a tz. DELIBERATE here: `series_data.time`,
+#        the device point buffer, is a NAIVE LOCAL wall clock and the aggregation
+#        pass is built on that (th_observation itself stores timestamptz with its
+#        zone). Selecting DTZ would ask us to break the buffer's contract to
+#        satisfy a linter.
+# TID252 was listed here as "relative imports are used throughout by choice".
+# Reversed 2026-09-14 on measurement, not taste: numpy nests deeper than we do
+# with zero parent-relative imports, fastapi likewise, and nothing in an
+# eighteen-library sample reached the four dots this package had. It is selected
+# above now. import-linter still guards the layering; TID252 keeps the edge
+# visible to a reader.
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI declares a parameter's SOURCE in its default: `file: UploadFile =
+# File(...)`, `user = Depends(auth)`. B008 is right about mutable defaults in
+# general and wrong about this framework's entire calling convention.
+extend-immutable-calls = [
+    "fastapi.File", "fastapi.Form", "fastapi.Body", "fastapi.Query",
+    "fastapi.Path", "fastapi.Header", "fastapi.Cookie", "fastapi.Depends",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Package __init__ files re-export for their consumers; every import there is
+# "unused" to a linter and load-bearing to the package.
+"__init__.py" = ["F401"]

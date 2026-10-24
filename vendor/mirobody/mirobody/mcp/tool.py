@@ -1,0 +1,586 @@
+import copy
+import inspect
+import logging
+import os
+
+from types import ModuleType, FunctionType
+
+from mirobody.kernel.ops import is_driver_exception
+from mirobody.utils.plugin_dirs import GROUP_TOOLS, entry_point_modules, import_plugin_module, resolve_plugin_dir
+
+logger = logging.getLogger(__name__)
+
+#-----------------------------------------------------------------------------
+
+# Parameter names that mean "who is calling". Only `user_info` is injected from
+# the verified JWT; the rest are the footgun this warns about.
+_CALLER_IDENTITY_PARAMS = {"user_id", "userid", "uid", "current_user"}
+
+#: What the tool loaders discovered: the process-wide MCP surface. Added to by
+#: `_publish`, read through `get_global_tools` / `get_global_descriptions`.
+_tools: dict = {}
+_descriptions: list = []
+
+#-----------------------------------------------------------------------------
+
+
+def parse_function(function: FunctionType) -> tuple[dict, bool, dict]:
+    tool = {
+        "name"          : function.__name__,
+        "description"   : "",
+        "inputSchema" : {
+            "type"  : "object",
+            "properties": {
+
+            },
+            "required"  : []
+        },
+        "annotations"   : {
+            "title"             : function.__name__,
+            "destructiveHint"   : False,
+            "openWorldHint"     : False,
+            "readOnlyHint"      : True,
+        },
+    }
+
+    #-----------------------------------------------------
+
+    # Input schema from `func_metadata`, the MCP SDK's own generator, rather
+    # than a hand-rolled match on stringified annotations. That got four cases
+    # wrong: a bare `dict` became "string", `Literal[...]` and `Enum` lost
+    # their constraint so the schema objected to nothing, and
+    # `Annotated[int, Field(...)]` lost both type and bounds. `skip_names` is
+    # the hidden-argument mechanism: the server fills `user_info` from the
+    # caller's JWT and it must never appear in the schema the model sees.
+    require_user_info = "user_info" in function.__annotations__
+    parameters = {name: None for name in function.__annotations__ if name != "return"}
+
+    # A tool whose parameters are a declared CONTRACT takes them as `**kwargs`,
+    # so its annotations name only `user_info` and the catch-all. `call_tool`
+    # builds its call from `parameters` and REJECTS anything not listed there,
+    # so the schema's property names have to be the list: otherwise every real
+    # argument of such a tool comes back as "unknown argument".
+    declared_schema = getattr(function, "input_schema", None)
+    if isinstance(declared_schema, dict) and declared_schema.get("properties"):
+        parameters = dict.fromkeys(declared_schema["properties"])
+        if require_user_info:
+            parameters["user_info"] = None
+
+    # A tool that takes `user_id` instead of `user_info` is not authenticated and
+    # does not know it. `user_info` is the injection hook; anything else stays in
+    # the schema, so the MODEL supplies it, and an MCP client can then ask for
+    # another person's data by sending a different id. The main README told
+    # authors to do exactly this until it was corrected, so warn rather than
+    # assume nobody followed it.
+    if not require_user_info:
+        caller_ident = _CALLER_IDENTITY_PARAMS & set(function.__annotations__)
+        if caller_ident:
+            logger.warning(
+                "tool %r takes %s but no `user_info`: the server cannot inject the "
+                "caller's identity, so that parameter stays in the tool schema and "
+                "the model supplies it. Take `user_info: Dict[str, Any]` instead.",
+                getattr(function, "__qualname__", function.__name__),
+                ", ".join(sorted(caller_ident)),
+            )
+
+    # A tool whose parameters are a CONTRACT, not a signature, declares the
+    # schema itself: `input_schema` on the function (or on the class, which
+    # `load_tools_from_class` binds onto it) is published verbatim. That is how
+    # `query_health_indicators` publishes `kernel.query.TOOL_SCHEMA`: one object,
+    # shared by the MCP surface and the chat model, so the two cannot drift and
+    # a `**kwargs` body does not become an empty schema. Deep-copied because
+    # the docstring parser below writes descriptions into it.
+    if isinstance(declared_schema, dict) and declared_schema.get("properties"):
+        tool["inputSchema"] = copy.deepcopy(declared_schema)
+    else:
+        from mcp.server.mcpserver.utilities.func_metadata import func_metadata
+
+        meta = func_metadata(function, skip_names=["user_info", "self"])
+        schema = meta.arg_model.model_json_schema(by_alias=True)
+        tool["inputSchema"] = {
+            "type": "object",
+            "properties": schema.get("properties", {}),
+        }
+        if schema.get("required"):
+            tool["inputSchema"]["required"] = list(schema["required"])
+        if schema.get("$defs"):
+            tool["inputSchema"]["$defs"] = schema["$defs"]
+
+    #-----------------------------------------------------
+    # User's descriptions.
+
+    # 0: function description.
+    # 1: argument description.
+    # 2: return description, and everything after it.
+    line_type = 0
+    current_arg_key = ""
+    returns_lines: list[str] = []
+
+    # `getdoc`: a function without a docstring has `__doc__` None, and
+    # `.splitlines()` on it stopped the whole boot.
+    for line in (inspect.getdoc(function) or "").splitlines():
+
+        #-------------------------------------------------
+        # Ignore empty line.
+
+        line = line.strip()
+        if not line:
+            continue
+
+        #-------------------------------------------------
+        # Update line type.
+
+        lower = line.lower()
+        if lower in ("arg:", "args:", "argument:", "arguments:", "param:", "params:", "parameter:", "parameters:"):
+            line_type = 1
+            current_arg_key = ""
+            continue
+
+        if lower in ("return:", "returns:", "result:", "results:"):
+            line_type = 2
+            continue
+
+        #-------------------------------------------------
+        # Save descriptions.
+
+        # Argument.
+        if line_type == 1:
+            try:
+                pos = line.find(":")
+                if pos > 0:
+                    key     = line[:pos].strip()
+                    value   = line[pos+1:].strip()
+
+                    if key and key in tool["inputSchema"]["properties"]:
+                        tool["inputSchema"]["properties"][key]["description"] = value
+                        current_arg_key = key
+                        continue
+
+                # Continuation line for current argument's description.
+                if current_arg_key and current_arg_key in tool["inputSchema"]["properties"]:
+                    desc = tool["inputSchema"]["properties"][current_arg_key].get("description", "")
+                    tool["inputSchema"]["properties"][current_arg_key]["description"] = desc + "\n" + line if desc else line
+
+            except Exception as e:
+                function_name = function.__name__
+                logger.warning("a docstring line was not read: function_name=%s error_type=%s",
+                               function_name, type(e).__name__)
+
+        # Return value, and anything after it (Notes, caveats, examples).
+        # This used to be `pass`: everything from `Returns:` onward was parsed
+        # and thrown away. The model only ever sees `description` plus the
+        # per-argument strings, so a documented return shape and any
+        # "Notes for LLMs" guidance never reached it and it had to guess what a
+        # tool gives back. Collected here and appended to the description below,
+        # under their original heading.
+        elif line_type == 2:
+            returns_lines.append(line)
+
+        # Function.
+        else:
+            if len(tool["description"]) > 0:
+                tool["description"] += "\n"
+
+            tool["description"] += line
+
+    #-----------------------------------------------------
+    # Fold the Returns section (and any trailing guidance) back into the one
+    # field the model actually reads.
+
+    if returns_lines:
+        if tool["description"]:
+            tool["description"] += "\n\n"
+        tool["description"] += "Returns:\n" + "\n".join(returns_lines)
+
+    #-----------------------------------------------------
+
+    # Clean up empty required list that some APIs (e.g. Gemini) don't accept.
+    schema = tool.get("inputSchema", {})
+    if "required" in schema and not schema["required"]:
+        del schema["required"]
+
+    return tool, require_user_info, parameters
+
+#-----------------------------------------------------------------------------
+
+def _declared_tool_names(obj) -> frozenset[str] | None:
+    """The explicit tool allow-list a module or class may declare as
+    `__tools__`, or `None` when it declares none.
+
+    Without it the rule is "every public method of a `*Service` class, and
+    every public module-level function, is a tool", and that rule publishes
+    whatever a refactor happens to leave public. Each record tool has one such
+    name, `envelope`: real API for the REST route and the chat adapter, and it
+    appeared in `tools/list` as a tool an MCP client could call. The leading
+    underscore is not an option for a name another module imports.
+    """
+    declared = getattr(obj, "__tools__", None)
+    if declared is None:
+        return None
+    return frozenset(str(n) for n in declared)
+
+
+def load_tools_from_class(klass, module_name: str) -> dict:
+    # If the class defines a _enabled() static method, call it to check
+    # whether this service should be registered (e.g. API key availability).
+    if hasattr(klass, "_enabled") and callable(klass._enabled):
+        try:
+            if not klass._enabled():
+                logger.info(f"Skipping disabled tool class: {klass.__name__}")
+                return {}
+        except Exception as e:
+            class_name = klass.__name__
+            logger.warning("a tool class's _enabled check failed: class_name=%s error_type=%s",
+                           class_name, type(e).__name__)
+            return {}
+
+    try:
+        functions = inspect.getmembers(klass, predicate=inspect.isfunction)
+    except Exception as e:
+        logger.warning("listing a tool class's functions failed: error_type=%s", type(e).__name__)
+        return {}
+
+    #-----------------------------------------------------
+
+    tools           = {}
+    class_instance  = klass()
+    declared        = _declared_tool_names(klass)
+    # A class-level `input_schema` is the whole class's contract; it is handed
+    # to `parse_function` the same way a function-level one arrives.
+    class_schema    = getattr(klass, "input_schema", None)
+
+    for function_name, function in functions:
+        if inspect.isabstract(function) or inspect.isbuiltin(function):
+            continue
+
+        #-------------------------------------
+
+        # Private method.
+        if function_name.startswith("_"):
+            continue
+
+        # An explicit allow-list wins over "everything public".
+        if declared is not None and function_name not in declared:
+            logger.debug(f"Ignore non-tool method {function_name}: not in {klass.__name__}.__tools__")
+            continue
+
+        # Method declared in base classes.
+        if function.__qualname__:
+            logger.debug(f"{function.__qualname__} in {klass.__name__}")
+
+            a = function.__qualname__.split(".")
+            if len(a) > 0:
+                if a[0] != klass.__name__:
+                    logger.debug(f"Ignore tool method in another class: {function_name}")
+                    continue
+        else:
+            logger.info(f"no qualname for {function_name}")
+
+        # Imported method.
+        if module_name and module_name != function.__module__:
+            logger.debug(f"Ignore tool method in another module: {function_name}")
+            continue
+
+        #-------------------------------------
+
+        if isinstance(class_schema, dict) and not hasattr(function, "input_schema"):
+            function.input_schema = class_schema
+
+        tool_description, require_user_info, parameters = parse_function(function)
+
+        tools[function_name] = {
+            "description"   : tool_description,
+            "auth"          : require_user_info,
+            "instance"      : getattr(class_instance, function_name),
+            "parameters"    : parameters,
+            # A service whose tools need something a deployment may lack (the
+            # medical-knowledge index) says so; unavailable tools are not listed.
+            "available"     : getattr(class_instance, "available", None),
+        }
+
+        logger.info(f"Loaded tool: {function_name}")
+
+    return tools
+
+#-----------------------------------------------------------------------------
+
+def load_tools_from_module(module: ModuleType, module_name: str) -> dict:
+
+    tools = {}
+
+    #-----------------------------------------------------
+    # Parse classes.
+
+    try:
+        classes = inspect.getmembers(module, predicate=inspect.isclass)
+    except Exception as e:
+        logger.warning("listing a tool module's classes failed: error_type=%s", type(e).__name__)
+        classes = {}
+
+    for class_name, klass in classes:
+        if inspect.isabstract(klass) or \
+            inspect.isbuiltin(klass) or \
+            class_name == "Any" or \
+            not class_name.endswith("Service"):
+
+            logger.debug(f"Ignore class: {class_name}")
+            continue
+
+        class_tools = load_tools_from_class(klass, module_name)
+        if class_tools:
+            tools[class_name] = class_tools
+
+    #-----------------------------------------------------
+    # Parse functions.
+
+    try:
+        functions = inspect.getmembers(module, predicate=inspect.isfunction)
+    except Exception as e:
+        logger.warning("listing a tool module's functions failed: error_type=%s", type(e).__name__)
+        functions = {}
+
+    module_tools = {}
+    declared = _declared_tool_names(module)
+
+    for function_name, function in functions:
+        if function_name.startswith("_") or \
+            inspect.isabstract(function) or \
+            inspect.isbuiltin(function) or \
+            function.__module__ != module_name or \
+            (declared is not None and function_name not in declared):
+
+            logger.debug(f"Ignore function: {function_name}")
+            continue
+
+        tool_description, require_user_info, parameters = parse_function(function)
+
+        module_tools[function_name] = {
+            "description"   : tool_description,
+            "auth"          : require_user_info,
+            "instance"      : function,
+            "parameters"    : parameters,
+        }
+
+        logger.info(f"Loaded tool: {function_name}")
+
+    if module_tools:
+        tools[module_name] = module_tools
+
+    #-----------------------------------------------------
+
+    return tools
+
+#-----------------------------------------------------------------------------
+
+def load_tools_from_directory(dir: str) -> tuple[dict, list]:
+    # `MCP_TOOL_DIRS` is a documented extension point ("add your own directory"),
+    # so a directory OUTSIDE the package has to work. It did not: the old rule
+    # derived the module name from the path string, which only doubles as a
+    # dotted package for paths under CWD spelled exactly that way. See
+    # utils/plugin_dirs.py for what that cost.
+    target_directory, module_name_prefix = resolve_plugin_dir(dir)
+
+    if not target_directory:
+        logger.warning(f"No tool directory found at {dir!r}")
+        return {}, []
+
+    #-----------------------------------------------------
+
+    logger.debug(f"Loading tools from {target_directory}")
+
+    # Sorted: scandir's order is the filesystem's, and the tools reach the model
+    # in this order, so two machines would send the same tools in two orders.
+    try:
+        entries = sorted(os.scandir(target_directory), key=lambda e: e.name)
+    except OSError as e:
+        logger.warning("a tool directory could not be scanned: error_type=%s", type(e).__name__)
+        return {}, []
+
+    #-----------------------------------------------------
+
+    tools       = {}
+    descriptions= []
+
+    for entry in entries:
+        if entry.is_dir() or \
+            not entry.name.lower().endswith(".py") or \
+            entry.name.startswith("_") or \
+            entry.name.startswith("test_"):
+            continue
+
+        try:
+            module_name, imported_module = import_plugin_module(
+                target_directory, module_name_prefix, entry.name
+            )
+        except Exception as e:
+            logger.warning("a tool module could not be imported: error_type=%s", type(e).__name__,
+                           exc_info=not is_driver_exception(e))
+            continue
+
+        #-------------------------------------------------
+
+        _register_module(imported_module, module_name, tools, descriptions)
+
+    _publish(tools, descriptions)
+    return tools, descriptions
+
+
+def _register_module(module: ModuleType, module_name: str, tools: dict, descriptions: list) -> None:
+    """Every tool `module` defines goes into `tools` / `descriptions`. A module
+    that cannot be read is logged and left out: one plugin's broken tool used
+    to stop the server from starting."""
+    try:
+        module_tools = load_tools_from_module(module, module_name)
+    except Exception as e:
+        logger.warning("a tool module was left out: error_type=%s", type(e).__name__,
+                       exc_info=not is_driver_exception(e))
+        return
+    for class_tools in (module_tools or {}).values():
+        if not class_tools or not isinstance(class_tools, dict):
+            continue
+        for tool_name, tool_info in class_tools.items():
+            if isinstance(tool_info, dict) and "description" in tool_info:
+                descriptions.append(tool_info["description"])
+                tools[tool_name] = tool_info
+
+
+def _publish(tools: dict, descriptions: list) -> None:
+    _tools.update(tools)
+    _descriptions.extend(descriptions)
+
+
+def load_tools_from_entry_points() -> tuple[dict, list]:
+    """Tools from every installed distribution that declares `mirobody.tools`."""
+    tools: dict = {}
+    descriptions: list = []
+    for module in entry_point_modules(GROUP_TOOLS):
+        _register_module(module, module.__name__, tools, descriptions)
+    _publish(tools, descriptions)
+    return tools, descriptions
+
+#-----------------------------------------------------------------------------
+
+def load_tools_from_directories(dirs: list[str]) -> tuple[dict, list]:
+    """Every tool: the configured directories, then the installed plugins
+    (`mirobody.tools` entry points). Same registry, same schema generation."""
+    tools       = {}
+    descriptions= []
+
+    for dir in dirs:
+        if not dir:
+            continue
+
+        cur_tools, cur_descriptions = load_tools_from_directory(dir)
+        if cur_tools:
+            tools.update(cur_tools)
+            descriptions.extend(cur_descriptions)
+
+    ep_tools, ep_descriptions = load_tools_from_entry_points()
+    tools.update(ep_tools)
+    descriptions.extend(ep_descriptions)
+
+    return tools, descriptions
+
+#-----------------------------------------------------------------------------
+
+async def call_tool(tools: dict, tool_name: str, arguments: dict | None = None, user_id: str = ""):
+    """Invoke one loaded tool by name.
+
+    Unknown argument names are rejected rather than ignored. The generated
+    JSON Schema governs what the model *sees*; nothing enforced it at call
+    time, so `keyword=` instead of `keywords=` used to be dropped on the floor
+    and the tool ran on its defaults: returning a confident, wrong answer that
+    the model had no way to attribute to its own typo. An error naming the
+    accepted parameters is something it can act on.
+
+    Returns None only when the tool cannot be dispatched at all (unknown name,
+    no bound instance); otherwise a result, or `{"success": False, "error": …}`.
+    """
+    # The following two scenarios should never occur.
+    if not tools or \
+        not tool_name or \
+        tool_name not in tools:
+
+        return None
+
+    tool = tools[tool_name]
+    if "instance" not in tool or \
+        not tool["instance"]:
+
+        return None
+
+    #-----------------------------------------------------
+    # Prepare arguments.
+
+    kwargs = tool["parameters"].copy() if "parameters" in tool else {}
+    if arguments:
+        unknown = [k for k in arguments if k not in kwargs]
+        if unknown:
+            # `user_info` is INJECTED below from the caller's JWT and kept out
+            # of the generated inputSchema for that reason. Listing it here
+            # contradicted the schema in the one message a model is most likely
+            # to act on: it reads "Accepted: ..., user_info" and spends a turn
+            # passing a caller identity it does not have. Passing it is harmless
+            # (injection happens after `arguments` is applied, so a supplied
+            # value is overwritten), but it is a round trip the schema never
+            # invited.
+            accepted = ", ".join(sorted(k for k in kwargs if k != "user_info")) or "(none)"
+            error = (
+                f"Unknown argument(s) for {tool_name}: {', '.join(sorted(unknown))}. "
+                f"Accepted: {accepted}."
+            )
+            logger.warning("unknown tool arguments refused: tool_name=%s count=%d", tool_name, len(unknown))
+            return {
+                "success"   : False,
+                "error"     : error
+            }
+
+        for k in arguments:
+            kwargs[k] = arguments[k]
+    if "auth" in tool and tool["auth"]:
+        kwargs["user_info"] = {"user_id": user_id}
+
+    #-----------------------------------------------------
+    # Invoke the function.
+
+    try:
+        if inspect.iscoroutinefunction(tool["instance"]):
+            result = await tool["instance"](**kwargs)
+
+        else:
+            result = tool["instance"](**kwargs)
+
+    except Exception as e:
+        # The type only, to the caller and the log: a driver's message quotes
+        # the statement with its parameters.
+        logger.error("tool call failed: tool_name=%s error_type=%s", tool_name, type(e).__name__,
+                     exc_info=not is_driver_exception(e))
+        return {
+            "success"   : False,
+            "error"     : f"{tool_name} failed ({type(e).__name__})."
+        }
+
+    return result
+
+
+def get_global_descriptions() -> list:
+    """The tool schemas exactly as a client receives them in `tools/list`.
+
+    Kept as public API even though nothing inside the package calls it: for a
+    project whose MCP tool surface IS the product, this is the only way to see
+    what a model actually gets: description text, generated inputSchema and
+    all. It is the check that caught the docstring parser silently dropping
+    every `Returns:` section, and the four types the old schema generator got
+    wrong. Removing it once cost real debugging time; don't remove it again.
+    """
+    return _descriptions
+
+
+def get_global_tools() -> dict:
+    return _tools
+
+
+
+
+
+#-----------------------------------------------------------------------------

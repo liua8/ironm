@@ -1,0 +1,132 @@
+"""The eval-only model configurations of the cloud references.
+
+    python benchmarks/local_models/refs/overlays.py      # writes refs/<ref>.llm.yaml
+
+Each file is the product's `config.llm.yaml` with one OpenRouter model for the
+chat agent (`ref-chat`) and the text utilities (`ref-utils`), and nothing
+else changed: documents are still read by the local OCR route and the table
+rules, and vision stays on `local-utils`, so no photo goes to the cloud model.
+`ref-chat` says `supports_image: false`, so a photo the agent opens with
+`read_file` reaches it as its OCR text, as it reaches the local small model.
+
+Every request is pinned to one OpenRouter host (`allow_fallbacks: false`).
+The account requires zero data retention; OpenRouter's guardrail removes
+every host that does not offer it, DeepSeek's own among them (2026-10-06:
+"ZDR violation (account settings)"). `require_parameters: true` is not used:
+the app sends a temperature with every utility call and OpenRouter lists none
+for GPT-6 Luna or 6.1 Sol, so it answers 404; each pinned host was checked to
+return schema-valid JSON under a strict json_schema with that temperature
+present. The stack runs one with `compose.ref.yaml` (README, "A cloud
+reference"), mounted in place of `/app/config.llm.yaml`; the product's file
+is not edited.
+"""
+
+from __future__ import annotations
+
+import copy
+from pathlib import Path
+
+import yaml
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[2]
+OPENROUTER = {"llm_type": "openai", "api_key": "OPENROUTER_API_KEY", "base_url": "https://openrouter.ai/api/v1"}
+
+#: ref name -> the model, the host it is pinned to, and what differs per surface.
+REFS = {
+    "deepseek-v4.1-flash-v2": {
+        "model": "deepseek/deepseek-v4.1-flash", "host": "together",
+        "chat": {},
+        # DeepSeek's endpoints take response_format but not structured outputs,
+        # as the product's own `deepseek-utils` entry says; thinking off, as there.
+        "utils": {"response_format": "json_object", "extra_body": {"reasoning": {"enabled": False}}},
+    },
+    "claude-sonnet-5.5": {
+        "model": "anthropic/claude-sonnet-5.5", "host": "google-vertex",
+        "chat": {}, "utils": {},          # no temperature, as the product's `claude-sonnet`
+    },
+    "gpt-6-luna": {
+        "model": "openai/gpt-6-luna", "host": "azure",
+        "chat": {}, "utils": {"reasoning_effort": "none"},   # as the product's `openai-utils`
+    },
+    "gpt-6.1-sol": {
+        "model": "openai/gpt-6.1-sol", "host": "azure",
+        "chat": {}, "utils": {},          # always reasons; as the product's `gpt`
+    },
+    # Probed 2026-10-07 under the account's ZDR rule: only Google's host passed
+    # for both (Opus on `anthropic`, `azure` and `amazon-bedrock` did not route a
+    # json_schema request with a temperature; Gemini on `google-ai-studio` is not ZDR).
+    "claude-opus-5.5": {
+        "model": "anthropic/claude-opus-5.5", "host": "google-vertex",
+        "chat": {}, "utils": {},          # no temperature, as the product's `claude-sonnet`
+    },
+    # Gemma 4, which also runs locally. The `:free` variants route only to
+    # Google AI Studio, which the account's ZDR rule excludes (2026-10-10).
+    # Both hosts passed a tool call and a strict json_schema. The 31B runs in
+    # FP8: Crusoe (BF16) rate-limited it, 12 waits in five questions, and
+    # Novita refused the app's first request as longer than its context.
+    "gemma-4-26b-a4b": {
+        "model": "google/gemma-4-26b-a4b-it", "host": "google-vertex",
+        "chat": {}, "utils": {},
+    },
+    "gemma-4-31b": {
+        "model": "google/gemma-4-31b-it", "host": "deepinfra/fp8",
+        "chat": {}, "utils": {},
+    },
+    # A teacher candidate beside Gemma 4 31B: Qwen3.5-35B-A3B tuned for agents,
+    # Apache-2.0. Only Novita serves it, and only as `:free`; it passed the
+    # account's ZDR rule and returned a structured tool call (2026-10-12).
+    "apodex-1.1-mini": {
+        "model": "apodex/apodex-1.1-mini:free", "host": "novita/bf16",
+        "chat": {}, "utils": {},
+    },
+    # The 397B Apodex 1.1, from Apodex's own API: its weights are not public.
+    # Reached from this Mac; the training machine's region is refused.
+    "apodex-1.1": {
+        "model": "apodex-1.1", "api": {"llm_type": "openai", "api_key": "APODEX_API_KEY",
+                                       "base_url": "https://api.apodex.ai/v1"},
+        "chat": {}, "utils": {"response_format": "json_object"},
+    },
+    "gemini-3.8-flash": {
+        "model": "google/gemini-3.8-flash", "host": "google-vertex",
+        "chat": {},
+        # As the product's `openrouter-utils`, whose default this model is: its
+        # reasoning cannot be turned off, `low` is the least it takes.
+        "utils": {"extra_body": {"reasoning": {"effort": "low", "exclude": True}}},
+    },
+}
+
+
+def entry(spec: dict, surface: str) -> dict:
+    extra = copy.deepcopy(spec[surface].get("extra_body") or {})
+    if "host" in spec:   # OpenRouter; a vendor's own API (`api`) has no hosts to pin
+        extra["provider"] = {"order": [spec["host"]], "allow_fallbacks": False}
+    out = {**spec.get("api", OPENROUTER), "model": spec["model"], "supports_image": False,
+           **{k: v for k, v in spec[surface].items() if k != "extra_body"}, "extra_body": extra}
+    if surface == "utils":
+        out["chat"] = False
+    return out
+
+
+def overlay(name: str) -> dict:
+    config = yaml.safe_load((ROOT / "config.llm.yaml").read_text(encoding="utf-8"))
+    spec = REFS[name]
+    config["MODELS"] = {"ref-chat": entry(spec, "chat"), "ref-utils": entry(spec, "utils"), **config["MODELS"]}
+    config["DEFAULT_MODEL"] = "ref-chat"
+    config["UTILS_TEXT_MODEL"] = ["ref-utils"]
+    config["UTILS_VISION_MODEL"] = ["local-utils"]
+    return config
+
+
+def main() -> None:
+    for name in REFS:
+        path = HERE / f"{name}.llm.yaml"
+        where = f"pinned to OpenRouter host {REFS[name]['host']}" if "host" in REFS[name] else "from its vendor's API"
+        head = (f"# Eval-only: generated by benchmarks/local_models/refs/overlays.py from config.llm.yaml.\n"
+                f"# ref {name}: {REFS[name]['model']} {where}.\n")
+        path.write_text(head + yaml.safe_dump(overlay(name), allow_unicode=True, sort_keys=False), encoding="utf-8")
+        print(path)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,80 @@
+mirobody/agent/chat/message.py	interpolation	role
+mirobody/agent/chat/message.py	interpolation	scene
+mirobody/agent/filesystem/files_backend.py	interpolation	self._scope
+mirobody/agent/middleware/prompt_caching.py	interpolation	msg
+mirobody/agent/middleware/tool_faults.py	interpolation	repairs
+mirobody/collect/files/file_upload_manager.py	interpolation	mapped_progress
+mirobody/collect/files/file_upload_manager.py	interpolation	progress
+mirobody/collect/files/file_upload_manager.py	interpolation	successful_files
+mirobody/collect/files/file_upload_manager.py	interpolation	total_files
+mirobody/collect/files/handlers/base.py	interpolation	file_key
+mirobody/collect/files/handlers/base.py	interpolation	unique_filename
+mirobody/collect/files/services/drive_listing.py	interpolation	file_key
+mirobody/collect/files/services/drive_listing.py	interpolation	target_user_id or uploader_user_id
+mirobody/collect/files/services/file_db_service.py	interpolation	file_key
+mirobody/collect/files/services/file_processing_service.py	interpolation	file_key
+mirobody/collect/files/services/file_processing_service.py	interpolation	storage.get_storage_type()
+mirobody/collect/files/services/file_processing_service.py	interpolation	total_files
+mirobody/collect/files/services/file_uploader.py	interpolation	filename
+mirobody/collect/files/services/file_uploader.py	interpolation	storage.get_storage_type()
+mirobody/collect/files/services/genetic_processor.py	interpolation	loaded_records
+mirobody/collect/files/services/genetic_processor.py	interpolation	valid_records
+mirobody/collect/files/services/list_my_data.py	interpolation	total_categories
+mirobody/collect/files/services/list_my_data.py	interpolation	total_records
+mirobody/collect/files/services/report_date.py	interpolation	file_key
+mirobody/collect/ingest/services/repair_reconcile.py	interpolation	created
+mirobody/collect/manager.py	interpolation	platform.name
+mirobody/collect/manager.py	interpolation	platform_name
+mirobody/collect/manager.py	interpolation	result
+mirobody/mcp/service.py	interpolation	name
+mirobody/mcp/tool.py	interpolation	", ".join(sorted(caller_ident))
+mirobody/mcp/tool.py	interpolation	dir
+mirobody/mcp/tool.py	interpolation	function.__qualname__
+mirobody/mcp/tool.py	interpolation	getattr(function, "__qualname__", function.__name__)
+mirobody/mcp/tool.py	interpolation	target_directory
+mirobody/server/bootstrap.py	interpolation	_SCHEMA_DIR
+mirobody/server/bootstrap.py	interpolation	env_name
+mirobody/server/bootstrap.py	interpolation	filename
+mirobody/server/bootstrap.py	interpolation	schema
+mirobody/server/worker.py	interpolation	[c.__name__ for c in task_classes]
+mirobody/task/loader.py	interpolation	dir
+mirobody/task/loader.py	interpolation	module_name
+mirobody/task/loader.py	interpolation	target
+mirobody/task/profile_refresh.py	interpolation	result.get('current_version')
+mirobody/task/profile_refresh.py	interpolation	result.get('last_execute_doc_id')
+mirobody/task/profile_refresh.py	interpolation	result.get('profile_id')
+mirobody/task/profile_refresh.py	interpolation	result.get('version')
+mirobody/translate/aggregate/aggregators/sql_aggregator.py	interpolation	chunk_end.strftime('%Y-%m-%d')
+mirobody/translate/aggregate/aggregators/sql_aggregator.py	interpolation	current_start.strftime('%Y-%m-%d')
+mirobody/translate/aggregate/aggregators/sql_aggregator.py	interpolation	data_begin_utc
+mirobody/translate/aggregate/aggregators/sql_aggregator.py	interpolation	end_date
+mirobody/translate/aggregate/aggregators/sql_aggregator.py	interpolation	end_date.date()
+mirobody/translate/aggregate/aggregators/sql_aggregator.py	interpolation	since_timestamp
+mirobody/translate/aggregate/aggregators/sql_aggregator.py	interpolation	start_date
+mirobody/translate/aggregate/aggregators/sql_aggregator.py	interpolation	start_date.date()
+mirobody/translate/aggregate/aggregators/sql_aggregator.py	interpolation	user_id or 'all users'
+mirobody/translate/aggregate/aggregators/sql_aggregator.py	interpolation	user_label
+mirobody/translate/aggregate/service.py	interpolation	end_date.isoformat()
+mirobody/translate/aggregate/service.py	interpolation	last_timestamp
+mirobody/translate/aggregate/service.py	interpolation	start_date.isoformat()
+mirobody/translate/aggregate/service.py	interpolation	user_id or 'all'
+mirobody/translate/aggregate/task.py	interpolation	stats_dict['execution_time_ms']
+mirobody/translate/aggregate/task.py	interpolation	stats_dict['summaries_created']
+mirobody/translate/aggregate/task.py	interpolation	stats_dict['users_affected']
+mirobody/user/auth/oauth_service.py	interpolation	err
+mirobody/utils/config/config.py	interpolation	file
+mirobody/utils/config/config.py	interpolation	upper_key
+mirobody/utils/config/postgresql.py	interpolation	" ".join(str(query).split())
+mirobody/utils/config/storage/aliyun.py	interpolation	self.bucket
+mirobody/utils/config/storage/aliyun.py	interpolation	self.cdn
+mirobody/utils/config/storage/aliyun.py	interpolation	self.cdn or 'none'
+mirobody/utils/config/storage/aliyun.py	interpolation	self.endpoint
+mirobody/utils/config/storage/aws.py	interpolation	self.bucket
+mirobody/utils/config/storage/aws.py	interpolation	self.region
+mirobody/utils/config/storage/local.py	interpolation	self.base_path
+mirobody/utils/config/storage/local.py	interpolation	self.proxy_url
+mirobody/utils/db.py	interpolation	logged_query
+mirobody/utils/http.py	interpolation	message
+mirobody/utils/http.py	interpolation	msg
+mirobody/utils/plugin_dirs.py	interpolation	ep.name
+mirobody/utils/plugin_dirs.py	interpolation	group

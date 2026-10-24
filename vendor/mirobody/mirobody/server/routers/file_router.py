@@ -1,0 +1,639 @@
+"""
+WebSocket routes for data_server with file upload progress and real-time communication
+"""
+
+from mirobody.collect import get_uploaded_files_paginated
+import asyncio
+import json
+import logging
+import uuid
+from datetime import datetime
+from fastapi import Request
+
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, field_validator
+from mirobody.utils import execute_query
+from mirobody.utils.i18n import language_from_headers
+from mirobody.utils.req_ctx import set_req_ctx
+from mirobody.server.auth import subject_for, verify_token, verify_token_claims
+from mirobody.server.envelope import ErrorResponse, StandardResponse, err, failed
+from mirobody.user.auth.bearer import aal2_required_response, lacks_second_factor
+
+from mirobody.collect import get_websocket_file_upload_manager
+from mirobody.collect import get_user_data_distribution
+
+# Additional imports for async file processing
+from mirobody.collect import delete_files_from_message, delete_all_files_from_message, upload_files_to_storage
+from mirobody.collect import FileUploadData
+from mirobody.utils.log import secret_fingerprint
+from mirobody.kernel.ops import is_driver_exception
+
+logger = logging.getLogger(__name__)
+
+# Import for direct S3 upload endpoint (now using universal service)
+# Note: FileUploader, validate_file_extension, generate_file_key are used via upload_files_to_storage
+
+# Get global file upload manager instance (singleton)
+websocket_file_upload_manager = get_websocket_file_upload_manager()
+
+router = APIRouter()
+
+# Server-side timeout configuration
+WEBSOCKET_IDLE_TIMEOUT = 5 * 60  # 5 minutes in seconds for idle connections
+WEBSOCKET_UPLOAD_TIMEOUT = 30 * 60  # 30 minutes in seconds for active uploads
+
+class FileUploadResponse(BaseModel):
+    """The envelope with a LIST in `data`, one entry per file: the shape the
+    web client's upload reads (`res[0].file_key`), so not `StandardResponse`,
+    whose `data` is an object."""
+
+    code: int
+    msg: str
+    data: list[FileUploadData] | None
+
+
+class FileDeleteRequest(BaseModel):
+    """File deletion request model"""
+    
+    message_id: str | int
+    file_keys: list[str] | None = None  # If None, delete all files
+    
+    @field_validator('message_id', mode='before')
+    @classmethod
+    def coerce_message_id_to_str(cls, v):
+        """Convert message_id to string (accepts both str and int from frontend)"""
+        return str(v) if v is not None else v
+
+
+
+async def _authorize_file_read(file_key: str, caller_id: str) -> bool:
+    """Can `caller_id` read the object stored under `file_key`?
+
+    Ownership is not a property of the object store (S3/OSS/local all hand out
+    bytes to whoever names the key) so it has to come from the row that
+    recorded the upload. Two tables record one:
+
+    ``th_files`` is the only one, now. There used to be a second lookup against
+    `deep_agent_workspace.object_storage_key`, for files the agent had written
+    into its own filesystem and that `th_files` therefore did not know about.
+    The agent's scratch space is deepagents' checkpointed `StateBackend` and
+    holds no object-storage bytes, so no such file exists and the fallback could
+    only ever have authorized a stale row. One source is also the point: two
+    tables answering "who owns this key" is two chances to disagree.
+
+    The file belongs to the record it was filed under (`query_user_id`), the
+    column the files LIST filters on, and care-circle members reach it through
+    the same permission check that list uses. This checked the uploader
+    (`user_id`) instead: a report a carer filed for someone could not be opened
+    by that person, and anyone who could read the carer could open it.
+
+    An unrecorded key is denied. That is deliberate and it is the reason this
+    returns bool rather than raising: a key nobody claims is either gone or was
+    never ours, and both should look identical from outside.
+    """
+    caller = str(caller_id)
+
+    rows = await execute_query(
+        "SELECT COALESCE(query_user_id, user_id) AS owner FROM th_files "
+        "WHERE file_key = :key AND is_del = FALSE LIMIT 1;",
+        params={"key": file_key},
+    )
+    if not rows:
+        return False
+
+    owner = str(rows[0].get("owner") or "")
+    if not owner:
+        return False
+    return await subject_for(caller, owner) is not None
+
+
+@router.get("/files/{file_path:path}", tags=["files"])
+async def serve_storage_file(
+    request: Request,
+    file_path: str,
+    authorization: str | None = Header(None),
+    access_token: str | None = Query(
+        None, description="Bearer token, for browser contexts that cannot set a header"
+    ),
+):
+    """
+    Proxy files from storage (S3/OSS) through backend, for the file's owner.
+
+    URL format: /files/uploads/20231125_123456_abc123.pdf
+
+    **This endpoint had no authentication at all.** An external review fetched a
+    real health-report PDF from a running deployment with no token: the key is
+    a second-resolution timestamp plus 8 hex characters, which is not a secret,
+    and the response also carried `Cache-Control: public` so any shared proxy
+    was free to keep a copy of someone's labs. The docstring said "Can add
+    access control if needed"; for PHI it was needed.
+
+    The token may arrive in the `Authorization` header OR as `?access_token=`.
+    The query parameter is not a convenience: a browser cannot set a header on
+    a navigation, an `<img src>` or a PDF viewer embed, and `_build_url` hands
+    out exactly such URLs. **Clients rendering these links must now append the
+    token**: a bare `<a href="/files/...">` gets 401.
+    """
+    from fastapi.responses import StreamingResponse
+    from mirobody.utils.config.storage import get_storage_client
+    import io
+
+    # Storage keys name their owner (`demo/<email>/...`), so the log carries a
+    # fingerprint of the key, never the key.
+    key_id = secret_fingerprint(file_path)
+    try:
+        # Security check: prevent path traversal
+        if ".." in file_path or file_path.startswith("/"):
+            logger.warning("refused a file path that leaves the storage root: key=%s", key_id)
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        caller_id, claims = await verify_token_claims(authorization or access_token or "")
+        if await lacks_second_factor(
+            int(caller_id), claims, getattr(request.app.state, "requires_second_factor", None)
+        ):
+            return aal2_required_response()
+
+        if not await _authorize_file_read(file_path, caller_id):
+            # 404, not 403: a 403 confirms the key exists, which turns this
+            # route back into the enumeration oracle it just stopped being.
+            logger.warning(
+                "unauthorized file read: caller_id=%s key=%s", caller_id, key_id
+            )
+            raise HTTPException(status_code=404, detail="File not found")
+
+        # Get storage client
+        storage = get_storage_client()
+        
+        # Get file from storage
+        content, err = await storage.get(file_path)
+        if err:
+            logger.warning("storage read failed: key=%s", key_id)
+        
+        if content is None:
+            logger.warning("file not found in storage: key=%s", key_id)
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # Determine content type from filename
+        content_type = storage.get_content_type_from_filename(file_path)
+        
+        # Extract filename for Content-Disposition header
+        filename = file_path.split("/")[-1] if "/" in file_path else file_path
+        
+        content_bytes = len(content)
+        logger.debug("serving file from storage: key=%s bytes=%d", key_id, content_bytes)
+        
+        # Return file as streaming response
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type=content_type,
+            headers={
+                # `attachment`, not `inline`: an uploaded .html or .svg served
+                # inline executes on this origin with the session that fetched
+                # it. Nothing here needs to render in place.
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Length": str(len(content)),
+                # `private`: the response is now per-user, so a shared proxy
+                # caching it would serve one person's labs to the next caller.
+                "Cache-Control": "private, no-store",
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "serving a file failed: key=%s (%s)", key_id, type(e).__name__,
+            exc_info=not is_driver_exception(e),
+        )
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# === WebSocket Routes ===
+@router.websocket("/ws/upload-health-report")
+async def websocket_upload_health_report(
+    websocket: WebSocket, 
+    token: str = Query(..., description="Authentication token"),
+    connectionId: str = Query(None, description="Optional client-provided connection ID for reconnection support")
+):
+    """
+    WebSocket file upload endpoint
+    Supports real-time file upload and progress synchronization
+    
+    Args:
+        token: Authentication token (required)
+        connectionId: Optional client-provided connection ID. If provided, the server will use it;
+                     otherwise, a new one will be generated. This enables reconnection to previous sessions.
+    """
+    user_id = None
+    # Generate unique trace_id for this WebSocket connection
+    trace_id = str(uuid.uuid4())
+
+    # Set request context with trace_id for the entire WebSocket session.
+    # `language` belongs here too: `JwtMiddleware` is a `BaseHTTPMiddleware`
+    # and never runs for a websocket scope, so every progress message during an
+    # upload came back in English whatever the client asked for. The handshake
+    # carries the same headers an HTTP request does.
+    ctx = {
+        "trace_id": trace_id,
+        "connection_type": "websocket",
+        "endpoint": "/ws/upload-health-report",
+    }
+    language = language_from_headers(websocket.headers)
+    if language:
+        ctx["language"] = language
+
+    logger.info("WebSocket file upload connection initiated")
+
+
+    with set_req_ctx(ctx):
+        try:
+            # Verify token
+            try:
+                user_id, claims = await verify_token_claims(token)
+                if not user_id:
+                    await websocket.close(code=1008, reason="Invalid token")
+                    return
+            except HTTPException:
+                logger.warning("upload socket refused its token: token=%s", secret_fingerprint(token))
+                await websocket.close(code=1008, reason="Token verification failed")
+                return
+            except Exception as e:
+                logger.error("upload socket token check failed: token=%s error_type=%s",
+                             secret_fingerprint(token), type(e).__name__, exc_info=not is_driver_exception(e))
+                await websocket.close(code=1008, reason="Token verification failed")
+                return
+
+            # The HTTP middleware never sees a WebSocket, so this socket asks the
+            # second-factor rule itself: an MFA account's AAL1 token used to open
+            # it and upload into the record without the passkey.
+            if await lacks_second_factor(
+                int(user_id), claims, getattr(websocket.app.state, "requires_second_factor", None)
+            ):
+                await websocket.close(code=1008, reason="Second factor required")
+                return
+
+            # Use client-provided connectionId or default to user_id (backward compatible)
+            if connectionId:
+                # Validate that connectionId starts with user_id (security check)
+                if not connectionId.startswith(f"{user_id}_") and connectionId != str(user_id):
+                    logger.warning("upload socket ignored a connectionId not prefixed by its account: user_id=%s",
+                                   user_id)
+                    # Fall back to user_id for backward compatibility
+                    connection_id = str(user_id)
+                else:
+                    connection_id = connectionId
+                    logger.info(f"Using client-provided connectionId: {connection_id}")
+            else:
+                # Default to user_id for backward compatibility (single tab per user)
+                # If frontend wants multi-tab support, it should provide a unique connectionId
+                connection_id = str(user_id)
+            
+            logger.info(f"WebSocket file upload connection established: user_id={user_id}, connection_id={connection_id}")
+
+            # Establish connection using connection_id (not just user_id) to support multiple tabs
+            await websocket_file_upload_manager.connect(websocket, connection_id)
+
+            # Add server-side timeout mechanism
+            last_activity_time = datetime.now()
+
+            # Message processing loop with timeout check
+            while True:
+                try:
+                    # Add receive message timeout with asyncio.wait_for
+                    message = await asyncio.wait_for(
+                        websocket.receive_text(),
+                        timeout=30.0,  # 30 second timeout for periodic idle time check
+                    )
+
+                    # Update last activity time
+                    last_activity_time = datetime.now()
+
+                    try:
+                        message_data = json.loads(message)
+                        message_type = message_data.get("type")
+
+                        # Handle different types of messages
+                        # Note: use connection_id for WebSocket operations, but pass user_id for business logic
+                        if message_type == "upload_start":
+                            # Add real user_id to message_data for file storage
+                            message_data["_real_user_id"] = str(user_id)
+                            await websocket_file_upload_manager.handle_upload_start(connection_id, message_data)
+                        elif message_type == "upload_chunk":
+                            message_data["_real_user_id"] = str(user_id)
+                            await websocket_file_upload_manager.handle_file_chunk(connection_id, message_data)
+                        elif message_type == "upload_end":
+                            message_data["_real_user_id"] = str(user_id)
+                            await websocket_file_upload_manager.handle_upload_end(connection_id, message_data)
+                        elif message_type == "ping":
+                            # Send pong directly via current websocket, not through manager
+                            # This avoids issues when user is not in active_connections
+                            await websocket.send_text(json.dumps({
+                                "type": "pong",
+                                "timestamp": datetime.now().isoformat(),
+                            }))
+                            logger.info(f"Sent pong to user {user_id}")
+                        elif message_type == "get_status":
+                            message_id = message_data.get("messageId")
+                            if message_id:
+                                status = await websocket_file_upload_manager.get_upload_status(
+                                    connection_id, message_id, user_id=str(user_id)
+                                )
+                                await websocket_file_upload_manager.send_message(connection_id, status)
+                        else:
+                            # The type is the client's text; only that it was not one of ours is news.
+                            logger.warning("upload socket: unknown message type ignored: connection_id=%s",
+                                           connection_id)
+
+                    except json.JSONDecodeError:
+                        logger.error("Invalid JSON message: bytes=%d", len(message))
+                        await websocket_file_upload_manager.send_message(
+                            connection_id,
+                            {"type": "error", "message": "Invalid JSON message format"},
+                        )
+
+                except TimeoutError:
+                    # Receive timeout, check if idle time limit exceeded
+                    current_time = datetime.now()
+                    idle_seconds = (current_time - last_activity_time).total_seconds()
+
+                    # Dynamically select timeout: use longer timeout when there are active uploads
+                    # Use connection_id to check uploads for this specific connection
+                    has_active_uploads = websocket_file_upload_manager.has_active_uploads(connection_id)
+                    timeout_threshold = WEBSOCKET_UPLOAD_TIMEOUT if has_active_uploads else WEBSOCKET_IDLE_TIMEOUT
+                    timeout_type = "upload" if has_active_uploads else "idle"
+                    timeout_minutes = timeout_threshold // 60
+                    active_uploads_count = websocket_file_upload_manager.get_active_uploads_count(connection_id)
+
+                    if idle_seconds >= timeout_threshold:
+                        logger.info(f"[DataService] File upload WebSocket {timeout_type} timeout ({idle_seconds:.1f}s/{timeout_threshold}s) for user {user_id} connection {connection_id} (active uploads: {active_uploads_count}), closing connection")
+
+                        # Check if WebSocket connection is still active before sending notification
+                        try:
+                            if websocket.client_state.value == 1:  # OPEN state
+                                await websocket_file_upload_manager.send_message(
+                                    connection_id,
+                                    {
+                                        "type": "connection_timeout",
+                                        "message": f"Connection closed due to {timeout_minutes} minutes of inactivity (timeout type: {timeout_type})",
+                                        "idle_seconds": idle_seconds,
+                                        "timeout_type": timeout_type,
+                                        "active_uploads_count": active_uploads_count,
+                                    },
+                                )
+                            else:
+                                logger.debug(f"[DataService] WebSocket already closed for user {user_id}, skipping timeout notification")
+                        except Exception as send_error:
+                            logger.debug("upload socket timeout notice not sent: user_id=%s error_type=%s",
+                                         user_id, type(send_error).__name__)
+
+                        # Ensure connection is closed
+                        try:
+                            if websocket.client_state.value == 1:  # OPEN state
+                                await websocket.close(code=1000, reason="Idle timeout")
+                        except Exception as close_error:
+                            logger.debug("upload socket close failed: user_id=%s error_type=%s",
+                                         user_id, type(close_error).__name__)
+                        break
+                    else:
+                        # Not timeout yet, continue listening
+                        logger.debug(f"[DataService] File upload WebSocket {timeout_type} check for user {user_id}: {idle_seconds:.1f}s/{timeout_threshold}s (active uploads: {active_uploads_count})")
+
+                except WebSocketDisconnect:
+                    logger.info(f"WebSocket connection normally disconnected: user_id={user_id}")
+                    break
+                except Exception as e:
+                    logger.error("upload socket message failed: user_id=%s error_type=%s", user_id,
+                                 type(e).__name__, exc_info=not is_driver_exception(e))
+                    break
+
+        except Exception as e:
+            logger.error("upload socket failed: user_id=%s error_type=%s", user_id, type(e).__name__,
+                         exc_info=not is_driver_exception(e))
+        finally:
+            # Clean up connection using connection_id
+            try:
+                if connection_id:
+                    await websocket_file_upload_manager.disconnect(connection_id)
+                    logger.info(f"WebSocket file upload connection disconnected: user_id={user_id}, connection_id={connection_id}")
+            except NameError:
+                # connection_id not defined (token verification failed before connection_id was set)
+                pass
+
+
+@router.get("/api/v1/data/data-distribution", response_model=StandardResponse | ErrorResponse)
+async def get_data_distribution(
+    user_id: str | None = Query(None, description="User ID"),
+    current_user: str = Depends(verify_token),
+):
+    """
+    Get user data distribution
+
+    Args:
+        user_id: Optional user ID, if not provided, use current logged-in user
+        current_user: Current logged-in user info
+
+    Returns:
+        User data distribution info
+    """
+    try:
+        # `?user_id=` was honoured with no authorization check at all, so any
+        # authenticated caller could read any user's data-category distribution:
+        # which categories of health data they hold and how much. The route
+        # directly below this one (`/api/v1/data/uploaded-files`) already did
+        # this correctly; the two were written apart and only one got the
+        # check.
+        target_user_id = await subject_for(current_user, user_id)
+        if target_user_id is None:
+            return err(403, "No permission to query this user's data.")
+
+        logger.info(f"Get data distribution: user_id={target_user_id}")
+
+        # Call service to get data distribution
+        result = await get_user_data_distribution(target_user_id)
+
+        return StandardResponse(data=result)
+
+    except Exception as e:
+        return failed("data distribution", e, "Failed to get the data distribution.")
+
+
+@router.get("/api/v1/data/uploaded-files", response_model=StandardResponse | ErrorResponse)
+async def get_uploaded_files(
+    target_user_id: str | None = Query(None, description="Target user ID - view files uploaded for which user"),
+    limit: int | None = Query(100, description="Maximum number of files to return"),
+    offset: int | None = Query(0, description="Pagination offset"),
+    current_user: str = Depends(verify_token),
+):
+    """
+    Get user's uploaded file history from th_files table.
+    
+    Data source: th_files table (migrated from th_messages)
+    
+    Logic:
+    - Files are stored in th_files table with user_id field
+    - target_user_id is empty: Return current user's own files
+    - target_user_id has value: Return specified user's files (if authorized)
+
+    Args:
+        target_user_id: Target user ID, if not provided, return own files
+        limit: Maximum number of files to return
+        offset: Pagination offset
+        current_user: Current logged-in user info
+
+    Returns:
+        User uploaded file list
+    """
+
+    try:
+        logger.info("Query uploaded files: caller_id=%s target_user_id=%s", current_user, target_user_id)  # phi: ok account ids
+
+        owner = await subject_for(current_user, target_user_id)
+        if owner is None:
+            return err(403, "No permission to query this user's files.")
+
+        result = await get_uploaded_files_paginated(
+            uploader_user_id=str(current_user),
+            target_user_id=owner,
+            limit=limit,
+            offset=offset,
+        )
+
+        return StandardResponse(data=result)
+
+    except Exception as e:
+        return failed("uploaded files list", e, "Failed to get uploaded files.")
+
+
+@router.post("/files/upload", response_model=FileUploadResponse)
+async def upload_files(
+    request: Request,
+    files: list[UploadFile] = File(..., description="Files to upload (PDF, images, documents, etc.)"),
+    user_id: str = Depends(verify_token),
+    folder: str | None = Query(None, description="Custom folder prefix for uploaded files, defaults to 'uploads'"),
+    target_user_id: str | None = Query(None, description="Upload for this person's record; needs a write grant"),
+    file: bool = Query(False, description="Also file the uploads in the record and start extraction, as the Data page does"),
+) -> FileUploadResponse:
+    """
+    Upload multiple files to storage, and with `file=true` file them.
+
+    Without `file` this is the first step of a chat attachment: the file is
+    stored, and the turn that sends its key files it and extracts it (so filing
+    here as well would file and extract every attachment twice). A client that
+    only uploads passes `file=true`: the files land in the record as a Data-page
+    upload would, through the same code the chat turn uses.
+
+    `target_user_id` is declared so that it is checked. Undeclared, FastAPI
+    dropped it and a proxy upload went ahead as the caller's own, with no grant
+    asked for.
+    
+    Args:
+        files: List of files to upload
+        user_id: User authentication data
+        folder: Custom folder prefix for uploaded files (optional, defaults to 'uploads')
+        
+    Returns:
+        FileUploadResponse: Standard response with code, msg, and data fields.
+        - code: 0 for success, 1 for partial/complete failure
+        - msg: Response message
+        - data: List of upload results, each containing file URL, file key, size, type, and timestamp
+    """
+    owner = await subject_for(user_id, target_user_id, write=True)
+    if owner is None:
+        return FileUploadResponse(code=403, msg="You cannot upload to that record.", data=[])
+
+    result = await upload_files_to_storage(files=files, user_id=owner, folder_prefix=folder)
+    stored = result.get("data") or []
+    if stored and file:
+        from mirobody.agent.chat.file import process_files_from_storage
+        from mirobody.collect import SOURCE_DATA
+
+        filed = await process_files_from_storage(
+            stored, user_id=str(user_id), msg_id=str(uuid.uuid4()), query_user_id=owner, source=SOURCE_DATA)
+        if filed < len(stored):
+            result = {**result, "code": 1, "msg": f"{len(stored)} stored, {filed} filed; the rest are not in the record"}
+        else:
+            result = {**result, "msg": f"{filed} filed; extraction started"}
+    elif stored and result.get("code") == 0:
+        result = {**result, "msg": f"{len(stored)} stored, not filed: send the keys with a chat message, or upload with file=true"}
+
+    return FileUploadResponse(
+        code=result["code"],
+        msg=result["msg"],
+        data=result["data"]
+    )
+
+
+@router.post("/api/v1/data/delete-files", response_model=StandardResponse | ErrorResponse)
+async def delete_uploaded_files(
+    request: FileDeleteRequest,
+    user_id: str = Depends(verify_token)
+):
+    """
+    Delete uploaded files from th_files table.
+    
+    Data source: th_files table (migrated from th_messages)
+    
+    This endpoint allows deletion of specific files or all files by source_id.
+    - If file_keys is provided, only those specific files will be soft deleted
+    - If file_keys is None/empty, all files with the source_id will be deleted
+    - Files are soft deleted (is_del = true) in th_files table
+    
+    Args:
+        request: FileDeleteRequest containing message_id (source_id) and optional file_keys
+        user_id: User authentication data
+        
+    Returns:
+        The deletion results in `data`.
+    """
+    try:
+        # Storage keys name their owner, so the log counts them.
+        logger.info("File deletion request: message_id=%s file_key_count=%d user_id=%s",
+                    request.message_id, len(request.file_keys or []), user_id)
+
+        # Validate input
+        if not request.message_id:
+            return err(400, "Message ID is required.")
+
+                
+        # Filter out empty strings from file_keys
+        valid_file_keys = [key for key in (request.file_keys or []) if key and key.strip()]
+        
+        # Determine if deleting all files or specific ones
+        if not valid_file_keys:
+            # Delete all files from the message
+            result = await delete_all_files_from_message(
+                message_id=request.message_id,
+                user_id=user_id
+            )
+        else:
+            # Delete specific files
+            result = await delete_files_from_message(
+                message_id=request.message_id,
+                file_keys=valid_file_keys,
+                user_id=user_id
+            )
+        
+        if "error" in result:
+            # The deletion raised; `error` carries the exception's text.
+            return err(500, "Failed to delete files.")
+        if not result.get("success"):
+            return err(404, "None of these files could be deleted.")
+        
+        # Successful deletion
+        deleted_count = len(result.get("deleted_files", []))
+        failed_count = len(result.get("failed_deletions", []))
+        message_deleted = result.get("message_deleted", False)
+        
+        if message_deleted:
+            msg = f"Successfully deleted all {deleted_count} files. Message marked as deleted."
+        elif failed_count > 0:
+            msg = f"Partial deletion: {deleted_count} files deleted, {failed_count} failed"
+        else:
+            msg = f"Successfully deleted {deleted_count} file(s)"
+        
+        return StandardResponse(msg=msg, data=result)
+
+    except Exception as e:
+        return failed("file deletion", e, "Failed to delete files.")
+
+

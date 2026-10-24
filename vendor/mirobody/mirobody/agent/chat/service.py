@@ -1,0 +1,432 @@
+import functools
+import logging
+
+from pydantic import ValidationError
+
+from mirobody.agent.registry import available_models, load_agent, model_labels
+from .session import (
+    create_session,
+    get_session_summaries,
+    get_session_summaries_by_person,
+    delete_session,
+    resolve_citations,
+)
+from .model import ChatStreamRequest, has_attachment
+from .message import (
+    get_chat_history,
+    set_message_rating
+)
+from . import turn
+
+from mirobody.kernel.ops import is_driver_exception
+from mirobody.user import JwtTokenValidator
+from mirobody.user.auth.bearer import bearer_subject
+from mirobody.user.user import get_user_info
+from mirobody.user.care_circle import beneficiary_users
+from mirobody.utils.sse import sse_headers
+from mirobody.utils import json_response_with_code, json_response, global_config, Request, Response, StreamingResponse, Route
+
+logger = logging.getLogger(__name__)
+
+
+#-----------------------------------------------------------------------------
+
+def _preflight(request: Request) -> Response | None:
+    """CORS preflight, which every endpoint here has to answer identically."""
+    if request.method == "OPTIONS":
+        return json_response_with_code(disable_log=True)
+    return None
+
+
+def public_endpoint(fn):
+    """Reachable without a token. Handles preflight, nothing else.
+
+    Explicit rather than implicit: an endpoint is public because it says so,
+    not because someone forgot the token check. `test_service_handlers.py`
+    pins the resulting public set.
+    """
+    @functools.wraps(fn)
+    async def wrapper(self, request: Request, *args, **kwargs) -> Response:
+        return _preflight(request) or await fn(self, request, *args, **kwargs)
+
+    wrapper.__mirobody_public__ = True
+    return wrapper
+
+
+def self_authenticating(fn):
+    """Preflight only: the handler does its own, non-standard auth.
+
+    One endpoint needs this and it does not fit `requires_auth`: `chat_handler`
+    reads `request.state.user_id`, populated by middleware, rather than
+    verifying the header itself.
+
+    Labelled separately from `public_endpoint` so the "reachable without a
+    token" set stays small and stays checkable.
+    """
+    @functools.wraps(fn)
+    async def wrapper(self, request: Request, *args, **kwargs) -> Response:
+        return _preflight(request) or await fn(self, request, *args, **kwargs)
+
+    wrapper.__mirobody_public__ = False
+    return wrapper
+
+
+async def _json_body(request: Request) -> tuple[dict | None, Response | None]:
+    """Parse a JSON object body. Five handlers repeated this same try/except
+    plus dict check verbatim; the error codes they returned (-1 vs -2) differed
+    only by which one the author happened to paste. The parser's own message
+    quotes the body, so the reply is a fixed sentence."""
+    try:
+        params = await request.json()
+    except ValueError:
+        return None, json_response_with_code(-1, "The request body is not valid JSON.", request=request)
+    if not params or not isinstance(params, dict):
+        return None, json_response_with_code(-1, "Invalid request body.", request=request)
+    return params, None
+
+
+def requires_auth(fn):
+    """Preflight, then a verified bearer token; passes `user_id` to the handler.
+
+    This preamble was copy-pasted into 13 handlers. Beyond the repetition, it
+    made authentication a thing you had to remember to write: a new handler
+    was authenticated only if its author happened to paste the right four
+    lines. Here it is the decorator, so leaving it off is visible.
+    """
+    @functools.wraps(fn)
+    async def wrapper(self, request: Request, *args, **kwargs) -> Response:
+        preflight = _preflight(request)
+        if preflight is not None:
+            return preflight
+
+        payload, err = self._token_validator.verify_token(request.headers.get("Authorization") or "")
+        if err:
+            return json_response(err, status_code=401, request=request)
+        # The signature outlives the account by the token's 30 days, and a
+        # refresh token or an MCP client's token is no session: all refused.
+        user_id = await bearer_subject(payload)
+        if not user_id:
+            return json_response("Not a valid session", status_code=401, request=request)
+
+        return await fn(self, request, str(user_id), *args, **kwargs)
+
+    wrapper.__mirobody_public__ = False
+    return wrapper
+
+class ChatService:
+    def __init__(
+        self,
+        token_validator : JwtTokenValidator | None = None,
+
+        uri_prefix      : str = "",
+        routes          : list | None = None,
+
+
+        agent_dirs      : list[str] | None = None,
+    ):
+        self._token_validator = token_validator
+
+        # Called for the side effect: the registry holds the one agent class
+        # and its LLM clients for the life of the process.
+        load_agent(agent_dirs or [], config=global_config())
+
+        #-------------------------------------------------
+
+        self.routes = routes if routes is not None else []
+
+        for path, handler, methods in (
+            ("/api/models",             self.model_handler,                     ["GET"]),
+            ("/api/prompts",            self.prompt_handler,                    ["GET"]),
+
+            ("/api/session",            self.session_handler,                   ["POST"]),
+
+            ("/api/history",            self.history_handler,                   ["GET"]),
+            ("/api/history_by_person",  self.personal_history_handler,          ["GET"]),
+            ("/api/history/delete",     self.history_delete_handler,            ["POST"]),
+            ("/api/rating",             self.rating_handler,                    ["POST"]),
+            ("/api/citations",          self.citations_handler,                 ["GET"]),
+
+            ("/api/chat",               self.chat_handler,                      ["POST"]),
+
+            ("/api/beneficiary-users",  self.beneficiary_user_handler,          ["GET"]),
+        ):
+            # OPTIONS on every route: each handler answers preflight via its
+            # auth decorator, so the route must accept the method to reach it.
+            self.routes.append(
+                Route(f"{uri_prefix}{path}", endpoint=handler, methods=[*methods, "OPTIONS"])
+            )
+
+    #-------------------------------------------------------------------------
+
+    @public_endpoint
+    async def model_handler(self, request: Request) -> Response:
+        """The `MODELS` entries whose key resolves, the default first
+        (`registry.available_models`): bare names, no `Agent/` prefix.
+
+        The shipped web client splits each entry on `/` into `{agent, provider}`
+        and falls back to the whole string as its `provider` when there is no
+        slash, so a bare name works unchanged. `?labels=1` answers with
+        `{"name", "model"}` objects instead, so a picker can show the model a
+        person knows while still sending back the entry's name.
+        """
+        data = available_models()
+        if request.query_params.get("labels", "").lower() in ("1", "true", "yes"):
+            labels = model_labels(data)
+            data = [{"name": n, "model": labels[n]} for n in data]
+
+        return json_response_with_code(
+            data=data,
+            request=request
+        )
+
+    #-------------------------------------------------------------------------
+
+    @public_endpoint
+    async def prompt_handler(self, request: Request) -> Response:
+        """The `PROMPTS` templates a chat request may name with `prompt_name`.
+
+        One list, from config, the same for every caller. `{"system": [...]}` is
+        the shape the shipped web client reads; it used to carry a `user` list
+        too (prompts a person saved through `/api/user/prompt/*`): nothing in
+        the shipped client could create one, and a framework's system prompt is
+        not something a user edits from a settings box, so that surface is gone.
+        A deployment with no configured templates gets an empty list.
+        """
+        options = global_config().get_agent_settings()
+        templates = options.get("prompt_templates") if isinstance(options, dict) else None
+        system_prompts = [{"name": name} for name in (templates or {})]
+
+        return json_response_with_code(
+            data={"system": system_prompts},
+            request=request,
+        )
+
+    #-------------------------------------------------------------------------
+
+    @requires_auth
+    async def session_handler(self, request: Request, user_id: str) -> Response:
+        try:
+            params = await request.json()
+            query_user_id = params.get("query_user_id", user_id)
+            session_id = params.get("session_id")  # Optional: clients may
+                                                   # supply a structured id
+                                                   # (e.g. a client encoding
+                                                   # compare pane info into it).
+        except Exception:
+            query_user_id = user_id
+            session_id = None
+
+        return json_response(
+            await create_session(user_id, query_user_id, session_id=session_id),
+            request=request
+        )
+
+    #-------------------------------------------------------------------------
+
+    @requires_auth
+    async def history_handler(self, request: Request, user_id: str) -> Response:
+        session_id = request.query_params.get("session_id", "")
+
+        try:
+            if session_id:
+                return json_response_with_code(
+                    data={"history": await get_chat_history(user_id, session_id)}, request=request)
+            return json_response_with_code(
+                data={"summaries": await get_session_summaries(user_id)}, request=request)
+        except Exception as e:
+            logger.error("reading chat history failed: user_id=%s error_type=%s", user_id, type(e).__name__,
+                         exc_info=not is_driver_exception(e))
+            return json_response_with_code(-1, "Could not load the conversation history.", request=request)
+
+    #-------------------------------------------------------------------------
+
+    @requires_auth
+    async def personal_history_handler(self, request: Request, user_id: str) -> Response:
+        return json_response(
+            await get_session_summaries_by_person(user_id),
+            request=request
+        )
+    
+    #-------------------------------------------------------------------------
+
+    @requires_auth
+    async def history_delete_handler(self, request: Request, user_id: str) -> Response:
+        params, err_response = await _json_body(request)
+        if err_response:
+            return err_response
+        session_id = params.get("session_id")
+        if not session_id:
+            return json_response_with_code(-1, "missing session_id", request=request)
+
+        err = await delete_session(user_id, session_id)
+        if err:
+            return json_response_with_code(-2, err, request=request)
+
+        return json_response_with_code(request=request)
+
+    #-------------------------------------------------------------------------
+
+    @requires_auth
+    async def citations_handler(self, request: Request, user_id: str) -> Response:
+        """`?session_id=…&rids=r1,r2`: what each cited row is now (`resolve_citations`)."""
+        session_id = request.query_params.get("session_id", "")
+        rids = [r.strip() for r in request.query_params.get("rids", "").split(",") if r.strip()]
+        if not session_id or not rids:
+            return json_response_with_code(-1, "session_id and rids are required", request=request)
+        try:
+            return json_response(await resolve_citations(user_id, session_id, rids), request=request)
+        except Exception as e:
+            logger.error("resolving citations failed: error_type=%s", type(e).__name__,
+                         exc_info=not is_driver_exception(e))
+            return json_response_with_code(-3, "Could not resolve the citations.", request=request)
+
+    #-------------------------------------------------------------------------
+
+    @requires_auth
+    async def rating_handler(self, request: Request, user_id: str) -> Response:
+        try:
+            params = await request.json()
+            rating = int(params["rating"])
+            # The web client rates an assistant response by its message id.
+            message_id = (
+                params.get("responseId")
+                or params.get("response_id")
+                or params.get("questionId")
+                or params.get("question_id")
+            )
+        except (KeyError, TypeError, ValueError):
+            return json_response_with_code(-1, "A rating is an integer `rating` and the `responseId` it rates.",
+                                           request=request)
+
+        if not message_id:
+            return json_response_with_code(-1, "missing responseId", request=request)
+
+        #-------------------------------------------------
+
+        updated = await set_message_rating(user_id, str(message_id), rating)
+        if not updated:
+            return json_response_with_code(-2, "message not found or not owned by user", request=request)
+
+        return json_response_with_code(request=request)
+
+    #-------------------------------------------------------------------------
+
+    @self_authenticating
+    async def chat_handler(self, request: Request) -> Response:
+        if not request.state.user_id or \
+            not isinstance(request.state.user_id, int) or \
+            request.state.user_id <= 0:
+
+            return json_response("", status_code=401, request=request)
+
+        user_id = request.state.user_id
+
+        #-------------------------------------------------
+
+        params, err_response = await _json_body(request)
+        if err_response:
+            return err_response
+        params["user_id"] = str(user_id)
+
+        #-------------------------------------------------
+
+        if not isinstance(params.get("question"), str):
+            return json_response_with_code(-2, "Invalid question.", request=request)
+
+        params["question"] = params["question"].strip()
+        # An attachment-only turn is a real request ("read this"), so a missing
+        # question is only empty when nothing else came with it. This guard used
+        # to reject on the text alone, which made "attach an image, press send"
+        # a hard -3 for every client. `has_attachment` rather than truthiness:
+        # `[{}]` names no file, and letting it through would promise the model
+        # an attachment that `/uploads/` cannot serve.
+        if not params["question"] and not has_attachment(params.get("file_list")):
+            return json_response_with_code(-3, "Empty question.", request=request)
+
+        #-------------------------------------------------
+
+        if "timezone" not in params:
+            if request.state.timezone:
+                params["timezone"] = request.state.timezone
+
+        if "language" not in params:
+            if request.state.language:
+                params["language"] = request.state.language
+
+        if "timezone" not in params or "language" not in params:
+            user_info, err = await get_user_info(user_id)
+            if err:
+                logger.warning("no profile zone or language for a chat: user_id=%s", user_id)
+            else:
+                if "timezone" not in params:
+                    from mirobody.utils.config import get_default_timezone
+                    params["timezone"] = user_info.timezone if user_info.timezone else get_default_timezone()
+                if "language" not in params:
+                    params["language"] = user_info.language if user_info.language else "en"
+
+        #-------------------------------------------------
+
+        # Unknown fields are rejected the way the MCP surface does, instead of
+        # letting a caller's typo (or a natural guess like `model`) become a
+        # bare 500. `ChatStreamRequest` forbids extras, so pydantic names them.
+        # A field with the wrong TYPE is a different mistake and says so: one
+        # message for both reported `file_list: "oops"` as an unknown field.
+        try:
+            body = ChatStreamRequest(**params)
+        except ValidationError as e:
+            errors = e.errors()
+            unknown = sorted(str(err["loc"][0]) for err in errors
+                             if err["type"] == "extra_forbidden" and err["loc"])
+            if unknown:
+                accepted = sorted(ChatStreamRequest.model_fields)
+                return json_response_with_code(
+                    -4,
+                    f"Unknown field(s): {', '.join(unknown)}. "
+                    f"Accepted: {', '.join(accepted)}.",
+                    request=request,
+                )
+            bad = "; ".join(f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}"
+                            for err in errors)
+            return json_response_with_code(-2, f"Invalid field(s): {bad}", request=request)
+
+        #-------------------------------------------------
+
+        # `as_of` redates the whole turn for a frozen eval run; an ordinary
+        # deployment must refuse it outright rather than quietly answer from
+        # the real clock as if it had been honoured.
+        if body.as_of:
+            from mirobody.agent.clock import eval_as_of_enabled, parse_as_of
+            from mirobody.utils.config import get_default_timezone
+
+            if not eval_as_of_enabled():
+                return json_response_with_code(
+                    -5, "as_of is not enabled on this server (EVAL_AS_OF_ENABLED is off).",
+                    request=request,
+                )
+            try:
+                parse_as_of(body.as_of, body.timezone or get_default_timezone())
+            except ValueError as e:
+                return json_response_with_code(-2, f"Invalid as_of: {e}", request=request)
+
+        return StreamingResponse(
+            turn.stream(body),
+            headers=sse_headers(),
+            media_type="text/event-stream"
+        )
+    
+    #-------------------------------------------------------------------------
+
+    @requires_auth
+    async def beneficiary_user_handler(self, request: Request, user_id: str) -> Response:
+        try:
+            data = await beneficiary_users(user_id)
+        except Exception as e:
+            logger.error("listing care-circle members failed: user_id=%s error_type=%s", user_id,
+                         type(e).__name__, exc_info=not is_driver_exception(e))
+            return json_response_with_code(-1, "Could not load the people you can ask about.", request=request)
+
+        return json_response_with_code(data=data, request=request)
+
+    #-------------------------------------------------------------------------
+
+#-----------------------------------------------------------------------------

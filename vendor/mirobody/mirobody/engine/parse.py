@@ -1,0 +1,180 @@
+"""Document to readings: one LLM call, then the offline resolver.
+
+The only part of the engine that needs a model key. Its imports of the model
+clients and document extractors are inside the functions, so `import
+mirobody.engine` stays numpy-only.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import re
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+
+from mirobody.engine.resolver import Resolution, resolve_reading
+
+
+class ExtractionError(RuntimeError):
+    """The document gave no readings. The message is a fixed sentence naming
+    the failure, never the model's output or the file's name, so a caller may
+    show it to a person."""
+
+
+@dataclass(frozen=True)
+class Reading:
+    """One extracted observation from a document."""
+
+    name: str
+    value: str = ""
+    unit: str = ""
+    reference_range: str = ""
+    #: The collection date printed on the document, ISO `YYYY-MM-DD`, or "".
+    #: A reading with no date is not a reading dated today: a caller that
+    #: substitutes its own clock puts a May report after an August one.
+    collected: str = ""
+    resolution: Resolution | None = None
+
+
+_EXTRACT_PROMPT = """You are a medical lab-report extraction engine.
+Extract EVERY health indicator measurement from this document.
+Return ONLY a JSON array, no prose. Each element:
+{"name": "<indicator name exactly as printed>", "value": "<numeric or textual result>", "unit": "<unit as printed, empty if none>", "reference_range": "<as printed, empty if none>", "collected": "<YYYY-MM-DD the document prints as the collection or examination date, empty if it prints none>"}
+Rules: keep the original language of names; do not translate; do not invent
+values; skip section headers and non-measurements. `collected` is the same
+date for every reading of one report unless the report prints a different one
+per row; leave it empty rather than guessing, and never use today's date."""
+
+
+async def _ensure_config() -> None:
+    """Load the configuration for a bare library call, and leave a loaded one
+    alone.
+
+    The model routing reads its keys through the config system (which also
+    loads `.env`), and a standalone caller (the CLI, a script) has not set it
+    up. `Config.init` is not idempotent: it replaces the global config, which
+    drops a server's `-c` files, the root log handlers and the uvicorn access
+    filter, and `POST /api/standardize` ran it on every request.
+    """
+    from mirobody.utils import Config, global_config
+
+    if global_config() is None:
+        await Config.init()
+
+
+async def parse_text(document: str, *, resolve_names: bool = True) -> list[Reading]:
+    """Parse report TEXT into readings: the same one LLM call as
+    :func:`parse_file`, without a file.
+
+    Split out of ``parse_file`` for ``POST /api/standardize``, which is handed
+    raw text by the caller and had no way in short of writing a temp file.
+    """
+    from mirobody.utils.llm import async_get_text_completion
+
+    await _ensure_config()
+    raw = await async_get_text_completion(
+        [
+            {"role": "system", "content": _EXTRACT_PROMPT},
+            {"role": "user", "content": document},
+        ]
+    )
+    if raw is None:
+        # `None` is "no model answered", not "the model answered nothing":
+        # either no provider is configured, or every configured one failed.
+        # Feeding it to the JSON parser produced "extraction returned non-JSON
+        # output: ", an empty quote where the cause should be.
+        from mirobody.utils.config.llm import no_provider_message, resolve_route
+
+        if resolve_route("text") is None:
+            raise ExtractionError(no_provider_message("text"))
+        raise ExtractionError(
+            "extraction failed: every configured provider returned an error "
+            "(the server log has the provider's message)"
+        )
+    return _readings_from_json(raw, resolve_names=resolve_names)
+
+
+async def parse_file(path: str, *, resolve_names: bool = True) -> list[Reading]:
+    """Parse a lab report / health document into readings, optionally resolving
+    each indicator name to its canonical LOINC identity (offline).
+
+    The document becomes TEXT first (`mirobody.documents.extract`): a PDF's
+    embedded text layer page by page, a spreadsheet or Word file as a table,
+    and only a scanned page or a photo through the vision provider: one image
+    at a time, never the whole file. Then the same one extraction call as
+    :func:`parse_text`. A born-digital PDF therefore needs a text model key
+    only. Raises `ExtractionError` when no provider key is configured,
+    nothing readable was found, or the model's answer was not a JSON array.
+    """
+    await _ensure_config()
+
+    from mirobody.documents import extract as documents
+    from mirobody.documents.ocr import vision_ocr
+
+    data = await asyncio.to_thread(Path(path).read_bytes)
+    text = await documents.extract_text(os.path.basename(path), None, data, ocr=vision_ocr)
+    if not text.strip():
+        raise ExtractionError("no readable text could be extracted from the file")
+    return await parse_text(text, resolve_names=resolve_names)
+
+
+def _iso_day(raw: object) -> str:
+    """`YYYY-MM-DD` from what the model put in `collected`, or "".
+
+    Models answer this field with "2026-05-06", "2026/05/06",
+    "2026-05-06 09:15:00" and "May 6, 2026". The separators are squared up,
+    the date part goes through `date.fromisoformat`, and whatever that cannot
+    read ("May 6, 2026" among them) is dropped. An unparseable date is no
+    date: a caller that guesses gets a wrong time axis, which is worse than a
+    missing one.
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    text = text.replace("/", "-").replace(".", "-").split(" ")[0].split("T")[0]
+    try:
+        return date.fromisoformat(text).isoformat()
+    except ValueError:
+        return ""
+
+
+def _readings_from_json(raw: str, *, resolve_names: bool) -> list[Reading]:
+    """The extraction model's JSON array -> Readings. Shared by both parsers."""
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\n?|```$", "", text).strip()
+    try:
+        items = json.loads(text)
+    except json.JSONDecodeError as exc:
+        # Not quoted: the output is a model's reading of a health document.
+        raise ExtractionError("extraction returned text that is not JSON") from exc
+    if not isinstance(items, list):
+        raise ExtractionError(f"extraction returned a JSON {type(items).__name__}, expected an array")
+
+    readings: list[Reading] = []
+    for it in items:
+        if not isinstance(it, dict) or not it.get("name"):
+            continue
+        name = str(it["name"]).strip()
+        value = str(it.get("value") or "").strip()
+        unit = str(it.get("unit") or "").strip()
+        readings.append(
+            Reading(
+                name=name,
+                value=value,
+                unit=unit,
+                reference_range=str(it.get("reference_range") or "").strip(),
+                collected=_iso_day(it.get("collected")),
+                # The unit is right here, and LOINC codes the unit into the
+                # identity: resolving on the name alone would file a mmol/L
+                # reading under the mg/dL code.
+                resolution=resolve_reading(name, value, unit) if resolve_names else None,
+            )
+        )
+    return readings
+
+
+__all__ = ["Reading", "parse_file", "parse_text"]

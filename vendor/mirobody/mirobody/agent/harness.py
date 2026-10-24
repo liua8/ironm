@@ -1,0 +1,242 @@
+"""Assembling a deepagents agent: the part that is the same for every agent.
+
+Two agents built on deepagents (this repository's reference agent and the
+first production consumer's) each carried the same forty lines: register the
+harness profile that disables the general-purpose ``task`` subagent under the
+key deepagents will *actually* look up for this model instance, mount the
+read-only projections into a ``CompositeBackend`` and deny writes to each
+mount, order the middleware stack, call ``create_deep_agent`` with
+``subagents=[]``, set the recursion limit. What differs between agents is what
+goes IN (the tools, the mounts, the prompt, the limits) and that stays with
+each agent. This module is the assembly.
+
+Two facts about deepagents that this module exists to remember:
+
+* **The no-subagent configuration has two halves**: a profile with
+  ``general_purpose_subagent(enabled=False)`` registered under the provider key
+  deepagents resolves for THIS model, *and* ``subagents=[]`` passed to
+  ``create_deep_agent``. Either half alone leaves ``task`` reachable.
+* **That key is not the config's ``llm_type``.** deepagents asks the model
+  instance (``get_model_provider``), and a class that does not override
+  ``_get_ls_params`` falls back to a class-name derivation: ``ChatAnthropicVertex``
+  → ``anthropicvertex``. Registering under the wrong key is a silent no-op; it
+  happened in production once, and the model called ``task``.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Iterable, Mapping
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+def provider_key(model: Any) -> str | None:
+    """The provider key deepagents resolves for this model instance: asked of
+    deepagents itself, with the langchain-core ``ls_provider`` as the fallback."""
+    try:
+        from deepagents._models import get_model_provider
+
+        key = get_model_provider(model)
+        if key:
+            return key
+    except Exception as exc:
+        logger.warning("could not derive the harness provider key from deepagents: error_type=%s", type(exc).__name__)
+    try:
+        return (model._get_ls_params() or {}).get("ls_provider")
+    except Exception:
+        return None
+
+
+def disable_general_purpose_subagent(model: Any, *, excluded_tools: Iterable[str] = ()) -> str | None:
+    """Register, for the key this model resolves to, a harness profile without the
+    general-purpose subagent and without ``excluded_tools`` (native tools the
+    agent must not expose: ``delete`` on a backend that does not implement it).
+    Returns the key, or ``None`` when it could not be derived (logged: the
+    subagent may then stay enabled for this build). Idempotent: registration is a
+    field-wise merge."""
+    key = provider_key(model)
+    if not key:
+        logger.warning("no harness provider key for this model; the 'task' subagent may stay enabled")
+        return None
+    from deepagents import GeneralPurposeSubagentProfile, HarnessProfile, register_harness_profile
+
+    register_harness_profile(
+        key,
+        HarnessProfile(
+            general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
+            excluded_tools=frozenset(excluded_tools),
+        ),
+    )
+    return key
+
+
+def read_only_mounts(routes: Mapping[str, Any], *, default: Any = None) -> tuple[Any, list]:
+    """A ``CompositeBackend`` over ``routes`` (``"/memories/" -> backend``) with
+    writes DENIED on every mount, and the scratch root (``default``, a
+    checkpointed ``StateBackend`` unless given) left writable.
+
+    Every mount is a projection of something another process owns, and a
+    projection cannot be written to. Declaring that as a permission rather than
+    leaving it to each backend's own refusal is what stops the model spending a
+    tool call to find out. Returns ``(backend, permissions)``.
+    """
+    from deepagents.backends import CompositeBackend, StateBackend
+    from deepagents.middleware.filesystem import FilesystemPermission
+
+    permissions = [
+        FilesystemPermission(operations=["write"], paths=[f"{prefix.rstrip('/')}/**"], mode="deny")
+        for prefix in routes
+    ]
+    return CompositeBackend(default=default or StateBackend(), routes=dict(routes)), permissions
+
+
+def standard_middleware(
+    *,
+    fault_middleware: Any = None,
+    retry_limit: int = 2,
+    model_call_limit: int = 50,
+    tool_call_limits: Mapping[str, int] | None = None,
+    tail: Iterable[Any] = (),
+) -> list:
+    """The middleware stack every agent here runs, outermost first.
+
+    1. fault containment: contains faults from every tool AND from the
+       wrappers below it (`ToolFaultMiddleware` unless one is injected);
+    2. retry governance: refuses a repeat of a call that already failed
+       unrecoverably, inside the fault middleware so its own bugs are
+       contained, reading the envelope that middleware attaches;
+    3. invalid-call repair: a call whose JSON never parsed reaches no tool;
+       this feeds the parse error back instead of ending the turn empty;
+    4. empty-answer repair: a reply with no text and no call (a reasoning
+       model that answered only in its reasoning channel) is asked for once;
+    5. the per-turn model-call budget, whose last call is made with tool
+       calls off and an instruction to answer from what the model has
+       (`ModelCallBudgetMiddleware`): a legitimate multi-step task runs to
+       completion, and a pathological loop ends with an answer;
+    6. one cap per named tool (``exit_behavior="continue"``: the tool is
+       removed for the rest of the turn, the turn goes on);
+    7. ``tail``: whatever the agent adds last (prompt caching).
+
+    A fresh stack per build is a fresh retry ledger per turn, which is what
+    "already tried that" has to mean.
+    """
+    from langchain.agents.middleware import ToolCallLimitMiddleware
+
+    from .middleware import (
+        EmptyAnswerRepairMiddleware,
+        InvalidToolCallRepairMiddleware,
+        ModelCallBudgetMiddleware,
+        RetryGovernanceMiddleware,
+        ToolFaultMiddleware,
+    )
+
+    stack: list = [
+        fault_middleware if fault_middleware is not None else ToolFaultMiddleware(),
+        RetryGovernanceMiddleware(limit=retry_limit),
+        InvalidToolCallRepairMiddleware(),
+        EmptyAnswerRepairMiddleware(),
+        ModelCallBudgetMiddleware(run_limit=model_call_limit),
+    ]
+    for tool_name, limit in (tool_call_limits or {}).items():
+        stack.append(ToolCallLimitMiddleware(tool_name=tool_name, run_limit=limit, exit_behavior="continue"))
+    stack.extend(tail)
+    return stack
+
+
+def assemble(
+    *,
+    model: Any,
+    tools: list,
+    system_prompt: str,
+    backend: Any,
+    permissions: list | None = None,
+    middleware: Iterable[Any] = (),
+    checkpointer: Any = None,
+    store: Any = None,
+    interrupt_on: Mapping[str, Any] | None = None,
+    recursion_limit: int | None = None,
+    model_call_limit: int | None = None,
+    excluded_native_tools: Iterable[str] = (),
+) -> Any:
+    """``create_deep_agent`` with both halves of the no-subagent configuration
+    applied, and the recursion limit set as a last-resort runaway net.
+
+    The recursion limit must sit above the model-call budget in the middleware,
+    so the graceful budget fires first. With no `recursion_limit` it is derived
+    from the built graph for `model_call_limit` (`recursion_limit_for`).
+    """
+    from deepagents import create_deep_agent
+
+    disable_general_purpose_subagent(model, excluded_tools=excluded_native_tools)
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "tools": list(tools),
+        "system_prompt": system_prompt,
+        "backend": backend,
+        "middleware": [*middleware, *_offload_middleware(model, backend, permissions)],
+        "subagents": [],
+        "interrupt_on": dict(interrupt_on) if interrupt_on else None,
+    }
+    if permissions is not None:
+        kwargs["permissions"] = permissions
+    if checkpointer is not None:
+        kwargs["checkpointer"] = checkpointer
+    if store is not None:
+        kwargs["store"] = store
+    agent = create_deep_agent(**kwargs)
+    if not recursion_limit and model_call_limit:
+        recursion_limit = recursion_limit_for(agent, model_call_limit)
+    if recursion_limit:
+        agent = agent.with_config({"recursion_limit": recursion_limit})
+    return agent
+
+
+#: deepagents counts a tool result as characters / 4 before paging it out to the
+#: virtual filesystem. Measured with MiniCPM5's tokenizer on the tool tables of
+#: benchmarks/local_models (2026-10-10): 1.85 characters per token for Chinese-heavy
+#: tables, 2.21 for English ones (dates, digits and pipes tokenize densely).
+_CHARS_PER_TOKEN = 1.8
+_DEEPAGENTS_CHARS_PER_TOKEN = 4
+#: deepagents' own threshold, in its units. The derived one never exceeds it.
+_DEEPAGENTS_OFFLOAD_LIMIT = 20000
+
+
+def tool_offload_limit(model: Any) -> int | None:
+    """The `tool_token_limit_before_evict` for `model`, in deepagents' units: a
+    result longer than a quarter of the model's declared input window is paged
+    from the virtual filesystem instead of sitting inline. None when the model
+    declares no `max_input_tokens` (deepagents' default then stands)."""
+    profile = getattr(model, "profile", None)
+    window = profile.get("max_input_tokens") if isinstance(profile, dict) else None
+    if not isinstance(window, int) or window <= 0:
+        return None
+    limit = round(window / 4 * _CHARS_PER_TOKEN / _DEEPAGENTS_CHARS_PER_TOKEN)
+    return max(1, min(limit, _DEEPAGENTS_OFFLOAD_LIMIT))
+
+
+def _offload_middleware(model: Any, backend: Any, permissions: Any) -> list[Any]:
+    """A FilesystemMiddleware with the derived offload threshold, or [] to keep
+    the built-in one. It replaces the built-in by name, so it must carry the
+    mount permissions the built-in would have been given."""
+    limit = tool_offload_limit(model)
+    if limit is None or limit == _DEEPAGENTS_OFFLOAD_LIMIT:
+        return []
+    from deepagents.middleware.filesystem import FilesystemMiddleware
+
+    return [FilesystemMiddleware(backend=backend, tool_token_limit_before_evict=limit, _permissions=permissions)]
+
+
+def recursion_limit_for(agent: Any, model_call_limit: int) -> int:
+    """The super-step ceiling a run of `model_call_limit` model calls stays under.
+
+    Each node of the loop runs at most once per model call (a repair jump only
+    skips nodes) and the before/after_agent hooks once per run. A fixed 6x the
+    budget did not hold: the loop had six nodes, so 6 x 50 was exact, and one
+    more after_model hook turned the graceful stop into GraphRecursionError at
+    call 48 (measured 2026-09-29, a local model repeating one refused call).
+    """
+    nodes = [n for n in agent.get_graph().nodes if n not in ("__start__", "__end__")]
+    once = sum(n.endswith((".before_agent", ".after_agent")) for n in nodes)
+    return (model_call_limit + 1) * (len(nodes) - once) + once

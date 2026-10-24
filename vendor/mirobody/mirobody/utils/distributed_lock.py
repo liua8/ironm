@@ -1,0 +1,128 @@
+"""Session-bound Postgres advisory locks for provider pulls."""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from datetime import datetime
+from typing import Any
+
+from mirobody.kernel.ops import is_driver_exception
+from mirobody.utils.config import global_config
+
+logger = logging.getLogger(__name__)
+
+
+class PullTaskLockManager:
+    """Hold each advisory lock on its own connection until the pull finishes."""
+
+    def __init__(self) -> None:
+        self._connections: dict[str, tuple[str, Any]] = {}
+
+    @staticmethod
+    def _lock_key(provider_slug: str) -> str:
+        return f"theta_pull_execution_lock:{provider_slug}"
+
+    @staticmethod
+    def _timestamp_key(provider_slug: str) -> str:
+        return f"task_execution_timestamp:{provider_slug}"
+
+    @staticmethod
+    def _last_run_key(provider_slug: str) -> str:
+        return f"pull_task:last_run:{provider_slug}"
+
+    async def try_acquire_execution_lock(self, provider_slug: str) -> str | None:
+        """An execution id while this instance holds the provider's lock, or
+        None when another session holds it or the database is unreachable.
+        The lock lasts until `release_execution_lock`: a session lock has no
+        duration, and a run longer than any fixed one must not lose it."""
+        conn = None
+        try:
+            conn = await global_config().get_postgresql().get_async_client()
+            await conn.set_autocommit(True)
+            row = await (await conn.execute(
+                "SELECT pg_try_advisory_lock(hashtextextended(%s, 0))",
+                (self._lock_key(provider_slug),),
+            )).fetchone()
+            if not row[0]:
+                await conn.close()
+                return None
+            execution_id = str(uuid.uuid4())
+            self._connections[execution_id] = (provider_slug, conn)
+            logger.info("provider lock acquired: provider=%s execution_id=%s",
+                        provider_slug, execution_id)
+            return execution_id
+        except Exception as exc:
+            if conn is not None:
+                await conn.close()
+            logger.error("provider lock acquire failed: provider=%s error_type=%s",
+                         provider_slug, type(exc).__name__,
+                         exc_info=not is_driver_exception(exc))
+            return None
+
+    async def release_execution_lock(self, provider_slug: str, execution_id: str) -> bool:
+        entry = self._connections.get(execution_id)
+        if entry is None or entry[0] != provider_slug:
+            return False
+        _, conn = self._connections.pop(execution_id)
+        try:
+            row = await (await conn.execute(
+                "SELECT pg_advisory_unlock(hashtextextended(%s, 0))",
+                (self._lock_key(provider_slug),),
+            )).fetchone()
+            return bool(row[0])
+        except Exception as exc:
+            logger.error("provider lock release failed: provider=%s error_type=%s",
+                         provider_slug, type(exc).__name__,
+                         exc_info=not is_driver_exception(exc))
+            return False
+        finally:
+            await conn.close()
+
+    async def get_last_execution_timestamp(self, provider_slug: str) -> float | None:
+        try:
+            value = await global_config().get_ephemeral().get(self._timestamp_key(provider_slug))
+            return float(value) if value else None
+        except Exception as exc:
+            logger.warning("execution timestamp read failed: provider=%s error_type=%s",
+                           provider_slug, type(exc).__name__,
+                           exc_info=not is_driver_exception(exc))
+            return None
+
+    async def update_last_execution_timestamp(self, provider_slug: str,
+                                              timestamp: float) -> bool:
+        try:
+            await global_config().get_ephemeral().set(
+                self._timestamp_key(provider_slug), str(timestamp), ex=604800
+            )
+            return True
+        except Exception as exc:
+            logger.warning("execution timestamp write failed: provider=%s error_type=%s",
+                           provider_slug, type(exc).__name__,
+                           exc_info=not is_driver_exception(exc))
+            return False
+
+    async def get_last_run(self, provider_slug: str) -> datetime | None:
+        try:
+            value = await global_config().get_ephemeral().get(self._last_run_key(provider_slug))
+            return datetime.fromisoformat(value) if value else None
+        except Exception as exc:
+            logger.warning("last run read failed: provider=%s error_type=%s",
+                           provider_slug, type(exc).__name__,
+                           exc_info=not is_driver_exception(exc))
+            return None
+
+    async def set_last_run(self, provider_slug: str, ts: datetime) -> bool:
+        try:
+            await global_config().get_ephemeral().set(
+                self._last_run_key(provider_slug), ts.isoformat(), ex=604800
+            )
+            return True
+        except Exception as exc:
+            logger.warning("last run write failed: provider=%s error_type=%s",
+                           provider_slug, type(exc).__name__,
+                           exc_info=not is_driver_exception(exc))
+            return False
+
+
+pull_task_lock_manager = PullTaskLockManager()

@@ -1,0 +1,536 @@
+import logging
+import os
+
+from typing import Any
+from collections.abc import Callable
+from psycopg_pool import AsyncConnectionPool
+from mirobody.utils.ephemeral import EphemeralStore
+
+from starlette.requests import Request
+from starlette.responses import Response, JSONResponse
+from starlette.routing import Route
+
+
+from .bootstrap import (
+    create_schema,
+    demo_sign_in,
+    enforce_production_auth_safety,
+    ensure_postgres_reachable,
+    realign_dose_slots,
+    seed_demo_data,
+    start_schedulers,
+)
+from .middleware_stack import build_middlewares, server_headers
+from .htdoc import add_htdoc_routes
+
+from mirobody import __version__
+
+# The wire contract's version, in /mirobody.json. One integer, raised by one
+# with every change a client may need to detect (a field, an event type, an
+# endpoint); a client compares it with `>=`. A phone core that speaks this API
+# answers the same key, so one check covers both.
+CAPABILITY_VERSION = 1
+from mirobody.user import AbstractTokenValidator, JwtTokenValidator, OAuthService, UserService
+from mirobody.mcp import McpService
+from mirobody.agent.chat import ChatService
+
+logger = logging.getLogger(__name__)
+
+#-----------------------------------------------------------------------------
+
+def _model_setup() -> dict[str, str]:
+    """`needed` sends the web client to its first-run page: no chat model is
+    usable yet. Read per request, because the page changes it."""
+    from mirobody.utils.config.llm import chat_default
+
+    return {"__MODEL_SETUP__": "needed" if chat_default() is None else "ready"}
+
+
+def _print_setup_link(port: int) -> None:
+    """While no model is set up, the first-run link with its token: `docker
+    run` alone has no deploy.sh to print it. Printed, not logged, so it reads
+    plainly in `docker logs`, and only then: once a model is set up, changing
+    it takes a signed-in session too, and a token repeated at every boot would
+    sit in every log shipper for good."""
+    from mirobody.server.routers.setup_router import setup_token
+    from mirobody.utils.config.llm import chat_default
+
+    if chat_default() is None:
+        print(f"Mirobody: no model is set up yet. Open http://localhost:{port}/setup?token={setup_token()}"
+              " (use the port you published).", flush=True)
+
+
+def _is_mounted(app, router) -> bool:
+    """Whether any route of `router` resolves in `app`. Asked through
+    `url_path_for`, not by scanning `app.routes`: FastAPI 0.141 keeps an
+    included router as one opaque `_IncludedRouter` entry there, so a scan
+    finds none of its paths and would call every router unmounted."""
+    from starlette.routing import NoMatchFound
+
+    for route in router.routes:
+        try:
+            app.url_path_for(route.name, **dict.fromkeys(getattr(route, "param_convertors", {}), "0"))
+            return True
+        except NoMatchFound:
+            continue
+    return False
+
+
+def _webpage_config(config) -> dict[str, Any]:
+    """`/mirobody.json`'s overlay, plus the demo account while the demo is seeded.
+
+    The overlay's MIROBODY_WEB_CONFIG still wins, as it does for every flag."""
+    webpage = dict(config.get_dict("MIROBODY_WEB_CONFIG", {}) or {})
+    hint = demo_sign_in(config)
+    if hint:
+        webpage.setdefault("__DEMO_SIGN_IN__", hint)
+    return webpage
+
+
+class Server:
+    def __init__(
+        self,
+
+        server_name     : str = "",
+        server_version  : str = __version__,
+
+        uri_prefix      : str = "",
+
+        jwt_key         : str = "",
+        jwt_iss         : str = "",
+        jwt_aud         : str = "",
+        jwt_client_id   : str = "",
+        jwt_scope       : str = "",
+        jwt_expires_in  : int = 0,
+
+        jwt_token_validator : AbstractTokenValidator | None = None,
+        jwt_sub_decode_func : Callable[[str], int] | None = None,
+        gen_jwt_claims_func : Callable[[str, str], dict] | None = None,
+
+        pg_pool         : AsyncConnectionPool[Any] | None = None,
+        ephemeral      : EphemeralStore | None = None,
+
+        # `config.mcp_tool_dirs` and `config.agent_dirs`.
+
+        tool_dirs       : list[str] | None = None,
+        agent_dirs      : list[str] | None = None,
+
+        # The following parameters can be generated via
+        #   config.get_email_options().
+
+        email_from      : str = "",
+        email_from_name : str = "",
+        email_template  : str = "",
+        email_password  : str = "",
+        email_predefined: str | bytes | bytearray | dict[str, str] | None = None,
+        email_smtp_host : str = "",
+        email_smtp_port : int = 0,
+        email_smtp_user : str = "",
+
+
+        # The following parameters can be generated via
+        #   config.get_webauthn_options().
+
+        webauthn_rp_id          : str = "",
+        webauthn_rp_name        : str = "",
+        webauthn_origin         : str = "",
+        webauthn_mfa_ticket_ttl : int = 300,
+
+        webpage_config          : dict[str, Any] | None = None,
+
+        url_paths_for_user_info_updater     : list[str] | None = None,      # ["url_path"]
+        url_paths_for_request_rate_limiter  : dict[str, int] | None = None, # {"url_path": requests_per_minute}
+
+        http_headers            : list[tuple[str, str]] | None = None,
+
+        **kwargs
+    ):
+        if agent_dirs is None:
+            agent_dirs = []
+        if tool_dirs is None:
+            tool_dirs = []
+        self._pg_pool = pg_pool
+
+        self._ephemeral = ephemeral
+        logger.info("Server state backend: %s", "postgres" if ephemeral else "local memory")
+
+        self._jwt_token_validator = jwt_token_validator \
+            if jwt_token_validator \
+            else JwtTokenValidator(
+                key         = jwt_key,
+                iss         = jwt_iss,
+                aud         = jwt_aud,
+                client_id   = jwt_client_id,
+                scope       = jwt_scope,
+                expires_in  = jwt_expires_in
+            )
+
+        #-------------------------------------------------
+
+        self._webpage_config = webpage_config
+        if not self._webpage_config:
+            self._webpage_config = {}
+
+        if "__IS_WEBAUTHN_ON__" not in self._webpage_config:
+            self._webpage_config["__IS_WEBAUTHN_ON__"] = True if webauthn_rp_id else False
+
+        # The shipped web client reads six flags off /mirobody.json and treats a
+        # MISSING key as an off switch. Only the sign-in flags were ever emitted,
+        # so `__IS_MOBILE_SOURCE_ON__` (which gates the whole device-provider
+        # UI (Garmin / Oura / Whoop / Apple Health)) read as False on every
+        # deployment, and ① Collect, the README's headline stage, was invisible
+        # in the client (docs/roadmap.md, 2026-08-17). Derive the defaults from
+        # what is actually installed rather than hardcoding them; an overlay's
+        # MIROBODY_WEB_CONFIG still wins.
+        if "__IS_MOBILE_SOURCE_ON__" not in self._webpage_config:
+            from mirobody.collect import installed_provider_slugs
+            self._webpage_config["__IS_MOBILE_SOURCE_ON__"] = bool(installed_provider_slugs())
+
+        if "__IS_NEW_FEATURES_ON__" not in self._webpage_config:
+            # MCP is always served (/mcp is registered unconditionally below).
+            self._webpage_config["__IS_NEW_FEATURES_ON__"] = ["MCP"]
+
+        # Settings' "API Config" points the page at another server. This one
+        # serves the bundle from its own origin, where that field only confuses
+        # (and a wrong value breaks the page until the session ends); a
+        # deployment that hosts the bundle elsewhere turns it on in the overlay.
+        if "__IS_API_CONFIG_ON__" not in self._webpage_config:
+            self._webpage_config["__IS_API_CONFIG_ON__"] = False
+
+        self._webpage_config.setdefault("capability_version", CAPABILITY_VERSION)
+        self._webpage_config.setdefault("server_version", server_version or __version__)
+
+        #-------------------------------------------------
+
+        os.environ.update([
+            ("USER_AGENT", f"{server_name if server_name else "mirobody MCP Server"} {server_version if server_version else __version__}")
+        ])
+
+        #-------------------------------------------------
+
+        self._routes = []
+
+        self._oauth_service = OAuthService(
+            token_validator     = self._jwt_token_validator,
+            gen_jwt_claims_func = gen_jwt_claims_func,
+
+            uri_prefix      = uri_prefix,
+            routes          = self._routes,
+
+            ephemeral       = self._ephemeral
+        )
+
+        self._user_service = UserService(
+            token_validator = self._jwt_token_validator,
+
+            uri_prefix      = uri_prefix,
+            routes          = self._routes,
+
+            db_pool         = self._pg_pool,
+            ephemeral       = self._ephemeral,
+
+            # Email login.
+            email_from      = email_from,
+            email_from_name = email_from_name,
+            email_template  = email_template,
+            email_password  = email_password,
+            email_predefined= email_predefined,
+            email_smtp_host = email_smtp_host,
+            email_smtp_port = email_smtp_port,
+            email_smtp_user = email_smtp_user,
+
+
+            # WebAuthn (AAL2).
+            webauthn_rp_id      = webauthn_rp_id,
+            webauthn_rp_name    = webauthn_rp_name,
+            webauthn_origin     = webauthn_origin,
+            webauthn_mfa_ticket_ttl = webauthn_mfa_ticket_ttl,
+        )
+
+        # Registering takes a code sent to the address when one can be sent.
+        self._webpage_config.setdefault("__IS_SIGNUP_CODE_ON__", self._user_service.sends_mail())
+
+        self._mcp_service = McpService(
+            token_validator = self._jwt_token_validator,
+
+            name            = server_name,
+            version         = server_version,
+
+            uri_prefix      = uri_prefix,
+            routes          = self._routes,
+
+            tool_dirs       = tool_dirs,
+        )
+
+        self._chat_service = ChatService(
+            token_validator = self._jwt_token_validator,
+
+            uri_prefix      = uri_prefix,
+            routes          = self._routes,
+
+            agent_dirs      = agent_dirs,
+        )
+
+        self._routes.append(Route(f"{uri_prefix}/api/health", endpoint=self.health_check_handler, methods=["GET"]))
+
+        # Served with or without a web client: an API client on a headless
+        # deployment reads `capability_version` from it too. The static client
+        # itself is mounted by `add_htdoc_routes` in `start()`, after every
+        # router, because its SPA fallback must lose to all real routes.
+        self._routes.append(
+            Route(
+                "/mirobody.json",
+                endpoint=lambda x: JSONResponse(content={**self._webpage_config, **_model_setup()}),
+                methods=["GET", "HEAD"]
+            )
+        )
+
+        #-------------------------------------------------
+
+        self._middlewares = build_middlewares(
+            http_headers=http_headers,
+            jwt_key=jwt_key,
+            jwt_sub_decode_func=jwt_sub_decode_func,
+            requires_second_factor=self._user_service.requires_second_factor,
+            uri_prefix=uri_prefix,
+            url_paths_for_request_rate_limiter=url_paths_for_request_rate_limiter,
+            url_paths_for_user_info_updater=url_paths_for_user_info_updater,
+            ephemeral=self._ephemeral,
+            pg_pool=self._pg_pool,
+        )
+    #-----------------------------------------------------
+
+    async def health_check_handler(self, request: Request) -> Response:
+        from mirobody.agent.registry import agent_name
+
+        total, authenticated = self._mcp_service.tool_counts()
+        return JSONResponse(
+            content = {
+                "service"               : self._mcp_service._name,
+                "version"               : self._mcp_service._version,
+                "tools"                 : total,
+                "public_tools"          : total - authenticated,
+                "authenticated_tools"   : authenticated,
+                "agent"                 : agent_name(),
+            }
+        )
+
+    #-----------------------------------------------------
+
+    def get_routes(self) -> list:
+        return self._routes
+
+    def declare_mounted_surfaces(self, app) -> None:
+        """Flags for surfaces whose truth is "is this router mounted", read off
+        `app` once every router is. They cannot be set in `__init__`, which runs
+        before any router is included.
+
+        Sent explicitly rather than left to the client's default, because the
+        shipped client has two defaults: `__IS_API_CONFIG_ON__` and
+        `__IS_WEBAUTHN_ON__` read a missing key as off, the device and journal
+        flags read it as on. An overlay's MIROBODY_WEB_CONFIG still wins.
+        """
+        from mirobody.server.routers import journal_router
+        from mirobody.server.routers import indicator_router, medication_router
+
+        self._webpage_config.setdefault("__IS_JOURNAL_ON__", _is_mounted(app, journal_router))
+        self._webpage_config.setdefault("__IS_INDICATOR_RECORDS_ON__", _is_mounted(app, indicator_router))
+        self._webpage_config.setdefault("__IS_INDICATOR_EXPORT_ON__", _is_mounted(app, indicator_router))
+        self._webpage_config.setdefault("__IS_DATA_DELTA_ON__", _is_mounted(app, indicator_router))
+        self._webpage_config.setdefault("__IS_MEDICATIONS_ON__", _is_mounted(app, medication_router))
+
+    def get_middlewares(self) -> list:
+        return self._middlewares
+
+    #-----------------------------------------------------
+
+    @staticmethod
+    async def start(yaml_files: list[str] | None = None, fastapi_routers: list | None = None):
+        # Load configuration via file.
+        from mirobody.utils import Config
+        if fastapi_routers is None:
+            fastapi_routers = []
+        if yaml_files is None:
+            yaml_files = []
+        config = await Config.init(yaml_filenames=yaml_files)
+        config.print()
+
+        # Fail fast, before any socket is bound: a deployment that declares
+        # PRODUCTION and still carries demo login codes must not come up at all.
+        enforce_production_auth_safety(config)
+
+        await ensure_postgres_reachable(config)
+        await create_schema(config)
+        await realign_dose_slots(config)
+        await seed_demo_data(config)
+
+        #-----------------------------------------------------
+        # Init mirobody server.
+        
+        # Create global resources (PostgreSQL pool and ephemeral state client)
+        pg_pool = await config.get_postgresql().get_async_pool()
+        ephemeral = config.get_ephemeral()
+        await ephemeral.cleanup()
+
+        # A key or local address saved from the first-run page, applied before
+        # the agent builds its model clients (`.env` still wins).
+        from mirobody.utils.config import settings
+        await settings.apply()
+
+        # Which LLM surfaces have a provider, before the first request finds
+        # out: a zero-key server used to boot in silence (#68). After the
+        # saved settings, or a deployment set up in the browser logs "no LLM
+        # API key is set" at every boot while its model works.
+        from mirobody.utils.config.doctor import log_report, provider_report
+        log_report(provider_report(), logger)
+
+        server = Server(
+            server_name     = config.http.name,
+            server_version  = config.http.version,
+
+            uri_prefix      = config.http.uri_prefix,
+
+            # jwt_key         = config.jwt_key,
+
+            pg_pool         = pg_pool,
+            ephemeral       = ephemeral,
+
+            webpage_config  = _webpage_config(config),
+
+            url_paths_for_request_rate_limiter  = config.get_dict("REQUEST_RATE_LIMITER"),
+            url_paths_for_user_info_updater     = config.get_list("USER_INFO_UPDATER"),
+
+            http_headers    = config.http.headers or [],
+
+            tool_dirs       = config.mcp_tool_dirs,
+            agent_dirs      = config.agent_dirs,
+
+            **config.get_jwt_options(),
+            **config.get_email_options(),
+            # Without these, `WEBAUTHN_RP_ID` in config never reached the
+            # server: Settings offered passkeys and MFA, but there was no
+            # WebAuthn service to enrol with, and an account with MFA on was
+            # never asked for a second factor.
+            **config.get_webauthn_options(),
+        )
+
+        #-----------------------------------------------------
+        # Init fastapi server.
+
+        from fastapi import FastAPI
+        # The interactive docs list every route and its parameters, readable
+        # without signing in. A deployment facing real users has no use for
+        # them; everywhere else they stay, for the people building on the API.
+        from mirobody.server.bootstrap import is_production
+        production = is_production(config)
+        app = FastAPI(
+            # Debug answers an exception with its traceback: never to real users.
+            debug       = config.log.level <= logging.DEBUG and not production,
+            routes      = server.get_routes(),
+            middleware  = server.get_middlewares(),
+            docs_url    = None if production else "/docs",
+            redoc_url   = None if production else "/redoc",
+            openapi_url = None if production else "/openapi.json",
+        )
+
+        # One handler for care-circle denial, so a route that forgets to catch
+        # `CareCircleDenied` answers 403 instead of proceeding. That is the whole
+        # reason the check raises: the shape it replaced returned
+        # `{"success": False, ...}`, and a caller who forgot to read that key got
+        # a silent grant. With this, forgetting costs a 403, not someone's
+        # health record.
+        from fastapi.responses import JSONResponse
+
+        from mirobody.server.envelope import err
+        from mirobody.user.care_circle import CareCircleDenied
+        from mirobody.utils.http import loggable_path
+
+        @app.exception_handler(CareCircleDenied)
+        async def _care_circle_denied(request, exc: CareCircleDenied):
+            logger.warning("care-circle denial reached the app handler: method=%s path=%s",  # phi: ok a route
+                           request.method, loggable_path(request.url.path))
+            # The denial's message is one of `care_circle`'s fixed sentences.
+            return JSONResponse(status_code=403, content=err(403, str(exc)).model_dump())
+
+        # Store global resources in app.state for access by all routers
+        app.state.ephemeral = ephemeral
+        app.state.pg_pool = pg_pool
+        # For the routes that take a token from the query string, which the JWT
+        # middleware never sees (`user.auth.bearer.lacks_second_factor`).
+        app.state.requires_second_factor = server._user_service.requires_second_factor
+        
+        logger.info("Global resources ready")
+
+        #-----------------------------------------------------
+        # Add other routers.
+
+        await start_schedulers()
+
+        from mirobody.server.routers import (
+            public_router as pulse_public_router,
+            apple_router,
+            user_router,
+            file_router,
+            session_share_router,
+            sharing_router,
+            indicator_router,
+            records_router,
+            journal_router,
+            genomics_router,
+            medication_router,
+            data_export_router,
+            setup_router,
+        )
+        app.include_router(pulse_public_router)
+        # apple_router is ALSO nested inside pulse_public_router (routers/__init__),
+        # so Apple Health uploads answer on both /apple/* and /api/v1/pulse/apple/*.
+        # docs/apple-health.md documents POST /apple/health, and a self-hosted
+        # deployment's uploader may point at either surface; keep both mounts.
+        # (The former import alias `old_router` was misleading: the actual legacy
+        # /api/v1/health/apple-health router was never registered here: its dead
+        # remains were removed from apple_router.py.)
+        app.include_router(apple_router)
+        app.include_router(file_router)
+        app.include_router(user_router)
+        app.include_router(session_share_router)
+        app.include_router(sharing_router)
+        app.include_router(indicator_router)
+        # The platform-shaped records surface (/api/data, /api/standardize).
+        # Registered after indicator_router: neither shadows the other, but the
+        # order documents which one the web client depends on.
+        app.include_router(records_router)
+        # The journal (/api/v1/journal), the write side of the ICPC-3 axes.
+        app.include_router(journal_router)
+        app.include_router(genomics_router)
+        app.include_router(medication_router)
+        app.include_router(data_export_router)
+        app.include_router(setup_router)
+
+        for router in fastapi_routers:
+            app.include_router(router)
+
+        server.declare_mounted_surfaces(app)
+
+        # Last on purpose: the SPA fallback and the API-prefix 404 guards
+        # only work if every real route above is already registered.
+        add_htdoc_routes(app, config.http.htdoc)
+
+        #-----------------------------------------------------
+        # Start asgi server.
+
+        config.print_predefined_codes()
+        _print_setup_link(config.http.port)
+
+        import uvicorn
+        asgi_server = uvicorn.Server(
+            uvicorn.Config(
+                app         = app,
+                host        = config.http.host,
+                port        = config.http.port,
+                headers     = server_headers(config.http.headers),
+                log_level   = config.log.level if config.log.level <= logging.DEBUG else logging.WARNING
+            )
+        )
+        await asgi_server.serve()
+
+#-----------------------------------------------------------------------------

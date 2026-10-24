@@ -1,0 +1,61 @@
+{
+  "test_id": "apple_healthkit_records",
+  "description": "HealthKit Record shapes as export.xml writes them (attribute names from Apple's own embedded DTD), synthetic values. The unit attribute is per record, not per type, so the same type appears here in more than one unit: that is what a device whose region setting changed produces. Expected numbers are worked by hand, never read back from the decoder.",
+  "vendor": "apple",
+  "cases": [
+    {
+      "data_type": "HKQuantityTypeIdentifierStepCount",
+      "tz": "Asia/Shanghai",
+      "input": {"value": "8421", "unit": "count", "sourceName": "Watch", "startDate": "2026-06-01 08:00:00 +0800", "endDate": "2026-06-01 08:00:00 +0800"},
+      "expected": {"count": 1, "values": {"steps": 8421}, "start_ms": {"steps": 1780272000000}}
+    },
+    {
+      "data_type": "HKQuantityTypeIdentifierDistanceWalkingRunning",
+      "tz": "Asia/Shanghai",
+      "input": {"value": "1", "unit": "mi", "sourceName": "iPhone", "startDate": "2026-06-01 08:00:00 +0800", "endDate": "2026-06-01 08:00:00 +0800"},
+      "expected": {"count": 1, "values": {"walkingRunningDistances": 1609.344}}
+    },
+    {
+      "data_type": "HKQuantityTypeIdentifierDistanceWalkingRunning",
+      "tz": "Asia/Shanghai",
+      "input": {"value": "1", "unit": "km", "sourceName": "iPhone", "startDate": "2026-06-01 08:00:00 +0800", "endDate": "2026-06-01 08:00:00 +0800"},
+      "expected": {"count": 1, "values": {"walkingRunningDistances": 1000}}
+    },
+    {
+      "data_type": "HKQuantityTypeIdentifierBodyTemperature",
+      "tz": "Asia/Shanghai",
+      "input": {"value": "98.6", "unit": "degF", "sourceName": "Thermometer", "startDate": "2026-06-01 08:00:00 +0800", "endDate": "2026-06-01 08:00:00 +0800"},
+      "expected": {"count": 1, "values": {"bodyTemperatures": 37.0}}
+    },
+    {
+      "data_type": "HKQuantityTypeIdentifierBodyMass",
+      "tz": "Asia/Shanghai",
+      "input": {"value": "70", "unit": "lb", "sourceName": "Scale", "startDate": "2026-06-01 08:00:00 +0800", "endDate": "2026-06-01 08:00:00 +0800"},
+      "expected": {"count": 1, "values": {"bodyMasss": 31.7514659}}
+    },
+    {
+      "data_type": "HKQuantityTypeIdentifierBloodGlucose",
+      "tz": "Asia/Shanghai",
+      "input": {"value": "5.5", "unit": "mmol/L", "sourceName": "Meter", "startDate": "2026-06-01 08:00:00 +0800", "endDate": "2026-06-01 08:00:00 +0800"},
+      "expected": {"count": 1, "values": {"bloodGlucoses": 99.088}}
+    },
+    {
+      "data_type": "HKQuantityTypeIdentifierHeartRate",
+      "tz": "Asia/Shanghai",
+      "input": {"value": "62", "unit": "count/min", "sourceName": "Watch", "startDate": "2026-06-01 08:00:00 +0800", "endDate": "2026-06-01 08:00:00 +0800"},
+      "expected": {"count": 1, "values": {"heartRates": 62}}
+    },
+    {
+      "data_type": "HKQuantityTypeIdentifierBodyMass",
+      "tz": "Asia/Shanghai",
+      "input": {"value": "70", "unit": "furlong", "sourceName": "Broken", "startDate": "2026-06-01 08:00:00 +0800", "endDate": "2026-06-01 08:00:00 +0800"},
+      "expected": {"count": 0, "absent": ["bodyMasss"]}
+    },
+    {
+      "data_type": "HKQuantityTypeIdentifierStepCount",
+      "tz": "Asia/Shanghai",
+      "input": {"value": "100", "unit": "count", "sourceName": "Watch", "startDate": "not a timestamp", "endDate": "2026-06-01 08:00:00 +0800"},
+      "expected": {"count": 0, "absent": ["steps"]}
+    }
+  ]
+}

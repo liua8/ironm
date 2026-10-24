@@ -1,0 +1,417 @@
+# Models — the one file to open after `./deploy.sh`.
+#
+# THE API KEY GOES IN .env, NOT HERE. Paste one on the setup page (`./deploy.sh`
+# prints its link), or put ONE of these six in the `.env` next to compose.yaml,
+# then `docker compose up -d` (a plain `restart` keeps the old environment);
+# every surface follows it:
+#
+#   OPENROUTER_API_KEY -> https://openrouter.ai/keys                  (recommended: one key, every model)
+#   DASHSCOPE_API_KEY  -> https://dashscope.console.aliyun.com/apiKey (when openrouter.ai is unreachable)
+#   GOOGLE_API_KEY     -> https://aistudio.google.com/apikey          (GEMINI_API_KEY is read as the same key)
+#   OPENAI_API_KEY     -> https://platform.openai.com/api-keys
+#   ANTHROPIC_API_KEY  -> https://platform.claude.com/settings/keys
+#   DEEPSEEK_API_KEY   -> https://platform.deepseek.com/api_keys
+#
+# This file says which MODEL each key uses, per surface (names are MODELS entries):
+#
+#   key in .env          chat (picker)   vision + text (utils)
+#   OPENROUTER_API_KEY   claude-sonnet   openrouter-utils
+#   DASHSCOPE_API_KEY    qwen            qwen-utils
+#   GOOGLE_API_KEY       gemini-flash    gemini-utils
+#   OPENAI_API_KEY       openai          openai-utils
+#   ANTHROPIC_API_KEY    claude          anthropic-utils
+#   DEEPSEEK_API_KEY     deepseek        deepseek-utils
+#
+# No key at all: serve the local models with llama.cpp's `llama-server` (the
+# preset docker/local-models.ini; docs/local-models.md) and choose "100% on this
+# machine" on the setup page, or set LOCAL_BASE_URL and LOCAL_OCR_BASE_URL; the
+# `local*` entries then serve every surface. With a key set as well, the key's
+# models come first.
+#
+# `mirobody doctor` (and the boot log) prints what the current config selects.
+# Model ids verified against each vendor's catalogue on 2026-10-06.
+
+#-----------------------------------------------------------------------------
+# MODELS — one entry per model you want to call. (Not "providers": in this
+# project a provider is a device or data source, see PROVIDER_DIRS.)
+#
+#   model_env       NAME of a variable that replaces `model` when set: in .env, or from the
+#                   setup page, which offers the model beside the key. Model names change
+#                   faster than this file; this is how a deployment follows them.
+#   llm_type        openai = any OpenAI-compatible endpoint (every vendor here but one).
+#                   Chat entries may also use google-genai / anthropic / vertex types.
+#   api_key         NAME of the .env variable holding the secret — never the secret
+#   base_url        the endpoint; `<PREFIX>_BASE_URL` in .env redirects every entry
+#                   reading that key to another gateway (PREFIX = api_key name minus _API_KEY).
+#                   NB `ANTHROPIC_BASE_URL` is also what Anthropic's own SDK and Claude Code
+#                   read, so a developer machine running either already has it pointed
+#                   somewhere — `mirobody doctor` prints the endpoint each surface resolved.
+#   supports_image  true = reads images. REQUIRED for anything UTILS_VISION_MODEL names:
+#                   report photos and scanned pages are images.
+#   supports_pdf    true = the MODEL reads a PDF natively. Whether one actually
+#                   travels as a file block is a separate question the TRANSPORT
+#                   answers: only the native anthropic / google-genai clients
+#                   carry a file block inside a tool message, so on any
+#                   OpenAI-compatible endpoint a PDF is served as extracted text
+#                   no matter what this says (measured — claude-sonnet over
+#                   OpenRouter answers 400 to the block, and reads the text fine)
+#   reasoning_effort sent only when declared; utility entries may use `none`.
+#                   OpenAI chat uses Responses so reasoning and tools work together
+#   response_format json_schema (default) | json_object | none — what the endpoint
+#                   accepts. Below json_schema the schema is written into the prompt
+#   chat            false = utility surfaces only, hidden from the chat picker
+#   profile         raw ModelProfile fields over the model's own profile; `max_input_tokens`
+#                   sets when the agent compacts and when it pages out a large tool result
+#   thinking_level  low | medium | high for chat, over AGENT_THINKING; chat promotes
+#                   `off` to the agent level. Utility entries may still disable thinking
+#   thinking_style  the thinking dialect when the name and URL do not tell it:
+#                   qwen | deepseek | openai | anthropic | gemini | openrouter | chat_template (llama.cpp)
+#   extra_body      vendor settings; chat overrides switches that hide/disable thinking
+#
+# The chat picker shows the entries whose key is present, in this order; the
+# FIRST is the default (or set DEFAULT_MODEL).
+MODELS:
+  claude-sonnet:
+    llm_type: openai
+    api_key: OPENROUTER_API_KEY
+    base_url: https://openrouter.ai/api/v1
+    model: anthropic/claude-sonnet-5.5
+    model_env: OPENROUTER_CHAT_MODEL
+    supports_image: true
+    supports_pdf: true
+    # No temperature: on Anthropic's API Claude Sonnet 5.5 answers 400 to a
+    # non-default sampling value. Through OpenRouter this entry passed a tool
+    # call and a second round with and without the 0.1 it used to carry
+    # (2026-10-06); without it, it does not depend on OpenRouter leaving the
+    # value out.
+  qwen:
+    llm_type: openai
+    api_key: DASHSCOPE_API_KEY
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model: qwen3.8-flash          # multimodal, tool calls verified 2026-10-06
+    model_env: DASHSCOPE_CHAT_MODEL
+    temperature: 0.1
+    supports_image: true
+  gemini-flash:
+    # The ONE chat entry that is not an OpenAI-compatible endpoint, and the
+    # reason is the tool loop. Gemini 3.x attaches a `thought_signature` to
+    # every functionCall part and REQUIRES it back verbatim on the next turn;
+    # the OpenAI-compatible endpoint has nowhere to carry it, so the signature
+    # is lost in LangChain's round trip and the second turn is:
+    #     400 Function call is missing a thought_signature in functionCall
+    #         parts. … function call `default_api:ls`, position 2
+    # Measured 2026-09-10: bare HTTP non-streaming (echoing the vendor's own
+    # assistant message back) works; every streaming shape 400s, and no config
+    # switch on the compat path recovers it — `disable_streaming` included.
+    # `langchain-google-genai` carries the signature explicitly (its
+    # `__gemini_function_call_thought_signatures__`), which is why the floor
+    # below it in pyproject.toml is pinned.
+    #
+    # Extraction is NOT affected and stays on the compat endpoint
+    # (`gemini-utils`): it is a single call with no second turn, so there is no
+    # signature to return. One vendor, two transports, for that one reason.
+    llm_type: google-genai
+    api_key: GOOGLE_API_KEY
+    model: gemini-3.8-flash
+    model_env: GOOGLE_CHAT_MODEL
+    temperature: 1.0
+    supports_image: true
+  openai:
+    llm_type: openai
+    api_key: OPENAI_API_KEY
+    base_url: https://api.openai.com/v1
+    model: gpt-6-sol
+    model_env: OPENAI_CHAT_MODEL
+    supports_image: true
+    # GPT-6 Sol requires Responses for tools with reasoning (OpenAI model docs).
+    # A summary is opt-in; encrypted reasoning carries context across tool
+    # rounds when store is false, without relying on server-side response state.
+    use_responses_api: true
+    output_version: responses/v1
+    reasoning: {summary: auto}
+    store: false
+    include: [reasoning.encrypted_content]
+  claude:
+    llm_type: anthropic           # the vendor's own API, not its OpenAI-compatible layer:
+                                  # prompt caching and the thinking channel are only there
+    api_key: ANTHROPIC_API_KEY
+    model: claude-sonnet-5-5
+    model_env: ANTHROPIC_CHAT_MODEL
+    supports_image: true
+    supports_pdf: true
+    # No sampling parameters on ANY `llm_type: anthropic` or
+    # `google_anthropic_vertex` entry. Two separate reasons: Claude Sonnet 5
+    # answered 400 "`temperature` is deprecated for this model" (measured
+    # 2026-09-10; Sonnet 5.5 400s on any non-default value, per Anthropic's
+    # migration guide), and `anthropic` 1.x REMOVED `temperature` / `top_p` /
+    # `top_k` from the messages API altogether, with no `**kwargs` to absorb
+    # them — so one reaching the client is a TypeError before a request exists
+    # (#72). `clients._drop_rejected_sampling` strips them against the
+    # installed signature and warns; this note is so nobody adds one expecting
+    # it to work. Nor `thinking: {type: disabled}` here: Sonnet 5.5 and Opus 5.5
+    # answer it with a 400, which is why `clients` sends no thinking block at all
+    # for "off".
+  deepseek:
+    llm_type: openai
+    api_key: DEEPSEEK_API_KEY
+    base_url: https://api.deepseek.com/v1
+    model: deepseek-flash         # V4.1 Flash: text + image; thinking on by default (ignores temperature)
+    model_env: DEEPSEEK_CHAT_MODEL
+    supports_image: true
+    response_format: json_object  # DeepSeek's JSON mode refuses a schema
+  gpt:
+    llm_type: openai
+    api_key: OPENROUTER_API_KEY
+    base_url: https://openrouter.ai/api/v1
+    model: openai/gpt-6-luna      # 237/248 on the evaluation's 24 questions, the cheapest model
+                                  # measured ($0.0009 an answer), never rate-limited
+                                  # (benchmarks/local_models, 2026-10-07). GPT-6.1 Sol was dropped:
+                                  # rate-limited upstream on OpenRouter even pinned to Azure, 9 of 24
+                                  # questions and 50 of 140 document rows unanswered, at 20 times
+                                  # the price. No temperature: OpenAI's GPT-6 guide says to remove it.
+    supports_image: true
+  local:
+    # The local agent: MiniCPM5-2B, the `minicpm5-2b` section of
+    # docker/local-models.ini on llama.cpp's router: the small size, which an
+    # ordinary computer runs (16 GB, no GPU) and the setup page opens on.
+    # LOCAL_MODEL=qwen3.8-27b (or the page's large size) needs about 20 GB of
+    # memory and looks at photos; on the 24-question evaluation it scored 240
+    # of 248 to the small size's 229. No key, and off until LOCAL_BASE_URL is
+    # set:
+    #   LOCAL_BASE_URL=http://127.0.0.1:8080/v1                (the app on this machine)
+    #   LOCAL_BASE_URL=http://host.docker.internal:8080/v1     (the app in Docker)
+    llm_type: openai
+    base_url: LOCAL_BASE_URL
+    model: minicpm5-2b
+    model_env: LOCAL_MODEL
+    temperature: 0                # MiniCPM5-2B Q4_K_M graded 194-212 of 248 at 0 and 182-200 at
+                                  # its card's 1.0/0.95/min_p 0 (benchmarks/local_models, 2026-10-10)
+    thinking_style: chat_template # thinking on/off reaches the model's chat template
+    supports_image: true          # the server says whether the model sees (/props)
+    stream_chunk_timeout: 600     # nothing streams while a local model reads the prompt:
+                                  # 80 s for the first 8k tokens on a 48 GB Apple-silicon machine; on 4 CPU
+                                  # cores MiniCPM5-2B reads ~50 tokens/s, and a 6.8k-token
+                                  # prompt was answered in 137 s (2026-10-07)
+    max_tokens: 6144              # a reply (reasoning included) that runs on is cut here, not at the
+                                  # context: MiniCPM5-2B generated with no end on two of the
+                                  # evaluation's questions and they hit the 600 s timeout
+                                  # (benchmarks/local_models, small-v2). A chart answer needs ~2k.
+    profile:
+      max_input_tokens: 48000     # the most it asks for: docker/local-models.ini (GPU) serves
+                                  # c = 65536 in one KV pool, where 48000 + max_tokens fits. A server
+                                  # with less (the CPU preset's 32768) narrows it, per turn, to its
+                                  # context less the reply (agent._fit_window). Compaction starts at
+                                  # 85% of the window; at 24000 a turn that read a few report pages
+                                  # compacted at about 20k and lost them (2026-10-12). Undeclared,
+                                  # deepagents compacts at a fixed 170000 tokens. It also sets when a
+                                  # large tool result is paged out (agent/harness.py).
+
+  # Utility entries (chat: false) — the models behind file parsing, indicator
+  # extraction, titles and summaries. MULTIMODAL, one per key, thinking off:
+  # extraction reads report photos and needs no reasoning trace.
+  openrouter-utils:
+    llm_type: openai
+    api_key: OPENROUTER_API_KEY
+    base_url: https://openrouter.ai/api/v1
+    model: google/gemini-3.8-flash
+    model_env: OPENROUTER_UTILS_MODEL
+    supports_image: true
+    chat: false
+    extra_body:
+      reasoning:                  # `enabled: false` is a 400 here — "Reasoning is mandatory
+        effort: low               # for this endpoint and cannot be disabled" (measured
+        exclude: true             # 2026-09-10). `low` is the least Gemini 3.8 Flash takes:
+                                  # Google's model page says `minimal` "returns an error", and
+                                  # OpenRouter lists high/medium/low. No trace returned.
+  qwen-utils:
+    llm_type: openai
+    api_key: DASHSCOPE_API_KEY
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model: qwen3.8-flash
+    model_env: DASHSCOPE_UTILS_MODEL
+    supports_image: true
+    chat: false
+    extra_body:
+      enable_thinking: false
+  gemini-utils:
+    llm_type: openai
+    api_key: GOOGLE_API_KEY
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+    model: gemini-3.8-flash
+    model_env: GOOGLE_UTILS_MODEL
+    supports_image: true
+    chat: false
+    reasoning_effort: low
+  openai-utils:
+    llm_type: openai
+    api_key: OPENAI_API_KEY
+    base_url: https://api.openai.com/v1
+    model: gpt-6-luna             # GPT-6's fast tier: images, structured outputs, $0.10/$0.50 per M
+    model_env: OPENAI_UTILS_MODEL
+    supports_image: true
+    chat: false
+    reasoning_effort: none        # thinking off, like every utility entry; and the only effort at
+                                  # which GPT-6 Luna takes the `temperature` extraction sends
+  anthropic-utils:
+    llm_type: anthropic           # the vendor's own API, not its OpenAI-compatible layer: only
+                                  # here does `output_config.format` GUARANTEE schema-valid JSON
+    api_key: ANTHROPIC_API_KEY
+    model: claude-haiku-4-5-20251001
+    model_env: ANTHROPIC_UTILS_MODEL
+    supports_image: true
+    chat: false
+    extra_body:                   # an anthropic entry's extra_body is native top-level parameters
+      thinking:
+        type: disabled
+  deepseek-utils:
+    llm_type: openai
+    api_key: DEEPSEEK_API_KEY
+    base_url: https://api.deepseek.com/v1
+    model: deepseek-flash
+    model_env: DEEPSEEK_UTILS_MODEL
+    supports_image: true
+    response_format: json_object
+    chat: false
+    extra_body:
+      thinking:
+        type: disabled
+
+  local-utils:
+    # The same agent model with thinking off: titles, summaries, the report
+    # date, and whatever a document's tables did not hold.
+    llm_type: openai
+    base_url: LOCAL_BASE_URL
+    model: minicpm5-2b
+    model_env: LOCAL_MODEL
+    temperature: 0
+    supports_image: true
+    chat: false
+    timeout: 1800                 # a long report is minutes of writing on a local model, and a
+    max_retries: 0                # retry starts it again from nothing (the SDK: 600 s, twice more)
+    extra_body:
+      chat_template_kwargs:       # thinking off: both answering models' templates (their GGUFs'
+        enable_thinking: false    # tokenizer.chat_template) prefill an empty <think></think> when
+                                  # this is false. llama-server passes true otherwise: MiniCPM5-2B
+                                  # then reasoned 98 tokens before a one-word answer it gives in 2
+                                  # with the switch (llama.cpp 0.6.0, 2026-10-07), and Qwen3.8-27B's
+                                  # template opens <think> whenever it is not false.
+
+  local-ocr:
+    # GLM-OCR-0.9B (Q8_0 + its mmproj), `glm-ocr` in docker/local-models.ini.
+    # Off until LOCAL_OCR_BASE_URL is set. It reads report photos and pages:
+    # one pass per prompt, the text and then the tables, whose columns are
+    # read without a model. The preset's other reader, `paddleocr-vl`
+    # (PaddleOCR-VL-1.6), answers its own prompts, so switching to it changes
+    # `model` and both `ocr_prompts` here ("OCR:" and "Table Recognition:";
+    # docs/local-models.md, The document reader); LOCAL_OCR_MODEL alone is not
+    # enough.
+    llm_type: openai
+    base_url: LOCAL_OCR_BASE_URL
+    model: glm-ocr
+    model_env: LOCAL_OCR_MODEL
+    supports_image: true
+    chat: false
+    ocr_prompts:                  # GLM-OCR answers only its own task prompts
+      text: "Text Recognition:"
+      tables: "Table Recognition:"
+    timeout: 600
+    max_retries: 0
+    extra_body:
+      temperature: 0              # the vision path sends none; OCR should not sample
+
+  # More models on a key you already have — add an entry, e.g. Kimi on DashScope:
+  # kimi: {llm_type: openai, api_key: DASHSCOPE_API_KEY, base_url: https://dashscope.aliyuncs.com/compatible-mode/v1, model: kimi-k2.5, temperature: 0.1}
+
+#-----------------------------------------------------------------------------
+# Which entry each surface uses.
+#
+# A value is an entry name, a list of names (the FIRST whose key is present wins
+# — how one key runs everything), `provider/model` (openai/…, openrouter/…,
+# dashscope/…, gemini/…, deepseek/…), or an inline spec shaped like an entry.
+# The same-named environment variable overrides the file:
+#   UTILS_VISION_MODEL=dashscope/qwen3.8-flash
+# Selection happens once; a failed call is reported, never retried elsewhere.
+
+# What the first-run page tells someone choosing 100% local (docs/local-models.md),
+# and where it looks for llama.cpp's `llama-server` when given no address, in
+# order: one on this machine, compose's `llama` service (the `local` or
+# `local-cpu` profile), and a server beside an app that is not in Docker.
+LOCAL_SETUP:
+  preset: docker/local-models.ini
+  base_urls:
+    - http://host.docker.internal:8080/v1
+    - http://llama:8080/v1
+    - http://127.0.0.1:8080/v1
+  # The two sizes the page offers, small first: the model that answers
+  # (`agent`) beside the document reader (`ocr`), both sections of the preset.
+  # download_gb adds up the GGUF files the preset fetches (Hugging Face,
+  # 2026-10-10); memory_gb is the peak llama-server held with both loaded
+  # while answering, and answer_s the median seconds per answer, on the
+  # machine `measured_on` names (benchmarks/local_models has the evaluation),
+  # where llama.cpp runs on the GPU: with no GPU a first answer took 2-3
+  # minutes on an Apple-silicon laptop's cores and up to about 15 on a 4-vCPU x86 server
+  # (docs/local-models.md, Without a GPU). `sees`: whether the
+  # answering model reads a photo itself (else its OCR text). MiniCPM5-1B and
+  # Qwen3.5-9B were evaluated and dropped: the 1B graded 109 of 248 to the
+  # 2B's 225-229 (2026-10-10), the 9B did not fit beside the stack on 16 GB.
+  tiers:
+    - id: small
+      sees: false
+      agent: minicpm5-2b
+      ocr: glm-ocr
+      download_gb: 4.1
+      memory_gb: 7.6
+      answer_s: 18
+      measured_on: Apple silicon GPU (Metal), 48 GB
+    - id: large
+      sees: true
+      agent: qwen3.8-27b
+      ocr: glm-ocr
+      download_gb: 14.5
+      memory_gb: 20.8
+      answer_s: 138
+      measured_on: Apple silicon GPU (Metal), 48 GB
+
+# Report photos and scanned PDF pages. Entries MUST be multimodal (supports_image: true).
+# Same order as UTILS_TEXT_MODEL, deliberately: with several keys present, the
+# surface that reads a photo and the surface that reads its text should land on
+# the same vendor, so one unreachable gateway degrades both together instead of
+# leaving a deployment that extracts text but cannot open an image.
+UTILS_VISION_MODEL: [openrouter-utils, qwen-utils, gemini-utils, openai-utils, anthropic-utils, deepseek-utils, local-utils]
+
+# Indicator extraction from text, file titles/summaries, conversation titles.
+# Not the chat default on purpose: reordering the picker must not change extraction.
+UTILS_TEXT_MODEL: [openrouter-utils, qwen-utils, gemini-utils, openai-utils, anthropic-utils, deepseek-utils, local-utils]
+
+# Optional: a document-OCR model that reads report photos and scanned pages in
+# place of UTILS_VISION_MODEL, and whose tables are read by rule, not by a model.
+UTILS_OCR_MODEL: [local-ocr]
+
+#-----------------------------------------------------------------------------
+# The agent.
+#   ALLOWED_TOOLS / DISALLOWED_TOOLS — MCP tool whitelist / blacklist (whitelist wins)
+#   PROMPTS — system prompt templates (path, or path@name); the first is the default
+#   DEFAULT_MODEL — a MODELS entry; unset = first entry whose key is present
+#   AGENT_NAME — the persona name in the prompt
+#   AGENT_CHECKPOINTER — LangGraph Postgres memory per session; false = every turn fresh
+#   KNOWLEDGE_INDEX — the offline medical reference `mirobody fetch knowledge` builds;
+#     empty = ~/.mirobody/knowledge/medref.sqlite3. No file, no offline tier.
+#   KNOWLEDGE_ONLINE — also search PubMed (Europe PMC) and ClinicalTrials.gov; each
+#     search sends its words to those hosts, never record data
+#   AGENT_THINKING — request native thinking for every chat model at this level
+#                    (low | medium | high; off/unset becomes medium). A positive
+#                    thinking_level overrides it. doctor --probe checks whether
+#                    the endpoint actually streams thinking; utility routes are unchanged
+
+ALLOWED_TOOLS:
+
+DISALLOWED_TOOLS:
+
+PROMPTS:
+  - agent/prompts/mirobody.jinja
+
+AGENT_CHECKPOINTER: true
+
+KNOWLEDGE_INDEX:
+KNOWLEDGE_ONLINE: false
+AGENT_THINKING: medium

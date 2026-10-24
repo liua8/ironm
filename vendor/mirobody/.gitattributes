@@ -1,0 +1,15 @@
+# The big terminology artifacts, at any depth under res/. The `**` matters:
+# the bundle moved into res/loinc/ in 1.5.1, and a pattern that stopped
+# matching would check out the LFS POINTER TEXT in place of 12 MB of data,
+# which fails as "the bundle is corrupt" rather than as "the path is wrong".
+mirobody/res/**/*.bin filter=lfs diff=lfs merge=lfs -text
+mirobody/res/**/*.npz filter=lfs diff=lfs merge=lfs -text
+mirobody/res/**/*.npy filter=lfs diff=lfs merge=lfs -text
+mirobody/res/**/*.gz filter=lfs diff=lfs merge=lfs -text
+
+# Scripts that run in bash (Linux, macOS, and on Windows a WSL or Git Bash
+# terminal), and the llama.cpp preset a container reads. A Windows checkout
+# with core.autocrlf converts text to CRLF, and bash stops at the first `\r`
+# ("$'\r': command not found") before deploy.sh has done anything.
+*.sh text eol=lf
+docker/*.ini text eol=lf

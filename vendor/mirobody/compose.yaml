@@ -1,0 +1,172 @@
+services:
+  pg:
+    # DOCKER_MIRROR ("docker.1ms.run/") is set by deploy.sh when the daemon
+    # cannot reach Docker Hub.
+    image: ${DOCKER_MIRROR:-}pgvector/pgvector:0.8.6-pg17-trixie
+    restart: unless-stopped
+    shm_size: 256mb
+    ports:
+      - "127.0.0.1:${PG_HOST_PORT:-18062}:5432"
+    environment:
+      POSTGRES_USER: holistic_user
+      POSTGRES_DB: ${PG_DBNAME:-holistic_db}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-REPLACE_THIS_VALUE_IN_PRODUCTION}
+    volumes:
+      - mirobody_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U holistic_user -d ${PG_DBNAME:-holistic_db}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+  # Uploads written by 1.5.2 belong to root: it ran the app as root, and this
+  # image runs as uid 10001, which could read them but not add one, so every
+  # upload failed after an upgrade. One pass as root gives the volume to the
+  # app's user before it starts, on every start, so a restored 1.5.2 archive
+  # is covered too. Files it already owns are skipped. A mount that refuses
+  # the change (NFS with root_squash) is reported and never blocks the start.
+  mirobody_init:
+    image: ${MIROBODY_IMAGE:-${DOCKER_MIRROR:-}thetahealth4mirobody/mirobody:1.5.8}
+    user: "0:0"
+    restart: "no"
+    network_mode: none
+    healthcheck:
+      disable: true
+    command:
+      - sh
+      - -c
+      - >-
+        find /app/.theta/mcp/upload \( ! -user mirobody -o ! -group mirobody \) -exec chown mirobody:mirobody {} +
+        || echo 'mirobody_init: could not give /app/.theta/mcp/upload to uid 10001; uploads may fail' >&2
+    volumes:
+      - mirobody_upload:/app/.theta/mcp/upload
+
+  mirobody: &mirobody
+    image: ${MIROBODY_IMAGE:-${DOCKER_MIRROR:-}thetahealth4mirobody/mirobody:1.5.8}
+    restart: unless-stopped
+    env_file:
+      - ${MIROBODY_ENV_FILE:-./docker/empty-environment}
+    ports:
+      # This machine only, like Postgres. On every interface, anyone on the
+      # network signed in with the demo accounts' public code (111111).
+      # MIROBODY_BIND=0.0.0.0 in .env offers the app to other machines; read
+      # SECURITY.md first.
+      - "${MIROBODY_BIND:-127.0.0.1}:${MIROBODY_HOST_PORT:-18060}:18060"
+    environment: &mirobody_env
+      ENV: ${ENV:-localdb}
+      PYTHONUNBUFFERED: "1"
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: "18060"
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+      PG_HOST: pg
+      PG_PORT: "5432"
+      PG_USER: holistic_user
+      PG_DBNAME: ${PG_DBNAME:-holistic_db}
+      PG_PASSWORD: ${PG_PASSWORD:-REPLACE_THIS_VALUE_IN_PRODUCTION}
+      # Only when set, like HF_ENDPOINT below. An empty value routes nothing,
+      # but it made a container look proxied when it was not.
+      HTTP_PROXY:
+      HTTPS_PROXY:
+      # host.docker.internal is a model server on this machine (LOCAL_BASE_URL):
+      # through the proxy, every request to it would leave the machine. Set
+      # with no proxy too, because .env can name one as ALL_PROXY or http_proxy.
+      # langchain-openai then logs "detected system proxy configuration" and
+      # keeps httpx's own transport, which still connects directly.
+      NO_PROXY: ${NO_PROXY:-pg,llama,localhost,127.0.0.1,host.docker.internal}
+    extra_hosts:
+      # Docker Desktop resolves this name itself; Docker Engine on Linux needs the line.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - mirobody_upload:/app/.theta/mcp/upload
+      - ${MIROBODY_CONFIG_FILE:-./docker/empty-config.yaml}:/app/config.${ENV:-localdb}.yaml:ro
+    depends_on:
+      pg:
+        condition: service_healthy
+      mirobody_init:
+        condition: service_completed_successfully
+
+  mirobody_worker:
+    <<: *mirobody
+    command: ["mirobody", "worker"]
+    ports: []
+    environment:
+      <<: *mirobody_env
+    # The image's check asks the web port, which the worker does not serve. A
+    # check that passes while it runs, not `disable: true`: Compose 2.32 fails
+    # `up --wait` on a disabled one, and deploy.sh stopped there (2026-10-13).
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 10s
+    depends_on:
+      pg:
+        condition: service_healthy
+      mirobody_init:
+        condition: service_completed_successfully
+      mirobody:
+        condition: service_healthy
+
+  # The local models on llama.cpp's `llama-server` (docker/local-models.ini, or
+  # LOCAL_MODELS_PRESET), on Linux or Windows with an NVIDIA GPU:
+  # `COMPOSE_PROFILES=local ./deploy.sh`, which keeps the profile in .env, or
+  # `docker compose --profile local up -d` beside a running stack (a later
+  # `docker compose down` removes it, and the next `up` leaves it out unless
+  # .env names the profile).
+  # A container on a Mac cannot use its GPU, so there llama-server runs on the
+  # host (docs/local-models.md). The first-run page finds either one.
+  llama: &llama
+    profiles: [local]
+    # llama.cpp b11429, the build benchmarks/local_models measured with this
+    # preset (results/run.json); a floating tag would change the server under
+    # it. LLAMA_IMAGE (and LLAMA_CPU_IMAGE below) in .env name another build,
+    # or the same one on a registry that mirrors ghcr.io.
+    image: ${LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-b11429}
+    restart: unless-stopped
+    command: ["--models-preset", "/presets/local-models.ini", "--models-max", "2", "--host", "0.0.0.0", "--port", "8080"]
+    environment:
+      LLAMA_CACHE: /models
+      # Where the models download from the first time, into the
+      # mirobody_models volume they load from after: a Hugging Face mirror
+      # where huggingface.co is unreachable, e.g. HF_ENDPOINT=https://<mirror>
+      # in .env (llama.cpp reads MODEL_ENDPOINT, then HF_ENDPOINT). Passed
+      # only when .env sets one.
+      HF_ENDPOINT:
+      MODEL_ENDPOINT:
+    volumes:
+      - ${LOCAL_MODELS_PRESET:-./docker/local-models.ini}:/presets/local-models.ini:ro
+      - ./docker/minicpm5-2b.jinja:/app/docker/minicpm5-2b.jinja:ro   # the preset's chat-template-file
+      - mirobody_models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # The same models with no GPU (`--profile local-cpu`), under the same name,
+  # so the app reaches it at http://llama:8080/v1 as well. Slower: on 4 vCPUs
+  # (2026-10-07) a first answer took 2-3 minutes on a 16 GB Apple-silicon laptop (colima)
+  # and up to about 15 on an Intel Xeon Gold 5220R, download included. Both
+  # models loaded held about 6.0 GiB in the container, so Docker needs at
+  # least 8 GB of memory: Docker Desktop gives its VM half the computer's by
+  # default, and colima 2 GB unless started with `--memory 8`.
+  llama_cpu:
+    <<: *llama
+    profiles: [local-cpu]
+    image: ${LLAMA_CPU_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-b11429}
+    # The CPU preset: the small model at 32k with a 16-bit KV cache, which a
+    # CPU reads four times as fast as the GPU preset's 8-bit one.
+    volumes:
+      - ${LOCAL_MODELS_PRESET:-./docker/local-models-cpu.ini}:/presets/local-models.ini:ro
+      - ./docker/minicpm5-2b.jinja:/app/docker/minicpm5-2b.jinja:ro
+      - mirobody_models:/models
+    deploy: {}
+    networks:
+      default:
+        aliases: [llama]
+
+volumes:
+  mirobody_postgres:
+  mirobody_upload:
+  mirobody_models:

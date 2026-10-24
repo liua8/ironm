@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+"""End-to-end check of the health-data path against a REAL database.
+
+The unit tests pin the tool's contract without a store (`tests/agent/tools/
+test_health_indicators_service.py`) and the SQL's shape without a connection
+(`tests/collect/test_query.py`). This script is the third thing: it runs the whole
+path — subject zone, window, election, rendering, the three medication views and the
+PHI sentinel — against a live Postgres with real rows in it, because the two
+failures that only a database shows are a statement that will not parse and a
+column that is not there.
+
+    docker compose exec -T mirobody python - --user 1 < scripts/e2e_health_data.py
+    # or, from a checkout with a reachable database:
+    python scripts/e2e_health_data.py --user 1
+
+The image carries the package, not `scripts/`, so the first form pipes this
+file in.
+
+Exit status is the number of failed checks, so it is usable in CI.
+
+`--capture DIR` additionally writes each answer as JSON, which is how the
+pre-rewrite behaviour of the tool this replaced was recorded: run it against
+the old code, keep the directory, diff it after the change.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import sys
+from pathlib import Path
+
+#: The demo values the PHI sentinel looks for — defined once, in the seed that
+#: writes them (`mirobody.server.demo`). A reading no real person would have and a
+#: comment nobody would write: if either reaches a log line, the redaction is
+#: not working, and grepping for "a number" would never show it.
+def phi_canary() -> str:
+    from mirobody.server.demo import PHI_CANARY
+    return PHI_CANARY
+
+CASES: list[tuple[str, dict]] = [
+    ("catalog", {}),
+    ("catalog_windowed", {"start": "2025-06-01", "end": "2025-06-30"}),
+    ("readings", {"indicators": ["RestingHeartRate-RHR"]}),
+    ("readings_stringified", {"indicators": '["RestingHeartRate-RHR"]'}),
+    ("buckets_day", {"indicators": ["RestingHeartRate-RHR"], "view": "day",
+                     "start": "2025-06-01", "end": "2025-06-10"}),
+    ("buckets_month", {"indicators": ["RestingHeartRate-RHR"], "view": "month",
+                       "start": "2025-01-01", "end": "2025-12-31"}),
+    ("buckets_hour", {"indicators": ["RestingHeartRate-RHR"], "view": "hour",
+                      "start": "2025-06-01", "end": "2025-06-03"}),
+    ("stats", {"indicators": ["RestingHeartRate-RHR"], "view": "stats"}),
+    ("stats_text_value", {"indicators": ["UrineGlucose-GLU"], "view": "stats"}),
+    ("latest", {"indicators": ["RestingHeartRate-RHR"], "view": "latest"}),
+    ("keywords", {"keywords": ["resting heart"]}),
+    ("keywords_miss", {"keywords": ["definitely-not-an-indicator-zzz"]}),
+    # A view with no indicator is answered with the catalogue and told so: the
+    # refusal it used to get cost small local models a turn each time
+    # (benchmarks/local_models, 2026-10-06).
+    ("catalog_view_answers", {"view": "day"}),
+    ("refused_wrong_kind", {"kind": "medications", "view": "day"}),  # the former mode switch
+    ("refused_retired_limit", {"indicators": ["x"], "limit": 5}),
+]
+
+
+async def _pick_a_day(service, user_id: str) -> tuple[str, str] | None:
+    """An (indicator, local date) this subject has a numeric reading for."""
+    catalogue = await service.envelope({"user_id": user_id})
+    for row in catalogue.data or []:
+        try:
+            float(str(row.get("latest_value") or ""))
+        except ValueError:
+            continue
+        if row.get("last_date"):
+            return str(row["indicator"]), str(row["last_date"])
+    return None
+
+
+async def _canary_present(canary: str) -> bool:
+    """Is the sentinel anywhere in the record set?
+
+    NOT filtered by `--user`: the canary rides on the signed-in member's own
+    thin record (`demo._member_series`), never on the Demo subject, so asking
+    about user 1 — the documented command, and this script's own default —
+    reported "seed the demo data first" on a correctly seeded database. Whose
+    row it is does not matter to what this checks: that PHI exists somewhere in
+    the system, so grepping the logs for it means something. (2026-09-14
+    regression report, F-8)
+    """
+    from mirobody.utils import execute_query
+
+    rows = await execute_query(
+        "SELECT 1 FROM v_observation WHERE note_text IS NOT NULL"
+        " AND decrypt_content(note_text) LIKE :needle LIMIT 1",
+        {"needle": f"%{canary}%"},
+        log_sql=False,
+    ) or []
+    return bool(rows)
+
+
+def _check(name: str, ok: bool, detail: str = "") -> bool:
+    print(f"  {'ok  ' if ok else 'FAIL'}  {name}{(' — ' + detail) if detail and not ok else ''}")
+    return ok
+
+
+async def run(user_id: str, capture: Path | None) -> int:
+    from mirobody.utils import Config
+
+    await Config.init(yaml_filenames=[])
+
+    from mirobody.kernel import query, tools
+    from mirobody.agent.tools._render import render_compact, render_rest
+    from mirobody.agent.tools.health_indicators_service import HealthIndicatorsService
+    from mirobody.agent.tools.medications_service import MedicationsService
+
+    service = HealthIndicatorsService()
+    failures = 0
+    print(f"\nquery_health_indicators against user {user_id}\n")
+
+    for name, args in CASES:
+        envelope = await service.envelope({"user_id": user_id}, **args)
+        text = render_compact(envelope)
+        if capture:
+            capture.mkdir(parents=True, exist_ok=True)
+            (capture / f"{name}.json").write_text(
+                json.dumps({"rendered": text, "rest": render_rest(envelope)},
+                           ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n",
+                encoding="utf-8",
+            )
+        expect_error = name.startswith("refused_")
+        got_error = envelope.status == tools.STATUS_ERROR
+        if not _check(name, got_error == expect_error, f"status={envelope.status} kind={envelope.error_kind}"):
+            failures += 1
+            continue
+        if expect_error:
+            failures += not _check(f"{name}: recoverable", envelope.error_class == tools.ERROR_RECOVERABLE)
+            failures += not _check(f"{name}: names the parameter", "invalid_arguments" == envelope.error_kind)
+        else:
+            failures += not _check(f"{name}: renders", bool(text.strip()))
+            failures += not _check(
+                f"{name}: window semantics declared",
+                envelope.meta.window_semantics in (query.SEMANTICS_TZ_EXACT, query.SEMANTICS_DATE_PADDED),
+            )
+        if name == "catalog_view_answers":
+            failures += not _check(f"{name}: is the catalogue", envelope.meta.view == "")
+            failures += not _check(
+                f"{name}: says the view was not applied",
+                any("was not applied" in a for a in envelope.assumptions),
+            )
+
+    print("\ninvariants\n")
+    # A day-grained answer must agree with the day authority the dashboard
+    # reads. Which indicator and which day come from what this subject ACTUALLY
+    # has: a hard-coded pair passes vacuously on a record that does not carry it.
+    probe = await _pick_a_day(service, user_id)
+    if probe is None:
+        failures += not _check("one day, one number (bucket == latest)", False, "no numeric reading to compare")
+    else:
+        indicator, day_iso = probe
+        day = await service.envelope(
+            {"user_id": user_id}, indicators=[indicator], view="day", start=day_iso, end=day_iso
+        )
+        latest = await service.envelope(
+            {"user_id": user_id}, indicators=[indicator], view="latest", start=day_iso, end=day_iso
+        )
+        day_value = (list(day.data or [{}])[0] or {}).get("avg")
+        latest_value = (list(latest.data or [{}])[0] or {}).get("value")
+        failures += not _check(
+            f"one day, one number ({indicator} on {day_iso})",
+            day_value is not None and latest_value is not None
+            and abs(float(day_value) - float(latest_value)) < 1e-6,
+            f"bucket={day_value} latest={latest_value}",
+        )
+
+    # The baseline is the OLDEST reading, and it comes from `view=stats`.
+    #
+    # This replaces a `("readings_oldest", {..., "order": "oldest"})` case that
+    # 1.4.0 made unpassable — `order` is not in `query.TOOL_SCHEMA` any more, so
+    # it was refused as an unknown parameter on every run, and the loop above
+    # counted that as a failure forever. A check that can never pass is worse
+    # than no check: it turns red into background noise.
+    #
+    # Renaming it to `view=stats` would have duplicated the `stats` case
+    # exactly — the loop only asserts "it rendered". What the old case actually
+    # verified is that you can reach the FIRST reading, and that is what is
+    # asserted here instead: `first`/`first_date` are present, and the baseline
+    # is not newer than the latest value it is a baseline for.
+    # The indicator comes from `probe`, not from a literal. A hard-coded name
+    # this subject does not carry answers with the CATALOGUE instead of with
+    # readings, and every assertion below then grades the wrong path — the same
+    # vacuity `_pick_a_day` exists to avoid, which is how the first draft of
+    # this check "failed" against a record that simply has other indicators.
+    baseline = await service.envelope(
+        {"user_id": user_id}, indicators=[probe[0]], view="stats"
+    ) if probe else None
+    row = (list(baseline.data or [{}])[0] or {}) if baseline else {}
+    has_baseline = row.get("first") is not None and row.get("first_date") is not None
+    failures += not _check(
+        "a baseline is the oldest reading (view=stats -> first/first_date)",
+        has_baseline,
+        f"first={row.get('first')!r} first_date={row.get('first_date')!r}"
+        if baseline else "no numeric reading to build a baseline from",
+    )
+    if has_baseline and row.get("last_date") is not None:
+        failures += not _check(
+            "the baseline is not newer than the latest",
+            str(row["first_date"]) <= str(row["last_date"]),
+            f"first_date={row['first_date']} last_date={row['last_date']}",
+        )
+        # Both are the stored local day. Stats rendered the UTC date of the
+        # instant, a day early for a reading filed before 08:00 in Shanghai.
+        failures += not _check(
+            "stats and the catalogue name the same last day",
+            str(row["last_date"]) == probe[1],
+            f"stats last_date={row['last_date']} catalogue last_date={probe[1]}",
+        )
+
+    # Medications are their own tool; the three views must all answer.
+    medications = MedicationsService()
+    for view in ("plan", "log", "history"):
+        env = await medications.envelope({"user_id": user_id}, view=view)
+        failures += not _check(f"medications_{view}", env.status != tools.STATUS_ERROR, f"status={env.status} kind={env.error_kind}")
+
+    # An unknown parameter is refused BY NAME, or the model cannot fix its call.
+    refusal = await service.envelope({"user_id": user_id}, kind="medications", view="day")
+    failures += not _check("an unknown parameter is refused by name", "kind: unknown parameter" in "; ".join(refusal.assumptions))
+
+    # The tool must never raise: the REPL calls it with no middleware above it.
+    class Broken:
+        def tz(self, _):
+            raise RuntimeError("the store fell over")
+
+    broken = HealthIndicatorsService(Broken())
+    env = await broken.envelope({"user_id": user_id})
+    failures += not _check("never raises", env.status == tools.STATUS_ERROR)
+    failures += not _check("never leaks the exception message", "fell over" not in render_compact(env))
+
+    # The PHI sentinel. The tool must be able to READ the canary and must not
+    # log it: `phi_lint` checks the source and `ops.PHIPolicy` filters at
+    # runtime, and this is the only check that exercises the whole system.
+    # The PHI sentinel's precondition: the canary must BE in the record, or a
+    # log that does not contain it proves nothing. Checked against the column
+    # directly — the tool deliberately never returns a comment, which is
+    # exactly why a comment is what the canary rides on.
+    canary = phi_canary()
+    failures += not _check(
+        "the canary is in the record (so a log check means something)",
+        await _canary_present(canary),
+        "seed the demo data first (SEED_DEMO_DATA=true)",
+    )
+    print(f"\n  now grep the running container's logs — a hit is a leak:\n"
+          f"    docker compose logs mirobody | grep -F {canary.split()[-1]!r} | head\n")
+
+    print(f"\n{failures} failed\n")
+    return failures
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--user", default="1", help="subject id to read (default: the demo user)")
+    parser.add_argument("--capture", type=Path, default=None, help="write each answer as JSON into this directory")
+    args = parser.parse_args()
+    # From a checkout, the package beside this file; piped into the image
+    # (`python -`) there is no file, and the installed package is the one.
+    if "__file__" in globals():
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    return asyncio.run(run(args.user, args.capture))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

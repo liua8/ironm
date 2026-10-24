@@ -1,0 +1,121 @@
+{
+  "file_not_supported": {
+    "en": "File type not supported",
+    "zh": "不支持的文件类型",
+    "fr": "Type de fichier non supporté",
+    "ja": "サポートされていないファイル形式",
+    "es": "Tipo de archivo no compatible"
+  },
+  "file_upload_failed": {
+    "en": "File upload failed",
+    "zh": "文件上传失败",
+    "fr": "Échec du téléchargement du fichier",
+    "ja": "ファイルのアップロードに失敗しました",
+    "es": "Error al subir el archivo"
+  },
+  "file_upload_completed": {
+    "en": "File upload completed",
+    "zh": "文件上传完成",
+    "fr": "Téléchargement du fichier terminé",
+    "ja": "ファイルのアップロードが完了しました",
+    "es": "Subida de archivo completada"
+  },
+  "uploading_file": {
+    "en": "Uploading file",
+    "zh": "正在上传文件",
+    "fr": "Téléchargement du fichier",
+    "ja": "ファイルをアップロード中",
+    "es": "Subiendo archivo"
+  },
+  "extracting_content": {
+    "en": "Extracting content",
+    "zh": "正在提取内容",
+    "fr": "Extraction du contenu",
+    "ja": "コンテンツを抽出中",
+    "es": "Extrayendo contenido"
+  },
+  "image_processing_success": {
+    "en": "Image processing completed",
+    "zh": "图片处理完成",
+    "fr": "Traitement d'image terminé",
+    "ja": "画像処理が完了しました",
+    "es": "Procesamiento de imagen completado"
+  },
+  "image_processing_failed": {
+    "en": "Image processing failed",
+    "zh": "图片处理失败",
+    "fr": "Échec du traitement d'image",
+    "ja": "画像処理に失敗しました",
+    "es": "Procesamiento de imagen falló"
+  },
+  "pdf_processing_success": {
+    "en": "PDF processing completed",
+    "zh": "PDF处理完成",
+    "fr": "Traitement PDF terminé",
+    "ja": "PDF処理が完了しました",
+    "es": "Procesamiento PDF completado"
+  },
+  "pdf_processing_failed": {
+    "en": "PDF processing failed",
+    "zh": "PDF处理失败",
+    "fr": "Échec du traitement PDF",
+    "ja": "PDF処理に失敗しました",
+    "es": "Procesamiento PDF falló"
+  },
+  "text_processing_success": {
+    "en": "Text processing completed",
+    "zh": "文本处理完成",
+    "fr": "Traitement de texte terminé",
+    "ja": "テキスト処理が完了しました",
+    "es": "Procesamiento de texto completado"
+  },
+  "text_processing_failed": {
+    "en": "Text processing failed",
+    "zh": "文本处理失败",
+    "fr": "Échec du traitement de texte",
+    "ja": "テキスト処理に失敗しました",
+    "es": "Procesamiento de texto falló"
+  },
+  "extracting_abstract": {
+    "en": "Generating file summary",
+    "zh": "正在生成文件摘要",
+    "fr": "Génération du résumé du fichier",
+    "ja": "ファイルの要約を作成中",
+    "es": "Generando el resumen del archivo"
+  },
+  "excel_processing_success": {
+    "en": "Spreadsheet processing completed",
+    "zh": "表格处理完成",
+    "fr": "Traitement du tableur terminé",
+    "ja": "スプレッドシートの処理が完了しました",
+    "es": "Procesamiento de la hoja de cálculo completado"
+  },
+  "excel_processing_failed": {
+    "en": "Spreadsheet processing failed",
+    "zh": "表格处理失败",
+    "fr": "Échec du traitement du tableur",
+    "ja": "スプレッドシートの処理に失敗しました",
+    "es": "Error al procesar la hoja de cálculo"
+  },
+  "document_processing_success": {
+    "en": "Document processing completed",
+    "zh": "文档处理完成",
+    "fr": "Traitement du document terminé",
+    "ja": "ドキュメントの処理が完了しました",
+    "es": "Procesamiento del documento completado"
+  },
+  "document_processing_failed": {
+    "en": "Document processing failed",
+    "zh": "文档处理失败",
+    "fr": "Échec du traitement du document",
+    "ja": "ドキュメントの処理に失敗しました",
+    "es": "Error al procesar el documento"
+  },
+  "genetic_processing_failed": {
+    "en": "Genetic data processing failed",
+    "zh": "基因数据处理失败",
+    "fr": "Échec du traitement des données génétiques",
+    "ja": "遺伝子データの処理に失敗しました",
+    "es": "Error al procesar los datos genéticos"
+  }
+}

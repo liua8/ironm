@@ -1,0 +1,210 @@
+# Connecting a device provider (Garmin · Oura · Whoop)
+
+**English** · **[中文](provider-setup.zh-CN.md)**
+
+The three shipped pull providers are OAuth clients of their vendor. Nothing in
+this repo can talk to Garmin, Oura or Whoop until **you** hold credentials from
+that vendor's developer programme — they are issued per application, and cannot
+be bundled with an open-source release.
+
+This page is the path from "installed" to "pulling data". To prove the
+provider mechanism works before dealing with any vendor, skip to
+[Verify](#verify): a provider that declines for missing credentials still says
+so in the boot log, which is the mechanism working.
+
+The settings live in [`config.devices.yaml`](../config.devices.yaml) (named by the
+`INCLUDE` list at the top of `config.yaml`), not in `config.yaml` itself: a
+deployment that never connects a wearable never sees them. That file ships with
+empty credentials and each vendor's endpoint defaults already filled in. Put your
+credentials in your `config.{env}.yaml` overlay, which overrides it (the YAML
+blocks below go there).
+
+**With Docker** the image carries its own copy of these files, so editing the
+checkout's `config.devices.yaml` changes nothing. Put the blocks in
+`config.localdb.yaml` next to `compose.yaml` and run `./deploy.sh` again: it
+mounts that file, by setting `MIROBODY_CONFIG_FILE` in `.env`. Keep the checkout
+under your home directory. A path Docker does not share, such as a checkout
+under `/tmp` with colima, mounts as an empty directory, and the server runs
+without your file.
+
+> **Apple Health is not in this list, and cannot be.** HealthKit is readable
+> only from a signed iOS app, on-device, after per-type user consent — there is
+> no web OAuth flow and no server-to-server API. This server *receives* Apple
+> data (`/apple/health`, `/apple/statistics`, `/apple/cda`) from a client that
+> already has it. See [`collect/providers/apple/`](../mirobody/collect/providers/apple/README.md).
+
+---
+
+## Before you start
+
+**A publicly reachable HTTPS URL.** Every vendor redirects the user's browser
+back to your server after they approve, and none of them accept `localhost` or
+plain HTTP for a registered redirect. For local development, tunnel:
+
+```bash
+ngrok http 18060     # → https://abc123.ngrok-free.app
+```
+
+Use that hostname everywhere below, and set it as `MCP_PUBLIC_URL` in
+`config.{env}.yaml` so the rest of the server agrees about its own address.
+
+**The callback route already exists.** It is served at:
+
+```
+{your-https-host}/api/v1/pulse/{platform}/{provider_slug}/callback
+```
+
+`platform` is always `theta` for these three. The slugs are `theta_garmin`,
+`theta_oura`, `theta_whoop` — the full slug, not the bare vendor name; the
+handler looks the provider up by exactly that string
+(`ProviderPlatform.get_provider`).
+
+So the redirect URL you register with the vendor, and the one you put in
+config, are the same string, and it looks like:
+
+```
+https://abc123.ngrok-free.app/api/v1/pulse/theta/theta_oura/callback
+```
+
+---
+
+## Oura
+
+**OAuth 2.0.** Register at [cloud.ouraring.com/oauth/applications](https://cloud.ouraring.com/oauth/applications).
+Set the redirect URI to the callback above with `theta_oura`.
+
+```yaml
+# config.{env}.yaml
+OURA_CLIENT_ID:     'your-client-id'
+OURA_CLIENT_SECRET: 'your-client-secret'
+OURA_REDIRECT_URL:  'https://abc123.ngrok-free.app/api/v1/pulse/theta/theta_oura/callback'
+```
+
+## Whoop
+
+**OAuth 2.0.** Register at [developer.whoop.com](https://developer.whoop.com/)
+and set the redirect URI with `theta_whoop`.
+
+```yaml
+WHOOP_CLIENT_ID:     'your-client-id'
+WHOOP_CLIENT_SECRET: 'your-client-secret'
+WHOOP_REDIRECT_URL:  'https://abc123.ngrok-free.app/api/v1/pulse/theta/theta_whoop/callback'
+```
+
+Optional, all with working defaults — set only to pin a different environment:
+`WHOOP_AUTH_URL`, `WHOOP_TOKEN_URL`, `WHOOP_API_BASE_URL`, `WHOOP_SCOPES`,
+`WHOOP_REQUEST_TIMEOUT`.
+
+## Garmin
+
+**OAuth 1.0a**, not 2.0 — the flow is request-token → user authorises →
+`oauth_verifier` → access-token, and the callback handler branches on it
+(`LinkType.OAUTH1`). Apply through the
+[Garmin Connect Developer Program](https://developer.garmin.com/gc-developer-program/);
+approval is a manual process and is usually the long pole.
+
+```yaml
+GARMIN_CLIENT_ID:     'your-consumer-key'
+GARMIN_CLIENT_SECRET: 'your-consumer-secret'
+GARMIN_REDIRECT_URL:  'https://abc123.ngrok-free.app/api/v1/pulse/theta/theta_garmin/callback'
+```
+
+Optional, with defaults: `GARMIN_AUTH_URL`, `GARMIN_TOKEN_URL`,
+`GARMIN_ACCESS_TOKEN_URL`, `GARMIN_API_BASE_URL`, `OAUTH_TEMP_TTL_SECONDS`.
+
+> Secrets in the overlay are encrypted at rest automatically: any key whose name
+> contains `_SECRET`, `_KEY`, `_TOKEN`, `_PASSWORD` … is encrypted with
+> `CONFIG_ENCRYPTION_KEY` from `.env` the first time the server reads it. Paste
+> the plaintext once; the overlay rewrites itself. The shipped defaults,
+> `config.yaml` and the files it includes, are read and never rewritten, so a
+> secret pasted into `config.devices.yaml` stays in plaintext.
+
+---
+
+## Verify
+
+**1. The provider starts.** Run `./deploy.sh` again, or `docker compose up -d`
+(a `docker compose restart` keeps the old mounts and environment), and read the
+boot log with `docker compose logs mirobody`:
+
+```
+Loaded provider: provider_class=OuraProvider
+  - provider platform loaded 1 providers
+```
+
+The line that means *credentials are missing*, not *code is broken*:
+
+```
+Provider OuraProvider declined to start (not configured)
+```
+
+Both are INFO. A `Failed to load provider …` at WARNING is a different problem:
+that is an import error, and a regression test covers it.
+
+**2. It is offered to users.**
+
+```bash
+curl -s http://localhost:18060/api/v1/pulse/providers | jq '.data.providers[].slug'
+```
+
+**3. Link an account.** `POST /api/v1/pulse/user/providers/link` (authenticated)
+returns the vendor authorisation URL; open it, approve, and the vendor sends the
+browser to your callback. On success the user's linked providers appear in:
+
+```bash
+curl -s http://localhost:18060/api/v1/pulse/user/providers -H "Authorization: Bearer $TOKEN"
+```
+
+Unlink with `POST /api/v1/pulse/user/providers/unlink`.
+
+**4. Data arrives.** Oura and WHOOP are pulled: right after a link (Oura 30
+days back, WHOOP 2), then on a schedule, Oura every hour and WHOOP once a day.
+
+Garmin pushes, and is pulled only once, 7 days back, right after a link. Give
+Garmin `POST {your-https-host}/api/v1/pulse/theta/theta_garmin/webhook` as the
+push endpoint for each summary type. Webhooks are off (404) until you set
+`COLLECT_WEBHOOK_SECRET`; then register the URL with `?secret=<value>`, or send
+the value in `X-Webhook-Secret`. A push names its person by Garmin's user id,
+which is matched through the linked account; a push for an account nobody
+linked here answers an error.
+
+WHOOP and Oura pushes are not supported. Their notifications carry only the id
+of a record to fetch, and no link here stores their user id, so a push from
+either is not stored.
+
+---
+
+## Troubleshooting
+
+**`loaded 0 providers` and no other line.** Every provider declined. Check the
+key names against this page — a typo in `OURA_CLIENT_ID` looks identical to not
+configuring it, because `create_provider` returns `None` either way.
+
+**Vendor rejects the redirect URI.** It must match what you registered
+*byte for byte*, including scheme, host, path and the absence of a trailing
+slash. The most common miss is the slug: `theta_oura`, not `oura`.
+
+**Callback returns "provider not available".** The provider declined at startup,
+so the platform has nothing registered under that slug. Fix the credentials
+first; the callback is downstream of registration.
+
+**It worked, then stopped.** An access token is refreshed before it expires.
+When the vendor refuses the refresh token, or none was stored because the
+consent lacked the offline scope, the link is marked for reconnecting: the app
+shows it as "reconnect", the pull skips it, and linking again clears the mark.
+A refresh that only times out is tried again on the next pull.
+
+---
+
+## Writing your own
+
+The provider contract is one directory:
+`mirobody_<slug>/provider_<slug>.py`, exporting a `BasePullProvider` subclass
+with `create_provider(config)` returning `None` when unconfigured, `format_data`
+and `pull_from_vendor_api(credentials, days)`.
+[`mirobody_whoop/`](../mirobody/collect/providers/mirobody_whoop/) is the OAuth2
+reference; [`mirobody_oura/`](../mirobody/collect/providers/mirobody_oura/) is the
+same shape with a different vendor. Full guide: [provider-guide.md](provider-guide.md).
+
+Providers outside the package go in `PROVIDER_DIRS`; those are loaded by file
+location, so use absolute imports in them.

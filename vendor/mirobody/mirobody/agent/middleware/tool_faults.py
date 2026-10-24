@@ -1,0 +1,270 @@
+"""One tool's failure must never end the conversation.
+
+LangGraph's ``ToolNode`` ships ``handle_tool_errors=_default_handle_tool_errors``,
+which RE-RAISES anything that isn't an argument-validation error. So an exception
+inside any tool (a bad row, a timed-out HTTP call, a driver hiccup) propagates
+out of the graph and takes the whole turn with it:
+
+  1. the SSE stream dies mid-answer, so the user gets a truncated reply;
+  2. the raw driver text (a full SQLAlchemy/psycopg dump, SQL and bound
+     parameters included) can reach end users.
+
+This middleware turns any such fault into an ordinary error ``ToolMessage``: the
+model sees "that tool failed", can apologise or try another route, and the
+conversation survives. It wraps EVERY tool the agent has (the MCP tools and
+deepagents' native filesystem tools) including ones added later, which is why
+it lives here rather than as a decorator on individual tools.
+
+NOT caught, deliberately:
+
+  * ``GraphBubbleUp`` (``GraphInterrupt`` et al.): how ``interrupt()`` suspends a
+    run. The agent passes ``interrupt_on`` only for ``ask_user``, but swallowing these would
+    silently break any approval flow added later.
+  * ``asyncio.CancelledError``: a ``BaseException``, so ``except Exception``
+    misses it by construction; a disconnected client must still cancel the run.
+"""
+
+import json
+import logging
+import re
+
+from langchain.agents.middleware import AgentMiddleware, hook_config
+from langchain_core.messages import AIMessage, ToolMessage
+from langgraph.errors import GraphBubbleUp
+
+from mirobody.agent.errors import AgentError
+from mirobody.kernel import tools as tool_kernel
+from mirobody.kernel.ops import is_driver_exception
+
+logger = logging.getLogger(__name__)
+
+
+def _fault_message(request, exc: Exception) -> ToolMessage:
+    """The error ``ToolMessage`` the model sees in place of a crashed tool result.
+
+    The TEXT carries the tool name, the error kind and the exception TYPE, never
+    its message: driver messages quote SQL with bound parameters, HTTP messages
+    quote payloads, and models have historically echoed such strings to users
+    verbatim. The full traceback goes to the log instead.
+
+    The ARTIFACT carries the same fault as a `tools.Envelope`, so
+    `RetryGovernanceMiddleware` learns whether retrying can help without parsing
+    the text, which a harness is free to truncate or evict.
+
+    Both come from `mirobody.kernel.tools`: one classifier, shared with every
+    consumer, rather than a per-repository table of exception names.
+    """
+    call = getattr(request, "tool_call", None) or {}
+    tool_name = call.get("name") or "unknown_tool"
+    kind = tool_kernel.classify_fault(exc)
+    logger.error("tool failed: tool_name=%s error_type=%s fault_kind=%s", tool_name, type(exc).__name__, kind,
+                 exc_info=not is_driver_exception(exc))
+    return ToolMessage(
+        content=tool_kernel.fault_text(kind, tool_name, exc),
+        name=tool_name,
+        tool_call_id=call.get("id") or "",
+        status="error",
+        artifact=tool_kernel.fault_envelope(exc),
+    )
+
+
+class ToolFaultMiddleware(AgentMiddleware):
+    """Contain every tool fault as an error result instead of a dead turn."""
+
+    def wrap_tool_call(self, request, handler):
+        try:
+            return handler(request)
+        except GraphBubbleUp:
+            raise
+        except Exception as exc:  # containment is the point
+            return _fault_message(request, exc)
+
+    async def awrap_tool_call(self, request, handler):
+        try:
+            return await handler(request)
+        except GraphBubbleUp:
+            raise
+        except Exception as exc:  # containment is the point
+            return _fault_message(request, exc)
+
+
+#-----------------------------------------------------------------------------
+
+# The retry hint the model sees for each unparseable call. Mentioning
+# `none` specifically because that is the observed failure: claude-sonnet-4.6
+# (via OpenRouter, temperature 0.1) deterministically emitted
+# `{"aggregate": none, ...}` for the health-data tool: Python's None
+# instead of JSON null / the quoted enum string "none".
+
+# Salvaging malformed arguments. The hint below names exactly what went wrong
+# and some providers still re-emit the same shape twice before we give up,
+# observed against the health-data tool as
+# `{"keywords": [...], "start_time": 2024-08-21, "aggregate": none}`, with an
+# unquoted date and a bare `none`. So repair the string first: these rewrites
+# are deterministic and narrow, and run only on text that has ALREADY failed
+# `json.loads`.
+_PY_LITERALS = re.compile(r'(?<=[:\[,\s])(None|none|True|False)(?=[\s,\]}])')
+
+#: An unquoted date or timestamp: JSON reads `2024` and chokes on the dash.
+_BARE_DATE = re.compile(
+    r'(?<=[:\[,])\s*(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?)\s*(?=[,\]}])'
+)
+
+_TRAILING_COMMA = re.compile(r',\s*(?=[}\]])')
+
+
+def _salvage_json_args(raw):
+    """Return a dict if *raw* can be coerced into valid JSON, else None.
+
+    Only ever called on arguments LangChain already refused to parse.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+
+    fixed = _PY_LITERALS.sub(
+        lambda m: {"None": "null", "none": "null", "True": "true", "False": "false"}[m.group(1)],
+        raw,
+    )
+    fixed = _BARE_DATE.sub(lambda m: f'"{m.group(1)}"', fixed)
+    fixed = _TRAILING_COMMA.sub("", fixed)
+
+    if fixed == raw:
+        # Nothing we know how to fix; do not hand back a string that failed once.
+        return None
+    try:
+        parsed = json.loads(fixed)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _names(calls: list) -> str:
+    """The tool names of `calls`, for a log line."""
+    return ", ".join(sorted({str(c.get("name") or "?") for c in calls}))
+
+
+_INVALID_CALL_HINT = (
+    "Your call to this tool was DROPPED: the arguments were not valid JSON. "
+    "Common causes: Python literals (none/None/True/False) instead of JSON "
+    "(null/true/false), or an unquoted enum value (write \"none\", not none). "
+    "Re-issue the call with strictly valid JSON arguments."
+)
+
+# One malformed call is worth two retries; a model that keeps emitting broken
+# JSON is not going to be argued into correctness, and each retry costs a full
+# model call. Counted per turn by scanning this turn's repair ToolMessages.
+_MAX_REPAIRS_PER_TURN = 2
+
+
+class InvalidToolCallRepairMiddleware(AgentMiddleware):
+    """A malformed tool call must never end the conversation either.
+
+    ``ToolFaultMiddleware`` above catches tools that CRASH, but a tool call
+    whose arguments fail JSON parsing never reaches any tool. LangChain parks
+    it in ``AIMessage.invalid_tool_calls``; the react loop routes on
+    ``tool_calls`` alone, sees none, and ends the graph. The user gets
+    "Answer Completed" over an empty message, and nothing is logged.
+
+    This hook answers each unparseable call with an error ``ToolMessage``
+    (the OpenAI wire format requires every emitted tool_call id to be
+    answered anyway) and jumps back to the model, which then re-issues the
+    call correctly. Scoped to the pure-invalid case: when valid calls exist
+    alongside, ToolNode must stay the next node, and it resolves the turn.
+    """
+
+    @hook_config(can_jump_to=["model"])
+    # `runtime` is part of the hook signature; this middleware does not read it.
+    def after_model(self, state, runtime):
+        messages = state.get("messages") or []
+        last = messages[-1] if messages else None
+        if not isinstance(last, AIMessage):
+            return None
+
+        invalid = last.invalid_tool_calls or []
+        if not invalid or last.tool_calls:
+            return None
+
+        # Count this turn's previous repairs (scan back to the last non-repair
+        # boundary: any message that is not one of our error ToolMessages and
+        # not an AIMessage that only carried invalid calls).
+        repairs = 0
+        for msg in reversed(messages[:-1]):
+            if isinstance(msg, ToolMessage) and msg.name == "__invalid_tool_call__":
+                repairs += 1
+            elif isinstance(msg, AIMessage) and not msg.tool_calls and msg.invalid_tool_calls:
+                continue
+            else:
+                break
+
+        if repairs >= _MAX_REPAIRS_PER_TURN:
+            tool_names = _names(invalid)
+            logger.error("invalid tool calls persisted after %d repairs; giving up: tool_names=%s",
+                         repairs, tool_names)
+            # Returning None here ended the turn with a ZERO-character reply
+            # and no error event: the client paid for the whole run and saw
+            # blank. An `AgentError` reaches the client as its own sentence;
+            # a RuntimeError read "internal error (RuntimeError)".
+            raise AgentError(
+                f"The model kept sending tool calls that were not valid JSON after "
+                f"{repairs} repair attempts. Please retry, or choose another model."
+            )
+
+        # Salvage first. A call we can coerce into valid JSON is promoted onto
+        # `tool_calls` and the message REPLACED (same id, so `add_messages`
+        # overwrites rather than appends), which lets ToolNode run it this turn
+        # instead of spending a model call asking for a rewrite that does not come.
+        salvaged, unsalvageable = [], []
+        for call in invalid:
+            args = _salvage_json_args(call.get("args"))
+            if args is None:
+                unsalvageable.append(call)
+            else:
+                salvaged.append({
+                    "name": call.get("name"),
+                    "args": args,
+                    "id": call.get("id") or "salvaged_tool_call",
+                    "type": "tool_call",
+                })
+
+        if salvaged and not unsalvageable:
+            tool_names = _names(salvaged)
+            logger.warning("salvaged malformed tool call(s) without a retry: tool_names=%s", tool_names)
+            return {
+                "messages": [
+                    AIMessage(
+                        id=last.id,
+                        content=last.content,
+                        tool_calls=salvaged,
+                        invalid_tool_calls=[],
+                        additional_kwargs=last.additional_kwargs,
+                        response_metadata=last.response_metadata,
+                    )
+                ]
+            }
+
+        # Names only: a call's parse `error` quotes the arguments it could
+        # not parse, and those are the person's question.
+        tool_names = _names(invalid)
+        logger.warning("repairing invalid tool call(s): tool_names=%s", tool_names)
+
+        return {
+            "messages": [
+                ToolMessage(
+                    content=json.dumps(
+                        {
+                            "error": f"call to {call.get('name') or 'unknown tool'} "
+                                     "had malformed JSON arguments",
+                            "hint": _INVALID_CALL_HINT,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    # Marker name: how the repair counter above recognises its
+                    # own messages. Never a real tool name.
+                    name="__invalid_tool_call__",
+                    tool_call_id=call.get("id") or "invalid_tool_call",
+                    status="error",
+                )
+                for call in invalid
+            ],
+            "jump_to": "model",
+        }
