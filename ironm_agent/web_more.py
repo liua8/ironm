@@ -671,3 +671,50 @@ async def diet_undo(user_id: str = Depends(_verify()), diet: Any = DIET) -> dict
         raise HTTPException(404, "现在没有热量调整")
     await diet.undo(user_id)
     return await _diet_state(user_id, diet)
+
+
+# ---- 今天的版本（spec [2026-10-23] §18 需求 3）---------------------------------------------------
+
+
+@router.get("/iron/api/today")
+async def get_today(
+    minutes: int | None = None,
+    tired: bool = False,
+    user_id: str = Depends(_verify()),
+    training: TrainingStore = TRAINING,
+) -> dict[str, Any]:
+    """按今天的状态、天气和可用时间，用规则改出今天的版本；原计划不变。"""
+    from ironm_agent.casefile import readiness
+    from ironm_agent.today import build
+
+    if minutes is not None and not 10 <= minutes <= 180:
+        raise HTTPException(422, "可用时间要在 10 到 180 分钟之间")
+    stored = await training.plan(user_id)
+    today = date.today()
+    if stored is None:
+        return {"status": "no_plan"}
+    session = stored.plan.session_on(today)
+    if session is None:
+        return {"status": "rest"}
+    snap = await _web().snapshot_for(user_id)
+    state = readiness(snap.readings, "", today)
+    wx = await weather.for_user(user_id)
+    advice = weather.assess(wx) if wx else None
+    poor = state.level == "poor"
+    version = build(
+        session,
+        tired=tired or poor,
+        tired_why="你说今天有点累" if tired else "；".join(state.reasons),
+        indoor=advice is not None and advice.level in ("indoor", "avoid"),
+        indoor_why=advice.reasons[0] if advice and advice.reasons else "",
+        minutes=minutes,
+    )
+    return {
+        "status": "ok",
+        "original": session.model_dump(mode="json"),
+        "today": version.session.model_dump(mode="json"),
+        "changed": version.changed,
+        "changes": list(version.changes),
+        "reasons": list(version.reasons),
+        "readiness": state.name,
+    }

@@ -573,3 +573,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .pt-head .link { white-space: nowrap; flex: none; }
 .cal-cell { width: 100%; max-width: 44px; justify-self: center; }
 .sheet-stack { display: flex; flex-direction: column; gap: 12px; }
+
+/* 今天的版本（spec [2026-10-23] §18 需求 3） */
+.tv { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+.tv-head { display: flex; flex-direction: column; gap: 8px; }
+.tv-why { margin: 0; padding-left: 18px; font-size: 14px; }
+.tv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px; }
+.tv-grid .plan-items { padding-left: 16px; margin: 4px 0 0; }

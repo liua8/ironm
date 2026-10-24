@@ -266,3 +266,100 @@ def test_diet_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
     r3 = c.post("/iron/api/diet/adjust/undo").json()
     assert r3["current"] is None and r3["target"] == before
     assert c.post("/iron/api/diet/adjust/undo").status_code == 404
+
+
+# ---- 需求 3：今天的版本 -----------------------------------------------------------------------
+
+from ironm_agent import today as today_mod  # noqa: E402
+from ironm_agent.protools.plan_check import estimate_minutes  # noqa: E402
+from ironm_agent.training import Session  # noqa: E402
+
+
+def leg_day(minutes: int = 60) -> Session:
+    return Session.model_validate(
+        {"day": TODAY.isoweekday(), "name": "下肢", "minutes": minutes, "items": [
+            {"exercise": "杠铃深蹲", "sets": 4, "reps": "6–8"},
+            {"exercise": "罗马尼亚硬拉", "sets": 3, "reps": "8–10"},
+            {"exercise": "腿弯举", "sets": 3, "reps": "10–12"},
+            {"exercise": "提踵", "sets": 3, "reps": "12–15"},
+            {"exercise": "慢跑", "sets": 1, "reps": "20 分钟"}]}
+    )  # fmt: skip
+
+
+def test_today_tired_halves_sets_and_says_why() -> None:
+    s = leg_day()
+    v = today_mod.build(s, tired=True, tired_why="最近一晚只睡了 4.5 小时")
+    assert [x.sets for x in v.session.items] == [2, 1, 1, 1, 1]  # 减半、至少 1 组
+    assert all(today_mod.TIRED_NOTE in x.note for x in v.session.items)
+    assert v.changed and "组数减半" in v.changes[0] and v.reasons == ("最近一晚只睡了 4.5 小时",)
+    assert [x.sets for x in s.items] == [4, 3, 3, 3, 1]  # 原计划不变
+    assert not today_mod.build(s).changed
+
+
+def test_today_indoor_swaps_outdoor_cardio() -> None:
+    v = today_mod.build(leg_day(), indoor=True, indoor_why="空气质量指数 180，不宜户外运动")
+    assert v.session.items[-1].exercise == today_mod.INDOOR
+    assert "原来是慢跑" in v.session.items[-1].note and "慢跑" in v.changes[0]
+    assert v.reasons == ("空气质量指数 180，不宜户外运动",)
+    assert v.session.items[0].exercise == "杠铃深蹲"  # 力量动作不换
+
+
+def test_today_trims_to_fit_minutes() -> None:
+    s = leg_day()
+    assert estimate_minutes(s) > 30
+    v = today_mod.build(s, minutes=30)
+    assert estimate_minutes(v.session) <= 30 and v.session.minutes == 30
+    names = [x.exercise for x in v.session.items]
+    assert "杠铃深蹲" in names  # 先删辅助动作，主项留下
+    assert "去掉" in v.changes[0] and v.reasons == ("今天只有 30 分钟",)
+    assert not today_mod.build(s, minutes=120).changed  # 放得下：不改
+
+
+def test_today_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mirobody.server.auth import verify_token
+
+    from ironm_agent import weather, web, web_more
+    from ironm_agent.training import Plan
+
+    book = TrainingBook()
+    real_today = date.today()
+    session = leg_day().model_copy(update={"day": real_today.isoweekday()})
+    plan = Plan.model_validate(
+        {"title": "x", "days_per_week": 1, "sessions": [session.model_dump()]}
+    )
+    d = asyncio.run(book.add_draft("42", "plan", plan_content(plan)))
+    asyncio.run(book.confirm("42", d.id))
+    sleep = {"h": 4.0}
+
+    async def snap(user_id: str, today: date | None = None) -> Snapshot:
+        p = Profile(height_cm=175, sex="male", goal="muscle", activity="moderate")
+        r = Readings(sleep_hours=((real_today, sleep["h"]),))
+        return Snapshot(p, r, tuple(compute_all(r, p, real_today)), real_today)
+
+    async def no_weather(user_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(web, "snapshot_for", snap)
+    monkeypatch.setattr(weather, "for_user", no_weather)
+    app = FastAPI()
+    app.include_router(web.router)
+    app.dependency_overrides[verify_token] = lambda: "42"
+    app.dependency_overrides[web_more.training_store] = lambda: book
+    c = TestClient(app)
+    r = c.get("/iron/api/today").json()
+    assert r["status"] == "ok" and r["changed"] and r["readiness"] == "差"
+    assert r["today"]["items"][0]["sets"] == 2 and r["original"]["items"][0]["sets"] == 4
+    assert any("只睡了 4" in x for x in r["reasons"])
+    sleep["h"] = 7.5
+    assert not c.get("/iron/api/today").json()["changed"]  # 睡得好、没有天气问题：按原计划
+    r2 = c.get("/iron/api/today?minutes=30").json()
+    assert any("30 分钟" in x for x in r2["reasons"]) and r2["today"]["minutes"] == 30
+    assert c.get("/iron/api/today?minutes=5").status_code == 422
+    assert asyncio.run(book.plan("42")).plan.sessions[0].items[0].sets == 4  # 原计划不变
+    # 按今天的版本打卡：动作和组数一起记下
+    app.dependency_overrides[web.training_store] = lambda: book
+    app.dependency_overrides[web.memory_store] = MemoryBook
+    monkeypatch.setattr(web, "refresh_later", lambda *a: None)
+    w = c.post("/iron/api/workouts", json={"session": "下肢", "items": [
+        {"exercise": "杠铃深蹲", "sets": 2, "reps": "6–8"}], "minutes": 30}).json()  # fmt: skip
+    assert w["workout"]["items"][0]["sets"] == 2 and w["workout"]["minutes"] == 30

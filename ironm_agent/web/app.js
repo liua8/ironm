@@ -322,6 +322,7 @@ function planTable(tr, brief) {
       h("button", { class: "link", type: "button", onclick: () => askCoach("帮我看看现在的训练计划，需要调整吗？") }, "调整", icon("chevron", "xs"))),
     t?.tip ? h("div", { class: "notice-line" }, icon("alert", "xs"), t.tip) : null,
     h("div", { class: "pt" }, rows),
+    todaySession && !t?.done ? todayVersion() : null,
     todaySession ? h("div", { class: "btn-row" },
       t?.done ? h("button", { class: "btn ghost", type: "button", disabled: true }, icon("check", "sm"), "今天已打卡")
         : h("button", { class: "btn", type: "button", onclick: () => doneSheet(todaySession.name) }, icon("check", "sm"), "完成打卡"),
@@ -329,10 +330,42 @@ function planTable(tr, brief) {
       : null);
 }
 
+// 今天的版本（spec [2026-10-23] §18 需求 3）：按状态、天气、可用时间用规则改，原计划不变
+const itemLine = (it) => `${it.exercise} ${it.sets}×${it.reps}${it.load || it.note ? `（${[it.load, it.note].filter(Boolean).join("，")}）` : ""}`;
+function todayVersion() {
+  const box = h("div", { class: "tv" });
+  const ask = { minutes: null, tired: false };
+  const draw = async () => {
+    const q = new URLSearchParams();
+    if (ask.minutes) q.set("minutes", ask.minutes);
+    if (ask.tired) q.set("tired", "true");
+    let v;
+    try { v = await api(`/iron/api/today${q.size ? `?${q}` : ""}`); }
+    catch (err) { box.replaceChildren(failed(err, draw)); return; }
+    if (v.status !== "ok") { box.replaceChildren(); return; }
+    const toggle = (label, on, flip) => h("button", { type: "button", class: `pill${on ? " on" : ""}`, "aria-pressed": String(on), onclick: () => { flip(); draw(); } }, label);
+    box.replaceChildren(
+      h("div", { class: "tv-head" }, h("b", {}, "今天的版本"),
+        h("div", { class: "asks" },
+          toggle("只有 30 分钟", ask.minutes === 30, () => { ask.minutes = ask.minutes === 30 ? null : 30; }),
+          toggle("今天有点累", ask.tired, () => { ask.tired = !ask.tired; }))),
+      v.changed ? h("div", {},
+        h("ul", { class: "tv-why" }, v.changes.map((c) => h("li", {}, c))),
+        h("p", { class: "muted" }, `原因：${v.reasons.join("；")}`),
+        h("div", { class: "tv-grid" },
+          h("div", {}, h("span", { class: "muted" }, "原计划"), h("ol", { class: "plan-items" }, v.original.items.map((it) => h("li", {}, itemLine(it))))),
+          h("div", {}, h("span", { class: "muted" }, "今天"), h("ol", { class: "plan-items" }, v.today.items.map((it) => h("li", {}, itemLine(it)))))),
+        h("button", { class: "btn ghost block", type: "button", onclick: () => doneSheet(v.today.name, v.today) }, icon("check", "sm"), "按今天的版本打卡"))
+        : h("p", { class: "muted" }, "今天状态和天气都合适，按原计划练。"));
+  };
+  draw();
+  return box;
+}
+
 function sessionSheet(x, isToday, t) {
   openSheet(`${isToday ? "今天" : weekdayName(x.day)} · ${x.name}`,
     h("p", { class: "muted" }, `约 ${x.minutes} 分钟`),
-    h("ol", { class: "plan-items" }, x.items.map((it) => h("li", {}, `${it.exercise} ${it.sets}×${it.reps}${it.load || it.note ? `（${[it.load, it.note].filter(Boolean).join("，")}）` : ""}`))),
+    h("ol", { class: "plan-items" }, x.items.map((it) => h("li", {}, itemLine(it)))),
     isToday && !t?.done ? h("button", { class: "btn block", type: "button", onclick: () => doneSheet(x.name) }, icon("check", "sm"), "完成打卡") : null,
     h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`${x.name}这次训练怎么练？每个动作要注意什么？`) }, icon("coach", "sm"), "问教练怎么练"));
 }
@@ -379,7 +412,7 @@ function calendarCard(brief) {
   return section("训练日历", null, box);
 }
 
-function doneSheet(session) {
+function doneSheet(session, version = null) {
   let rpe = 0;
   const scale = h("div", { class: "rpe" });
   const draw = () => scale.replaceChildren(...Array.from({ length: 10 }, (_, i) => h("button", {
@@ -390,11 +423,12 @@ function doneSheet(session) {
   const save = h("button", { class: "btn block", type: "button", onclick: async () => {
     save.disabled = true; msg.textContent = "正在记下…";
     try {
-      await api("/iron/api/workouts", { method: "POST", body: JSON.stringify({ session: session === "训练" ? "" : session, done: true, rpe: rpe || null, note: note.value.trim() }) });
+      await api("/iron/api/workouts", { method: "POST", body: JSON.stringify({ session: session === "训练" ? "" : session, done: true, rpe: rpe || null, note: note.value.trim(),
+        ...(version ? { items: version.items.map((it) => ({ exercise: it.exercise, sets: it.sets, reps: it.reps })), minutes: version.minutes, note: [note.value.trim(), "按今天的版本"].filter(Boolean).join("；").slice(0, 80) } : {}) }) });
       closeSheet(); render();
     } catch (err) { msg.textContent = err.message; save.disabled = false; }
   } }, "打卡");
-  openSheet(`打卡：${session}`,
+  openSheet(`打卡：${session}${version ? "（今天的版本）" : ""}`,
     h("p", { class: "muted" }, "这次感觉怎么样？1 很轻松，10 到极限（可不选）"), scale, note, save, msg);
 }
 

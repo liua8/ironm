@@ -27,7 +27,7 @@ from ironm_agent.memory_prefs import refresh as refresh_prefs
 from ironm_agent.memory_store import CATEGORIES, ORIGINS, Item, MemoryStore, default_store
 from ironm_agent.memory_view import expired
 from ironm_agent.metrics import ACTIVITY, GOALS, KcalAdjust, Metric, compute_all
-from ironm_agent.training import TrainingStore, WorkoutLog, default_training
+from ironm_agent.training import LogItem, TrainingStore, WorkoutLog, default_training
 
 _log = logging.getLogger("ironm_agent.web")
 
@@ -379,8 +379,10 @@ class WorkoutIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session: str = Field(default="", max_length=16)
+    items: list[LogItem] = Field(default_factory=list, max_length=15)  # 按今天的版本练时带上
     done: bool = True
     rpe: int | None = Field(default=None, ge=1, le=10)
+    minutes: int | None = Field(default=None, ge=1, le=300)
     note: str = Field(default="", max_length=80)
 
 
