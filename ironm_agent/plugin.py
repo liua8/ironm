@@ -92,6 +92,8 @@ from ironm_agent.weather import for_user as weather_for
 _log = logging.getLogger("ironm_agent.run")
 
 FAILED = "IronM 这次没能回答，请稍后再试。"
+REVIEW_ASK = "按这周的复盘调整训练计划"  # 每周复盘一键生成调整方案时的问法（spec [2026-10-23] §18）
+REVIEW_MAX_DAYS = 2  # 按复盘调整每次最多改几天
 WEATHER_WAIT_S = 4.0  # 天气最多等 4 秒（同一个地方 10 分钟内有缓存）
 NO_TEXT = "没有收到文字问题。"
 NO_ANSWER = "这次没能调用模型，暂时回答不了，请稍后再试。"
@@ -822,6 +824,8 @@ class IronMAgent:
     ) -> tuple[Plan, Any]:
         """计划检查不过时，带着问题请训练规划改一次；改后问题更少才换上。日志只记结果，不记内容。"""
 
+        limit = REVIEW_MAX_DAYS if text.startswith(REVIEW_ASK) else None
+
         def review(p: Plan) -> tuple[str, ...]:
             return check_plan(
                 p,
@@ -829,6 +833,7 @@ class IronMAgent:
                 goal=tools.goal,
                 injured=tools.injured,
                 equipment=tools.equipment,
+                max_changed_days=limit,
             ).problems
 
         problems = review(plan)

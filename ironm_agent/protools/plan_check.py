@@ -72,6 +72,17 @@ def _adjacent(days: list[int]) -> bool:
     return any((b - a) == 1 for a, b in pairwise(ds)) or (1 in ds and 7 in ds)
 
 
+def changed_days(new: Plan, old: Plan) -> int:
+    """新旧计划相比，有改动的天数（新增、去掉、内容变了都算）。"""
+    a = {s.day: s for s in old.sessions}
+    b = {s.day: s for s in new.sessions}
+    return sum(
+        1
+        for d in set(a) | set(b)
+        if (d in a) != (d in b) or (d in a and a[d].model_dump() != b[d].model_dump())
+    )
+
+
 def _diff(new: Plan, old: Plan) -> list[str]:
     out = []
     old_by = {s.day: s for s in old.sessions}
@@ -109,7 +120,9 @@ def check_plan(
     equipment: frozenset[Equipment] | None = None,
     available_days: int | None = None,
     available_minutes: int | None = None,
+    max_changed_days: int | None = None,
 ) -> Result:
+    """max_changed_days：按复盘调整时每次最多改几天（spec [2026-10-23] §18）。"""
     problems: list[str] = []  # 必须改的
     hints: list[str] = []  # 建议看一看的
     sets, days, unknown = _volume(plan)
@@ -199,6 +212,12 @@ def check_plan(
             "K03、K04、K05、K06；动作库",
         )
     )
+    if current is not None and max_changed_days is not None:
+        n = changed_days(plan, current)
+        if n > max_changed_days:
+            problems.append(
+                f"改动了 {n} 天，按复盘调整每次最多改 {max_changed_days} 天：只保留最关键的改动"
+            )
     if current is not None:
         changed = _diff(plan, current)
         findings.append(

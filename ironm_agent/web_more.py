@@ -534,3 +534,70 @@ async def record_meal(
     )
     row = await store.add(user_id, date.today(), meal)
     return {"meal": row.json(), **(await _day_json(user_id, row.day, store))}
+
+
+# ---- 每周复盘直接出调整方案（spec [2026-10-23] §18 需求 1）---------------------------------------
+
+
+def make_agent(training: TrainingStore, memory: MemoryStore) -> Any:
+    """生成调整方案用的 Agent：和对话里改计划走同一条链路（测试时换成假的）。"""
+    from ironm_agent.plugin import IronMAgent
+
+    agent = IronMAgent(training=training, memory=memory)
+    agent._remember_on = False  # 这不是用户说的话，不提取记忆
+    return agent
+
+
+@router.post("/iron/api/review/proposal")
+async def review_proposal(
+    user_id: str = Depends(_verify()),
+    training: TrainingStore = TRAINING,
+    memory: MemoryStore = MEMORY,
+) -> dict[str, Any]:
+    from ironm_agent.brief import weekly_review
+    from ironm_agent.plugin import REVIEW_ASK, REVIEW_MAX_DAYS
+    from ironm_agent.protools.plan_check import changed_days
+    from ironm_agent.training import parse_plan
+
+    stored = await training.plan(user_id)
+    if stored is None:
+        raise HTTPException(409, "还没有训练计划：先让教练排一份")
+    snap = await _web().snapshot_for(user_id)
+    logs = [x.log for x in await training.workouts(user_id, snap.today - timedelta(days=14))]
+    tips = weekly_review(snap, stored.plan, logs, stored.since)["tips"]
+    if not tips:
+        return {"status": "no_change", "message": "这周没有需要调整的地方，照计划来。"}
+    ask = f"{REVIEW_ASK}（每次最多改两处，只改需要改的地方）：" + "".join(tips)
+    agent = make_agent(training, memory)
+    msgs = [{"role": "user", "content": ask}]
+    blocks = [b async for b in agent.generate_response(user_id, msgs, session_id="")]
+    card = next(
+        (
+            b
+            for b in blocks
+            if b.get("type") == "tool_call" and str(b.get("id", "")).startswith("card-")
+        ),
+        None,
+    )
+    answer = "".join(str(b.get("text", "")) for b in blocks if b.get("type") == "text")
+    if card is None:
+        return {
+            "status": "failed",
+            "message": "这次没能生成调整方案，可以到对话里让教练改。",
+            "answer": answer,
+        }
+    draft = await training.draft(user_id, str(card["id"])[len("card-") :])
+    if draft is None:
+        raise HTTPException(500, "调整方案没有保存成功，请再试一次")
+    new = parse_plan(draft.content.get("plan"))[0]
+    n = changed_days(new, stored.plan) if new is not None else 0
+    return {
+        "status": "ok",
+        "tips": tips,
+        "answer": answer,
+        "draft": draft.json(),
+        "changed_days": n,
+        "warning": f"这份方案改动了 {n} 天，超过了每次最多改 {REVIEW_MAX_DAYS} 天"
+        if n > REVIEW_MAX_DAYS
+        else "",
+    }

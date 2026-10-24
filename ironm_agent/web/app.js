@@ -411,8 +411,44 @@ function weekCard(w) {
       h("div", { class: "row-main" }, h("span", { class: "row-title" }, k), sub ? h("span", { class: "row-sub" }, sub) : null),
       h("span", { class: "row-end" }, v)))),
     w.tips.length ? h("ul", { class: "tips" }, w.tips.map((t) => h("li", {}, t))) : h("p", { class: "muted" }, "这周没有需要调整的地方，照计划来。"),
-    w.tips.length && w.planned ? h("button", { class: "btn ghost block", type: "button",
-      onclick: () => askCoach(`按这周的复盘帮我调整训练计划：${w.tips.join("")}`) }, icon("coach", "sm"), "让教练按复盘调整计划") : null);
+    w.tips.length && w.planned ? h("button", { class: "btn block", type: "button", onclick: proposalSheet }, icon("check", "sm"), "生成调整方案") : null);
+}
+
+// 每周复盘直接出调整方案（spec [2026-10-23] §18 需求 1）：训练规划按复盘改计划，确认后才替换，可以撤销
+async function proposalSheet() {
+  const box = h("div", { class: "sheet-stack" }, h("p", { class: "muted" }, "训练规划在按这周的复盘改计划，大约要半分钟…"));
+  openSheet("按复盘调整计划", box);
+  let r;
+  try { r = await api("/iron/api/review/proposal", { method: "POST" }); }
+  catch (err) { box.replaceChildren(h("p", { class: "error" }, err.message)); return; }
+  if (r.status !== "ok") {
+    box.replaceChildren(h("p", { class: "muted" }, r.message), r.answer ? h("p", {}, r.answer) : null,
+      h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach("按这周的复盘帮我调整训练计划") }, icon("coach", "sm"), "到对话里让教练改"));
+    return;
+  }
+  draftView(box, r.draft, r.answer, r.warning);
+}
+
+function draftView(box, d, answer, warning) {
+  const msg = h("p", { class: "muted", role: "status" });
+  const actions = h("div", { class: "btn-row" });
+  const act = async (action, done) => {
+    for (const b of actions.querySelectorAll("button")) b.disabled = true;
+    try { await api(`/iron/api/drafts/${d.id}/${action}`, { method: "POST" }); done(); cache.metrics = null; }
+    catch (err) { msg.className = "error"; msg.textContent = err.message; for (const b of actions.querySelectorAll("button")) b.disabled = false; }
+  };
+  const undo = h("button", { class: "btn ghost", type: "button", onclick: () => act("undo", () => { msg.textContent = "已撤销，计划回到改之前的样子。"; actions.replaceChildren(); }) }, "撤销");
+  actions.append(
+    h("button", { class: "btn", type: "button", onclick: () => act("confirm", () => { msg.textContent = "已保存，新的计划从今天起生效。"; actions.replaceChildren(undo); }) }, icon("check", "sm"), "确认"),
+    h("button", { class: "btn ghost", type: "button", onclick: () => act("cancel", () => { msg.textContent = "已取消，计划没有改动。"; actions.replaceChildren(); }) }, "取消"));
+  const sessions = d.plan?.sessions || [];
+  box.replaceChildren(
+    answer ? h("p", { class: "lede" }, answer) : null,
+    d.changes ? h("div", { class: "notice-line" }, icon("info", "xs"), `改了什么：${d.changes}`) : null,
+    warning ? h("div", { class: "notice-line" }, icon("alert", "xs"), warning) : null,
+    h("ol", { class: "plan-items" }, sessions.map((x) => h("li", {}, `${weekdayName(x.day)} ${x.name}（约 ${x.minutes} 分钟）：${x.items.map((it) => `${it.exercise} ${it.sets}×${it.reps}`).join("、")}`))),
+    actions, msg,
+    h("p", { class: "caption" }, "确认后才会替换现在的计划，之后可以撤销；这份方案 24 小时内有效。"));
 }
 
 // ---- 动作：卡片流，官方视频，"没看懂"请动作教练用大白话讲（spec [2026-10-23] §13）--------------------
