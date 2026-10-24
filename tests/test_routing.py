@@ -105,7 +105,7 @@ def test_log_has_scores_not_text() -> None:
         "我左膝疼得厉害", llm=("pro", s(recovery=1.0)), keyword=s(recovery=1.0), vector=None
     )
     log = d.log()
-    assert set(log) == {"intent", "roles", "weights", "weighted", "channels"}
+    assert set(log) == {"intent", "roles", "weights", "weighted", "channels", "skills"}
     assert "左膝" not in str(log)
 
 
@@ -166,3 +166,71 @@ def test_chain_logs_route_scores(monkeypatch: Any) -> None:
     _, seen = run(a, "增肌期练完吃什么比较好")
     assert seen["route_by"] == "weighted" and seen["route"]["roles"] == ["nutrition", "trainer"]
     assert "llm" in seen["route"]["channels"] and "增肌" not in str(seen["route"])
+
+
+# ---- 路由同时选 Skill（spec [2026-10-23] §21）--------------------------------------------------
+
+
+def test_llm_channel_picks_skills_and_drops_bad_ids() -> None:
+    from ironm_agent.routing import LLMResult
+
+    reply = {
+        "intent": "pro",
+        "scores": {"trainer": 1.0, "nutrition": 0.8, "recovery": 0},
+        "skills": {
+            "trainer": ["plan-muscle", "food-muscle", "move-feel", "nope", "plan-muscle", "move-teach",
+                        "plan-weekly"],
+            "nutrition": [],
+            "recovery": "rest-sleep",
+        },
+    }  # fmt: skip
+    got = asyncio.run(llm_scores("增肌怎么练怎么吃", FakeLLM(lambda *_: jsonr(reply))))
+    assert isinstance(got, LLMResult)
+    # 别的角色的、讲法类的、不存在的、重复的去掉，最多 2 份；空列表表示不装；格式不对的当没选
+    assert got.skills == {"trainer": ("plan-muscle", "move-teach"), "nutrition": ()}
+    d = combine("x", llm=got, keyword=None, vector=None)
+    assert d.skills == {"trainer": ("plan-muscle", "move-teach"), "nutrition": ()}
+    assert d.log()["skills"] == {"trainer": ["plan-muscle", "move-teach"], "nutrition": []}
+    only = combine("x", llm=LLMResult("pro", s(trainer=1.0), {"nutrition": ("food-muscle",)}),
+                   keyword=None, vector=None)  # fmt: skip
+    assert only.skills == {}  # 没请到的角色不带
+    assert combine("x", llm=("pro", s(trainer=1.0)), keyword=None, vector=None).skills == {}
+
+
+def test_route_prompt_lists_skill_catalog() -> None:
+    seen: list[str] = []
+
+    def reply(stage: Any, messages: Any, tools: bool) -> Any:
+        seen.append(str(messages[0]["content"]))
+        return jsonr({"intent": "pro", "scores": {}})
+
+    asyncio.run(llm_scores("增肌", FakeLLM(reply)))
+    assert "plan-muscle 增肌" in seen[0] and "data-trend 趋势解读" in seen[0]
+    assert "move-feel" not in seen[0]  # 讲法类不由路由选
+    assert "空列表" in seen[0]
+
+
+def test_chain_uses_routed_skills(monkeypatch: Any) -> None:
+    from tests.fakes import route_reply
+    from tests.test_turn_flow import Team, agent, run, snapshot_of
+
+    class Picky(Team):
+        def __init__(self, skills: Any) -> None:
+            super().__init__("nutrition")
+            self.skills = skills
+
+        def __call__(self, stage: Any, messages: Any, tools: bool) -> Any:
+            if stage == "route":
+                return route_reply("pro", "nutrition", (), self.skills)
+            return super().__call__(stage, messages, tools)
+
+    _, seen = run(agent(Picky({"nutrition": []}), monkeypatch=monkeypatch, snapshot=snapshot_of()),
+                  "肌酸是什么")  # fmt: skip
+    assert seen["skills"] == {"nutrition": []} and seen["skills_by"] == {"nutrition": "route"}
+    _, seen = run(agent(Picky({"nutrition": ["food-supplement"]}), monkeypatch=monkeypatch,
+                        snapshot=snapshot_of()), "肌酸是什么")  # fmt: skip
+    assert seen["skills"] == {"nutrition": ["food-supplement"]}
+    _, seen = run(
+        agent(Picky(None), monkeypatch=monkeypatch, snapshot=snapshot_of()), "肌酸要怎么吃"
+    )
+    assert seen["skills_by"] == {"nutrition": "rule"} and seen["skills"]["nutrition"]

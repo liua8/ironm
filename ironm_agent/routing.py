@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from functools import cache
 from itertools import pairwise
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from pydantic import Field
 
@@ -28,6 +28,7 @@ from ironm_agent.common import ContractModel
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
 from ironm_agent.roles import EXPERTS, SPECS, Role
 from ironm_agent.router import concerns_of
+from ironm_agent.skills import catalog, valid_for
 from ironm_agent.yamlfile import load_yaml
 
 _log = logging.getLogger("ironm_agent.routing")
@@ -218,24 +219,35 @@ _PROMPT = """你是健身 App "AI 健身管家"的问题分类器。只做分类
 2. scores：每个专业角色和这个问题的相关程度，0 到 1 之间：最该负责的接近 1；问题明确涉及它的领域就给 0.6 以上；只是沾边给 0.3 以下；无关给 0。
    - 问到"我的"数据时按领域给分：体重、体脂给 nutrition；睡眠、心率、心率变异性、血压给 recovery；步数、力量进步给 trainer。
    - 身体正疼、受伤、生病时，recovery 给 0.6 以上。
+3. skills：给分 0.6 以上的角色，从下面它能用的规程里选这一轮要用的（最多 2 个，写编号）；问题简单、规程用不上（比如问一个名词是什么意思、只查一个数），给空列表 []。
+
+各角色能用的规程（编号 名字（典型说法））：
+{skills}
 
 最近的对话（用于理解指代，可能为空）：
 {history}
 
 {persona}
 
-只输出 JSON：{{"intent": "pro", "scores": {{{keys}}}}}"""
+只输出 JSON：{{"intent": "pro", "scores": {{{keys}}}, "skills": {{"角色代号": ["规程编号"]}}}}"""
+
+
+class LLMResult(NamedTuple):
+    intent: Intent
+    scores: dict[str, float]
+    skills: dict[str, tuple[str, ...]]  # 角色 → 路由选的规程编号（空表示不装；没写的角色由规则选）
 
 
 async def llm_scores(
     text: str, llm: LLM, history: Sequence[str] = (), persona: str = ""
-) -> tuple[Intent, dict[str, float]] | None:
+) -> LLMResult | None:
     """persona：这个人的画像（有效记忆排成的清单），帮助判断，比如有伤病时恢复更相关。"""
     roles = "\n".join(f"- {r.value}：{SPECS[r].name}，{SPECS[r].duty}" for r in EXPERTS)
     prompt = _PROMPT.format(
         roles=roles,
         history="\n".join(history[-6:]) or "（无）",
         keys=", ".join(f'"{n}": 0' for n in NAMES),
+        skills=catalog(),
         persona=(persona + "\n（只用来判断该请谁）") if persona else "",
     )
     try:
@@ -255,7 +267,14 @@ async def llm_scores(
     for n in NAMES:
         v = scores.get(n, 0)
         out[n] = min(1.0, max(0.0, float(v))) if isinstance(v, int | float) else 0.0
-    return intent, out
+    picked = raw.get("skills")
+    chosen: dict[str, tuple[str, ...]] = {}
+    if isinstance(picked, dict):
+        for n in NAMES:
+            ids = picked.get(n)
+            if isinstance(ids, list):
+                chosen[n] = valid_for(Role(n), ids)
+    return LLMResult(intent, out, chosen)
 
 
 # ---- 合在一起 -------------------------------------------------------------------------------
@@ -271,6 +290,7 @@ class Decision:
     )  # 各路的分（不可用的不在里面）
     weights: dict[str, float] = field(default_factory=dict)  # 实际用的权重
     concerns: tuple[str, ...] = ()
+    skills: dict[str, tuple[str, ...]] = field(default_factory=dict)  # 请到的角色里路由选了规程的
 
     @property
     def primary(self) -> Role | None:
@@ -286,13 +306,14 @@ class Decision:
             "channels": {
                 c: {k: round(v, 2) for k, v in s.items()} for c, s in self.channels.items()
             },
+            "skills": {k: list(v) for k, v in self.skills.items()},
         }
 
 
 def combine(
     text: str,
     *,
-    llm: tuple[Intent, Mapping[str, float]] | None,
+    llm: LLMResult | tuple[Intent, Mapping[str, float]] | None,
     keyword: Mapping[str, float] | None,
     vector: Mapping[str, float] | None,
 ) -> Decision:
@@ -330,7 +351,12 @@ def combine(
             at = rest.index(Role.TRAINER) if Role.TRAINER in rest else len(rest)
             rest.insert(at, Role.RECOVERY)
         roles = [roles[0], *rest]
-    return Decision(intent, tuple(roles), weighted, channels, weights, concerns)
+    picked = llm.skills if isinstance(llm, LLMResult) else {}
+    skills: dict[str, tuple[str, ...]] = {}  # 路由选了规程的角色（§21）
+    for r in roles:
+        if r.value in picked:
+            skills[r.value] = picked[r.value]
+    return Decision(intent, tuple(roles), weighted, channels, weights, concerns, skills)
 
 
 @dataclass

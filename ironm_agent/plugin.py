@@ -71,7 +71,7 @@ from ironm_agent.safety.replies import (
     load_replies,
     refusal_sections,
 )
-from ironm_agent.skills import pick
+from ironm_agent.skills import choose
 from ironm_agent.tools import Toolbox
 from ironm_agent.training import (
     Plan,
@@ -198,6 +198,7 @@ def as_route(d: RouteDecision) -> Route:
         reason=f"加权得分：{top}" if top else "",
         by="weighted",
         problems=(f"权重：{used}",) if used else (),
+        skills=d.skills,
     )
 
 
@@ -652,7 +653,11 @@ class IronMAgent:
         pictures = [x.part() for x in files.images]
         seeing = r.primary or roles[0]  # 图片只交给主责角色
         similar = default_router().similar  # 说法对不上时按语义选规程（spec [2026-10-23] §20）
-        loaded = {role: pick(role, text, triggers, similar) for role in roles}
+        picked = {  # 路由选的规程加上系统情况要求的；路由没选的角色按规则选（§21）
+            role: choose(role, text, triggers, similar, r.skills.get(role.value)) for role in roles
+        }
+        loaded = {role: got for role, (got, _) in picked.items()}
+        run["skills_by"] = {role.value: by for role, (_, by) in picked.items()}
         tools_ctx = self._tool_context(user_id, snapshot, case, recall)
         run["skills"] = {role.value: [x.id for x in loaded[role]] for role in roles}
         results: dict[int, Consultation] = {}

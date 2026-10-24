@@ -1,5 +1,5 @@
 # Skill 选择考题（spec [2026-10-23] §20）：问题交给这个角色时，应该装载哪份规程。
-# expect：装载的讲内容的规程里有其中任一份就算对；on：这一轮的情况（poor 状态差、injury 有伤病、plan 要写计划、
+# expect：装载的讲内容的规程里有其中任一份就算对；expect 为 [] 表示用不上规程（只问名词意思这类），一份都不装才算对；on：这一轮的情况（poor 状态差、injury 有伤病、plan 要写计划、
 # log 要记训练、image 附了图片、move 点到了动作库里的动作）。
 # 写完再跑，没有照这些题改规程的 when；以后改 when 时不要只为了让这里的题通过。内容由 Claude 撰写，待审定。
 version: "0.1"
@@ -47,3 +47,12 @@ cases:
   - {role: recovery, ask: 膝盖肿了而且越来越疼, on: [injury], expect: [就医信号, 疼痛时怎么改动作, 酸痛还是受伤]}
   - {role: recovery, ask: 我最近的静息心率有变化吗, expect: [趋势解读, 今天状态判断]}
   - {role: recovery, ask: 我的睡眠数据怎么没有, expect: [数据缺失时怎么说]}
+  # ---- 用不上 Skill（spec [2026-10-23] §21）：只问名词是什么意思 ----
+  - {role: trainer, ask: RPE 是什么意思, expect: []}
+  - {role: trainer, ask: 超级组是什么, expect: []}
+  - {role: trainer, ask: 复合动作指的是哪类动作, expect: []}
+  - {role: nutrition, ask: 卡路里和千卡是一回事吗, expect: []}
+  - {role: nutrition, ask: GI 值是什么, expect: []}
+  - {role: nutrition, ask: BMI 是什么意思, expect: []}
+  - {role: recovery, ask: HRV 是什么, expect: []}
+  - {role: recovery, ask: 静息心率是指什么, expect: []}

@@ -103,3 +103,57 @@ def prompt_of(chosen: Sequence[Skill]) -> str:
         "\n\n本次装载的规程（照着做；规程里带〔K..〕编号的数字，引用时写这个编号；没有编号的是做事方法，不是出处）：\n"
         + "\n".join(x.text() for x in chosen)
     )
+
+
+# ---- 路由选 Skill（spec [2026-10-23] §21）------------------------------------------------------
+
+RULE_TRIGGERS: frozenset[str] = frozenset(
+    {"poor", "plan", "log", "image", "injury"}
+)  # 路由看不到的系统情况
+
+
+def _routable(role: Role) -> list[Skill]:
+    return [x for x in skills() if not x.style and (x.role == role or x.shared)]
+
+
+def catalog() -> str:
+    """给路由模型看的 Skill 目录：每个角色能选的编号、名字和几个典型说法（讲法类不列）。"""
+
+    def line(x: Skill) -> str:
+        return f"{x.id} {x.name}（{'、'.join(x.when[:4])}）" if x.when else f"{x.id} {x.name}"
+
+    out = [f"- {r.value}：" + "；".join(line(x) for x in skills() if x.role == r and not x.style)
+           for r in EXPERTS]  # fmt: skip
+    shared = [line(x) for x in skills() if x.shared]
+    if shared:
+        out.append("- 三个角色都能用：" + "；".join(shared))
+    return "\n".join(out)
+
+
+def valid_for(role: Role, ids: Sequence[object]) -> tuple[str, ...]:
+    """路由选的编号里，属于这个角色（或共享）、不是讲法类的，最多 MAX_SKILLS 份。"""
+    mine = {x.id for x in _routable(role)}
+    kept = [str(i) for i in ids if isinstance(i, str) and i in mine]
+    return tuple(dict.fromkeys(kept))[:MAX_SKILLS]
+
+
+def choose(
+    role: Role,
+    text: str,
+    triggers: Collection[str] = (),
+    similar: Similar | None = None,
+    routed: Sequence[str] | None = None,
+) -> tuple[list[Skill], str]:
+    """这一轮给这个角色装载的规程，以及来自哪里（route 路由选的，rule 按规则选的）。
+    路由选了（空列表表示不装讲内容的规程）：先放路由看不到的系统情况要求的，再放路由选的，最多 MAX_SKILLS 份；
+    路由没选：按 pick 的办法。讲法规程都按规则装载。"""
+    if routed is None:
+        return pick(role, text, triggers, similar), "rule"
+    content = _routable(role)
+    by_id = {x.id: x for x in content}
+    required = [x for x in content if any(t in RULE_TRIGGERS and t in triggers for t in x.on)]
+    chosen = list(dict.fromkeys([*required, *(by_id[i] for i in routed if i in by_id)]))[
+        :MAX_SKILLS
+    ]
+    style = [x for x in skills() if x.style and x.role == role and x.score(text, triggers) > 0]
+    return chosen + style, "route"

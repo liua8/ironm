@@ -8,6 +8,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Literal
 
+from pydantic import Field
+
 from ironm_agent.common import ContractModel
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
 from ironm_agent.roles import EXPERTS, SPECS, Role
@@ -46,6 +48,8 @@ class Route(ContractModel):
     reason: str = ""
     by: Literal["model", "keywords", "rule", "weighted"]
     problems: tuple[str, ...] = ()  # 模型方案没通过的原因（改按关键词时记下）
+    # 路由给角色选的规程（spec [2026-10-23] §21）；没写的角色按规则选
+    skills: dict[str, tuple[str, ...]] = Field(default_factory=dict)
 
     def experts(self) -> tuple[Role, ...]:
         """这一轮要请的专业 Agent：主责与辅助；康复恢复师排在训练教练之前。"""

@@ -168,3 +168,29 @@ def test_similar_picks_when_no_phrase_matches() -> None:
     assert [x.name for x in pick(Role.TRAINER, "想把胳膊练粗一点", (), lambda *_: None)] == [
         "按今天的状态调整"
     ]
+
+
+def test_choose_follows_route_and_adds_rule_required() -> None:
+    """路由选的规程（空列表就不装），加上路由看不到的系统情况要求的（spec [2026-10-23] §21）。"""
+    from ironm_agent.skills import catalog, choose, valid_for
+
+    got, by = choose(Role.NUTRITION, "肌酸是什么", (), None, ())
+    assert got == [] and by == "route"
+    got, _ = choose(
+        Role.TRAINER, "帮我排个增肌计划", {"plan"}, None, ("plan-muscle", "plan-newbie")
+    )
+    assert [x.id for x in got] == ["plan-weekly", "plan-muscle"]  # 规则要求的在前，最多 2 份
+    got, _ = choose(Role.NUTRITION, "这碗面多少热量", {"image"}, None, ())
+    assert [x.id for x in got] == ["food-photo"]  # 附了图片：路由说不用也要装
+    got, _ = choose(Role.TRAINER, "卧推时肩胛骨怎么收紧", {"move"}, None, ("move-teach",))
+    assert [x.id for x in got] == ["move-teach", "move-feel"]  # 讲法类照旧按规则装
+    got, by = choose(Role.TRAINER, "增肌一周练几次", (), None, None)
+    assert by == "rule" and got[0].name == "增肌"  # 路由没选：按规则
+    assert valid_for(Role.RECOVERY, ["data-trend", "rest-sleep", "plan-muscle"]) == (
+        "data-trend",
+        "rest-sleep",
+    )
+    text = catalog()
+    assert (
+        "- trainer：" in text and "三个角色都能用：data-trend" in text and "move-feel" not in text
+    )
