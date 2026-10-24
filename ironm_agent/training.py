@@ -128,6 +128,12 @@ class LogItem(_Model):
     def _reps(cls, v: Any) -> Any:
         return str(v) if isinstance(v, int | float) else (v or "")
 
+    @model_validator(mode="after")
+    def _count(self) -> LogItem:
+        if self.done_sets and self.sets is None:  # 只填了每组的：组数按填了几组算
+            self.sets = len(self.done_sets)
+        return self
+
     def performed(self) -> list[SetDone]:
         """每组做了多少：填了每组的用每组的；否则按"3 组 × 8 次"或"3 组，8、8、7 次"展开；看不出来时为空。"""
         if self.done_sets:

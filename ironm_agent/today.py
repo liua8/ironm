@@ -14,7 +14,7 @@ from ironm_agent.training import PlanItem, Session
 
 _OUTDOOR = re.compile(r"跑|快走|户外|徒步|爬山|骑行|跳绳")
 INDOOR = "原地踏步或室内单车"
-TIRED_NOTE = "今天状态差：减轻重量，不练到力竭"
+TIRED_NOTE = "减轻重量、不练到力竭"
 
 
 @dataclass(frozen=True)
@@ -53,17 +53,17 @@ def build(
     """tired：今天状态差或生病；indoor：天气不宜户外；minutes：今天只有多少分钟；
     scale：中断后回来，按原量的几成练（需求 5 用）。"""
     d = _Draft(list(session.items))
-    if scale is not None and scale < 1:
+    scaled = scale is not None and scale < 1
+    if scale is not None and scaled and not tired:  # 两样都有时只按减得多的（减半）来，不叠加
         d.items = [x.model_copy(update={"sets": max(1, round(x.sets * scale))}) for x in d.items]
         d.changes.append(f"每个动作的组数按原来的约 {round(scale * 10)} 成")
         d.reasons.append(scale_why)
     if tired:
-        d.items = [
-            x.model_copy(update={"sets": max(1, x.sets // 2), "note": _note(x, TIRED_NOTE)})
-            for x in d.items
-        ]
-        d.changes.append("组数减半（至少 1 组），减轻重量、不练到力竭")
-        d.reasons.append(tired_why or "今天状态差")
+        d.items = [x.model_copy(update={"sets": max(1, x.sets // 2)}) for x in d.items]
+        d.changes.append(  # 备注写在改动说明里一次，不在每个动作后面重复
+            f"组数减半（至少 1 组），{TIRED_NOTE}" + ("（已包含中断后的降量）" if scaled else "")
+        )
+        d.reasons += [tired_why or "今天状态差", scale_why if scaled else ""]
     if indoor:
         swapped = []
         for i, x in enumerate(d.items):

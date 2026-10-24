@@ -598,3 +598,14 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .triggers:empty { display: none; }
 .trigger { display: flex; flex-direction: column; gap: 10px; }
 .trigger p { margin: 2px 0 0; }
+
+/* 目标进度（spec [2026-10-23] §18 需求 6） */
+.goal-box:empty { display: none; }
+.goal { display: flex; flex-direction: column; gap: 10px; }
+.goal p { margin: 0; }
+.goal-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.goal-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.goal-nums div { display: flex; flex-direction: column; gap: 2px; background: var(--neutral-soft); border-radius: 12px; padding: 8px 4px; }
+.goal-nums b { font-size: 20px; }
+.tone-good { color: var(--good); }
+.tone-warn { color: var(--warn); }

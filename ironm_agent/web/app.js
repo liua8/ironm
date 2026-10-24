@@ -243,7 +243,66 @@ async function home(view) {
     api("/iron/api/weather").catch(() => ({ status: "unavailable", message: "暂时取不到天气" })),
     api("/iron/api/training").catch(() => null),
   ]);
-  view.append(statusCard(brief, wx), triggersCard(), planTable(training, brief), calendarCard(brief));
+  view.append(statusCard(brief, wx), triggersCard(), goalCard(), planTable(training, brief), calendarCard(brief));
+}
+
+// 目标进度与阶段复测（spec [2026-10-23] §18 需求 6）：没设目标时首页不显示，数据页提示去"我的"设置
+const fmtDay = (iso) => { const [y, m, d] = iso.split("-").map(Number); return `${y}年${m}月${d}日`; };
+function goalCard({ empty = false } = {}) {
+  const box = h("div", { class: "goal-box" });
+  const draw = (st) => {
+    const g = st.goal, p = st.progress;
+    if (!g) {
+      if (!empty) { box.replaceChildren(); return; }
+      box.replaceChildren(h("div", { class: "card" }, h("p", { class: "muted" }, "还没有设目标体重和日期。"),
+        h("a", { class: "link", href: "#me" }, "到「我的」设置", icon("chevron", "xs"))));
+      return;
+    }
+    const kg = (v) => (v == null ? "—" : `${num(v)}`);
+    const tone = { reached: "good", on_track: "good", ahead: "good", behind: "warn", wrong_way: "warn" }[p.status] || "";
+    box.replaceChildren(h("div", { class: "card goal" },
+      h("div", { class: "goal-head" }, h("b", {}, `目标体重 ${kg(g.value)} 公斤`), h("span", { class: "muted" }, `${fmtDay(g.by)}前`)),
+      h("div", { class: "goal-nums" },
+        ...[["起点", p.start], ["当前", p.current], ["目标", p.target]].map(([k, v]) => h("div", {}, h("span", { class: "muted" }, k), h("b", {}, kg(v)), h("span", { class: "muted" }, "公斤")))),
+      p.predicted ? h("p", {}, "预计达成：", h("b", {}, fmtDay(p.predicted))) : null,
+      p.message ? h("p", { class: tone ? `tone-${tone}` : "" }, p.message) : null,
+      p.missing ? h("p", { class: "muted" }, p.missing) : null,
+      p.pace ? h("div", { class: "notice-line" }, icon("alert", "xs"), p.pace) : null,
+      p.retest.due ? h("div", { class: "notice-line" }, icon("alert", "xs"), h("div", {}, p.retest.text,
+        h("button", { class: "link", type: "button", onclick: async () => draw(await api("/iron/api/goal/retest", { method: "POST" })) }, "已复测"))) : null));
+  };
+  api("/iron/api/goal").then(draw).catch(() => box.replaceChildren());
+  return box;
+}
+
+function goalSection() {
+  const box = h("div", { class: "card" });
+  const view = (st) => {
+    const g = st.goal;
+    box.replaceChildren(h("div", { class: "kv" }, h("span", {}, "目标体重"),
+      h("span", {}, g ? `${num(g.value)} 公斤，${fmtDay(g.by)}前` : "未设置", " ",
+        h("button", { class: "link", type: "button", onclick: () => edit(g) }, icon("edit", "xs"), g ? "修改" : "设置"))));
+  };
+  const edit = (g) => {
+    const value = h("input", { type: "number", inputmode: "decimal", min: "30", max: "250", step: "0.1", value: g ? String(g.value) : "", placeholder: "比如 65" });
+    const by = h("input", { type: "date", value: g ? g.by : "" });
+    const msg = h("div", { class: "error" });
+    const form = h("form", {}, h("label", {}, "目标体重（公斤）", value), h("label", {}, "目标日期", by), msg,
+      h("div", { class: "form-actions" },
+        g ? h("button", { class: "btn ghost", type: "button", onclick: async () => view(await api("/iron/api/goal", { method: "DELETE" })) }, "清除") : null,
+        h("button", { class: "btn ghost", type: "button", onclick: () => view({ goal: g }) }, "取消"),
+        h("button", { class: "btn", type: "submit" }, "保存")));
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!value.value || !by.value) { msg.textContent = "目标体重和日期都要填"; return; }
+      msg.textContent = "正在保存…";
+      try { view(await api("/iron/api/goal", { method: "PUT", body: JSON.stringify({ value: Number(value.value), by: by.value }) })); }
+      catch (err) { msg.textContent = err.message; }
+    });
+    box.replaceChildren(form); value.focus();
+  };
+  api("/iron/api/goal").then(view).catch(() => view({ goal: null }));
+  return section("目标", null, box, h("p", { class: "caption", style: "padding:0 2px" }, "首页和数据页会显示起点、当前、目标和按体重趋势预计达成的日期；每 4 周提醒复测一次。"));
 }
 
 // 触发型调整（spec [2026-10-23] §18 需求 5）：满足条件就提醒，一键生成调整方案；中断后回来的降量已经在今天的版本里
@@ -875,6 +934,7 @@ async function data(view) {
   const [list, muscles, brief] = await Promise.all([
     metrics(), api("/iron/api/muscles").catch(() => null), api("/iron/api/brief").catch(() => null)]);
   const m = byKey(list);
+  view.append(section("目标进度", null, goalCard({ empty: true })));
   view.append(section("肌肉人体图", h("span", { class: "caption" }, "最近 28 天"), muscles ? bodyMap(muscles) : failed(new Error("人体图暂时算不出来"), () => render())));
   view.append(h("div", { class: "fresh" }, icon("info", "xs"),
     list.as_of ? `数据截至 ${md(list.as_of)}${list.stale_days > 1 ? `（${list.stale_days} 天前）` : ""} · 点开任一项看怎么算的` : "还没有同步到健康数据"));
@@ -1401,6 +1461,7 @@ async function me(view) {
   edit.addEventListener("click", () => { edit.hidden = true; profileForm(box, data, () => { edit.hidden = false; }); });
   profileView(box, data);
   view.append(section("档案", edit, box, h("p", { class: "caption", style: "padding:0 2px" }, "用来计算 BMI、基础代谢、每日热量和蛋白质目标。")));
+  view.append(goalSection());
   view.append(citySection());
   view.append(section("说明", null, h("div", { class: "card" }, h("p", { class: "muted" }, "AI 健身管家会把你的问题交给最合适的专业角色（训练规划、动作教练、营养、恢复、数据分析），涉及几个方面时再把他们的意见整合起来。建议仅供参考，不能代替医生；身体不适请及时就医。"))));
   view.append(h("button", { class: "btn danger block", type: "button", onclick: signOut }, icon("logout", "sm"), "退出登录"));

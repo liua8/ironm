@@ -1,6 +1,7 @@
 """计划与饮食的动态调整（spec [2026-10-23] §18）。不调用真实模型。"""
 
 import asyncio
+from dataclasses import replace
 from datetime import date, timedelta
 from typing import Any
 
@@ -290,7 +291,7 @@ def test_today_tired_halves_sets_and_says_why() -> None:
     s = leg_day()
     v = today_mod.build(s, tired=True, tired_why="最近一晚只睡了 4.5 小时")
     assert [x.sets for x in v.session.items] == [2, 1, 1, 1, 1]  # 减半、至少 1 组
-    assert all(today_mod.TIRED_NOTE in x.note for x in v.session.items)
+    assert today_mod.TIRED_NOTE in v.changes[0] and not v.session.items[0].note  # 备注只写一次
     assert v.changed and "组数减半" in v.changes[0] and v.reasons == ("最近一晚只睡了 4.5 小时",)
     assert [x.sets for x in s.items] == [4, 3, 3, 3, 1]  # 原计划不变
     assert not today_mod.build(s).changed
@@ -383,6 +384,7 @@ SQUAT = PlanItem(exercise="杠铃深蹲", sets=3, reps="6–8")
 
 def test_performed_from_sets_or_text() -> None:
     assert [x.reps for x in LogItem(exercise="x", sets=3, reps="8").performed()] == [8, 8, 8]
+    assert LogItem(exercise="x", done_sets=[SetDone(reps=8)] * 2).sets == 2
     assert [x.reps for x in LogItem(exercise="x", sets=3, reps="8、8、7").performed()] == [8, 8, 7]
     assert LogItem(exercise="x", sets=3, reps="8–12").performed() == []  # 范围是计划，不是实际
     assert LogItem(exercise="x", sets=3, reps="30 秒").performed() == []
@@ -601,3 +603,94 @@ def test_chat_pain_is_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
 
     asyncio.run(go())
     assert book.rows["42"] == [("knee", date.today())]
+
+
+# ---- 需求 6：目标进度与阶段复测 -----------------------------------------------------------------
+
+from ironm_agent.goal import Goal, GoalBook, progress, retest  # noqa: E402
+from ironm_agent.metrics import weight_trend  # noqa: E402
+
+
+def weights(per_week: float, start: float = 80.0, days: int = 28) -> tuple[tuple[date, float], ...]:
+    return tuple(
+        (TODAY - timedelta(days=i), round(start + per_week / 7 * (days - 1 - i), 2))
+        for i in range(days)
+    )
+
+
+def test_goal_progress_predicts_date() -> None:
+    w = weights(-0.5)  # 每周掉 0.5 公斤，现在 78.07
+    g = Goal(75, TODAY + timedelta(days=60), TODAY - timedelta(days=27), start=80)
+    p = progress(g, w, weight_trend(w), TODAY)
+    assert p["start"] == 80 and p["current"] == w[0][1] and p["target"] == 75
+    pred = date.fromisoformat(p["predicted"])
+    assert abs((pred - TODAY).days - round((w[0][1] - 75) / 0.5 * 7)) <= 1
+    assert p["status"] == "on_track" and "预计" in p["message"]
+    late = progress(replace(g, by=TODAY + timedelta(days=14)), w, weight_trend(w), TODAY)
+    assert late["status"] == "behind" and "晚约" in late["message"] and "1%" in late["pace"]
+    early = progress(replace(g, by=TODAY + timedelta(days=200)), w, weight_trend(w), TODAY)
+    assert early["status"] == "ahead" and "由你决定" in early["message"]
+    wrong = progress(g, weights(0.5), weight_trend(weights(0.5)), TODAY)
+    assert wrong["status"] == "wrong_way" and wrong["predicted"] is None
+    done = progress(replace(g, value=79), w, weight_trend(w), TODAY)
+    assert done["status"] == "reached"
+
+
+def test_goal_progress_says_what_is_missing() -> None:
+    few = weights(-0.5, days=5)
+    g = Goal(75, TODAY + timedelta(days=60), TODAY - timedelta(days=4))
+    p = progress(g, few, weight_trend(few), TODAY)
+    assert p["predicted"] is None and "不够两周" in p["missing"] and "还缺" in p["missing"]
+    assert p["start"] == few[-1][1]  # 设目标时没有起点：用设目标之后的第一次
+    none = progress(g, (), weight_trend(()), TODAY)
+    assert none["current"] is None and "称一次体重" in none["missing"]
+
+
+def test_retest_reminder() -> None:
+    g = Goal(75, TODAY + timedelta(days=90), TODAY - timedelta(days=27))
+    assert not retest(g, TODAY)["due"]
+    r = retest(g, TODAY + timedelta(days=1))
+    assert r["due"] and "体重、腰围和关键动作" in r["text"] and "超过 6 周" not in r["text"]
+    assert "超过 6 周" in retest(g, TODAY + timedelta(days=15))["text"]
+    assert not retest(replace(g, retest_day=TODAY), TODAY + timedelta(days=1))["due"]
+
+
+def test_goal_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mirobody.server.auth import verify_token
+
+    from ironm_agent import web, web_more
+
+    real = date.today()
+    goals = GoalBook()
+    w = tuple((real - (TODAY - d), v) for d, v in weights(-0.5))
+
+    async def snap(user_id: str, today: date | None = None) -> Snapshot:
+        p = Profile(height_cm=175, sex="male", goal="fat_loss", activity="moderate")
+        r = Readings(weight=w)
+        return Snapshot(p, r, tuple(compute_all(r, p, real)), real)
+
+    monkeypatch.setattr(web, "snapshot_for", snap)
+    app = FastAPI()
+    app.include_router(web.router)
+    app.dependency_overrides[verify_token] = lambda: "42"
+    app.dependency_overrides[web_more.goal_store] = lambda: goals
+    c = TestClient(app)
+    assert c.get("/iron/api/goal").json() == {"goal": None, "progress": None}
+    by = (real + timedelta(days=60)).isoformat()
+    r = c.put("/iron/api/goal", json={"value": 75, "by": by}).json()
+    assert r["goal"]["start"] == w[0][1] and r["progress"]["predicted"]
+    assert c.put("/iron/api/goal", json={"value": 75, "by": real.isoformat()}).status_code == 422
+    assert c.put("/iron/api/goal", json={"value": 10, "by": by}).status_code == 422
+    goals.rows["42"] = replace(goals.rows["42"], set_day=real - timedelta(days=30))
+    assert c.get("/iron/api/goal").json()["progress"]["retest"]["due"]
+    assert not c.post("/iron/api/goal/retest").json()["progress"]["retest"]["due"]
+    assert c.delete("/iron/api/goal").json()["goal"] is None
+    assert c.post("/iron/api/goal/retest").status_code == 404
+
+
+def test_today_tired_and_gap_do_not_stack() -> None:
+    v = today_mod.build(
+        leg_day(), tired=True, tired_why="没睡好", scale=0.7, scale_why="上次训练是 9 天前"
+    )
+    assert [x.sets for x in v.session.items] == [2, 1, 1, 1, 1]  # 只减半，不再乘七成
+    assert "已包含中断后的降量" in v.changes[0] and v.reasons == ("没睡好", "上次训练是 9 天前")

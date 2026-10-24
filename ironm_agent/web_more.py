@@ -772,3 +772,74 @@ async def get_today(
         "reasons": list(version.reasons),
         "readiness": state.name,
     }
+
+
+# ---- 目标进度与阶段复测（spec [2026-10-23] §18 需求 6）---------------------------------------------
+
+
+def goal_store() -> Any:
+    from ironm_agent.goal import default_goal
+
+    return default_goal()
+
+
+GOAL = Depends(goal_store)  # 测试时用 dependency_overrides 换成内存版
+
+
+class GoalIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    value: float = Field(ge=30, le=250)  # 目标体重（公斤）
+    by: date
+
+
+async def _goal_state(user_id: str, goals: Any) -> dict[str, Any]:
+    from ironm_agent.goal import progress
+
+    g = await goals.get(user_id)
+    if g is None:
+        return {"goal": None, "progress": None}
+    snap = await _web().snapshot_for(user_id)
+    trend = next((m for m in snap.metrics if m.key == "weight_trend"), None)
+    return {"goal": g.json(), "progress": progress(g, snap.readings.weight, trend, snap.today)}
+
+
+@router.get("/iron/api/goal")
+async def get_goal(user_id: str = Depends(_verify()), goals: Any = GOAL) -> dict[str, Any]:
+    return await _goal_state(user_id, goals)
+
+
+@router.put("/iron/api/goal")
+async def put_goal(
+    body: GoalIn, user_id: str = Depends(_verify()), goals: Any = GOAL
+) -> dict[str, Any]:
+    from ironm_agent.goal import Goal
+
+    today = date.today()
+    if not today < body.by <= today + timedelta(days=730):
+        raise HTTPException(422, "目标日期要在今天之后、两年以内")
+    snap = await _web().snapshot_for(user_id)
+    weights = sorted(snap.readings.weight)
+    old = await goals.get(user_id)
+    start = weights[-1][1] if weights else None
+    retest_day = old.retest_day if old is not None else None
+    await goals.set(user_id, Goal(body.value, body.by, today, start, retest_day))
+    return await _goal_state(user_id, goals)
+
+
+@router.delete("/iron/api/goal")
+async def delete_goal(user_id: str = Depends(_verify()), goals: Any = GOAL) -> dict[str, Any]:
+    await goals.clear(user_id)
+    return {"goal": None, "progress": None}
+
+
+@router.post("/iron/api/goal/retest")
+async def goal_retest(user_id: str = Depends(_verify()), goals: Any = GOAL) -> dict[str, Any]:
+    """记下今天复测过（体重请照常记录或同步；关键动作在打卡里填每组的重量和次数）。"""
+    from ironm_agent.goal import retested
+
+    g = await goals.get(user_id)
+    if g is None:
+        raise HTTPException(404, "还没有设目标")
+    await goals.set(user_id, retested(g, date.today()))
+    return await _goal_state(user_id, goals)
