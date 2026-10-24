@@ -191,6 +191,18 @@ def test_choose_follows_route_and_adds_rule_required() -> None:
         "rest-sleep",
     )
     text = catalog()
-    assert (
-        "- trainer：" in text and "三个角色都能用：data-trend" in text and "move-feel" not in text
-    )
+    assert "trainer（训练教练）：" in text and "move-feel" not in text
+    assert "data-trend 趋势解读：问自己某项数据" in text.split("三个角色都能用：")[1]
+
+
+def test_every_skill_says_when_to_use_and_not() -> None:
+    """什么时候用、什么时候不用（spec [2026-10-23] §22）；not_for 点到的规程都存在（加载时检查）。"""
+    from ironm_agent.skills import catalog
+
+    names = {x.name for x in skills()}
+    for x in skills():
+        assert x.use and x.use in x.brief(), x.id
+        assert all(n in names for n in re.findall(r"「([^」]+)」", x.not_for)), x.id
+    text = catalog()
+    sleep = next(x for x in skills() if x.id == "rest-sleep")
+    assert sleep.use in text and "（不用于：" in text and "「数据缺失时怎么说」" in sleep.not_for

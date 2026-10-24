@@ -1,0 +1,3189 @@
+{
+ "summary": {
+  "模型": {
+   "主责对": "42/42",
+   "主责准确率": 1.0,
+   "必须请到的都请了": "39/42",
+   "多请的人次": 0,
+   "平均请几位": 1.0,
+   "错当成闲聊等": 0,
+   "问题类型对（闲聊等）": "6/6"
+  },
+  "关键字": {
+   "主责对": "30/42",
+   "主责准确率": 0.714,
+   "必须请到的都请了": "36/42",
+   "多请的人次": 7,
+   "平均请几位": 1.0,
+   "错当成闲聊等": 0,
+   "问题类型对（闲聊等）": "1/6"
+  },
+  "语义向量": {
+   "主责对": "39/42",
+   "主责准确率": 0.929,
+   "必须请到的都请了": "37/42",
+   "多请的人次": 1,
+   "平均请几位": 1.0,
+   "错当成闲聊等": 0,
+   "问题类型对（闲聊等）": "0/6"
+  },
+  "加权（三路）": {
+   "主责对": "42/42",
+   "主责准确率": 1.0,
+   "必须请到的都请了": "40/42",
+   "多请的人次": 0,
+   "平均请几位": 1.07,
+   "错当成闲聊等": 0,
+   "问题类型对（闲聊等）": "6/6"
+  },
+  "加权（去掉模型）": {
+   "主责对": "37/42",
+   "主责准确率": 0.881,
+   "必须请到的都请了": "38/42",
+   "多请的人次": 5,
+   "平均请几位": 1.29,
+   "错当成闲聊等": 0,
+   "问题类型对（闲聊等）": "1/6"
+  },
+  "现在的主教练调度": {
+   "主责对": "42/42",
+   "主责准确率": 1.0,
+   "必须请到的都请了": "42/42",
+   "多请的人次": 0,
+   "平均请几位": 1.29,
+   "错当成闲聊等": 0,
+   "问题类型对（闲聊等）": "6/6"
+  }
+ },
+ "rows": [
+  {
+   "id": "T01",
+   "ask": "一周只能抽出两个晚上，怎么练效果最好",
+   "label": {
+    "primary": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.1,
+     "recovery": 0.1
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.33
+    },
+    "llm": {
+     "trainer": 0.95,
+     "nutrition": 0.1,
+     "recovery": 0.1
+    }
+   }
+  },
+  {
+   "id": "T02",
+   "ask": "练了三个月卧推一直卡在六十公斤上不去",
+   "label": {
+    "primary": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.09,
+     "recovery": 0.3
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.12,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.95,
+     "nutrition": 0.15,
+     "recovery": 0.2
+    }
+   }
+  },
+  {
+   "id": "T03",
+   "ask": "下周想安排一次减量，该怎么减",
+   "label": {
+    "primary": [
+     "trainer"
+    ],
+    "allowed": [
+     "recovery"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.1,
+     "recovery": 0.09
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.35,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.95,
+     "nutrition": 0.1,
+     "recovery": 0.3
+    }
+   }
+  },
+  {
+   "id": "T04",
+   "ask": "女生想练出翘臀，每周练几次臀",
+   "label": {
+    "primary": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.05,
+     "recovery": 0.09
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.28
+    },
+    "llm": {
+     "trainer": 0.95,
+     "nutrition": 0.2,
+     "recovery": 0.1
+    }
+   }
+  },
+  {
+   "id": "T05",
+   "ask": "只有一根弹力带，能练全身吗",
+   "label": {
+    "primary": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.16
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.18
+    },
+    "llm": {
+     "trainer": 0.95,
+     "nutrition": 0.0,
+     "recovery": 0.0
+    }
+   }
+  },
+  {
+   "id": "T06",
+   "ask": "春节放假停了三周，回来第一次练什么",
+   "label": {
+    "primary": [
+     "trainer"
+    ],
+    "allowed": [
+     "recovery"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.02,
+     "recovery": 0.13
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.11
+    },
+    "llm": {
+     "trainer": 0.95,
+     "nutrition": 0.1,
+     "recovery": 0.2
+    }
+   }
+  },
+  {
+   "id": "T07",
+   "ask": "力量训练和游泳放在同一天可以吗",
+   "label": {
+    "primary": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.07,
+     "recovery": 0.27
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.82
+    },
+    "llm": {
+     "trainer": 0.9,
+     "nutrition": 0.1,
+     "recovery": 0.3
+    }
+   }
+  },
+  {
+   "id": "T08",
+   "ask": "想跑进五公里二十五分钟，平时怎么练",
+   "label": {
+    "primary": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.11,
+     "recovery": 0.1
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.25
+    },
+    "llm": {
+     "trainer": 0.95,
+     "nutrition": 0.1,
+     "recovery": 0.2
+    }
+   }
+  },
+  {
+   "id": "T09",
+   "ask": "保加利亚分腿蹲总是站不稳",
+   "label": {
+    "primary": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.33,
+     "recovery": 0.1
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.95,
+     "nutrition": 0.0,
+     "recovery": 0.15
+    }
+   }
+  },
+  {
+   "id": "T10",
+   "ask": "高位下拉怎么才能感觉到背在用力",
+   "label": {
+    "primary": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.21
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.14
+    },
+    "llm": {
+     "trainer": 0.95,
+     "nutrition": 0.0,
+     "recovery": 0.1
+    }
+   }
+  },
+  {
+   "id": "T11",
+   "ask": "没有单杠，引体向上可以用什么代替",
+   "label": {
+    "primary": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.08,
+     "recovery": 0.13
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.04,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.95,
+     "nutrition": 0.0,
+     "recovery": 0.0
+    }
+   }
+  },
+  {
+   "id": "T12",
+   "ask": "农夫行走是练哪里的",
+   "label": {
+    "primary": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.62,
+     "recovery": 0.29
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.24
+    },
+    "llm": {
+     "trainer": 0.9,
+     "nutrition": 0.0,
+     "recovery": 0.1
+    }
+   }
+  },
+  {
+   "id": "T13",
+   "ask": "每次办了卡都去不了几次，怎么才能坚持下来",
+   "label": {
+    "primary": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.1,
+     "recovery": 0.14
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.59
+    },
+    "llm": {
+     "trainer": 0.9,
+     "nutrition": 0.1,
+     "recovery": 0.1
+    }
+   }
+  },
+  {
+   "id": "T14",
+   "ask": "我这个月平均每天走了多少步",
+   "label": {
+    "primary": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.02,
+     "recovery": 0.17
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.62,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.8,
+     "nutrition": 0.0,
+     "recovery": 0.0
+    }
+   }
+  },
+  {
+   "id": "T15",
+   "ask": "我的深蹲这一个月有没有进步",
+   "label": {
+    "primary": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.4
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.43
+    },
+    "llm": {
+     "trainer": 0.95,
+     "nutrition": 0.05,
+     "recovery": 0.1
+    }
+   }
+  },
+  {
+   "id": "N01",
+   "ask": "健身后喝蛋白粉还是吃鸡胸肉好",
+   "label": {
+    "primary": [
+     "nutrition"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 0.4,
+     "nutrition": 1.0,
+     "recovery": 0.11
+    },
+    "vector": {
+     "trainer": 0.45,
+     "nutrition": 1.0,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.1,
+     "nutrition": 0.9,
+     "recovery": 0.1
+    }
+   }
+  },
+  {
+   "id": "N02",
+   "ask": "公司食堂中午怎么搭配比较健康",
+   "label": {
+    "primary": [
+     "nutrition"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 0.7,
+     "nutrition": 1.0,
+     "recovery": 0.21
+    },
+    "vector": {
+     "trainer": 0.14,
+     "nutrition": 1.0,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.0,
+     "nutrition": 0.9,
+     "recovery": 0.0
+    }
+   }
+  },
+  {
+   "id": "N03",
+   "ask": "晚上八点以后吃东西会胖吗",
+   "label": {
+    "primary": [
+     "nutrition"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 0.45,
+     "nutrition": 1.0,
+     "recovery": 0.29
+    },
+    "vector": {
+     "trainer": 0.0,
+     "nutrition": 1.0,
+     "recovery": 0.06
+    },
+    "llm": {
+     "trainer": 0.0,
+     "nutrition": 0.9,
+     "recovery": 0.1
+    }
+   }
+  },
+  {
+   "id": "N04",
+   "ask": "素食者怎么吃够蛋白质",
+   "label": {
+    "primary": [
+     "nutrition"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 0.29,
+     "nutrition": 1.0,
+     "recovery": 0.0
+    },
+    "vector": {
+     "trainer": 0.27,
+     "nutrition": 1.0,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.0,
+     "nutrition": 0.95,
+     "recovery": 0.0
+    }
+   }
+  },
+  {
+   "id": "N05",
+   "ask": "左旋肉碱真的能减肥吗",
+   "label": {
+    "primary": [
+     "nutrition"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition",
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.92,
+     "recovery": 0.0
+    },
+    "vector": {
+     "trainer": 0.65,
+     "nutrition": 1.0,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.0,
+     "nutrition": 0.9,
+     "recovery": 0.0
+    }
+   }
+  },
+  {
+   "id": "N06",
+   "ask": "周末聚餐吃火锅怎么点不会吃超",
+   "label": {
+    "primary": [
+     "nutrition"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.98,
+     "recovery": 0.09
+    },
+    "vector": {
+     "trainer": 0.01,
+     "nutrition": 1.0,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.0,
+     "nutrition": 0.9,
+     "recovery": 0.0
+    }
+   }
+  },
+  {
+   "id": "N07",
+   "ask": "我这一个月掉了几斤",
+   "label": {
+    "primary": [
+     "nutrition"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer",
+      "nutrition"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.48,
+     "recovery": 0.77
+    },
+    "vector": {
+     "trainer": 0.05,
+     "nutrition": 1.0,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.0,
+     "nutrition": 0.9,
+     "recovery": 0.1
+    }
+   }
+  },
+  {
+   "id": "N08",
+   "ask": "体脂率从二十五降到二十要多久",
+   "label": {
+    "primary": [
+     "nutrition"
+    ],
+    "allowed": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition",
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "nutrition",
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.7,
+     "recovery": 0.59
+    },
+    "vector": {
+     "trainer": 0.0,
+     "nutrition": 1.0,
+     "recovery": 0.19
+    },
+    "llm": {
+     "trainer": 0.4,
+     "nutrition": 0.9,
+     "recovery": 0.1
+    }
+   }
+  },
+  {
+   "id": "N09",
+   "ask": "一到晚上就特别想吃甜的，忍不住",
+   "label": {
+    "primary": [
+     "nutrition"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition",
+      "recovery"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.98,
+     "recovery": 0.8
+    },
+    "vector": {
+     "trainer": 0.0,
+     "nutrition": 1.0,
+     "recovery": 0.76
+    },
+    "llm": {
+     "trainer": 0.0,
+     "nutrition": 0.9,
+     "recovery": 0.1
+    }
+   }
+  },
+  {
+   "id": "N10",
+   "ask": "夏天跑步出汗多要不要补电解质",
+   "label": {
+    "primary": [
+     "nutrition"
+    ],
+    "allowed": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition",
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.34,
+     "recovery": 0.07
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.71
+    },
+    "llm": {
+     "trainer": 0.5,
+     "nutrition": 0.85,
+     "recovery": 0.2
+    }
+   }
+  },
+  {
+   "id": "R01",
+   "ask": "跑完步脚后跟一踩地就疼",
+   "label": {
+    "primary": [
+     "recovery"
+    ],
+    "allowed": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 0.88,
+     "nutrition": 0.0,
+     "recovery": 1.0
+    },
+    "vector": {
+     "trainer": 0.33,
+     "nutrition": 0.0,
+     "recovery": 1.0
+    },
+    "llm": {
+     "trainer": 0.3,
+     "nutrition": 0.0,
+     "recovery": 0.9
+    }
+   }
+  },
+  {
+   "id": "R02",
+   "ask": "网球肘还能练上肢吗",
+   "label": {
+    "primary": [
+     "recovery",
+     "trainer"
+    ],
+    "required": [
+     "recovery"
+    ],
+    "allowed": [
+     "trainer",
+     "recovery"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "recovery",
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.2
+    },
+    "vector": {
+     "trainer": 0.94,
+     "nutrition": 0.0,
+     "recovery": 1.0
+    },
+    "llm": {
+     "trainer": 0.4,
+     "nutrition": 0.0,
+     "recovery": 0.9
+    }
+   }
+  },
+  {
+   "id": "R03",
+   "ask": "落枕了今天还能去健身房吗",
+   "label": {
+    "primary": [
+     "recovery"
+    ],
+    "allowed": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "recovery",
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.03,
+     "recovery": 0.02
+    },
+    "vector": {
+     "trainer": 0.78,
+     "nutrition": 0.0,
+     "recovery": 1.0
+    },
+    "llm": {
+     "trainer": 0.3,
+     "nutrition": 0.0,
+     "recovery": 0.9
+    }
+   }
+  },
+  {
+   "id": "R04",
+   "ask": "踝关节扭伤一周了，什么时候能恢复跑步",
+   "label": {
+    "primary": [
+     "recovery"
+    ],
+    "allowed": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "recovery",
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 0.94,
+     "nutrition": 0.02,
+     "recovery": 1.0
+    },
+    "vector": {
+     "trainer": 0.49,
+     "nutrition": 0.0,
+     "recovery": 1.0
+    },
+    "llm": {
+     "trainer": 0.3,
+     "nutrition": 0.0,
+     "recovery": 0.95
+    }
+   }
+  },
+  {
+   "id": "R05",
+   "ask": "跑步时突然胸口发闷要紧吗",
+   "label": {
+    "primary": [
+     "recovery"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.16
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.67
+    },
+    "llm": {
+     "trainer": 0.2,
+     "nutrition": 0.0,
+     "recovery": 0.95
+    }
+   }
+  },
+  {
+   "id": "R06",
+   "ask": "做完臀桥腰有点酸是正常的吗",
+   "label": {
+    "primary": [
+     "recovery",
+     "trainer"
+    ],
+    "required": [
+     "recovery"
+    ],
+    "allowed": [
+     "trainer",
+     "recovery"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "recovery",
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.18,
+     "recovery": 0.1
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.04
+    },
+    "llm": {
+     "trainer": 0.5,
+     "nutrition": 0.0,
+     "recovery": 0.75
+    }
+   }
+  },
+  {
+   "id": "R07",
+   "ask": "最近总是睡不醒，白天没精神",
+   "label": {
+    "primary": [
+     "recovery"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 0.55,
+     "nutrition": 0.46,
+     "recovery": 1.0
+    },
+    "vector": {
+     "trainer": 0.0,
+     "nutrition": 0.47,
+     "recovery": 1.0
+    },
+    "llm": {
+     "trainer": 0.2,
+     "nutrition": 0.2,
+     "recovery": 0.9
+    }
+   }
+  },
+  {
+   "id": "R08",
+   "ask": "手表说我身体电量很低，今天要不要休息",
+   "label": {
+    "primary": [
+     "recovery"
+    ],
+    "allowed": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "recovery",
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.09,
+     "recovery": 0.61
+    },
+    "vector": {
+     "trainer": 0.0,
+     "nutrition": 0.46,
+     "recovery": 1.0
+    },
+    "llm": {
+     "trainer": 0.5,
+     "nutrition": 0.1,
+     "recovery": 0.8
+    }
+   }
+  },
+  {
+   "id": "R09",
+   "ask": "我上周的睡眠平均几个小时",
+   "label": {
+    "primary": [
+     "recovery"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.89
+    },
+    "vector": {
+     "trainer": 0.0,
+     "nutrition": 0.16,
+     "recovery": 1.0
+    },
+    "llm": {
+     "trainer": 0.0,
+     "nutrition": 0.0,
+     "recovery": 0.9
+    }
+   }
+  },
+  {
+   "id": "R10",
+   "ask": "我早上的心跳比平时快了十几下",
+   "label": {
+    "primary": [
+     "recovery"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer",
+      "recovery"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.28,
+     "recovery": 0.43
+    },
+    "vector": {
+     "trainer": 0.0,
+     "nutrition": 0.06,
+     "recovery": 1.0
+    },
+    "llm": {
+     "trainer": 0.1,
+     "nutrition": 0.1,
+     "recovery": 0.9
+    }
+   }
+  },
+  {
+   "id": "R11",
+   "ask": "来例假的时候能不能练",
+   "label": {
+    "primary": [
+     "recovery"
+    ],
+    "allowed": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "recovery",
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "recovery",
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.81
+    },
+    "vector": {
+     "trainer": 0.14,
+     "nutrition": 0.0,
+     "recovery": 1.0
+    },
+    "llm": {
+     "trainer": 0.5,
+     "nutrition": 0.1,
+     "recovery": 0.8
+    }
+   }
+  },
+  {
+   "id": "R12",
+   "ask": "连续练了两周，浑身没劲是不是练过头了",
+   "label": {
+    "primary": [
+     "recovery"
+    ],
+    "allowed": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "recovery",
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 0.65,
+     "nutrition": 0.03,
+     "recovery": 1.0
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.67
+    },
+    "llm": {
+     "trainer": 0.4,
+     "nutrition": 0.2,
+     "recovery": 0.9
+    }
+   }
+  },
+  {
+   "id": "X01",
+   "ask": "想增肌，每周怎么练、每天吃多少",
+   "label": {
+    "primary": [
+     "trainer",
+     "nutrition"
+    ],
+    "required": [
+     "trainer",
+     "nutrition"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer",
+      "nutrition"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer",
+      "nutrition"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer",
+      "nutrition"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.52,
+     "recovery": 0.04
+    },
+    "vector": {
+     "trainer": 0.6,
+     "nutrition": 1.0,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.95,
+     "nutrition": 0.9,
+     "recovery": 0.1
+    }
+   }
+  },
+  {
+   "id": "X02",
+   "ask": "膝盖做过手术，现在想减肥，怎么运动怎么吃",
+   "label": {
+    "primary": [
+     "recovery",
+     "trainer",
+     "nutrition"
+    ],
+    "required": [
+     "recovery",
+     "nutrition"
+    ],
+    "allowed": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "recovery",
+      "trainer",
+      "nutrition"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.21,
+     "recovery": 0.39
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.07,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.8,
+     "nutrition": 0.7,
+     "recovery": 0.7
+    }
+   }
+  },
+  {
+   "id": "X03",
+   "ask": "熬夜加班后第二天还去健身，练前吃点什么好",
+   "label": {
+    "primary": [
+     "recovery",
+     "nutrition",
+     "trainer"
+    ],
+    "required": [
+     "nutrition"
+    ],
+    "allowed": [
+     "recovery",
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "recovery",
+      "nutrition",
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "nutrition",
+      "recovery"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.71,
+     "recovery": 0.68
+    },
+    "vector": {
+     "trainer": 0.0,
+     "nutrition": 0.71,
+     "recovery": 1.0
+    },
+    "llm": {
+     "trainer": 0.4,
+     "nutrition": 0.8,
+     "recovery": 0.5
+    }
+   }
+  },
+  {
+   "id": "X04",
+   "ask": "准备参加健美比赛，备赛期怎么练怎么吃",
+   "label": {
+    "primary": [
+     "trainer",
+     "nutrition"
+    ],
+    "required": [
+     "trainer",
+     "nutrition"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "trainer",
+      "nutrition"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "trainer",
+      "nutrition"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.24,
+     "recovery": 0.15
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.83,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.9,
+     "nutrition": 0.9,
+     "recovery": 0.3
+    }
+   }
+  },
+  {
+   "id": "X05",
+   "ask": "体重一个月没动了，是训练还是饮食的问题",
+   "label": {
+    "primary": [
+     "nutrition",
+     "trainer"
+    ],
+    "required": [
+     "nutrition"
+    ],
+    "allowed": [
+     "trainer"
+    ]
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition",
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（三路）": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "现在的主教练调度": {
+     "intent": "pro",
+     "roles": [
+      "nutrition",
+      "trainer"
+     ]
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 0.87,
+     "nutrition": 1.0,
+     "recovery": 0.79
+    },
+    "vector": {
+     "trainer": 0.86,
+     "nutrition": 1.0,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.5,
+     "nutrition": 0.8,
+     "recovery": 0.2
+    }
+   }
+  },
+  {
+   "id": "O01",
+   "ask": "早上好呀",
+   "label": {
+    "intent": "chat"
+   },
+   "picks": {
+    "关键字": {
+     "intent": "chat",
+     "roles": []
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "chat",
+     "roles": []
+    },
+    "模型": {
+     "intent": "chat",
+     "roles": []
+    },
+    "加权（三路）": {
+     "intent": "chat",
+     "roles": []
+    },
+    "现在的主教练调度": {
+     "intent": "chat",
+     "roles": []
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 0.75,
+     "nutrition": 1.0,
+     "recovery": 0.0
+    },
+    "vector": {
+     "trainer": 0.0,
+     "nutrition": 1.0,
+     "recovery": 0.56
+    },
+    "llm": {
+     "trainer": 0.0,
+     "nutrition": 0.0,
+     "recovery": 0.0
+    }
+   }
+  },
+  {
+   "id": "O02",
+   "ask": "你们这个是怎么收费的",
+   "label": {
+    "intent": "app"
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "nutrition"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "app",
+     "roles": []
+    },
+    "加权（三路）": {
+     "intent": "app",
+     "roles": []
+    },
+    "现在的主教练调度": {
+     "intent": "app",
+     "roles": []
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.0
+    },
+    "vector": {
+     "trainer": 0.47,
+     "nutrition": 1.0,
+     "recovery": 0.0
+    },
+    "llm": {
+     "trainer": 0.0,
+     "nutrition": 0.0,
+     "recovery": 0.0
+    }
+   }
+  },
+  {
+   "id": "O03",
+   "ask": "帮我写一首关于春天的诗",
+   "label": {
+    "intent": "out_of_scope"
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "out_of_scope",
+     "roles": []
+    },
+    "加权（三路）": {
+     "intent": "out_of_scope",
+     "roles": []
+    },
+    "现在的主教练调度": {
+     "intent": "out_of_scope",
+     "roles": []
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.32
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.5
+    },
+    "llm": {
+     "trainer": 0.0,
+     "nutrition": 0.0,
+     "recovery": 0.0
+    }
+   }
+  },
+  {
+   "id": "O04",
+   "ask": "辛苦啦，今天就到这",
+   "label": {
+    "intent": "chat"
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "chat",
+     "roles": []
+    },
+    "加权（三路）": {
+     "intent": "chat",
+     "roles": []
+    },
+    "现在的主教练调度": {
+     "intent": "chat",
+     "roles": []
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.29
+    },
+    "vector": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.79
+    },
+    "llm": {
+     "trainer": 0.0,
+     "nutrition": 0.0,
+     "recovery": 0.0
+    }
+   }
+  },
+  {
+   "id": "O05",
+   "ask": "我的数据你们存在哪里",
+   "label": {
+    "intent": "app"
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer",
+      "nutrition"
+     ]
+    },
+    "模型": {
+     "intent": "app",
+     "roles": []
+    },
+    "加权（三路）": {
+     "intent": "app",
+     "roles": []
+    },
+    "现在的主教练调度": {
+     "intent": "app",
+     "roles": []
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.49,
+     "recovery": 0.0
+    },
+    "vector": {
+     "trainer": 0.0,
+     "nutrition": 0.95,
+     "recovery": 1.0
+    },
+    "llm": {
+     "trainer": 0.0,
+     "nutrition": 0.0,
+     "recovery": 0.0
+    }
+   }
+  },
+  {
+   "id": "O06",
+   "ask": "明天天气怎么样",
+   "label": {
+    "intent": "out_of_scope"
+   },
+   "picks": {
+    "关键字": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "语义向量": {
+     "intent": "pro",
+     "roles": [
+      "recovery"
+     ]
+    },
+    "加权（去掉模型）": {
+     "intent": "pro",
+     "roles": [
+      "trainer"
+     ]
+    },
+    "模型": {
+     "intent": "out_of_scope",
+     "roles": []
+    },
+    "加权（三路）": {
+     "intent": "out_of_scope",
+     "roles": []
+    },
+    "现在的主教练调度": {
+     "intent": "out_of_scope",
+     "roles": []
+    }
+   },
+   "scores": {
+    "keyword": {
+     "trainer": 1.0,
+     "nutrition": 0.0,
+     "recovery": 0.0
+    },
+    "vector": {
+     "trainer": 0.0,
+     "nutrition": 0.15,
+     "recovery": 1.0
+    },
+    "llm": {
+     "trainer": 0.0,
+     "nutrition": 0.0,
+     "recovery": 0.0
+    }
+   }
+  }
+ ]
+}

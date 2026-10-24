@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Collection, Sequence
 from functools import cache
 from pathlib import Path
@@ -15,7 +16,7 @@ from typing import Literal
 from pydantic import Field
 
 from ironm_agent.common import ContractModel
-from ironm_agent.roles import EXPERTS, Role
+from ironm_agent.roles import EXPERTS, SPECS, Role
 from ironm_agent.yamlfile import load_yaml
 
 SKILLS_PATH = Path(__file__).with_name("skills.yaml")
@@ -29,6 +30,8 @@ class Skill(ContractModel):
     role: Role | None = None
     shared: bool = False  # 三个专业 Agent 都能装载（如数据解读，spec [2026-10-23] §20）
     name: str = Field(min_length=1, max_length=12)
+    use: str = Field(min_length=4, max_length=60)  # 什么时候用（spec [2026-10-23] §22）
+    not_for: str = Field(default="", max_length=90)  # 什么时候不用、该用哪个
     when: tuple[str, ...] = ()
     on: tuple[Trigger, ...] = ()
     default: bool = False
@@ -43,6 +46,10 @@ class Skill(ContractModel):
         return sum(1 for w in self.when if w in text) + TRIGGER_BONUS * sum(
             1 for t in self.on if t in triggers
         )
+
+    def brief(self) -> str:
+        """本地语义兜底用来比的文字：名字、什么时候用、典型说法。"""
+        return f"{self.name}：{self.use}；{'、'.join(self.when)}"
 
     def text(self) -> str:
         parts = [f"【{self.name}】"]
@@ -68,6 +75,11 @@ def skills(path: Path = SKILLS_PATH) -> tuple[Skill, ...]:
         raise ValueError("讲法规程不能当默认规程")
     if any((x.role is None) != x.shared or (x.shared and x.default) for x in data.skills):
         raise ValueError("规程要么属于一个角色，要么是共享的（共享规程不能当默认规程）")
+    names = {x.name for x in data.skills}
+    for x in data.skills:
+        unknown = [n for n in re.findall(r"「([^」]+)」", x.not_for) if n not in names]
+        if unknown:
+            raise ValueError(f"{x.id} 的 not_for 点到的规程不存在：{unknown}")
     return data.skills
 
 
@@ -88,7 +100,7 @@ def pick(
     )
     chosen = [x for s, _, x in scored if s > 0][:MAX_SKILLS]
     if not chosen and similar is not None and content:
-        sims = similar(text, [f"{x.name}：{'、'.join(x.when)}" for x in content])
+        sims = similar(text, [x.brief() for x in content])
         if sims:
             chosen = [content[max(range(len(sims)), key=lambda i: sims[i])]]
     if not chosen:
@@ -117,16 +129,17 @@ def _routable(role: Role) -> list[Skill]:
 
 
 def catalog() -> str:
-    """给路由模型看的 Skill 目录：每个角色能选的编号、名字和几个典型说法（讲法类不列）。"""
+    """给路由模型看的 Skill 目录：每个角色能选的编号、名字、什么时候用和不用（讲法类不列，§22）。"""
 
     def line(x: Skill) -> str:
-        return f"{x.id} {x.name}（{'、'.join(x.when[:4])}）" if x.when else f"{x.id} {x.name}"
+        return f"{x.id} {x.name}：{x.use}" + (f"（不用于：{x.not_for}）" if x.not_for else "")
 
-    out = [f"- {r.value}：" + "；".join(line(x) for x in skills() if x.role == r and not x.style)
-           for r in EXPERTS]  # fmt: skip
-    shared = [line(x) for x in skills() if x.shared]
-    if shared:
-        out.append("- 三个角色都能用：" + "；".join(shared))
+    out = []
+    for r in EXPERTS:
+        out.append(f"{r.value}（{SPECS[r].name}）：")
+        out += [f"  - {line(x)}" for x in skills() if x.role == r and not x.style]
+    out.append("三个角色都能用：")
+    out += [f"  - {line(x)}" for x in skills() if x.shared]
     return "\n".join(out)
 
 

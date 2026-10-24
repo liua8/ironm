@@ -56,3 +56,16 @@ cases:
   - {role: nutrition, ask: BMI 是什么意思, expect: []}
   - {role: recovery, ask: HRV 是什么, expect: []}
   - {role: recovery, ask: 静息心率是指什么, expect: []}
+  # ---- 容易混的（spec [2026-10-23] §22，写说明之前先写好）----
+  - {role: recovery, ask: 手表这几天怎么没记到我的睡眠, expect: [数据缺失时怎么说]}
+  - {role: recovery, ask: 最近总是半夜醒，有什么办法, expect: [睡眠改善]}
+  - {role: trainer, ask: 过年胡吃海喝两周没去健身房，现在怎么开始, expect: [中断后回归]}
+  - {role: recovery, ask: 跟腱手术半年了，医生说可以慢慢练了, on: [injury], expect: [伤后回到训练]}
+  - {role: recovery, ask: 深蹲完膝盖外侧刺痛，第二天还疼, on: [injury], expect: [疼痛时怎么改动作, 酸痛还是受伤]}
+  - {role: recovery, ask: 前天练背今天背好酸，是受伤了吗, expect: [酸痛还是受伤]}
+  - {role: recovery, ask: 今天手表显示恢复分很低，要不要休息, expect: [今天状态判断]}
+  - {role: trainer, ask: 昨晚没睡好，今天的腿要怎么练, on: [poor], expect: [按今天的状态调整]}
+  - {role: trainer, ask: 卧推卡在八十公斤两个月了, expect: [减量与平台期, 提升力量]}
+  - {role: trainer, ask: 健身房人太多没有深蹲架，换什么练, expect: [替代动作选择]}
+  - {role: nutrition, ask: 一个人在家做饭，减脂期一周怎么吃, expect: [减脂饮食]}
+  - {role: nutrition, ask: 每天点外卖还能增肌吗, expect: [外卖与食堂怎么选, 增肌饮食]}
