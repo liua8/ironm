@@ -212,3 +212,65 @@ def test_chat_triggers_daily_and_pain_reevaluation(
     asyncio.run(go("我左膝最近又疼了，深蹲要注意什么"))
     reasons = [r for _, r in coach_in_memory]
     assert "每天第一次提问" in reasons and "说疼" in reasons
+
+
+# ---- 对话里的管家消息（spec [2026-10-23] §26）--------------------------------------------------
+
+
+def test_inbox_pending_unseen_and_choices() -> None:
+    from ironm_agent.coach_state import decide, mark_seen, pending, unseen
+
+    pain = PainBook()
+    pain.rows["42"] = [("knee", TODAY), ("knee", TODAY - timedelta(days=2))]
+    dp = deps(training=with_plan(), pain=pain)
+    s1, _ = asyncio.run(evaluate("42", dp, reason="打卡"))
+    history = asyncio.run(dp.store.history("42"))
+    news = unseen(s1, history)
+    assert news and all(c.status != "confirm" for c in news)  # 要确认的不在"改了什么"里重复
+    assert "alert:pain" in {x.key for x in pending(s1, TODAY)}
+    asyncio.run(mark_seen(dp.store, "42", s1.version))
+    s1b = asyncio.run(dp.store.get("42"))
+    assert s1b is not None and s1b.seen == 1 and unseen(s1b, history) == []
+    item = asyncio.run(decide(dp.store, "42", "alert:pain", "later"))
+    assert item is not None and item.key == "alert:pain"
+    s2 = asyncio.run(dp.store.get("42"))
+    assert s2 is not None and "alert:pain" not in {
+        x.key for x in pending(s2, TODAY)
+    }  # 暂不：今天不再问
+    assert "alert:pain" in {x.key for x in pending(s2, TODAY + timedelta(days=1))}  # 明天再问
+    asyncio.run(decide(dp.store, "42", "alert:pain", "accept"))
+    s3 = asyncio.run(dp.store.get("42"))
+    assert s3 is not None and "alert:pain" not in {
+        x.key for x in pending(s3, TODAY + timedelta(days=3))
+    }
+    kinds = [c.change for c in asyncio.run(dp.store.history("42"))[:2]]
+    assert kinds == ["accepted", "declined"]  # 选择写进调整经历
+    assert asyncio.run(decide(dp.store, "42", "kcal", "accept")) is None  # 不用确认的不接受选择
+    s4, _ = asyncio.run(evaluate("42", dp, reason="说疼"))  # 重新评估时保留看过的版本和选择
+    assert s4.seen == 1 and "alert:pain" in s4.choices
+
+
+def test_inbox_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mirobody.server.auth import verify_token
+
+    from ironm_agent import web, web_more
+
+    pain = PainBook()
+    pain.rows["42"] = [("knee", TODAY), ("knee", TODAY - timedelta(days=1))]
+    dp = deps(training=with_plan(), pain=pain)
+    monkeypatch.setattr(web_more, "coach_deps", lambda: dp)
+    app = FastAPI()
+    app.include_router(web.router)
+    app.dependency_overrides[verify_token] = lambda: "42"
+    c = TestClient(app)
+    r = c.get("/iron/api/coach/inbox").json()
+    assert r["changes"] and {x["key"] for x in r["pending"]} >= {"alert:pain"}
+    assert c.post("/iron/api/coach/seen", json={"version": r["version"]}).status_code == 200
+    assert c.get("/iron/api/coach/inbox").json()["changes"] == []  # 看过的不再出现
+    d = c.post("/iron/api/coach/decide", json={"key": "alert:pain", "decision": "later"})
+    assert d.status_code == 200 and d.json()["item"]["value"]["trigger"] == "pain"
+    assert "alert:pain" not in {x["key"] for x in c.get("/iron/api/coach/inbox").json()["pending"]}
+    assert (
+        c.post("/iron/api/coach/decide", json={"key": "nope", "decision": "accept"}).status_code
+        == 404
+    )

@@ -28,7 +28,9 @@ _log = logging.getLogger("ironm_agent.coach_state")
 
 type Kind = Literal["today", "target", "kcal", "goal", "retest", "alert", "proposal"]
 type Action = Literal["auto", "confirm", "info"]  # 自动生效 / 要用户确认 / 只提醒
-type ChangeKind = Literal["added", "changed", "removed"]
+type ChangeKind = Literal[
+    "added", "changed", "removed", "accepted", "declined"
+]  # 后两种是用户的选择
 
 HISTORY_DAYS = 63  # 读多久的训练记录（平台期要看 9 周）
 
@@ -43,12 +45,22 @@ class Item(BaseModel):
     value: dict[str, Any] = Field(default_factory=dict)  # 页面要用的结构化内容
 
 
+class Choice(BaseModel):
+    """用户在对话里对一条待确认调整的选择（spec [2026-10-23] §26）。"""
+
+    decision: Literal["accept", "later"]
+    title: str  # 当时这条调整的说法；调整内容变了就重新问
+    day: date
+
+
 class State(BaseModel):
     version: int
     day: date
     at: datetime
     reason: str  # 这次因为什么重新评估
     items: list[Item]
+    seen: int = 0  # 用户在对话里看过的最新版本
+    choices: dict[str, Choice] = Field(default_factory=dict)  # 每条待确认调整的选择
 
     def item(self, key: str) -> Item | None:
         return next((x for x in self.items if x.key == key), None)
@@ -424,7 +436,8 @@ async def evaluate(
     changes = diff(old, items, today, version)
     if old is not None and old.day == today and not changes:
         return old, []
-    state = State(version=version, day=today, at=datetime.now(UTC), reason=reason, items=items)
+    state = State(version=version, day=today, at=datetime.now(UTC), reason=reason, items=items,
+                  seen=old.seen if old else 0, choices=old.choices if old else {})  # fmt: skip
     await deps.store.save(user_id, state, changes)
     _log.info("coach evaluated %s", json.dumps({"version": version, "items": len(items),
                                                 "changes": len(changes)}))  # fmt: skip
@@ -452,3 +465,55 @@ async def settle() -> None:
     """等后台评估做完（测试用）。"""
     while _BACKGROUND:
         await asyncio.gather(*list(_BACKGROUND), return_exceptions=True)
+
+
+# ---- 对话里的管家消息（spec [2026-10-23] §26）---------------------------------------------------
+
+
+def pending(state: State, today: date) -> list[Item]:
+    """还要用户确认的：确认过的同一条不再问；暂不的今天不再问；调整内容变了就重新问。"""
+    out = []
+    for x in state.items:
+        if x.action != "confirm":
+            continue
+        c = state.choices.get(x.key)
+        if c is not None and c.title == x.title and (c.decision == "accept" or c.day == today):
+            continue
+        out.append(x)
+    return out
+
+
+def unseen(state: State, history: Sequence[Change]) -> list[Change]:
+    """用户在对话里还没看过的自动生效和提醒类改动（新的在后）。"""
+    return [c for c in reversed(history)
+            if c.version > state.seen and c.status != "confirm" and c.change in ("added", "changed", "removed")]  # fmt: skip
+
+
+async def mark_seen(store: CoachStore, user_id: str, version: int) -> None:
+    state = await store.get(user_id)
+    if state is not None and version > state.seen:
+        await store.save(
+            user_id, state.model_copy(update={"seen": min(version, state.version)}), []
+        )
+
+
+async def decide(
+    store: CoachStore,
+    user_id: str,
+    key: str,
+    decision: Literal["accept", "later"],
+    today: date | None = None,
+) -> Item | None:
+    """记下用户对一条待确认调整的选择，并写进调整经历；没有这条时返回 None。"""
+    today = today or date.today()
+    state = await store.get(user_id)
+    item = state.item(key) if state is not None else None
+    if state is None or item is None or item.action != "confirm":
+        return None
+    choices = {**state.choices, key: Choice(decision=decision, title=item.title, day=today)}
+    record = Change(id=uuid.uuid4().hex[:16], at=datetime.now(UTC), day=today, version=state.version,
+                    key=key, kind=item.kind, change="accepted" if decision == "accept" else "declined",
+                    after=item.title, why=item.why, basis=item.basis, status="confirm")  # fmt: skip
+    await store.save(user_id, state.model_copy(update={"choices": choices}), [record])
+    _log.info("coach decision %s", json.dumps({"decision": decision, "kind": item.kind}))
+    return item

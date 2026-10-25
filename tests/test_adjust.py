@@ -514,20 +514,19 @@ def test_pain_parts_and_pain_trigger() -> None:
 
 
 def test_missed_and_gap() -> None:
-    def done(back: int) -> WorkoutLog:
-        return WorkoutLog(day=TODAY - timedelta(days=back), session="下肢")
+    sat = date(2026, 10, 24)  # 固定在周六，结果不随运行日期变
 
-    # TODAY 是周六；上次练是 9 天前（周四），之后的周五、周一、周三、周五都没练
-    m = trig.missed_trigger(THREE, [done(9)], TODAY - timedelta(days=60), TODAY)
+    def done(back: int) -> WorkoutLog:
+        return WorkoutLog(day=sat - timedelta(days=back), session="下肢")
+
+    # sat 是周六；上次练是 9 天前（周四），之后的周五、周一、周三、周五都没练
+    m = trig.missed_trigger(THREE, [done(9)], sat - timedelta(days=60), sat)
     assert m is not None and "连着 4 次" in m.detail and m.action == "proposal"
-    assert trig.missed_trigger(THREE, [done(2)], None, TODAY) is None  # 上次练后只空了 1 次
-    assert trig.missed_trigger(THREE, [done(9), done(0)], None, TODAY) is None  # 今天练了
-    assert trig.gap_scale([done(9)], TODAY) == (0.7, "上次训练是 9 天前，先按原量的约 7 成恢复")
-    assert (
-        trig.gap_scale([done(20)], TODAY) is not None
-        and trig.gap_scale([done(20)], TODAY)[0] == 0.5
-    )  # type: ignore[index]
-    assert trig.gap_scale([done(3)], TODAY) is None and trig.gap_scale([], TODAY) is None
+    assert trig.missed_trigger(THREE, [done(2)], None, sat) is None  # 上次练后只空了 1 次
+    assert trig.missed_trigger(THREE, [done(9), done(0)], None, sat) is None  # 今天练了
+    assert trig.gap_scale([done(9)], sat) == (0.7, "上次训练是 9 天前，先按原量的约 7 成恢复")
+    assert trig.gap_scale([done(20)], sat) is not None and trig.gap_scale([done(20)], sat)[0] == 0.5  # type: ignore[index]
+    assert trig.gap_scale([done(3)], sat) is None and trig.gap_scale([], sat) is None
     v = today_mod.build(leg_day(), scale=0.7, scale_why="上次训练是 9 天前")
     assert [x.sets for x in v.session.items] == [3, 2, 2, 2, 1] and "约 7 成" in v.changes[0]
 

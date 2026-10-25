@@ -10,7 +10,7 @@ import os
 import re
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -917,3 +917,50 @@ async def get_coach(user_id: str = Depends(_verify())) -> dict[str, Any]:
 async def get_coach_history(user_id: str = Depends(_verify())) -> dict[str, Any]:
     deps = coach_deps()
     return {"changes": [c.model_dump(mode="json") for c in await deps.store.history(user_id, 60)]}
+
+
+class CoachSeen(BaseModel):
+    version: int = Field(ge=1)
+
+
+class CoachDecision(BaseModel):
+    key: str = Field(min_length=1, max_length=80)
+    decision: Literal["accept", "later"]
+
+
+@router.get("/iron/api/coach/inbox")
+async def coach_inbox(user_id: str = Depends(_verify())) -> dict[str, Any]:
+    """对话里的管家消息（spec [2026-10-23] §26）：还没看过的自动调整，以及要用户确认的调整。"""
+    from ironm_agent.coach_state import evaluate, pending, unseen
+
+    deps = coach_deps()
+    try:
+        state, _ = await evaluate(user_id, deps, reason="打开对话", force=False)
+    except Exception as e:
+        _log.error("coach inbox failed: error_type=%s", type(e).__name__)
+        raise HTTPException(503, "管家的方案暂时算不出来，请稍后再试") from e
+    news = unseen(state, await deps.store.history(user_id, 60))
+    return {
+        "version": state.version,
+        "changes": [c.model_dump(mode="json") for c in news],
+        "pending": [x.model_dump(mode="json") for x in pending(state, date.today())],
+    }
+
+
+@router.post("/iron/api/coach/seen")
+async def coach_seen(body: CoachSeen, user_id: str = Depends(_verify())) -> dict[str, Any]:
+    from ironm_agent.coach_state import mark_seen
+
+    await mark_seen(coach_deps().store, user_id, body.version)
+    return {"seen": body.version}
+
+
+@router.post("/iron/api/coach/decide")
+async def coach_decide(body: CoachDecision, user_id: str = Depends(_verify())) -> dict[str, Any]:
+    """用户在对话里确认或暂不一条调整；确认后的执行（调热量、生成计划预览）由页面接着调对应接口。"""
+    from ironm_agent.coach_state import decide
+
+    item = await decide(coach_deps().store, user_id, body.key, body.decision)
+    if item is None:
+        raise HTTPException(404, "这条调整已经不需要处理了")
+    return {"key": body.key, "decision": body.decision, "item": item.model_dump(mode="json")}

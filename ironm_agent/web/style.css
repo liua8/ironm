@@ -757,18 +757,19 @@ input, select, textarea { background: #0f1113; border-color: var(--line); }
 @keyframes cheer-pop { from { transform: scale(.3); opacity: 0; } }
 @keyframes cheer-out { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
 
-/* 管家今日调整（spec [2026-10-23] §23） */
-.coach-box:empty { display: none; }
-.coach-card { gap: 12px; border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
-.cc-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.cc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.cc-row { display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-items: start; }
+/* 对话里的管家消息、今日战报里的入口（spec [2026-10-23] §26） */
+.hero .hero-inbox { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-weight: 750; text-decoration: none; font-size: 14px; }
+.hero .hero-inbox span { flex: 1; }
+.msg-coach.inbox { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); gap: 12px; }
+.inbox-head { display: flex; align-items: center; gap: 8px; }
+.inbox-head .i { color: var(--accent); }
+.inbox-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.inbox-list li { display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: start; font-size: 14px; }
 .cc-tag { font-size: 11px; font-weight: 850; text-align: center; padding: 3px 0; border-radius: 4px; transform: var(--slant); background: var(--accent-soft); color: var(--accent); }
-.cc-row.changed .cc-tag { background: var(--heat-soft); color: var(--heat); }
-.cc-row.removed .cc-tag { background: var(--sunken); color: var(--muted); }
-.cc-row.removed b { color: var(--muted); text-decoration: line-through; font-weight: 600; }
+.cc-tag.changed { background: var(--heat-soft); color: var(--heat); }
+.cc-tag.removed { background: var(--sunken); color: var(--muted); }
 .cc-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.cc-main p { margin: 0; }
-.cc-pending { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
-.cc-item { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; }
-.cc-item .btn { flex: none; }
+.inbox-pending { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.inbox-item { display: flex; flex-direction: column; gap: 6px; }
+.inbox-item p { margin: 0; }
+.inbox-result { display: flex; flex-direction: column; gap: 8px; }
