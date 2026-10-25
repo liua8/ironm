@@ -501,7 +501,97 @@ class Readings:
     steps: tuple[Point, ...] = ()
     systolic: tuple[Point, ...] = ()
     diastolic: tuple[Point, ...] = ()
+    body_fat: tuple[Point, ...] = ()  # 百分数
+    lean_mass: tuple[Point, ...] = ()  # 公斤
+    waist: tuple[Point, ...] = ()  # 厘米
+    active_kcal: tuple[Point, ...] = ()  # 每天的活动消耗（千卡）
+    exercise_min: tuple[Point, ...] = ()  # 每天的运动时长（分钟）
+    vo2max: tuple[Point, ...] = ()  # 毫升/公斤/分钟
     errors: tuple[str, ...] = field(default=())  # 哪些数据没读到
+
+
+# ---- 身体成分与活动（spec [2026-10-23] §26）：有数据才算，不打乱已有指标的编号 ----------------------
+
+
+def _latest(points: Sequence[Point], key: str, name: str, unit: str, *, places: int = 1,
+            source: str, tone: Tone = "neutral", brief: str = "", extra: str = "") -> Metric:  # fmt: skip
+    pts = sorted(points)
+    end, value = pts[-1]
+    month = _window(pts, 28, end)
+    change = ""
+    if len(month) >= 2 and month[0][0] != end:
+        delta = value - month[0][1]
+        change = f"，近 4 周{'+' if delta >= 0 else ''}{_fmt(delta, places)}"
+    return Metric(
+        key, name, round(value, places), unit,
+        f"最近一次 {_fmt(value, places)} {unit}（{end.month}月{end.day}日）{change}{extra}",
+        how="取最近一次记录，和 4 周前比", data=_span(month or pts[-1:]), source=source,
+        tone=tone, series=tuple(pts)[-60:], brief=brief,
+    )  # fmt: skip
+
+
+def body_fat(points: Sequence[Point]) -> Metric:
+    return _latest(
+        points,
+        "body_fat",
+        "体脂率",
+        "%",
+        source="体脂秤、手动记录等；不同设备测法不同，看自己前后的变化比和别人比更有用（经验）",
+    )
+
+
+def lean_mass(points: Sequence[Point]) -> Metric:
+    return _latest(
+        points,
+        "lean_mass",
+        "去脂体重",
+        "公斤",
+        source="体脂秤等估算的去脂体重（经验：看自己前后的变化）",
+    )
+
+
+def waist(points: Sequence[Point], p: Profile) -> Metric:
+    limit = 90 if p.sex == "male" else 85 if p.sex == "female" else None
+    value = sorted(points)[-1][1]
+    over = limit is not None and value >= limit
+    return _latest(
+        points, "waist", "腰围", "厘米",
+        source="WS/T 428—2013《成人体重判定》：腰围男 ≥ 90 厘米、女 ≥ 85 厘米为中心型肥胖",
+        tone="attention" if over else ("good" if limit is not None else "neutral"),
+        brief="偏粗" if over else ("正常" if limit is not None else ""),
+        extra=f"；中心型肥胖的界值是 {limit} 厘米" if limit is not None else "",
+    )  # fmt: skip
+
+
+def active_kcal(points: Sequence[Point]) -> Metric:
+    key, name, unit = "active_kcal", "活动消耗", "千卡/天"
+    end = max(d for d, _ in points)
+    week = _window(points, 7, end)
+    avg = statistics.fmean(v for _, v in week)
+    return Metric(
+        key, name, round(avg), unit, f"最近 7 天平均每天活动消耗约 {round(avg)} 千卡",
+        how="最近 7 天（以最后一条记录为准）每天的活动消耗取平均", data=_span(week),
+        source="手表或手机按心率和动作估算，只算活动的部分（不含基础代谢）", series=tuple(sorted(points))[-60:],
+    )  # fmt: skip
+
+
+def exercise_min(points: Sequence[Point]) -> Metric:
+    key, name, unit = "exercise_min", "运动时长", "分钟/周"
+    end = max(d for d, _ in points)
+    week = _window(points, 7, end)
+    total = sum(v for _, v in week)
+    ok = total >= 150
+    return Metric(
+        key, name, round(total), unit, f"最近 7 天共运动约 {round(total)} 分钟；建议每周至少 150 分钟中等强度",
+        how="最近 7 天（以最后一条记录为准）每天的运动分钟数相加", data=_span(week),
+        source="成年人每周 150–300 分钟中等强度有氧活动（世界卫生组织 2020）", ref="K01",
+        tone="good" if ok else "attention", series=tuple(sorted(points))[-60:], brief="达标" if ok else "偏少",
+    )  # fmt: skip
+
+
+def vo2max(points: Sequence[Point]) -> Metric:
+    return _latest(points, "vo2max", "最大摄氧量", "毫升/公斤/分钟",
+                   source="手表按跑步或快走时的心率和速度估算，看自己的变化（经验）")  # fmt: skip
 
 
 def compute_all(
@@ -538,4 +628,10 @@ def compute_all(
         out.append(
             missing("hrv", "心率变异性", "毫秒", "心率变异性记录（连接手表或上传苹果健康数据）")
         )
+    # 身体成分与活动：放在最后、有数据才算，已有指标的编号不变（spec [2026-10-23] §26）
+    extra = [
+        (r.body_fat, body_fat), (r.waist, lambda pts: waist(pts, profile)), (r.active_kcal, active_kcal),
+        (r.exercise_min, exercise_min), (r.lean_mass, lean_mass), (r.vo2max, vo2max),
+    ]  # fmt: skip
+    out += [f(pts) for pts, f in extra if pts]
     return out

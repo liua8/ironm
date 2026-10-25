@@ -25,7 +25,18 @@ FAMILIES: dict[str, tuple[str, ...]] = {
     "steps": ("dailySteps", "dailyTotalSteps", "steps"),
     "systolic": ("systolicPressures",),
     "diastolic": ("diastolicPressures",),
+    # 身体成分与活动（spec [2026-10-23] §26）：mirobody 已有这些指标
+    "lean_mass": ("bodyFatFreeWeight",),
+    "active_kcal": ("activeCalories", "dailyCaloriesActive"),
+    "exercise_min": ("exerciseMinutes",),
+    "vo2max": ("vo2Maxs",),
 }
+# 体脂率：有的来源记成小数（0.185），有的记成百分数（18.5），统一成百分数
+# 手动记的"体脂率"会统一到标准编码（LOINC 41982-0），目录里叫 Percentage of body fat Measured
+BODY_FAT = ("bodyFatPercentages", "Percentage of body fat Measured")
+# 腰围：苹果健康按米记，手动记录按厘米，统一成厘米
+WAIST = ("waistCircumferences",)
+_TO_CM = {"m": 100.0, "cm": 1.0, "mm": 0.1}
 # 睡眠：各家叫法不同，单位也不同（小时、分钟、毫秒），按单位换成小时
 SLEEP = (
     "sleepDuration",
@@ -186,9 +197,23 @@ async def read_all(
         return_exceptions=True,
     )
     sleep = merge([x for x in sleep_parts if not isinstance(x, BaseException)])
+    waist_parts = await asyncio.gather(
+        *(_series(svc, who, n, start, today, _TO_CM) for n in candidates(catalog, WAIST)),
+        return_exceptions=True,
+    )
+    waist = merge([x for x in waist_parts if not isinstance(x, BaseException)])
+    fat_parts = await asyncio.gather(
+        *(_series(svc, who, n, start, today) for n in candidates(catalog, BODY_FAT)),
+        return_exceptions=True,
+    )
+    body_fat = tuple(
+        (d, v * 100 if v <= 1 else v)
+        for d, v in merge([x for x in fat_parts if not isinstance(x, BaseException)])
+    )
     try:
         height = await _height_cm(svc, who)
     except Exception as e:
         _log.warning("height unavailable: error_type=%s", type(e).__name__)
         height = None
-    return Readings(sleep_hours=sleep, height_cm=height, errors=tuple(errors), **got)
+    return Readings(sleep_hours=sleep, height_cm=height, waist=waist, body_fat=body_fat,
+                    errors=tuple(errors), **got)  # fmt: skip

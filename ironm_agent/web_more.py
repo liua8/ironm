@@ -964,3 +964,105 @@ async def coach_decide(body: CoachDecision, user_id: str = Depends(_verify())) -
     if item is None:
         raise HTTPException(404, "这条调整已经不需要处理了")
     return {"key": body.key, "decision": body.decision, "item": item.model_dump(mode="json")}
+
+
+# ---- 自己记一条、改值、删一条（spec [2026-10-23] §26 需求 4）-----------------------------------------
+
+
+def reading_store() -> Any:
+    from ironm_agent.readings import default_readings
+
+    return default_readings()
+
+
+READINGS = Depends(reading_store)  # 测试时用 dependency_overrides 换成内存版
+
+
+class ReadingIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    value: float
+    day: date | None = None
+
+
+class ReadingFix(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    value: float
+
+
+def _reading_kind(kind: str) -> Any:
+    from ironm_agent.readings import KINDS
+
+    if kind not in KINDS:
+        raise HTTPException(422, "这项数据不能手动记录")
+    return KINDS[kind]
+
+
+@router.get("/iron/api/readings")
+async def get_readings(
+    kind: str, user_id: str = Depends(_verify()), store: Any = READINGS
+) -> dict[str, Any]:
+    k = _reading_kind(kind)
+    rows = await store.recent(user_id, kind)
+    return {
+        "kind": kind,
+        "title": k.title,
+        "unit": k.shown,
+        "low": k.low,
+        "high": k.high,
+        "rows": rows,
+    }
+
+
+@router.post("/iron/api/readings")
+async def add_reading(
+    body: ReadingIn, user_id: str = Depends(_verify()), store: Any = READINGS
+) -> dict[str, Any]:
+    from ironm_agent.readings import OutOfRange, check
+
+    _reading_kind(body.kind)
+    day = body.day or date.today()
+    if day > date.today() or (date.today() - day).days > 365:
+        raise HTTPException(422, "日期只能是今天或一年以内")
+    try:
+        check(body.kind, body.value)
+    except OutOfRange as e:
+        raise HTTPException(422, str(e)) from e
+    if await store.add(user_id, body.kind, body.value, day) < 1:
+        raise HTTPException(409, "同一天已经记过同样的数，没有重复写入")
+    coach_later(user_id, "记数据")
+    return {"ok": True, "rows": await store.recent(user_id, body.kind)}
+
+
+@router.post("/iron/api/readings/{kind}/{row_id}")
+async def fix_reading(
+    kind: str,
+    row_id: int,
+    body: ReadingFix,
+    user_id: str = Depends(_verify()),
+    store: Any = READINGS,
+) -> dict[str, Any]:
+    from ironm_agent.readings import OutOfRange, check
+
+    _reading_kind(kind)
+    try:
+        check(kind, body.value)
+    except OutOfRange as e:
+        raise HTTPException(422, str(e)) from e
+    if not await store.amend(user_id, row_id, body.value):
+        raise HTTPException(404, "这条记录不存在")
+    coach_later(user_id, "记数据")
+    return {"ok": True, "rows": await store.recent(user_id, kind)}
+
+
+@router.delete("/iron/api/readings/{kind}/{row_id}")
+async def delete_reading(
+    kind: str, row_id: int, user_id: str = Depends(_verify()), store: Any = READINGS
+) -> dict[str, Any]:
+    _reading_kind(kind)
+    if not await store.remove(user_id, row_id):
+        raise HTTPException(404, "这条记录不存在")
+    coach_later(user_id, "记数据")
+    return {"ok": True, "rows": await store.recent(user_id, kind)}

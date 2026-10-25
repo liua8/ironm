@@ -135,7 +135,8 @@ function signOut() { store.set(""); cache = { metrics: null, profile: null, exer
 
 // ---- 通用组件 -----------------------------------------------------------------------------
 function section(title, action, ...body) {
-  return h("section", { class: "section" }, h("div", { class: "section-head" }, h("h2", {}, title), action), ...body);
+  const head = title || action ? h("div", { class: "section-head" }, title ? h("h2", {}, title) : null, action) : null;
+  return h("section", { class: "section" }, head, ...body);
 }
 function more(label, href) { return h("a", { href }, label, icon("chevron", "xs")); }
 function chip(text, tone = "") { return text ? h("span", { class: `chip ${tone}` }, text) : null; }
@@ -228,6 +229,9 @@ function metricSheet(m) {
     h("dl", { class: "facts" }, facts.map(([k, v]) => h("div", {}, h("dt", {}, k), h("dd", {}, v)))),
     (m.missing || []).some((x) => x.includes("我的")) ? h("a", { class: "btn block", href: "#me" }, "去「我的」填写") : null,
     (m.missing || []).some((x) => x.includes("手表")) ? h("button", { class: "btn block", type: "button", onclick: appleSheet }, icon("phone", "sm"), "导入苹果健康数据") : null,
+    CALC_FROM[m.key] ? h("div", { class: "calc-from" }, h("h3", {}, "这个数不能直接改"), h("p", {}, CALC_FROM[m.key][0]), h("p", { class: "muted" }, CALC_FROM[m.key][1]),
+      h("a", { class: "btn ghost block", href: "#me", onclick: closeSheet }, "去「我的」修改")) : null,
+    MANUAL[m.key] ? h("div", {}, h("h3", {}, "自己记一条、改或删"), recordBox(MANUAL[m.key])) : null,
     h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`我的${m.name}最近怎么样？说明什么？`) }, icon("coach", "sm"), "问问教练"));
 }
 
@@ -961,32 +965,120 @@ async function presetsBox(redraw) {
 }
 
 // ---- 数据：人体图 → 常看指标 → 每周复盘 → 其余指标 → 导入数据（spec [2026-10-23] §13）-------------------
-const COMMON = ["weight", "resting_hr", "sleep", "steps"];
-const OTHER = [
-  ["身体", ["weight_trend", "bmi"]],
-  ["恢复", ["hrv_sdnn", "hrv_rmssd", "hrv"]],
-  ["血压", ["blood_pressure"]],
-  ["能量", ["bmr", "tdee", "kcal_target", "protein_target"]],
-];
+// 数据页（spec [2026-10-23] §26）：重要指标在前；目标与计算一组；其余放在更多指标里，有数据才显示
+const IMPORTANT = ["weight", "body_fat", "waist", "resting_hr", "hrv", "sleep", "steps", "active_kcal"];
+const CALC = ["bmi", "bmr", "tdee", "kcal_target", "protein_target"];
+const MORE = ["weight_trend", "blood_pressure", "hrv_sdnn", "hrv_rmssd", "exercise_min", "lean_mass", "vo2max"];
+const IMPORTANT_NAMES = { weight: "体重", body_fat: "体脂率", waist: "腰围", resting_hr: "静息心率", hrv: "心率变异性", sleep: "睡眠时长", steps: "步数", active_kcal: "活动消耗" };
+// 能自己记的（指标 → 记录的种类）；血压要记收缩压和舒张压两个数
+const MANUAL = { weight: ["weight"], body_fat: ["body_fat"], waist: ["waist"], resting_hr: ["resting_hr"], sleep: ["sleep"], blood_pressure: ["systolic", "diastolic"] };
+// 计算出来的指标不能直接改：写明由什么算出、去哪里改
+const CALC_FROM = {
+  bmi: ["由体重和身高算出。", "体重在数据页记，身高在「我的」里改。"],
+  bmr: ["由体重、身高、年龄、性别算出。", "身高、出生日期、性别在「我的」里改，体重在数据页记。"],
+  tdee: ["基础代谢乘以日常活动水平。", "活动水平在「我的」里改。"],
+  kcal_target: ["每日总消耗按目标加减，再加上两周饮食复盘的调整量。", "目标在「我的」里改；调整量在饮食页确认或撤销。"],
+  protein_target: ["按体重和目标算出。", "目标在「我的」里改，体重在数据页记。"],
+};
 
 async function data(view) {
   const [list, muscles, brief] = await Promise.all([
     metrics(), api("/iron/api/muscles").catch(() => null), api("/iron/api/brief").catch(() => null)]);
   const m = byKey(list);
-  view.append(section("目标进度", null, goalCard({ empty: true })));
-  view.append(section("肌肉人体图", h("span", { class: "caption" }, "最近 28 天"), muscles ? bodyMap(muscles) : failed(new Error("人体图暂时算不出来"), () => render())));
   view.append(h("div", { class: "fresh" }, icon("info", "xs"),
-    list.as_of ? `数据截至 ${md(list.as_of)}${list.stale_days > 1 ? `（${list.stale_days} 天前）` : ""} · 点开任一项看怎么算的` : "还没有同步到健康数据"));
-  view.append(metricGroup("常看指标", COMMON.map((k) => m[k]).filter(Boolean)));
+    list.as_of ? `数据截至 ${md(list.as_of)}${list.stale_days > 1 ? `（${list.stale_days} 天前）` : ""} · 点开任一项看怎么算的、自己记一条` : "还没有同步到健康数据，可以先自己记一条"));
+  view.append(section("重要指标", null, h("div", { class: "tiles" }, IMPORTANT.map((k) => (m[k] && m[k].value != null ? tile(m[k]) : emptyTile(k, m[k]))))));
+  view.append(section("目标进度", null, goalCard({ empty: true })));
+  view.append(metricGroup("目标与计算", CALC.map((k) => m[k]).filter(Boolean)));
+  view.append(section("肌肉人体图", h("span", { class: "caption" }, "最近 28 天"), muscles ? bodyMap(muscles) : failed(new Error("人体图暂时算不出来"), () => render())));
   if (brief) view.append(section("每周复盘", h("span", { class: "caption" }, `${md(brief.week.from)}–${md(brief.week.to)}`), weekCard(brief.week)));
-  const rest = OTHER.map(([title, keys]) => [title, keys.map((k) => m[k]).filter(Boolean)]).filter(([, xs]) => xs.length);
-  if (rest.length) {
-    const more = h("details", { class: "more-metrics" }, h("summary", {}, "更多指标", icon("chevron", "xs")),
-      ...rest.map(([title, xs]) => metricGroup(title, xs)));
-    view.append(more);
+  const more = MORE.map((k) => m[k]).filter((x) => x && x.value != null);
+  if (more.length) {
+    view.append(h("details", { class: "more-metrics" }, h("summary", {}, "更多指标", icon("chevron", "xs")), metricGroup("", more)));
   }
   const [catalog, files] = await Promise.all([catalogSection(), filesSection()]);
-  view.append(catalog, files, section("导入数据", null, addGrid()));
+  view.append(section("导入数据", null, addGrid()), catalog, files);
+}
+
+// 重要指标没有数据时：能自己记的显示"记一条"，靠设备的显示怎么导入
+function emptyTile(key, m) {
+  const name = IMPORTANT_NAMES[key];
+  const manual = MANUAL[key];
+  const action = manual ? h("button", { class: "btn small", type: "button", onclick: () => recordSheet(name, manual) }, icon("plus", "sm"), "记一条")
+    : h("button", { class: "btn ghost small", type: "button", onclick: appleSheet }, "导入苹果健康");
+  return h("div", { class: "tile empty" },
+    h("div", { class: "tile-head" }, h("span", { class: "tile-name" }, name)),
+    h("p", { class: "muted" }, m ? missingHint(m) : manual ? "还没有记录" : "连接手表或导入苹果健康后就有"),
+    action);
+}
+
+// 自己记一条、改值、删一条：写进同一份健康记录，来源"手动记录"；改和删保留原记录（mirobody 的更正与撤回）
+function recordSheet(title, kinds) {
+  openSheet(`记录${title}`, recordBox(kinds));
+}
+function recordBox(kinds) {
+  const box = h("div", { class: "record-box" });
+  const msg = h("p", { class: "muted", role: "status" });
+  const list = h("div", { class: "rows" });
+  const inputs = {};
+  const day = h("input", { type: "date", id: `rec-day-${kinds.join("-")}`, value: isoDay(new Date()), max: isoDay(new Date()) });
+  const refresh = async () => {
+    const all = await Promise.all(kinds.map((k) => api(`/iron/api/readings?kind=${k}`)));
+    list.replaceChildren(...all.flatMap((r) => r.rows.slice(0, 6).map((row) => readingRow(r, row, refresh, msg))));
+    if (!list.childElementCount) list.append(h("p", { class: "muted" }, "还没有记录。"));
+    return all;
+  };
+  const save = h("button", { class: "btn", type: "button" }, icon("check", "sm"), "记下");
+  save.addEventListener("click", async () => {
+    save.disabled = true; msg.className = "muted"; msg.textContent = "正在记下…";
+    try {
+      for (const k of kinds) {
+        const v = Number(inputs[k].value);
+        if (!inputs[k].value) throw new Error("请填上数值");
+        await api("/iron/api/readings", { method: "POST", body: JSON.stringify({ kind: k, value: v, day: day.value }) });
+      }
+      msg.textContent = "已记下，指标会按新数据重新算。";
+      for (const k of kinds) inputs[k].value = "";
+      cache.metrics = null; await refresh(); render();
+    } catch (err) { msg.className = "error"; msg.textContent = err.message; }
+    save.disabled = false;
+  });
+  refresh().then((all) => {
+    const fields = all.map((r) => {
+      inputs[r.kind] = h("input", { type: "number", inputmode: "decimal", step: "0.1", min: String(r.low), max: String(r.high), id: `rec-${r.kind}`, placeholder: `${r.low}–${r.high}` });
+      return h("label", {}, `${r.title}（${r.unit}）`, inputs[r.kind]);
+    });
+    box.replaceChildren(h("div", { class: "record-form" }, ...fields, h("label", {}, "日期", day), save), msg,
+      h("h3", {}, "最近的记录"), list,
+      h("p", { class: "caption" }, "改和删都会保留原来那条，可以追溯。手表、报告导入的数也能改。"));
+  }).catch((err) => box.replaceChildren(h("p", { class: "error" }, err.message)));
+  box.append(...skeleton(120));
+  return box;
+}
+function readingRow(r, row, refresh, msg) {
+  const el = h("div", { class: "row-item reading" });
+  const show = () => {
+    el.replaceChildren(
+      h("div", { class: "row-main" }, h("span", { class: "row-title" }, `${row.value} ${r.unit}`), h("span", { class: "row-sub" }, `${row.day} · ${r.title} · ${row.manual ? "手动记录" : "设备或报告"}`)),
+      h("button", { class: "link", type: "button", onclick: edit }, "改"),
+      h("button", { class: "link danger-link", type: "button", onclick: remove }, "删"));
+  };
+  const edit = () => {
+    const input = h("input", { type: "number", inputmode: "decimal", step: "0.1", value: String(row.value), id: `fix-${row.id}`, "aria-label": "改成" });
+    const ok = h("button", { class: "btn small", type: "button" }, "保存");
+    ok.addEventListener("click", async () => {
+      try { await api(`/iron/api/readings/${r.kind}/${row.id}`, { method: "POST", body: JSON.stringify({ value: Number(input.value) }) }); cache.metrics = null; await refresh(); render(); }
+      catch (err) { msg.className = "error"; msg.textContent = err.message; }
+    });
+    el.replaceChildren(h("div", { class: "row-main" }, input), ok, h("button", { class: "btn ghost small", type: "button", onclick: show }, "取消"));
+    input.focus();
+  };
+  const remove = async () => {
+    try { await api(`/iron/api/readings/${r.kind}/${row.id}`, { method: "DELETE" }); cache.metrics = null; await refresh(); render(); }
+    catch (err) { msg.className = "error"; msg.textContent = err.message; }
+  };
+  show();
+  return el;
 }
 
 function metricGroup(title, present) {

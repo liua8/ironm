@@ -773,3 +773,15 @@ input, select, textarea { background: #0f1113; border-color: var(--line); }
 .inbox-item { display: flex; flex-direction: column; gap: 6px; }
 .inbox-item p { margin: 0; }
 .inbox-result { display: flex; flex-direction: column; gap: 8px; }
+
+/* 数据页：重要指标没数据时、自己记一条、计算类怎么改（spec [2026-10-23] §26） */
+.tile.empty { cursor: default; gap: 8px; justify-content: space-between; align-items: stretch; text-align: left; }
+.tile.empty .btn { align-self: flex-start; }
+.record-box { display: flex; flex-direction: column; gap: 12px; }
+.record-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; align-items: end; }
+.record-form .btn { grid-column: 1 / -1; }
+.row-item.reading { cursor: default; }
+.row-item.reading input { padding: 8px 10px; }
+.danger-link { color: var(--heat); }
+.calc-from { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
+.calc-from p { margin: 0; }
