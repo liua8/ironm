@@ -244,7 +244,6 @@ const QUICK = {
   "今天想练腿": "今天想练腿，怎么安排？",
   "今天有点累": "今天有点累，还要练吗？怎么安排？",
 };
-const BRIEF_TONE = { good: "good", fair: "neutral", poor: "attention", unknown: "neutral" };
 const WEEK = ["一", "二", "三", "四", "五", "六", "日"];
 const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -255,7 +254,8 @@ async function home(view) {
     api("/iron/api/training").catch(() => null),
     api("/iron/api/calendar").catch(() => null),
   ]);
-  view.append(statusCard(brief, wx, cal), planTable(training, brief), calendarCard(brief));
+  view.append(statusCard(brief, wx, cal, training), planTable(training, brief));
+  if (wx.status === "ok") view.append(weatherRow(wx));
 }
 
 // 本周进度环（spec [2026-10-23] §19）
@@ -348,10 +348,8 @@ function wxIcon(text) {
 const aqiTone = (a) => (a <= 100 ? "good" : a <= 150 ? "mid" : "bad");
 
 // 今日战报（spec [2026-10-23] §19）：今天练什么、一句鼓劲的话、本周进度环、本月天数、状态与天气
-function statusCard(brief, wx, cal) {
-  const day = brief?.today, rd = day?.readiness, week = brief?.week, hero = brief?.hero;
-  const why = rd?.reasons?.length ? `${rd.reasons.join("；")}。` : "";
-  const monthDays = cal?.done_days?.length ?? null;
+function statusCard(brief, wx, cal, tr) {
+  const day = brief?.today, week = brief?.week, hero = brief?.hero;
   return h("div", { class: "hero" },
     h("div", { class: "scan", "aria-hidden": "true" }),
     h("div", { class: "hero-kicker" }, h("span", { class: "hero-tag" }, "今日战报")),
@@ -360,14 +358,40 @@ function statusCard(brief, wx, cal) {
         h("h2", { class: "hero-title" }, hero?.title || "今天"),
         h("p", { class: "hero-push" }, hero?.push || "今天的简报暂时取不到，稍后再看。")),
       ring(week?.done || 0, week?.planned || 0)),
-    h("div", { class: "hero-stats" },
-      h("div", { class: "hero-stat" }, h("span", { class: "k" }, "本月练了"), h("span", { class: "v" }, monthDays == null ? "—" : String(monthDays), h("small", {}, "天"))),
-      h("div", { class: "hero-stat" }, h("span", { class: "k" }, "今天状态"), h("span", { class: `v state-${BRIEF_TONE[rd?.level] || "neutral"}` }, rd ? rd.name : "—")),
-      h("div", { class: "hero-stat" }, h("span", { class: "k" }, "今天时长"), h("span", { class: "v" }, day?.training?.kind === "session" ? String(day.training.minutes) : "—", h("small", {}, day?.training?.kind === "session" ? "分钟" : "")))),
-    why && !day?.alert ? h("p", { class: "hero-why" }, why) : null,
-    weatherRow(wx),
-    day?.alert ? h("p", { class: "hero-alert" }, icon("alert", "xs"), day.alert) : null,
+    weekStrip(tr, cal),
+    day?.alert && day?.training?.kind !== "session" ? h("p", { class: "hero-alert" }, icon("alert", "xs"), day.alert) : null,
     inboxLine());
+}
+
+// 本周七天一条：哪天有练、哪天练过、今天在哪；点开看一周计划（spec [2026-10-23] §29）
+function weekStrip(tr, cal) {
+  const plan = tr?.plan;
+  if (!plan) return null;
+  const now = new Date(), todayNo = now.getDay() || 7;
+  const byDay = Object.fromEntries(plan.sessions.map((x) => [x.day, x]));
+  const lit = new Set(cal?.done_days || []);
+  const cells = WEEK.map((w, i) => {
+    const d = i + 1, x = byDay[d];
+    const iso = isoDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - todayNo + d));
+    const cls = `ws-day${x ? " plan" : ""}${lit.has(iso) ? " done" : ""}${d === todayNo ? " today" : ""}`;
+    return h("span", { class: cls }, h("i", {}, d === todayNo ? "今" : w), h("b", {}, x ? x.name.slice(0, 2) : "休"));
+  });
+  return pressable(h("div", { class: "week-strip", "aria-label": "本周计划" }, cells), () => weekSheet(tr));
+}
+
+function weekSheet(tr) {
+  const plan = tr.plan, todayNo = new Date().getDay() || 7;
+  const byDay = Object.fromEntries(plan.sessions.map((x) => [x.day, x]));
+  openSheet(plan.title,
+    h("p", { class: "muted" }, `每周 ${plan.days_per_week} 练${plan.goal ? ` · 目标：${plan.goal}` : ""}`),
+    h("div", { class: "pt" }, WEEK.map((w, i) => {
+      const d = i + 1, x = byDay[d], isToday = d === todayNo;
+      const row = h("div", { class: `pt-row${isToday ? " today" : ""}${x ? "" : " rest"}` },
+        h("span", { class: "pt-day" }, isToday ? "今天" : `周${w}`), h("span", { class: "pt-name" }, x ? x.name : "休息"),
+        h("span", { class: "pt-min" }, x ? `${x.minutes} 分钟` : ""), x ? icon("chevron", "xs") : h("span"));
+      return x ? pressable(row, () => sessionSheet(x, isToday, null)) : row;
+    })),
+    h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach("帮我看看现在的训练计划，需要调整吗？") }, icon("coach", "sm"), "让教练调整计划"));
 }
 
 // 有待确认的调整时，今日战报里一行入口，点了进对话（spec [2026-10-23] §26）
@@ -424,33 +448,19 @@ function planTable(tr, brief) {
   planSessions = plan.sessions; planTargets = tr.targets || {};
   const todayNo = new Date().getDay() || 7;
   const byDay = Object.fromEntries(plan.sessions.map((x) => [x.day, x]));
-  const rows = WEEK.map((w, i) => {
-    const d = i + 1, x = byDay[d], isToday = d === todayNo;
-    const row = h("div", { class: `pt-row${isToday ? " today" : ""}${x ? "" : " rest"}` },
-      h("span", { class: "pt-day" }, isToday ? "今天" : `周${w}`),
-      h("span", { class: "pt-name" }, x ? x.name : "休息"),
-      h("span", { class: "pt-min" }, x ? `${x.minutes} 分钟` : ""),
-      x ? icon("chevron", "xs") : h("span"));
-    return x ? pressable(row, () => sessionSheet(x, isToday, t)) : row;
-  });
   const todaySession = byDay[todayNo];
-  return h("div", { class: "card plan-card" },
-    h("div", { class: "pt-head" },
-      h("div", {}, h("h3", {}, plan.title), h("p", { class: "muted" }, `每周 ${plan.days_per_week} 练${plan.goal ? ` · 目标：${plan.goal}` : ""}`)),
-      h("button", { class: "link", type: "button", onclick: () => askCoach("帮我看看现在的训练计划，需要调整吗？") }, "调整", icon("chevron", "xs"))),
-    t?.tip ? h("div", { class: "notice-line" }, icon("alert", "xs"), t.tip) : null,
-    h("div", { class: "pt" }, rows),
-    todaySession && !t?.done ? todayVersion() : null,
-    todaySession ? h("div", { class: "btn-row" },
-      t?.done ? h("button", { class: "btn ghost", type: "button", disabled: true }, icon("check", "sm"), "今天已打卡")
-        : h("button", { class: "btn", type: "button", onclick: () => doneSheet(todaySession.name) }, icon("check", "sm"), "完成打卡"),
-      h("button", { class: "btn ghost", type: "button", onclick: () => askCoach("今天练什么？按我的计划和今天的状态说") }, icon("coach", "sm"), "今天怎么练"))
-      : null);
+  if (!todaySession || t?.done) {
+    const next = [1, 2, 3, 4, 5, 6].map((n) => byDay[((todayNo - 1 + n) % 7) + 1]).find(Boolean);
+    return h("div", { class: "card plan-card" },
+      h("h3", {}, t?.done ? "今天已打卡" : "今天休息"),
+      next ? h("p", { class: "muted" }, `下一练：${weekdayName(next.day)} ${next.name}，约 ${next.minutes} 分钟`) : null);
+  }
+  return h("div", { class: "card plan-card" }, todayVersion(todaySession));
 }
 
 // 今天的版本（spec [2026-10-23] §18 需求 3）：按状态、天气、可用时间用规则改，原计划不变
 const itemLine = (it) => `${it.exercise} ${it.sets}×${it.reps}${it.load || it.note ? `（${[it.load, it.note].filter(Boolean).join("，")}）` : ""}`;
-function todayVersion() {
+function todayVersion(session) {
   const box = h("div", { class: "tv" });
   const ask = { minutes: null, tired: false };
   const draw = async () => {
@@ -462,19 +472,24 @@ function todayVersion() {
     catch (err) { box.replaceChildren(failed(err, draw)); return; }
     if (v.status !== "ok") { box.replaceChildren(); return; }
     const toggle = (label, on, flip) => h("button", { type: "button", class: `pill${on ? " on" : ""}`, "aria-pressed": String(on), onclick: () => { flip(); draw(); } }, label);
+    const items = (v.changed ? v.today : v.original).items;
     box.replaceChildren(
-      h("div", { class: "tv-head" }, h("b", {}, "今天的版本"),
-        h("div", { class: "asks" },
-          toggle("只有 30 分钟", ask.minutes === 30, () => { ask.minutes = ask.minutes === 30 ? null : 30; }),
-          toggle("今天有点累", ask.tired, () => { ask.tired = !ask.tired; }))),
-      v.changed ? h("div", {},
-        h("ul", { class: "tv-why" }, v.changes.map((c) => h("li", {}, c))),
+      h("div", { class: "tv-head" },
+        h("div", {}, h("h3", {}, `今天 · ${v.today.name}`), h("p", { class: "muted" }, `约 ${v.today.minutes || session.minutes} 分钟 · ${items.length} 个动作`)),
+        h("button", { class: "icon-btn", type: "button", "aria-label": "问教练怎么练", onclick: () => askCoach("今天练什么？按我的计划和今天的状态说") }, icon("coach", "sm"))),
+      v.changed ? h("details", { class: "tv-adjusted" },
+        h("summary", {}, icon("alert", "xs"), h("span", {}, "已按今天的状态调整"), h("em", {}, "为什么"), icon("chevron", "xs")),
+        h("p", {}, v.changes.join("；")),
         h("p", { class: "muted" }, `原因：${v.reasons.join("；")}`),
-        h("div", { class: "tv-grid" },
-          h("div", {}, h("span", { class: "muted" }, "原计划"), h("ol", { class: "plan-items" }, v.original.items.map((it) => h("li", {}, itemLine(it))))),
-          h("div", {}, h("span", { class: "muted" }, "今天"), h("ol", { class: "plan-items" }, v.today.items.map((it) => h("li", {}, itemLine(it)))))),
-        h("button", { class: "btn ghost block", type: "button", onclick: () => doneSheet(v.today.name, v.today) }, icon("check", "sm"), "按今天的版本打卡"))
-        : h("p", { class: "muted" }, "今天状态和天气都合适，按原计划练。"));
+        h("p", { class: "muted" }, `原计划：${v.original.items.map(itemLine).join("、")}`)) : null,
+      h("ol", { class: "plan-items tv-list" }, items.map((it) => {
+        const tg = planTargets[it.exercise];
+        return h("li", {}, h("span", {}, itemLine(it)), tg && !v.changed ? h("small", { class: "muted" }, `下次 ${tg.text}`) : null);
+      })),
+      h("div", { class: "asks" },
+        toggle("只有 30 分钟", ask.minutes === 30, () => { ask.minutes = ask.minutes === 30 ? null : 30; }),
+        toggle("今天有点累", ask.tired, () => { ask.tired = !ask.tired; })),
+      h("button", { class: "btn block", type: "button", onclick: () => doneSheet(v.today.name, v.changed ? v.today : null) }, icon("check", "sm"), "练完打卡"));
   };
   draw();
   return box;
@@ -792,6 +807,7 @@ function dietReviewCard() {
   };
   const draw = (r) => {
     const p = r.proposal, c = r.current;
+    wrap.hidden = !p && !c;
     box.replaceChildren(...[
       c ? h("div", { class: "kv" }, h("span", {}, "现在的调整"), h("span", {}, `${kcal(c.kcal)} 千卡/天（${md(c.since)}起）`)) : null,
       c ? h("p", { class: "caption" }, `原因：${c.reason}`) : null,
@@ -802,8 +818,10 @@ function dietReviewCard() {
         c ? h("button", { class: "btn ghost", type: "button", onclick: () => act("/iron/api/diet/adjust/undo") }, "撤销上次调整") : null),
       h("p", { class: "caption" }, "每两周按体重趋势复盘一次；调整后的目标不会低于基础代谢和安全下限。")].filter(Boolean));
   };
-  api("/iron/api/diet/review").then(draw).catch((err) => box.replaceChildren(h("p", { class: "muted" }, err.message)));
-  return section("两周饮食复盘", null, box);
+  const wrap = section("两周饮食复盘", null, box);
+  wrap.hidden = true;
+  api("/iron/api/diet/review").then(draw).catch(() => {});
+  return wrap;
 }
 
 function meter(label, have, target, unit) {
@@ -990,12 +1008,17 @@ async function data(view) {
   const m = byKey(list);
   view.append(h("div", { class: "fresh" }, icon("info", "xs"),
     list.as_of ? `数据截至 ${md(list.as_of)}${list.stale_days > 1 ? `（${list.stale_days} 天前）` : ""} · 点开任一项看怎么算的、自己记一条` : "还没有同步到健康数据，可以先自己记一条"));
-  view.append(section("重要指标", null, h("div", { class: "tiles" }, IMPORTANT.map((k) => (m[k] && m[k].value != null ? tile(m[k]) : emptyTile(k, m[k]))))));
+  const have = IMPORTANT.filter((k) => m[k] && m[k].value != null), lack = IMPORTANT.filter((k) => !have.includes(k));
+  view.append(section("重要指标", null,
+    have.length ? h("div", { class: "tiles" }, have.map((k) => tile(m[k]))) : null,
+    lack.length ? pressable(h("div", { class: "card lack-row" },
+      h("div", { class: "row-main" }, h("span", { class: "row-title" }, `还缺 ${lack.length} 项`), h("span", { class: "row-sub" }, lack.map((k) => IMPORTANT_NAMES[k]).join("、"))),
+      h("span", { class: "row-end" }, "补记录", icon("chevron", "sm"))), () => lackSheet(lack, m)) : null));
   view.append(section("目标进度", null, goalCard({ empty: true })));
-  view.append(metricGroup("目标与计算", CALC.map((k) => m[k]).filter(Boolean)));
+  view.append(calendarCard(brief));
   view.append(section("肌肉人体图", h("span", { class: "caption" }, "最近 28 天"), muscles ? bodyMap(muscles) : failed(new Error("人体图暂时算不出来"), () => render())));
   if (brief) view.append(section("每周复盘", h("span", { class: "caption" }, `${md(brief.week.from)}–${md(brief.week.to)}`), weekCard(brief.week)));
-  const more = MORE.map((k) => m[k]).filter((x) => x && x.value != null);
+  const more = [...CALC, ...MORE].map((k) => m[k]).filter((x) => x && x.value != null);
   if (more.length) {
     view.append(h("details", { class: "more-metrics" }, h("summary", {}, "更多指标", icon("chevron", "xs")), metricGroup("", more)));
   }
@@ -1003,16 +1026,15 @@ async function data(view) {
   view.append(section("导入数据", null, addGrid()), catalog, files);
 }
 
-// 重要指标没有数据时：能自己记的显示"记一条"，靠设备的显示怎么导入
-function emptyTile(key, m) {
-  const name = IMPORTANT_NAMES[key];
-  const manual = MANUAL[key];
-  const action = manual ? h("button", { class: "btn small", type: "button", onclick: () => recordSheet(name, manual) }, icon("plus", "sm"), "记一条")
-    : h("button", { class: "btn ghost small", type: "button", onclick: appleSheet }, "导入苹果健康");
-  return h("div", { class: "tile empty" },
-    h("div", { class: "tile-head" }, h("span", { class: "tile-name" }, name)),
-    h("p", { class: "muted" }, m ? missingHint(m) : manual ? "还没有记录" : "连接手表或导入苹果健康后就有"),
-    action);
+// 还缺的重要指标：一张清单，能自己记的记一条，靠设备的导入（spec [2026-10-23] §29）
+function lackSheet(keys, m) {
+  openSheet("补记录", h("div", { class: "rows" }, keys.map((k) => {
+    const name = IMPORTANT_NAMES[k], manual = MANUAL[k];
+    return h("div", { class: "row-item" },
+      h("div", { class: "row-main" }, h("span", { class: "row-title" }, name), h("span", { class: "row-sub" }, manual ? "可以自己记" : "要连接手表或导入苹果健康")),
+      manual ? h("button", { class: "btn small", type: "button", onclick: () => recordSheet(name, manual) }, icon("plus", "sm"), "记一条")
+        : h("button", { class: "btn ghost small", type: "button", onclick: appleSheet }, "导入"));
+  })));
 }
 
 // 自己记一条、改值、删一条：写进同一份健康记录，来源"手动记录"；改和删保留原记录（mirobody 的更正与撤回）
@@ -1783,19 +1805,17 @@ function inboxView(r) {
   };
   const el = h("div", { class: "msg-coach inbox" },
     h("div", { class: "inbox-head" }, icon("coach", "sm"), h("b", {}, "管家"), h("span", { class: "muted" }, "按你最新的数据调整了方案")),
-    others.length ? h("ul", { class: "inbox-list" }, others.slice(0, 4).map((c) => h("li", {},
+    others.length ? h("ul", { class: "inbox-list" }, others.slice(0, 3).map((c) => h("li", {},
       h("span", { class: `cc-tag ${c.change}` }, INBOX_WORD[c.change] || "调整"),
-      h("div", { class: "cc-main" }, h("span", {}, c.change === "removed" ? `${c.before}（已解除）` : c.after),
-        c.why && c.change !== "removed" ? h("span", { class: "muted" }, c.why) : null)))) : null,
-    moves.length ? h("p", { class: "muted" }, `另有 ${moves.length} 个动作的下次目标更新了，在计划表里能看到。`) : null,
-    r.pending.length ? h("div", { class: "inbox-pending" }, h("b", {}, "要你确认"), r.pending.map((x) => {
+      h("div", { class: "cc-main" }, h("span", {}, c.change === "removed" ? `${c.before}（已解除）` : c.after))))) : null,
+    r.pending.length ? h("div", { class: "inbox-pending" }, r.pending.map((x) => {
       const row = h("div", { class: "inbox-item" });
       const yes = h("button", { class: "btn small", type: "button" }, x.key === "proposal:diet" ? "确认调整" : "确认，出方案");
       const no = h("button", { class: "btn ghost small", type: "button" }, "暂不");
       yes.addEventListener("click", () => decide(x, "accept", row, [yes, no]));
       no.addEventListener("click", () => decide(x, "later", row, [yes, no]));
-      row.append(h("b", {}, x.title), x.why ? h("p", { class: "muted" }, x.why) : null,
-        x.basis ? h("p", { class: "caption" }, `依据：${x.basis}`) : null, h("div", { class: "btn-row" }, yes, no));
+      row.append(x.why ? h("details", { class: "inbox-why" }, h("summary", {}, h("b", {}, x.title), icon("chevron", "xs")), h("p", { class: "muted" }, x.why))
+        : h("b", {}, x.title), h("div", { class: "btn-row" }, yes, no));
       return row;
     })) : null);
   if (r.changes.length) api("/iron/api/coach/seen", { method: "POST", body: JSON.stringify({ version: r.version }) }).catch(() => {});

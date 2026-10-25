@@ -105,3 +105,12 @@ def test_web_files_load_nothing_external() -> None:
             (web / name).read_text().replace("http://www.w3.org/2000/svg", "")
         )  # SVG 命名空间不是请求
         assert not re.search(r"https?://|@import|//cdn", text), name
+
+
+def test_page_does_not_show_basis_codes_in_coach_inbox() -> None:
+    """spec [2026-10-23] §29 需求 2：管家消息里不显示依据编号（出处内部留底，追问才说）。"""
+    from pathlib import Path
+
+    app = (Path(__file__).resolve().parents[1] / "ironm_agent" / "web" / "app.js").read_text()
+    inbox = app[app.index("function inboxView") : app.index("function syncComposer")]
+    assert "basis" not in inbox and "依据" not in inbox
