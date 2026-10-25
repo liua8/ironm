@@ -812,7 +812,7 @@ function dietReviewCard() {
       c ? h("div", { class: "kv" }, h("span", {}, "现在的调整"), h("span", {}, `${kcal(c.kcal)} 千卡/天（${md(c.since)}起）`)) : null,
       c ? h("p", { class: "caption" }, `原因：${c.reason}`) : null,
       p ? h("p", { class: "lede" }, `${p.reason}：建议每天${p.delta > 0 ? "多" : "少"}吃约 ${Math.abs(p.delta)} 千卡，目标从 ${p.before} 调到 ${p.after} 千卡。`) : h("p", { class: "muted" }, r.message),
-      p ? h("p", { class: "caption" }, `依据：${p.basis}`) : null,
+      p && p.basis ? h("details", { class: "inbox-why" }, h("summary", {}, h("span", { class: "caption" }, "依据"), icon("chevron", "xs")), h("p", { class: "caption" }, p.basis)) : null,
       h("div", { class: "btn-row" },
         p ? h("button", { class: "btn", type: "button", onclick: () => act("/iron/api/diet/adjust") }, icon("check", "sm"), "确认调整") : null,
         c ? h("button", { class: "btn ghost", type: "button", onclick: () => act("/iron/api/diet/adjust/undo") }, "撤销上次调整") : null),
