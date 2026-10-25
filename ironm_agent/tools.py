@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -159,6 +160,8 @@ class Evidence:
     metric_queries: int = 0
     pro_queries: int = 0  # 专业工具（只算不查，不占查询次数）
     health_failed: bool = False
+    # 每次工具调用：哪个工具、结果（ok / empty 查空 / error 失败 / refused 没有权限）、耗时（运行框架用，不含内容）
+    calls: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def queries(self) -> int:
@@ -251,6 +254,7 @@ class Toolbox:
         self.user_info = {"user_id": user_id, "session_id": session_id}
         self.render = render
         self.evidence = Evidence()
+        self._outcome = "ok"  # 这一次工具调用的结果（run 里记下）
         if calcs:
             self.evidence.calcs.update(calcs)
 
@@ -282,6 +286,7 @@ class Toolbox:
         for e in found:
             self.evidence.entries[e.id] = e
         if not found:
+            self._outcome = "empty"
             return "动作库里没有找到这个动作。"
         return "\n\n".join(e.as_evidence() for e in found)
 
@@ -303,6 +308,19 @@ class Toolbox:
         return "\n\n".join(e.as_evidence() for e in found)
 
     async def run(self, call: ToolCall) -> str:
+        """执行一次工具调用，并记下结果和耗时（spec [2026-10-23] §31）。"""
+        self._outcome = "ok"
+        start = time.perf_counter()
+        try:
+            return await self._dispatch(call)
+        except Exception:
+            self._outcome = "error"
+            raise
+        finally:
+            ms = int((time.perf_counter() - start) * 1000)
+            self.evidence.calls.append({"tool": call.name, "result": self._outcome, "ms": ms})
+
+    async def _dispatch(self, call: ToolCall) -> str:
         if call.name == KNOWLEDGE and self.spec.kb_domains:
             return self._knowledge(str(call.arguments.get("query", "")))
         if call.name == EXERCISES and self.library:
@@ -317,6 +335,7 @@ class Toolbox:
             return await self._medical(str(call.arguments.get("query", "")))
         if self.context is not None and pro.allowed(self.spec.role.value, call.name):
             return await self._pro(call)
+        self._outcome = "refused"
         return json.dumps({"error": f"{self.spec.name}不能使用这个工具"}, ensure_ascii=False)
 
     async def _pro(self, call: ToolCall) -> str:
@@ -339,6 +358,7 @@ class Toolbox:
             items = await self.metrics()  # type: ignore[misc]
         except Exception as e:
             _log.warning("metrics failed: error_type=%s", type(e).__name__)
+            self._outcome = "error"
             return "这次没能计算指标。"
         lines = []
         for i, m in enumerate(items, start=1):
@@ -357,8 +377,10 @@ class Toolbox:
             out = await self.meds.query_medications(self.user_info, **dict(args))  # type: ignore[union-attr]
         except Exception as e:  # 读不到不影响作答
             _log.warning("medications query failed: error_type=%s", type(e).__name__)
+            self._outcome = "error"
             return "这次没能读取用药记录。"
         if isinstance(out, Mapping) and out.get("success") is False:
+            self._outcome = "error"
             return "用药记录查询没有成功，可以如实说明没读到。"
         text = out.get("result") if isinstance(out, Mapping) else out
         return str(text or "没有用药记录。")
@@ -369,6 +391,7 @@ class Toolbox:
             return await self.medical(query, "")  # type: ignore[misc]
         except Exception as e:
             _log.warning("medical knowledge failed: error_type=%s", type(e).__name__)
+            self._outcome = "error"
             return "这次没能查到医学资料。"
 
     def _knowledge(self, query: str) -> str:
@@ -377,6 +400,7 @@ class Toolbox:
         for e in found:
             self.evidence.entries[e.id] = e
         if not found:
+            self._outcome = "empty"
             return "依据库里没有找到相关资料。"
         return "\n\n".join(e.as_evidence() for e in found)
 
@@ -387,12 +411,17 @@ class Toolbox:
         except Exception as e:  # 读不到数据不影响作答：如实告诉模型
             _log.warning("health query failed: error_type=%s", type(e).__name__)
             self.evidence.health_failed = True
+            self._outcome = "error"
             return "这次没能读取健康数据。"
         if getattr(envelope, "status", "ok") == "error":
             self.evidence.health_failed = True
             kind = getattr(envelope, "error_kind", None) or "error"
+            self._outcome = "error"
             return f"查询没有成功（{kind}），可以换个参数再试，或者如实说明没读到数据。"
-        for row in getattr(envelope, "data", None) or []:
+        rows = getattr(envelope, "data", None) or []
+        if not rows:
+            self._outcome = "empty"
+        for row in rows:
             rid = row.get("rid") if isinstance(row, Mapping) else None
             if isinstance(rid, str) and rid:
                 self.evidence.support[rid] = row_numbers(row)

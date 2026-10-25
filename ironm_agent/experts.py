@@ -10,17 +10,19 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
 from pydantic import ValidationError
 
 from ironm_agent.casefile import CaseFile
-from ironm_agent.checks import check_text, cited_ids, repair
+from ironm_agent.checks import EXPERIENCE, check_text, cited_ids, repair, sentences
 from ironm_agent.common import ContractModel
 from ironm_agent.frameworks import framework, framework_refs
+from ironm_agent.harness import problem_kinds
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
 from ironm_agent.memory_view import Recall
 from ironm_agent.personal import Personal
@@ -64,6 +66,9 @@ class Consultation:
     opinion: Opinion
     evidence: Evidence
     status: str  # spoke / silent / failed
+    # 运行框架用的明细（spec [2026-10-23] §31）：往返轮数、核对问题类别、是否改写、是否被规则修正、
+    # 是否用完查询次数、是否收走工具后才作答、〔经验〕占比、耗时；不含内容
+    trace: dict[str, Any] = field(default_factory=dict)
 
 
 _PROMPT = """你是健身 App 里的「{name}」，负责：{duty}。
@@ -356,15 +361,27 @@ async def consult(
     if personal is not None:
         toolbox.evidence.support.update(personal.support)
         toolbox.evidence.rows.update(personal.rows)
+    trace: dict[str, Any] = {"rounds": 0, "checks": [], "fixed": False, "repaired": False,
+                             "exhausted": False, "forced": False}  # fmt: skip
+    start = time.perf_counter()
     try:
         fields = _SOLO_FIELDS if solo else _FIELDS
-        opinion = await _loop(spec, messages, toolbox, llm, said, fields, task, today)
+        opinion = await _loop(spec, messages, toolbox, llm, said, fields, task, today, trace)
     except ModelUnavailable as e:
         _log.warning("expert unavailable: role=%s reason=%s", spec.role.value, e)
         silent = Opinion(role=spec.role, speak=False, reason="这次没能调用模型")
-        return Consultation(silent, toolbox.evidence, "failed")
+        trace["ms"] = int((time.perf_counter() - start) * 1000)
+        return Consultation(silent, toolbox.evidence, "failed", trace)
+    trace["ms"] = int((time.perf_counter() - start) * 1000)
+    trace["experience"] = experience_share(opinion.body()) if opinion.speak else 0.0
     status = "spoke" if opinion.speak else "silent"
-    return Consultation(opinion, toolbox.evidence, status)
+    return Consultation(opinion, toolbox.evidence, status, trace)
+
+
+def experience_share(text: str) -> float:
+    """标〔经验〕的句子占比（运行框架用：过半说明知识库缺这块）。"""
+    all_ = sentences(text)
+    return round(sum(EXPERIENCE in x for x in all_) / len(all_), 2) if all_ else 0.0
 
 
 async def _loop(
@@ -376,17 +393,21 @@ async def _loop(
     fields: Sequence[str] = _FIELDS,
     task: str | None = None,
     today: date | None = None,
+    trace: dict[str, Any] | None = None,
 ) -> Opinion:
+    trace = trace if trace is not None else {}
     fixes = 0
     rounds = 0
     tools = toolbox.schemas() or None
     while True:
         rounds += 1
+        trace["rounds"] = rounds
         reply = await llm.chat("expert", messages, tools=tools, json_mode=tools is None)
         if reply.tool_calls:
             if rounds > MAX_ROUNDS + 1:  # 已经不给工具了还要查：放弃，不无限循环
                 return Opinion(role=spec.role, speak=False, reason="一直在查询，没能给出意见")
             if rounds > MAX_ROUNDS:
+                trace["forced"] = True
                 messages.append(reply.as_message())
                 for call in reply.tool_calls:
                     messages.append(
@@ -401,6 +422,7 @@ async def _loop(
             messages.append(reply.as_message())
             for call in reply.tool_calls:
                 if toolbox.evidence.queries >= MAX_QUERIES:
+                    trace["exhausted"] = True
                     result = "查询次数已用完。请根据已有依据作答，直接输出 JSON。"
                 else:
                     result = await toolbox.run(call)
@@ -414,9 +436,13 @@ async def _loop(
         )
         if not problems and opinion is not None:
             return opinion
+        if fixes == 0:
+            trace["checks"] = problem_kinds(problems)  # 只留类别，问题原文里可能有回答片段
+            trace["fixed"] = True
         if fixes >= 1:
             if opinion is None:
                 return Opinion(role=spec.role, speak=False, reason="没能给出规定格式的意见")
+            trace["repaired"] = True
             _log.info(
                 "expert opinion repaired: role=%s problems=%d", spec.role.value, len(problems)
             )

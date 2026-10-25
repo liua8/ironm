@@ -31,9 +31,10 @@ from ironm_agent.constraints import Context, Violation, annotate, annotate_plan
 from ironm_agent.constraints import check as check_constraints
 from ironm_agent.exercises import named_in
 from ironm_agent.experts import Consultation, consult, write_task
+from ironm_agent.harness import TraceStore, mentioned_roles, missing_readings, new_turn, react
 from ironm_agent.kb import KnowledgeBase, default_kb
 from ironm_agent.llm import ModelsConfig, TurnLLM, load_models
-from ironm_agent.memory import earlier, last_sources, recent, split_thread, user_lines
+from ironm_agent.memory import USER, earlier, last_sources, recent, split_thread, user_lines
 from ironm_agent.memory_extract import extract, hold, take_held, worth_extracting
 from ironm_agent.memory_prefs import due as prefs_due
 from ironm_agent.memory_prefs import refresh as refresh_prefs
@@ -47,6 +48,7 @@ from ironm_agent.provenance import explain, is_provenance
 from ironm_agent.render import (
     SOURCES_ID,
     SOURCES_NAME,
+    TURN_ID,
     answer_text,
     consultation_summary,
     finished,
@@ -248,8 +250,12 @@ class IronMAgent:
         pain: PainStore | None = None,
         medications: Any | None = None,
         medical: Any | None = None,
+        traces: TraceStore | None = None,
         **kwargs: Any,
     ) -> None:
+        self._traces = (
+            traces  # 运行框架的轨迹（spec [2026-10-23] §31，默认用数据库里 iron-m 自己的表）
+        )
         # mirobody 的用药记录与医学知识（spec [2026-10-23] §25）；测试时换成假的，注入了 health 却没给的不用
         self._meds = medications
         self._medical = medical
@@ -475,6 +481,9 @@ class IronMAgent:
         start = time.perf_counter()
         llm = TurnLLM(self._models, self._environ)
         said: dict[str, Any] = {}  # 这一轮的回答（交给后台提取记忆，不进日志）
+        # 这一轮的编号：页面上点"有用 / 没用"时带回来，评价记到这一轮的轨迹上（spec [2026-10-23] §31）
+        yield {"type": "tool_call", "id": TURN_ID, "name": "", "args": {"turn": run["turn"]}}
+        yield {"type": "tool_result", "tool_call_id": TURN_ID, "content": "", "status": "ok"}
         try:
             text = question_of(messages)
             if not text:
@@ -516,12 +525,41 @@ class IronMAgent:
             run["ms"] = int((time.perf_counter() - start) * 1000)
             run["model_calls"] = len(llm.calls)
             run["model_failures"] = sum(1 for c in llm.calls if not c.ok)
-            # 耗时放在前面：mirobody 会截断过长的日志行
+            run["budget_hit"] = len(llm.calls) >= self._models.turn_budget
+            # 耗时放在前面：mirobody 会截断过长的日志行；各环节明细（_ 开头）只进轨迹，不进日志
             first = ("turn", "path", "ms", "memory", "memory_ms", "model_calls", "model_failures")
             ordered = {k: run[k] for k in first if k in run} | run
-            _log.info("ironm turn %s", json.dumps(ordered, ensure_ascii=False))
+            line = {k: v for k, v in ordered.items() if not k.startswith("_")}
+            _log.info("ironm turn %s", json.dumps(line, ensure_ascii=False))
             if self._observe is not None:
                 self._observe(dict(ordered))
+            if run["path"] != "no_text":
+                task = asyncio.create_task(self._save_trace(user_id, session_id, dict(ordered)))
+                self._tasks.add(task)
+                task.add_done_callback(self._tasks.discard)
+
+    def _trace_store(self) -> TraceStore:
+        if self._traces is None:
+            from ironm_agent.harness import default_traces
+
+            self._traces = default_traces()
+        return self._traces
+
+    async def _save_trace(self, user_id: str, session_id: str, run: dict[str, Any]) -> None:
+        """后台存这一轮的轨迹（spec [2026-10-23] §31）；失败只记日志，不影响回答。"""
+        try:
+            turn = new_turn(user_id, session_id, run)
+            await self._trace_store().add(turn)
+        except Exception as e:
+            _log.warning("trace save failed: error_type=%s", type(e).__name__)
+
+    async def _react(self, user_id: str, session_id: str, text: str, history: list[str]) -> None:
+        """这句话是对上一轮的反应（说不对、换个说法再问）时，记到上一轮的轨迹上。"""
+        previous = next((x[len(USER) :] for x in reversed(history) if x.startswith(USER)), None)
+        try:
+            await react(self._trace_store(), user_id, session_id, text, previous)
+        except Exception as e:
+            _log.warning("trace react failed: error_type=%s", type(e).__name__)
 
     async def _turn(
         self,
@@ -572,6 +610,9 @@ class IronMAgent:
             )  # 记忆超过上限、按优先级没读的条数（spec [2026-10-23] §17）
         run["memory_ms"] = int((time.perf_counter() - read) * 1000)
         said["history"] = history
+        reacting = asyncio.create_task(self._react(user_id, session_id, text, history))
+        self._tasks.add(reacting)
+        reacting.add_done_callback(self._tasks.discard)
         snap = asyncio.create_task(self._read_snapshot(user_id))
         train = asyncio.create_task(self._read_training(user_id, date.today()))
         wx = asyncio.create_task(self._read_weather(user_id))
@@ -658,6 +699,8 @@ class IronMAgent:
         if prep is None:
             prep = await self._prepare(user_id, recall, text, history, snap, train, wx, run)
         snapshot, plan, case, decision = prep.snapshot, prep.plan, prep.case, prep.decision
+        run["snapshot_failed"] = snapshot.failed
+        run["_missing"] = missing_readings(snapshot.readings)
         if snapshot.failed:
             yield notice("这次没读到你的健康数据，下面的回答没有用到它。")
         job = task_of(text)
@@ -773,6 +816,12 @@ class IronMAgent:
                     )
             before += [results[i] for i in tasks.values()]
         consultations = [results[i] for i in range(len(roles))]
+        invited = [x.value for x in roles]
+        run["_experts"] = [
+            {"role": c.opinion.role.value, "status": c.status, **c.trace, "calls": c.evidence.calls,
+             "mentions": mentioned_roles(c.opinion.body(), invited) if c.opinion.speak else []}
+            for c in consultations
+        ]  # fmt: skip
         run["statuses"] = [c.status for c in consultations]
         run["queries"] = sum(c.evidence.queries for c in consultations)
         run["pro_tools"] = sum(c.evidence.pro_queries for c in consultations)
@@ -802,6 +851,8 @@ class IronMAgent:
             composed = await compose(text, primary, consultations, llm, recall,
                                      constraints=rules, annotate=mark, state=case.readiness.line())  # fmt: skip
         run.update(constraints=list(composed.violations), constraint_fixed=composed.fixed)
+        run["_compose"] = {"checks": list(composed.checks), "repaired": composed.repaired,
+                           "degraded": composed.degraded}  # fmt: skip
         writer = next(
             (c for c in consultations if c.opinion.role in (Role.TRAINER, Role.GENERAL)), None
         )

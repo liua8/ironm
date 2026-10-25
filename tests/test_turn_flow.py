@@ -11,7 +11,7 @@ from ironm_agent.llm import ModelUnavailable, Reply, Stage
 from ironm_agent.memory_store import Change, Item, MemoryBook
 from ironm_agent.metrics import Profile, Readings
 from tests.fakes import jsonr, route_reply, system_of
-from tests.test_plugin import agent, text_of
+from tests.test_plugin import agent, shown, text_of
 
 TODAY = date(2026, 10, 23)
 T0 = datetime(2026, 10, 20, tzinfo=UTC)
@@ -73,7 +73,7 @@ def run(a: Any, text: str, session: str = "42:s1") -> tuple[list[dict[str, Any]]
 
     async def go() -> list[dict[str, Any]]:
         msgs = [{"role": "user", "content": text}]
-        return [b async for b in a.generate_response("42", msgs, session_id=session)]
+        return shown([b async for b in a.generate_response("42", msgs, session_id=session)])
 
     return asyncio.run(go()), seen
 

@@ -15,6 +15,7 @@ from dataclasses import dataclass, replace
 from ironm_agent.checks import CALC_REF, KB_REF, check_text, cited_ids, plain, repair
 from ironm_agent.constraints import Violation, fixes
 from ironm_agent.experts import Consultation, Opinion
+from ironm_agent.harness import problem_kinds
 from ironm_agent.kb import Entry
 from ironm_agent.llm import LLM, ModelUnavailable
 from ironm_agent.memory_view import Recall
@@ -35,6 +36,8 @@ class Composed:
     rows: tuple[tuple[str, str], ...] = ()  # 正文引用到的健康数据（rid，说明）
     violations: tuple[str, ...] = ()  # 约束核对第一次发现的问题类别（spec [2026-10-23] §4）
     fixed: bool = False  # 改写后仍不过关，末尾补了固定的限制
+    checks: tuple[str, ...] = ()  # 核对第一次发现的问题类别（运行框架用，spec [2026-10-23] §31）
+    repaired: bool = False  # 改写后仍不通过，被规则修正
 
 
 type Constraints = Callable[[str], list[Violation]]
@@ -225,6 +228,7 @@ async def revise(
                         calcs=ev.calcs, experience=said)  # fmt: skip
     if answer.strip():
         composed = _composed(answer, ev.entries, ev.calcs, ev.rows, rewrites=1)
+        composed = replace(composed, checks=tuple(problem_kinds(problems)), repaired=bool(problems))
     return _settle(composed, constraints, found, annotate)
 
 
@@ -265,6 +269,7 @@ async def compose(
         {"role": "user", "content": _payload(text, opinions, shield, state)},
     ]
     found: list[Violation] = []
+    checks: list[str] = []
     for attempt in range(2):
         try:
             reply = await llm.chat("compose", messages)
@@ -283,7 +288,9 @@ async def compose(
         violations = constraints(plain(answer)) if constraints and answer.strip() else []
         if attempt == 0:
             found = violations
+            checks = problem_kinds(problems)
         problems += [v.detail for v in violations]
+        repaired = bool(problems) and attempt == 1
         if not problems or attempt == 1:
             if problems:  # 改了一次还不过：修正而不是放弃
                 answer = repair(
@@ -295,12 +302,9 @@ async def compose(
                     experience=said,
                 )
             if answer.strip():
-                return _settle(
-                    _composed(answer, entries, calcs, rows, rewrites=attempt),
-                    constraints,
-                    found,
-                    annotate,
-                )
+                done = _composed(answer, entries, calcs, rows, rewrites=attempt)
+                done = replace(done, checks=tuple(checks), repaired=repaired)
+                return _settle(done, constraints, found, annotate)
             break  # 修完什么都不剩：退回主责角色的意见
         messages.append({"role": "assistant", "content": draft})
         messages.append(
@@ -312,4 +316,4 @@ async def compose(
     degraded = _composed(
         fallback(opinions[0]), entries, calcs, rows, rewrites=1, degraded=True, by_model=False
     )
-    return _settle(degraded, constraints, found, annotate)
+    return _settle(replace(degraded, checks=tuple(checks)), constraints, found, annotate)

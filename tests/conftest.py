@@ -32,3 +32,13 @@ def coach_in_memory(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[tuple[str,
 
     monkeypatch.setattr(plugin, "default_coach_eval", coach)
     yield calls
+
+
+@pytest.fixture(autouse=True)
+def traces_in_memory(monkeypatch: pytest.MonkeyPatch) -> Iterator[object]:
+    """运行框架的轨迹（spec [2026-10-23] §31）：测试里默认存在内存里，不连数据库。"""
+    from ironm_agent import harness
+
+    book = harness.TraceBook()
+    monkeypatch.setattr(harness, "_default", book)
+    yield book

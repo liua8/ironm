@@ -1066,3 +1066,93 @@ async def delete_reading(
         raise HTTPException(404, "这条记录不存在")
     coach_later(user_id, "记数据")
     return {"ok": True, "rows": await store.recent(user_id, kind)}
+
+
+# ---- 运行框架（spec [2026-10-23] §31）：评价记到那一轮、系统汇总、个人汇总 ------------------------------
+
+
+def trace_store() -> Any:
+    from ironm_agent.harness import default_traces
+
+    return default_traces()
+
+
+TRACES = Depends(trace_store)  # 测试时用 dependency_overrides 换成内存版
+
+
+class RatingIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rating: Literal[1, -1]
+
+
+@router.post("/iron/api/turns/{turn_id}/rating")
+async def rate_turn(
+    turn_id: str, body: RatingIn, user_id: str = Depends(_verify()), store: Any = TRACES
+) -> dict[str, Any]:
+    """页面上点"有用 / 没用"：记到这一轮的轨迹上；只能评自己的那一轮。"""
+    from ironm_agent.harness import rate
+
+    if not await rate(store, user_id, turn_id, body.rating):
+        raise HTTPException(404, "找不到这一轮")
+    return {"ok": True}
+
+
+async def _admin_only(user_id: str) -> None:
+    if not await is_admin(user_id):
+        raise HTTPException(403, "只有管理员能查看")
+
+
+def _since(days: int) -> Any:
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC) - timedelta(days=max(1, min(180, days)))
+
+
+@router.get("/iron/api/admin/harness/system")
+async def harness_system(
+    days: int = 7, user_id: str = Depends(_verify()), store: Any = TRACES
+) -> dict[str, Any]:
+    """系统汇总：按环节、按专业 Agent、按 Skill、按工具的出错次数和比例，耗时（只给管理员）。"""
+    from ironm_agent.harness import system_summary
+
+    await _admin_only(user_id)
+    return {"days": days, **system_summary(await store.since(_since(days)))}
+
+
+@router.get("/iron/api/admin/harness/person/{person}")
+async def harness_person(
+    person: str, days: int = 30, user_id: str = Depends(_verify()), store: Any = TRACES
+) -> dict[str, Any]:
+    """个人汇总：系统在这个人身上哪里没帮好（只给管理员）。"""
+    from ironm_agent.harness import person_summary
+
+    await _admin_only(user_id)
+    start = _since(days)
+    try:
+        changes = await coach_deps().store.history(person, 200)
+        declined = sum(1 for c in changes if c.change == "declined" and c.day >= start.date())
+    except Exception as e:  # 读不到调整经历不影响其余汇总
+        _log.warning("coach history failed: error_type=%s", type(e).__name__)
+        declined = 0
+    return {"days": days, **person_summary(await store.since(start, person), declined)}
+
+
+@router.get("/iron/api/admin/harness/turns")
+async def harness_turns(
+    days: int = 1,
+    person: str = "",
+    bad: bool = True,
+    limit: int = 50,
+    user_id: str = Depends(_verify()),
+    store: Any = TRACES,
+) -> dict[str, Any]:
+    """逐轮看哪里出错：每一轮的时间、路径、耗时、请了谁、用了哪些 Skill、出错信号（只给管理员，不含内容）。"""
+    from ironm_agent.harness import turn_brief
+
+    await _admin_only(user_id)
+    turns = await store.since(_since(days), person or None)
+    rows = [turn_brief(t) for t in reversed(turns)]
+    if bad:
+        rows = [r for r in rows if r["signals"]]
+    return {"turns": rows[: max(1, min(200, limit))]}
