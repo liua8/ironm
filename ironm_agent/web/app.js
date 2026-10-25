@@ -351,6 +351,7 @@ function statusCard(brief, wx, cal) {
   const why = rd?.reasons?.length ? `${rd.reasons.join("；")}。` : "";
   const monthDays = cal?.done_days?.length ?? null;
   return h("div", { class: "hero" },
+    h("div", { class: "scan", "aria-hidden": "true" }),
     h("div", { class: "hero-kicker" }, h("span", { class: "hero-tag" }, "今日战报")),
     h("div", { class: "hero-main" },
       h("div", { class: "hero-text" },
