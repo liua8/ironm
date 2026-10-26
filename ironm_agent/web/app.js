@@ -1966,6 +1966,7 @@ function applyBlock(msg, b) {
   switch (b.type) {
     case "start": msg.id = b.id || msg.id; break;
     case "tool_call":
+      if (b.id === "turn") { msg.turn = b.args?.turn || ""; break; }  // 这一轮的编号：评价时带回（spec [2026-10-23] §31）
       if (b.id === "sources") break;
       if (String(b.id || "").startsWith("card-")) { if (!msg.cards.some((c) => c.id === b.id)) msg.cards.push({ id: b.id, kind: b.args?.kind, draft: b.args?.draft, data: null, state: "", busy: false, error: "" }); break; }
       if (!msg.steps.some((x) => x.id === b.id)) msg.steps.push({ id: b.id, name: b.name || "", task: b.args?.["任务"] || "", result: "", done: false });
@@ -1989,7 +1990,7 @@ function applyBlock(msg, b) {
   }
 }
 
-function coachMsg() { return { role: "coach", steps: [], text: "", notices: [], sources: "", cards: [], id: "", error: "", done: false, open: false, srcOpen: false, rating: 0, el: null }; }
+function coachMsg() { return { role: "coach", turn: "", steps: [], text: "", notices: [], sources: "", cards: [], id: "", error: "", done: false, open: false, srcOpen: false, rating: 0, el: null }; }
 
 // 预览卡片（计划、训练记录）：确认才写入，写入后能撤销；状态从服务端取（刷新后也对）
 const CARD_STATE = { pending: "", confirmed: "已保存", cancelled: "已取消", undone: "已撤销" };
@@ -2101,6 +2102,7 @@ async function rate(msg, value) {
   try {
     await apiData("/api/rating", { method: "POST", body: JSON.stringify({ rating: value, responseId: msg.id }) });
     msg.rating = value; refresh(msg);
+    if (msg.turn) api(`/iron/api/turns/${encodeURIComponent(msg.turn)}/rating`, { method: "POST", body: JSON.stringify({ rating: value }) }).catch(() => {});
   } catch { msg.notices.push("评价没有保存成功，请稍后再试。"); refresh(msg); }
 }
 

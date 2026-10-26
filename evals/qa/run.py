@@ -214,7 +214,7 @@ async def run_case(
             elif kind == "tool_call":
                 if str(b.get("id", "")).startswith("card-"):
                     r.cards.append(str((b.get("args") or {}).get("kind", "")))
-                elif b.get("id") != "sources":
+                elif b.get("id") not in ("sources", "turn"):  # turn 是这一轮的编号，页面不显示
                     r.steps.append(str(b.get("name", "")))
             elif kind == "tool_result" and b.get("tool_call_id") == "sources":
                 r.sources = str(b.get("content", ""))

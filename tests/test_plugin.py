@@ -9,6 +9,7 @@ from ironm_agent.casefile import Snapshot
 from ironm_agent.llm import ModelUnavailable, Reply, Stage, load_models
 from ironm_agent.memory_store import MemoryBook, MemoryStore
 from ironm_agent.plugin import FAILED, IronMAgent
+from ironm_agent.render import TURN_ID
 from ironm_agent.tools import HEALTH
 from ironm_agent.triggers import PainBook
 from tests.fakes import FakeHealth, call, jsonr, route_reply, system_of, tool_results
@@ -85,9 +86,14 @@ def collect(a: IronMAgent, content: Any) -> list[dict[str, Any]]:
         msgs = [{"role": "user", "content": content}]
         blocks = [b async for b in a.generate_response("42", msgs, session_id="42:s1")]
         await a.settle()  # 等后台的记忆提取做完
-        return blocks
+        return shown(blocks)
 
     return asyncio.run(go())
+
+
+def shown(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """去掉这一轮的编号块（页面评价时用，不显示，spec [2026-10-23] §31）。"""
+    return [b for b in blocks if TURN_ID not in (b.get("id"), b.get("tool_call_id"))]
 
 
 def text_of(blocks: list[dict[str, Any]]) -> str:
@@ -227,7 +233,7 @@ def test_asking_for_someone_else_is_not_supported(monkeypatch: Any) -> None:
 
     async def go() -> list[dict[str, Any]]:
         msgs = [{"role": "user", "content": "我妈最近血压怎么样，我自己膝盖也疼"}]
-        blocks = [b async for b in a.generate_response("42", msgs, session_id="7:s1")]
+        blocks = shown([b async for b in a.generate_response("42", msgs, session_id="7:s1")])
         await a.settle()
         return blocks
 

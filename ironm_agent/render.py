@@ -66,6 +66,7 @@ def answer_text(composed: Composed, *, prefix: str = "") -> str:
 
 
 SOURCES_ID = "sources"
+TURN_ID = "turn"  # 这一轮的编号（页面评价时带回，spec [2026-10-23] §31），页面上不显示
 SOURCES_NAME = "依据与来源"
 
 
