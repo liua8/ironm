@@ -102,6 +102,23 @@ def aqi_level(value: int) -> tuple[str, str]:
 
 
 @dataclass(frozen=True)
+class Day:
+    """一天的预报。"""
+
+    day: str  # YYYY-MM-DD（当地日期）
+    code: int
+    tmax: float
+    tmin: float
+    feels_min: float
+    rain: int | None  # 降水概率（%）
+    wind_kmh: float | None
+
+    @property
+    def text(self) -> str:
+        return weather_text(self.code)
+
+
+@dataclass(frozen=True)
 class Weather:
     place: str
     temperature: float
@@ -112,6 +129,7 @@ class Weather:
     pm25: float | None = None
     pm10: float | None = None
     observed: str = ""  # 观测时间（当地时间）
+    days: tuple[Day, ...] = ()  # 今天起 7 天的预报（首页日历用，spec [2026-10-23] §33）
 
     @property
     def text(self) -> str:
@@ -190,6 +208,21 @@ def assess(w: Weather) -> Advice:
     return Advice(level, tuple(reasons), tuple(dict.fromkeys(sources)))
 
 
+RAIN_LIKELY = 50  # 降水概率不到这么多：预报里的雨、雷暴只提醒"可能有"，不改到室内（经验规则）
+
+
+def assess_day(d: Day) -> Advice:
+    """某一天的预报对训练的影响：和实时天气同一套规则；高温看最高气温，寒冷看最低体感温度；没有空气质量预报。
+    预报有雨或雷暴但降水概率不高时，只提醒可能有，备好雨具或改室内。"""
+    unlikely = (_wet(d.code) or d.code >= 95) and d.rain is not None and d.rain < RAIN_LIKELY
+    a = assess(Weather("", d.tmax, d.feels_min, None, 3 if unlikely else d.code, d.wind_kmh))
+    if not unlikely:
+        return a
+    level: Level = a.level if _ORDER.index(a.level) > _ORDER.index("caution") else "caution"
+    reason = f"可能有{d.text}（降水概率 {d.rain}%），户外运动备好雨具，或者改在室内（经验）"
+    return Advice(level, (*a.reasons, reason), a.sources)
+
+
 def summary(w: Weather) -> str:
     parts = [f"{w.place} {w.text}", f"{w.temperature:.0f}℃（体感 {w.feels_like:.0f}℃）"]
     a = w.aqi
@@ -260,7 +293,10 @@ async def fetch(place: Place) -> Weather:
             FORECAST_URL,
             point
             | {
-                "current": "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m"
+                "current": "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m",
+                "daily": "weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_min,"
+                "precipitation_probability_max,wind_speed_10m_max",
+                "forecast_days": 7,
             },
         ),
         _get(AIR_URL, point | {"current": "pm2_5,pm10"}),
@@ -281,9 +317,29 @@ async def fetch(place: Place) -> Weather:
         _float(air_now.get("pm2_5")),
         _float(air_now.get("pm10")),
         str(cur.get("time") or ""),
+        _days(now.get("daily") or {}),
     )
     _cache[key] = (time.monotonic(), w)
     return w
+
+
+def _days(daily: dict[str, Any]) -> tuple[Day, ...]:
+    """每日预报（按列给的数组）拼成一天一条；缺数的那天跳过。"""
+
+    def col(name: str, i: int) -> Any:
+        values = daily.get(name) or []
+        return values[i] if i < len(values) else None
+
+    out = []
+    for i, day in enumerate(daily.get("time") or []):
+        tmax, tmin = _float(col("temperature_2m_max", i)), _float(col("temperature_2m_min", i))
+        if tmax is None or tmin is None:
+            continue
+        feels = _float(col("apparent_temperature_min", i))
+        rain = _float(col("precipitation_probability_max", i))
+        out.append(Day(str(day), int(col("weather_code", i) or 0), tmax, tmin, tmin if feels is None else feels,
+                       None if rain is None else int(rain), _float(col("wind_speed_10m_max", i))))  # fmt: skip
+    return tuple(out)
 
 
 def _float(v: Any) -> float | None:

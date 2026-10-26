@@ -255,7 +255,6 @@ async function home(view) {
     api("/iron/api/calendar").catch(() => null),
   ]);
   view.append(statusCard(brief, wx, cal, training), planTable(training, brief));
-  if (wx.status === "ok") view.append(weatherRow(wx));
 }
 
 // 本周进度环（spec [2026-10-23] §19）
@@ -358,25 +357,80 @@ function statusCard(brief, wx, cal, tr) {
         h("h2", { class: "hero-title" }, hero?.title || "今天"),
         h("p", { class: "hero-push" }, hero?.push || "今天的简报暂时取不到，稍后再看。")),
       ring(week?.done || 0, week?.planned || 0)),
-    weekStrip(tr, cal),
+    weekCalendar(tr, cal, wx, brief),
     day?.alert && day?.training?.kind !== "session" ? h("p", { class: "hero-alert" }, icon("alert", "xs"), day.alert) : null,
     inboxLine());
 }
 
-// 本周七天一条：哪天有练、哪天练过、今天在哪；点开看一周计划（spec [2026-10-23] §29）
-function weekStrip(tr, cal) {
+// 本周日历和天气（spec [2026-10-23] §33）：每天练什么、练过没有；今天和以后几天的天气和最高气温；
+// 那天的计划里有户外类动作、天气又不适合户外时，标一个提醒点；点某一天看那天的计划和天气，点"整月"看整月日历
+const OUTDOOR = /跑|骑|快走|徒步|跳绳|爬山|户外/;
+const outdoorOf = (x) => (x?.items || []).filter((it) => OUTDOOR.test(it.exercise)).map((it) => it.exercise);
+const badWeather = (level) => level === "indoor" || level === "avoid";
+function weekCalendar(tr, cal, wx, brief) {
   const plan = tr?.plan;
-  if (!plan) return null;
-  const now = new Date(), todayNo = now.getDay() || 7;
-  const byDay = Object.fromEntries(plan.sessions.map((x) => [x.day, x]));
+  const now = new Date(), todayNo = now.getDay() || 7, todayIso = isoDay(now);
+  const byDay = Object.fromEntries((plan?.sessions || []).map((x) => [x.day, x]));
   const lit = new Set(cal?.done_days || []);
-  const cells = WEEK.map((w, i) => {
-    const d = i + 1, x = byDay[d];
-    const iso = isoDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - todayNo + d));
-    const cls = `ws-day${x ? " plan" : ""}${lit.has(iso) ? " done" : ""}${d === todayNo ? " today" : ""}`;
-    return h("span", { class: cls }, h("i", {}, d === todayNo ? "今" : w), h("b", {}, x ? x.name.slice(0, 2) : "休"));
+  const forecast = Object.fromEntries((wx?.forecast || []).map((f) => [f.date, f]));
+  const days = WEEK.map((w, i) => {
+    const d = i + 1, iso = isoDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - todayNo + d));
+    const f = forecast[iso];
+    const today = iso === todayIso;
+    // 今天用实时天气的判断（含空气质量），以后几天用预报
+    const level = today && wx?.status === "ok" ? wx.advice.level : f?.level;
+    return { d, w, iso, x: byDay[d], done: lit.has(iso), today, past: iso < todayIso, f, level };
   });
-  return pressable(h("div", { class: "week-strip", "aria-label": "本周计划" }, cells), () => weekSheet(tr));
+  const cells = days.map((c) => {
+    const warn = outdoorOf(c.x).length && !c.past && !c.done && badWeather(c.level);
+    const cls = `wc-day${c.x ? " plan" : ""}${c.done ? " done" : ""}${c.today ? " today" : ""}${c.past ? " past" : ""}`;
+    const temp = c.today && wx?.status === "ok" ? wx.temperature : c.f?.tmax;
+    const text = c.today && wx?.status === "ok" ? wx.text : c.f?.text;
+    return pressable(h("span", { class: cls, "aria-label": `${c.today ? "今天" : `周${c.w}`}，${c.x ? c.x.name : "休息"}${c.done ? "，练过" : ""}${text ? `，${text} ${temp}度` : ""}` },
+      h("i", {}, c.today ? "今" : c.w),
+      text ? h("span", { class: "wc-wx" }, icon(wxIcon(text), "xs"), h("small", {}, `${temp}°`))
+        : h("span", { class: "wc-wx none" }, c.done ? icon("check", "xs") : ""),
+      h("b", {}, c.x ? c.x.name.slice(0, 2) : "休"),
+      warn ? h("em", { class: "wc-warn", "aria-hidden": "true" }) : null), () => daySheet(c, tr, wx, cal, brief));
+  });
+  const note = wx?.status === "ok" && wx.advice.level !== "good" && wx.advice.reasons.length
+    ? pressable(h("p", { class: `wc-note ${wx.advice.level}` }, icon(wxIcon(wx.text), "xs"), h("span", {}, wx.advice.reasons[0])), () => weatherSheet(wx))
+    : wx?.status === "no_city" ? h("a", { class: "wc-note link", href: "#me" }, icon("sun", "xs"), h("span", {}, "设置城市后，日历里会显示天气"))
+      : null;
+  return h("div", { class: "week-cal" },
+    h("div", { class: "wc-head" }, h("span", {}, wx?.status === "ok" ? `本周 · ${wx.place}` : "本周"),
+      h("button", { class: "link", type: "button", onclick: () => monthSheet(brief) }, `这个月练了 ${cal?.done_days?.length ?? 0} 天 · 整月`, icon("chevron", "xs"))),
+    h("div", { class: "wc-row" }, cells),
+    note);
+}
+
+// 点日历上的某一天：那天练什么、练过的记录、天气和对训练的影响
+function daySheet(c, tr, wx, cal, brief) {
+  const [, mm, dd] = c.iso.split("-").map(Number);
+  const done = (cal?.days?.[c.iso] || []).filter((e) => e.done);
+  const live = c.today && wx?.status === "ok";
+  const weatherBox = live
+    ? h("div", { class: `day-wx ${wx.advice.level}` },
+      h("div", { class: "day-wx-top" }, icon(wxIcon(wx.text), "sm"), h("b", {}, `${wx.text} ${wx.temperature}°`), h("span", { class: "muted" }, `体感 ${wx.feels_like}°${wx.aqi != null ? ` · 空气${wx.aqi_level}` : ""}`)),
+      h("p", {}, wx.advice.reasons.length ? `${wx.advice.name}：${wx.advice.reasons.join("；")}` : `${wx.advice.name}，天气不影响训练`))
+    : c.f ? h("div", { class: `day-wx ${c.f.level}` },
+      h("div", { class: "day-wx-top" }, icon(wxIcon(c.f.text), "sm"), h("b", {}, `${c.f.text} ${c.f.tmin}–${c.f.tmax}°`), c.f.rain != null ? h("span", { class: "muted" }, `降水概率 ${c.f.rain}%`) : null),
+      h("p", {}, c.f.reasons.length ? `${c.f.name}：${c.f.reasons.join("；")}` : `${c.f.name}，天气不影响训练`))
+      : null;
+  const t = brief?.today?.training;
+  openSheet(`${c.today ? "今天" : `周${c.w}`} · ${mm}月${dd}日`,
+    weatherBox,
+    c.x && !c.past && badWeather(c.level)
+      ? h("p", { class: "muted" }, outdoorOf(c.x).length ? `计划里的${outdoorOf(c.x).join("、")}受天气影响，可以改在室内做（跑步机、动感单车），或者换一天。` : "这天的动作都能在室内做，天气不影响。")
+      : null,
+    c.x ? h("div", {}, h("h3", {}, `${c.x.name} · 约 ${c.x.minutes} 分钟`), h("ol", { class: "plan-items" }, c.x.items.map((it) => h("li", {}, itemLine(it)))))
+      : h("p", { class: "muted" }, "这天是休息日。"),
+    done.length ? h("div", {}, h("h3", {}, "练过"), h("ul", { class: "tips" }, done.map((e) => h("li", {}, e.line)))) : null,
+    c.today && c.x && !t?.done ? h("button", { class: "btn block", type: "button", onclick: () => doneSheet(c.x.name) }, icon("check", "sm"), "练完打卡") : null,
+    c.x && !c.past && badWeather(c.level) && outdoorOf(c.x).length
+      ? h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`周${c.w}${c.today ? "（今天）" : ""}天气是${live ? wx.text : c.f?.text}，我计划练${c.x.name}，里面的${outdoorOf(c.x).join("、")}怎么调整比较合适？`) }, icon("coach", "sm"), "按天气问问教练怎么调整")
+      : null,
+    tr?.plan ? h("button", { class: "btn ghost block", type: "button", onclick: () => weekSheet(tr) }, "看一周计划") : null);
 }
 
 function weekSheet(tr) {
@@ -403,21 +457,6 @@ function inboxLine() {
     box.hidden = false;
   }).catch(() => {});
   return box;
-}
-
-function weatherRow(wx) {
-  if (wx.status === "no_city") {
-    return h("a", { class: "wx-row", href: "#me" }, icon("sun", "sm"), h("span", {}, "在「我的」里设置城市，就能看到天气和训练提示"), icon("chevron", "xs"));
-  }
-  if (wx.status !== "ok") return h("div", { class: "wx-row" }, icon("cloud", "sm"), h("span", {}, wx.message || "暂时取不到天气"));
-  const advice = wx.advice.reasons.length ? `${wx.advice.name}：${wx.advice.reasons[0]}` : `${wx.advice.name}，天气不影响训练`;
-  return pressable(h("div", { class: "wx", "aria-label": "天气详情" },
-    h("div", { class: "wx-main" },
-      icon(wxIcon(wx.text), "sm"),
-      h("b", {}, `${wx.temperature}°`),
-      h("span", { class: "wx-text" }, `${wx.place} · ${wx.text} · 体感 ${wx.feels_like}°`),
-      wx.aqi != null ? h("span", { class: `aqi ${aqiTone(wx.aqi)}` }, `${wx.aqi_level} ${wx.aqi}`) : null),
-    h("p", { class: `wx-advice ${wx.advice.level}` }, advice)), () => weatherSheet(wx));
 }
 
 function weatherSheet(wx) {
@@ -508,8 +547,10 @@ function sessionSheet(x, isToday, t) {
 const weekdayName = (d) => `周${WEEK[d - 1]}`;
 
 let calMonth = "";
-function calendarCard(brief) {
-  const box = h("div", { class: "card cal" });
+// 整月训练日历（spec [2026-10-23] §33：从数据页挪到首页，点本周日历上的"整月"打开）
+function monthSheet(brief) {
+  calMonth = "";
+  const box = h("div", { class: "cal" });
   const draw = async () => {
     let cal;
     try { cal = await api(`/iron/api/calendar${calMonth ? `?month=${calMonth}` : ""}`); }
@@ -545,7 +586,7 @@ function calendarCard(brief) {
   };
   box.append(...skeleton(260));
   draw();
-  return section("训练日历", null, box);
+  openSheet("训练日历", box);
 }
 
 // 打卡时可以按计划里的动作填每组的重量和次数（spec [2026-10-23] §18 需求 4，可不填）
@@ -1045,7 +1086,6 @@ async function data(view) {
       h("div", { class: "row-main" }, h("span", { class: "row-title" }, `还缺 ${lack.length} 项`), h("span", { class: "row-sub" }, lack.map((k) => IMPORTANT_NAMES[k]).join("、"))),
       h("span", { class: "row-end" }, "补记录", icon("chevron", "sm"))), () => lackSheet(lack, m)) : null));
   view.append(section("目标进度", null, goalCard({ empty: true })));
-  view.append(calendarCard(brief));
   view.append(section("肌肉人体图", h("span", { class: "caption" }, "近 7 天"), muscles ? bodyMap(muscles, brief) : failed(new Error("人体图暂时算不出来"), () => render())));
   if (brief) view.append(section("每周复盘", h("span", { class: "caption" }, `${md(brief.week.from)}–${md(brief.week.to)}`), weekCard(brief.week)));
   const more = [...CALC, ...MORE].map((k) => m[k]).filter((x) => x && x.value != null);

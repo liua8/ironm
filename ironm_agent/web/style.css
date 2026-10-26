@@ -824,14 +824,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .move-cover[class*="p-"], .empty-video[class*="p-"] { background: linear-gradient(rgb(21 19 15 / 3.5%) 1px, transparent 1px) 0 0 / 16px 16px, linear-gradient(90deg, rgb(21 19 15 / 3.5%) 1px, transparent 1px) 0 0 / 16px 16px, linear-gradient(160deg, #fafaf8, #efeee9); color: var(--ink-2); }
 
 /* ==== 精简（spec [2026-10-23] §29）：本周一条、今天的训练一张卡、还缺的指标合成一行 ==== */
-.week-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; padding-top: 14px; border-top: 1px solid var(--hero-line); cursor: pointer; }
-.ws-day { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 7px 0 8px; border-radius: 9px; background: var(--sunken); color: var(--muted); }
-.ws-day i { font-style: normal; font-size: 11px; letter-spacing: .04em; }
-.ws-day b { font-size: 12.5px; font-weight: 600; }
-.ws-day.plan { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-hi); color: var(--ink-2); }
-.ws-day.done { background: linear-gradient(135deg, var(--amber), var(--fire)); color: #fff; box-shadow: none; }
-.ws-day.today { box-shadow: inset 0 0 0 2px var(--fire); color: var(--accent); }
-.ws-day.today.done { color: #fff; }
 .tv { display: flex; flex-direction: column; gap: 14px; border-top: 0; padding-top: 0; }
 .tv .tv-head { display: flex; flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .tv .tv-head h3 { margin: 0; font-size: 19px; }
@@ -898,3 +890,29 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .move-frames img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #fff; border-radius: var(--radius-sm); border: 1px solid var(--line); }
 .move-figure figcaption a { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
 .move-cover.p-拉伸放松, .empty-video.p-拉伸放松 { color: var(--ink-2); }
+
+/* ==== 首页本周日历和天气（spec [2026-10-23] §33） ==== */
+.week-cal { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--hero-line); }
+.wc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--muted); }
+.wc-head .link { font-size: 13px; }
+.wc-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+.wc-day { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 0 8px; border-radius: 10px; background: var(--sunken); color: var(--muted); cursor: pointer; min-width: 0; }
+.wc-day i { font-style: normal; font-size: 11px; }
+.wc-day b { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.wc-wx { display: flex; flex-direction: column; align-items: center; gap: 1px; height: 30px; justify-content: center; color: var(--ink-2); }
+.wc-wx small { font-size: 11px; font-family: var(--mono); }
+.wc-wx.none { color: #fff; }
+.wc-day.plan { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-hi); color: var(--ink-2); }
+.wc-day.past { opacity: .75; }
+.wc-day.done { background: linear-gradient(135deg, var(--amber), var(--fire)); color: #fff; box-shadow: none; opacity: 1; }
+.wc-day.done .wc-wx { color: #fff; }
+.wc-day.today { box-shadow: inset 0 0 0 2px var(--fire); color: var(--accent); }
+.wc-day.today.done { color: #fff; }
+.wc-warn { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--heat); }
+.wc-note { display: flex; align-items: center; gap: 6px; margin: 0; padding: 8px 10px; border-radius: 9px; background: var(--warn-soft); color: var(--warn); font-size: 13px; cursor: pointer; text-decoration: none; }
+.wc-note.indoor, .wc-note.avoid { background: var(--heat-soft); color: var(--heat); }
+.wc-note.link { background: var(--sunken); color: var(--muted); }
+.day-wx { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 10px; background: var(--good-soft); }
+.day-wx.caution { background: var(--warn-soft); } .day-wx.indoor, .day-wx.avoid { background: var(--heat-soft); }
+.day-wx-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.day-wx p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink-2); }

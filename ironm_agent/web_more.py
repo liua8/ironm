@@ -170,7 +170,15 @@ def weather_json(w: weather.Weather | None, has_city: bool) -> dict[str, Any]:
             "reasons": list(advice.reasons),
             "sources": list(advice.sources),
         },
+        "forecast": [_forecast_json(d) for d in w.days],
     }
+
+
+def _forecast_json(d: weather.Day) -> dict[str, Any]:
+    """一天的预报和对训练的影响（首页日历用，spec [2026-10-23] §33）。"""
+    advice = weather.assess_day(d)
+    return {"date": d.day, "text": d.text, "tmax": round(d.tmax), "tmin": round(d.tmin), "rain": d.rain,
+            "level": advice.level, "name": advice.name, "reasons": list(advice.reasons)}  # fmt: skip
 
 
 @router.get("/iron/api/weather")

@@ -365,3 +365,43 @@ def test_recommend_clips_long_output() -> None:
     llm = FakeLLM(lambda *_: jsonr(long))
     rec, problem = asyncio.run(recommend(llm, DayContext(kind="晚餐", appetite="很饿")))
     assert rec is not None and len(rec.dishes) == 8 and len(rec.title) <= 30 and problem == ""
+
+
+# ---- 首页日历的天气预报（spec [2026-10-23] §33）------------------------------------------------
+
+
+def test_forecast_days_parsed_and_assessed(monkeypatch: pytest.MonkeyPatch) -> None:
+    daily = {
+        "time": ["2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29"],
+        "weather_code": [0, 61, 61, 95],
+        "temperature_2m_max": [24.0, 20.0, 38.0, None],  # 最后一天缺数：跳过
+        "temperature_2m_min": [15.0, 14.0, 26.0, 12.0],
+        "apparent_temperature_min": [14.0, 13.0, 27.0, 11.0],
+        "precipitation_probability_max": [0, 30, 80, 90],
+        "wind_speed_10m_max": [10.0, 12.0, 8.0, 15.0],
+    }
+
+    async def fake_get(url: str, params: dict[str, Any]) -> dict[str, Any]:
+        if url == weather.AIR_URL:
+            return {"current": {"pm2_5": 10, "pm10": 20}}
+        assert params["forecast_days"] == 7 and "precipitation_probability_max" in params["daily"]
+        cur = {"temperature_2m": 22.0, "apparent_temperature": 21.0, "weather_code": 0}
+        return {"current": cur, "daily": daily}
+
+    from ironm_agent import web_more
+
+    monkeypatch.setattr(weather, "_get", fake_get)
+    weather._cache.clear()
+    w = asyncio.run(weather.fetch(weather.Place("上海", 31.0, 121.0)))
+    assert [d.day for d in w.days] == ["2026-10-26", "2026-10-27", "2026-10-28"]
+    sunny, maybe, wet_hot = (weather.assess_day(d) for d in w.days)
+    assert sunny.level == "good"
+    assert (
+        maybe.level == "caution" and "可能有雨" in maybe.reasons[-1] and "30%" in maybe.reasons[-1]
+    )
+    assert wet_hot.level == "indoor"  # 38℃ 到高温橙色档、雨的概率 80%：取最严的一档
+    assert any("室内" in r for r in wet_hot.reasons) and any("38℃" in r for r in wet_hot.reasons)
+    out = web_more.weather_json(w, True)
+    assert [f["date"] for f in out["forecast"]] == ["2026-10-26", "2026-10-27", "2026-10-28"]
+    assert out["forecast"][1] == {"date": "2026-10-27", "text": "雨", "tmax": 20, "tmin": 14, "rain": 30,
+                                  "level": "caution", "name": "户外要注意", "reasons": list(maybe.reasons)}  # fmt: skip
