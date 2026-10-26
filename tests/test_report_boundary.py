@@ -57,3 +57,15 @@ def test_routed_pain_skills_are_dropped_on_data_questions() -> None:
     assert "rest-pain" not in ids and "rest-return" not in ids
     kept, _ = choose(Role.RECOVERY, "膝盖疼还能练吗", {"injury"}, routed=["rest-pain"])
     assert "rest-pain" in [x.id for x in kept]
+
+
+@pytest.mark.parametrize(
+    ("text", "hurt"),
+    [("我尿酸偏高严重吗", False), ("乳酸阈怎么测", False), ("喝酸奶好吗", False), ("腿酸还能练吗", True),
+     ("肌肉酸痛怎么缓解", True), ("膝盖疼还能练吗", True)],
+)  # fmt: skip
+def test_acid_in_indicator_names_is_not_soreness(text: str, hurt: bool) -> None:
+    """尿酸、乳酸里的"酸"不算身体不适；腿酸、酸痛照旧算。"""
+    from ironm_agent.plugin import _HURT
+
+    assert bool(_HURT.search(text)) is hurt

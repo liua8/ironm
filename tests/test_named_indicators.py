@@ -179,6 +179,12 @@ def test_remembered_injury_does_not_force_pain_skills_on_data_questions(
     assert "data-labs" in got and not {"rest-pain", "rest-return"} & set(got)
     collect(
         agent(Seen(), health=FakeHealth(rows=[]), monkeypatch=monkeypatch, memory=memory()),
+        "我尿酸偏高严重吗",
+    )
+    got = traces_in_memory.turns[-1].trace["skills"]["recovery"]  # "尿酸"的"酸"不是酸痛（§39）
+    assert "data-labs" in got and not {"rest-pain", "rest-return"} & set(got)
+    collect(
+        agent(Seen(), health=FakeHealth(rows=[]), monkeypatch=monkeypatch, memory=memory()),
         "膝盖疼还能练吗",
     )
     assert "rest-pain" in traces_in_memory.turns[-1].trace["skills"]["recovery"]

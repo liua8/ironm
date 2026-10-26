@@ -186,7 +186,8 @@ def _weather_case(w: Weather, plan: Plan | None, today: date) -> str:
     return "。".join(parts)
 
 
-_HURT = re.compile(r"疼|痛|伤|肿|麻|酸|不舒服|难受")
+# "尿酸""乳酸""叶酸""氨基酸"里的"酸"不是酸痛（spec [2026-10-23] §39）
+_HURT = re.compile(r"疼|痛|伤|肿|麻|(?<![尿乳叶基胃])酸(?!奶)|不舒服|难受")
 
 
 def checked_note(named: Sequence[str], found: str, rows: int, ok: bool) -> str:
