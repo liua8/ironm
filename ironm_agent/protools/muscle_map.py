@@ -1,7 +1,10 @@
-"""肌肉人体图：近期练了哪些肌肉、哪些没练（spec [2026-10-23] §13）。
+"""肌肉人体图：近 7 天每块肌肉练了多少组、哪些还在恢复、哪些没练（spec [2026-10-23] §13、§30）。
+恢复怎么算见 recovery.py。
 
-按训练记录和动作库的标注用规则计算，不调用模型。只写了"完成"、没写动作的记录（首页一键打卡），
-按那天计划里的动作算。
+按训练记录和动作库的标注用规则计算，不调用模型。每个动作标了主要练到和辅助练到的细分肌肉：
+主要练到的每组记 1 组，辅助练到的每组按半组算。深浅按近 7 天的组数分档，档位参照每周训练量
+与增肌的剂量—效应关系（K04：每周 10 组以上明显好于不足 5 组）。只写了"完成"、没写动作的记录
+（首页一键打卡），按那天计划里的动作算。
 """
 
 from __future__ import annotations
@@ -13,37 +16,52 @@ from datetime import date, timedelta
 from typing import Literal
 
 from ironm_agent.protools.movement import find
+from ironm_agent.protools.recovery import Feel, Recovery, recovery
 from ironm_agent.training import Plan, WorkoutLog
 
-type Status = Literal["recent", "week", "none"]
-STATUS_NAMES: dict[str, str] = {"recent": "两天内练过", "week": "本周练过", "none": "7 天以上没练"}
-RECENT_DAYS = 2
+type Level = Literal["none", "low", "mid", "high"]
+LEVEL_NAMES: dict[str, str] = {
+    "none": "近 7 天没练",
+    "low": "不到 5 组",
+    "mid": "5–9 组",
+    "high": "10 组以上",
+}
+ASSIST_WEIGHT = 0.5
 WEEK_DAYS = 7
 LOOKBACK_DAYS = 28
 
-# 人体图上的肌群：正面、背面各一张（肩在两面都有）
-FRONT = ("胸", "肩", "肱二头肌", "核心", "股四头肌")
-BACK = ("背", "肩", "肱三头肌", "臀", "腘绳肌", "小腿")
-GROUPS: tuple[str, ...] = tuple(dict.fromkeys((*FRONT, *BACK)))
+# 人体图上的细分肌肉：正面、背面（斜方肌、前臂、小腿两面都画）
+FRONT = ("斜方肌", "三角肌前束", "三角肌中束", "胸大肌", "肱二头肌", "前臂", "腹直肌", "腹斜肌",
+         "股四头肌", "内收肌", "小腿")  # fmt: skip
+BACK = ("斜方肌", "三角肌后束", "背阔肌", "肱三头肌", "前臂", "竖脊肌", "臀中肌", "臀大肌",
+        "腘绳肌", "小腿")  # fmt: skip
+MUSCLES: tuple[str, ...] = tuple(dict.fromkeys((*FRONT, *BACK)))
+
+
+def level(sets: float) -> Level:
+    return "none" if sets <= 0 else "low" if sets < 5 else "mid" if sets < 10 else "high"
 
 
 @dataclass
-class Group:
+class Muscle:
     name: str
-    status: Status = "none"
+    sets_7d: float = 0
     last: date | None = None
-    sets_7d: int = 0
     history: list[str] = field(default_factory=list)  # 最近几次：日期、动作、组数
 
-    def json(self) -> dict[str, object]:
+    def json(self, today: date, rec: Recovery) -> dict[str, object]:
+        sets = round(self.sets_7d * 2) / 2
+        lv = level(sets)
         return {
             "name": self.name,
-            "status": self.status,
-            "status_name": STATUS_NAMES[self.status],
+            "side": "both" if self.name in FRONT and self.name in BACK else "front" if self.name in FRONT else "back",
+            "sets_7d": int(sets) if sets == int(sets) else sets,
+            "level": lv,
+            "level_name": LEVEL_NAMES[lv],
             "last": self.last.isoformat() if self.last else None,
-            "sets_7d": self.sets_7d,
             "history": self.history[:5],
-        }
+            **rec.json(today),
+        }  # fmt: skip
 
 
 def _done_items(log: WorkoutLog, plan: Plan | None) -> list[tuple[str, int]]:
@@ -58,41 +76,47 @@ def _done_items(log: WorkoutLog, plan: Plan | None) -> list[tuple[str, int]]:
 
 
 def muscle_map(
-    logs: Sequence[WorkoutLog], today: date, plan: Plan | None = None
+    logs: Sequence[WorkoutLog],
+    today: date,
+    plan: Plan | None = None,
+    feels: dict[str, tuple[Feel, date]] | None = None,
 ) -> dict[str, object]:
-    groups = {g: Group(g) for g in GROUPS}
+    """logs 要包含今天往前约 32 天的训练（恢复要看"4 周内练过没有"）。"""
+    muscles = {m: Muscle(m) for m in MUSCLES}
     start = today - timedelta(days=LOOKBACK_DAYS - 1)
     done = sorted(
         (x for x in logs if x.done and start <= x.day <= today), key=lambda x: x.day, reverse=True
     )
     for log in done:
-        per_group: dict[str, list[str]] = defaultdict(list)
+        recent = (today - log.day).days < WEEK_DAYS
+        per_muscle: dict[str, list[str]] = defaultdict(list)
         for name, sets in _done_items(log, plan):
             move = find(name)
             if move is None:
                 continue
-            for g in move.tag.groups:
-                if g not in groups:
-                    continue
-                per_group[g].append(f"{move.name} {sets} 组")
-                if (today - log.day).days < WEEK_DAYS:
-                    groups[g].sets_7d += sets
-        for g, what in per_group.items():
-            item = groups[g]
+            for weight, names in ((1.0, move.tag.muscles), (ASSIST_WEIGHT, move.tag.assist)):
+                for m in names:
+                    item = muscles[m]
+                    per_muscle[m].append(
+                        f"{move.name} {sets} 组" + ("（辅助）" if weight < 1 else "")
+                    )
+                    if recent:
+                        item.sets_7d += weight * sets
+        for m, what in per_muscle.items():
+            item = muscles[m]
             if item.last is None:
                 item.last = log.day
             item.history.append(f"{log.day.month}月{log.day.day}日：" + "、".join(what))
-    for item in groups.values():
-        if item.last is None:
-            continue
-        ago = (today - item.last).days
-        item.status = "recent" if ago <= RECENT_DAYS else "week" if ago < WEEK_DAYS else "none"
-    untrained = [g for g in GROUPS if groups[g].status == "none"]
+    rec = recovery(logs, today, plan, _done_items, feels)
+    out = [muscles[m].json(today, rec[m]) for m in MUSCLES]
     return {
         "today": today.isoformat(),
-        "front": [groups[g].json() for g in FRONT],
-        "back": [groups[g].json() for g in BACK],
-        "untrained": untrained,
+        "muscles": out,
+        "front": list(FRONT),
+        "back": list(BACK),
+        "untrained": [x["name"] for x in out if x["level"] == "none"],
+        "recovering": [x["name"] for x in out if x["recovering"]],
         "sessions": len(done),
-        "note": "按最近 28 天的训练记录和动作库的标注计算；只记了'完成'的那次按当天计划里的动作算。",
+        "note": "组数按近 7 天的训练记录算：主要练到的每组记 1 组，辅助练到的按半组；恢复按肌肉、动作、组数和"
+        "用力程度估算，你说的感受优先。只记了'完成'的那次按当天计划算。",
     }

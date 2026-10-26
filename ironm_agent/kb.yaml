@@ -864,3 +864,145 @@ entries:
         where: Main results
     keywords: [拉伸, 酸痛, 练后酸, 放松, 静态拉伸]
     review: claude_draft
+
+  - id: K48
+    domains: [training, recovery]
+    title: 同一肌群两次训练之间隔多久（ACSM）
+    source: Quantity and Quality of Exercise for Developing and Maintaining Cardiorespiratory, Musculoskeletal, and Neuromotor Fitness in Apparently Healthy Adults（Med Sci Sports Exerc 43(7):1334–1359）
+    publisher: 美国运动医学会（ACSM），Garber 等
+    year: 2011
+    level: position_stand
+    population: 健康成年人
+    summary: 每个主要肌群每周练 2–3 天；同一肌群两次抗阻训练之间至少隔 48 小时。
+    points:
+      - text: 每个主要肌群每周训练 2–3 天。
+        where: Recommendations — resistance exercise
+      - text: 同一肌群的两次抗阻训练之间至少间隔 48 小时。
+        where: Recommendations — resistance exercise
+    keywords: [恢复, 间隔, 48 小时, 隔天练, 同一肌群, 肌肉恢复]
+    url: https://pubmed.ncbi.nlm.nih.gov/21694556/
+    review: claude_draft
+
+  - id: K49
+    domains: [training, recovery]
+    title: 不同动作、不同部位恢复时间不一样
+    source: The Importance of Recovery in Resistance Training Microcycle Construction（J Hum Kinet 91:205–223）
+    publisher: Sousa、Zourdos、Storey、Helms
+    year: 2024
+    level: systematic_review
+    population: 进行抗阻训练的成年人（纳入 24 项研究，多为有训练基础的男性）
+    summary: 下肢动作练后要 48–72 小时恢复，上肢一般 24 小时以内；多关节、动用肌肉多、以离心为主或在肌肉拉长位置发力的动作恢复更慢；练到力竭、组数多也会拉长恢复；个体差异大，要边练边看恢复情况。
+    points:
+      - text: 下肢动作需要 48–72 小时恢复，上肢动作一般 24 小时以内。
+        where: Exercise selection
+      - text: 多关节、动用肌肉多、强调离心或拉长位置的动作需要更长恢复时间。
+        where: Exercise selection; Conclusions
+      - text: 练到力竭和单次训练组数多都会延长恢复时间，两者叠加影响更大。
+        where: Proximity to failure; Volume; Conclusions
+      - text: 个体差异大，建议从较低训练量开始，观察恢复后再逐步加量。
+        where: Abstract
+    keywords: [恢复, 恢复时间, 肌肉恢复, 上肢, 下肢, 多关节, 力竭, 练后多久]
+    url: https://doi.org/10.5114/jhk/186659
+    review: claude_draft
+
+  - id: K50
+    domains: [training, recovery]
+    title: 深蹲、卧推、硬拉练后的恢复过程
+    source: Time course of recovery is similar for the back squat, bench press, and deadlift in well-trained males（Appl Physiol Nutr Metab 44(10):1033–1042）
+    publisher: Belcher、Sousa、Carzoli 等
+    year: 2019
+    level: rct
+    population: 训练多年的男性（12 人）
+    summary: 4 组做到力竭后，深蹲的发力速度到 72 小时仍低于练前；卧推只在练完当时下降；硬拉没有比深蹲造成更多损伤或更久恢复。
+    points:
+      - text: 深蹲后平均发力速度下降，持续到 72 小时。
+        where: Results
+      - text: 卧推只在练完即刻下降，硬拉没有明显下降。
+        where: Results
+    keywords: [深蹲, 卧推, 硬拉, 恢复, 72 小时]
+    url: https://doi.org/10.1139/apnm-2019-0004
+    review: claude_draft
+
+  - id: K51
+    domains: [training, recovery]
+    title: 练到力竭会拉长恢复时间
+    source: Time course of recovery following resistance training leading or not to failure（Eur J Appl Physiol 117(12):2387–2399）
+    publisher: Morán-Navarro、Pérez、Mora-Rodríguez 等
+    year: 2017
+    level: rct
+    population: 有抗阻训练基础的男性（10 人）
+    summary: 训练量相同时，每组都练到力竭比不练到力竭，神经肌肉表现和代谢指标的恢复要多花 24–48 小时。
+    points:
+      - text: 练到力竭的方案在练后 24–48 小时的恢复明显慢于不到力竭的方案，即使总训练量相同。
+        where: Results; Conclusions
+    keywords: [力竭, 练到力竭, 恢复, 疲劳]
+    url: https://doi.org/10.1007/s00421-017-3725-7
+    review: claude_draft
+
+  - id: K52
+    domains: [training, recovery]
+    title: 不同肌肉做离心训练后的损伤程度不一样
+    source: Comparison in eccentric exercise-induced muscle damage among four limb muscles（Eur J Appl Physiol 111(2):211–223）
+    publisher: Chen、Lin、Chen、Lin、Nosaka
+    year: 2011
+    level: rct
+    population: 没有训练基础的年轻男性
+    summary: 做不习惯的最大离心训练后，屈肘和伸肘肌（肱二头、肱三头）损伤最重，屈膝肌（大腿后侧）次之，伸膝肌（大腿前侧）最轻；作者认为和这块肌肉日常用得多不多有关。
+    points:
+      - text: 屈肘、伸肘肌各项损伤指标的变化都大于屈膝、伸膝肌。
+        where: Results
+      - text: 屈膝肌的变化大于伸膝肌。
+        where: Results
+      - text: 差别可能与肌肉在日常活动中的使用程度有关。
+        where: Discussion
+    keywords: [离心, 肌肉损伤, 酸痛, 手臂, 大腿后侧, 不习惯]
+    url: https://doi.org/10.1007/s00421-010-1648-7
+    review: claude_draft
+
+  - id: K53
+    domains: [training, recovery]
+    title: 同样的训练第二次做，损伤明显变小
+    source: Damage and the repeated bout effect of arm, leg, and trunk muscles induced by eccentric resistance exercises（Scand J Med Sci Sports 29(5):725–735）
+    publisher: Chen、Yang、Huang 等
+    year: 2019
+    level: rct
+    population: 平时不运动的年轻男性（15 人）
+    summary: 9 个手臂、腿、躯干的离心训练做完两周后再做一次，第二次的力量下降、酸痛和血液损伤指标都明显更小（重复训练效应）。
+    points:
+      - text: 第二次训练后各项指标的变化都小于第一次。
+        where: Results
+    keywords: [重复训练效应, 不习惯, 第一次练, 酸痛, 恢复]
+    url: https://doi.org/10.1111/sms.13388
+    review: claude_draft
+
+  - id: K54
+    domains: [training, recovery]
+    title: 多关节动作比单关节动作恢复慢
+    source: Different time course recovery of muscle oedema within the quadriceps femoris and functional performance after single- vs multi-joint exercises（Biol Sport 40(3):767–774）
+    publisher: Dourado、Vieira、Boullosa、Bottaro
+    year: 2023
+    level: rct
+    population: 没有训练基础的年轻男性（14 人）
+    summary: 腿举后力量 48 小时恢复，腿屈伸后 24 小时恢复；差别不大，但多关节动作的功能恢复更慢。
+    points:
+      - text: 腿屈伸后峰值力矩 24 小时恢复，腿举后 48 小时恢复。
+        where: Results
+    keywords: [多关节, 单关节, 腿举, 腿屈伸, 恢复]
+    url: https://doi.org/10.5114/biolsport.2023.119984
+    review: claude_draft
+
+  - id: K55
+    domains: [training, recovery]
+    title: 大训练量比大重量恢复更久
+    source: Comparison of the recovery response from high-intensity and high-volume resistance exercise in trained men（Eur J Appl Physiol 117(7):1287–1298）
+    publisher: Bartolomei、Sadres、Church 等
+    year: 2017
+    level: rct
+    population: 有抗阻训练基础的男性（12 人）
+    summary: 深蹲 8 组 × 10 次（70%）比 8 组 × 3 次（90%）造成更大的力量和爆发力下降、更多肌肉损伤，恢复更久。
+    points:
+      - text: 大训练量方案的表现下降和肌肉损伤都大于大重量方案。
+        where: Results; Conclusions
+    keywords: [训练量, 组数, 恢复, 深蹲]
+    url: https://doi.org/10.1007/s00421-017-3598-9
+    review: claude_draft

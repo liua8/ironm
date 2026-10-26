@@ -4,6 +4,7 @@
 #   v_pull 垂直拉、shoulder 肩部小肌群、curl 弯举、extension 臂屈伸、calf 小腿、abduction 髋外展、
 #   core 核心、plyo 跳跃全身、cardio 有氧
 # groups：主要练到的肌群（算每周组数时每组记 1 组）
+# muscles / assist：人体图用的细分肌肉，主要练到 / 辅助练到（辅助的每组按半组算）
 # stress：会给哪些关节加负担（这些部位有伤时，计划检查会标出，替代动作会避开）
 #   knee 膝、back 腰背、shoulder 肩、wrist 手腕、ankle 脚踝、neck 颈
 # friendly：常用来照顾哪些部位（有伤时替代动作优先选）
@@ -12,36 +13,36 @@ version: "0.1"
 review: claude_draft
 
 tags:
-  bodyweight-squat: {pattern: squat, groups: [股四头肌, 臀], stress: [knee]}
-  goblet-squat: {pattern: squat, groups: [股四头肌, 臀], stress: [knee]}
-  box-squat: {pattern: squat, groups: [股四头肌, 臀], stress: [], friendly: [knee]}
-  back-squat: {pattern: squat, groups: [股四头肌, 臀], stress: [knee, back]}
-  romanian-deadlift: {pattern: hinge, groups: [腘绳肌, 臀], stress: [back]}
-  deadlift: {pattern: hinge, groups: [臀, 腘绳肌, 背], stress: [back]}
-  bulgarian-split-squat: {pattern: lunge, groups: [股四头肌, 臀], stress: [knee]}
-  reverse-lunge: {pattern: lunge, groups: [股四头肌, 臀], stress: [knee]}
-  glute-bridge: {pattern: bridge, groups: [臀, 腘绳肌], stress: [], friendly: [knee]}
-  step-up: {pattern: lunge, groups: [股四头肌, 臀], stress: [knee]}
-  calf-raise: {pattern: calf, groups: [小腿], stress: [ankle]}
-  band-lateral-walk: {pattern: abduction, groups: [臀], stress: [], friendly: [knee, back]}
-  leg-press: {pattern: squat, groups: [股四头肌, 臀], stress: [knee], friendly: [back]}
-  push-up: {pattern: h_push, groups: [胸, 肱三头肌], stress: [shoulder, wrist]}
-  dumbbell-bench-press: {pattern: h_push, groups: [胸, 肱三头肌], stress: [shoulder]}
-  bench-press: {pattern: h_push, groups: [胸, 肱三头肌], stress: [shoulder]}
-  one-arm-row: {pattern: h_pull, groups: [背, 肱二头肌], stress: [], friendly: [back]}
-  band-row: {pattern: h_pull, groups: [背], stress: [], friendly: [back, knee]}
-  pull-up: {pattern: v_pull, groups: [背, 肱二头肌], stress: [shoulder]}
-  lat-pulldown: {pattern: v_pull, groups: [背, 肱二头肌], stress: [shoulder]}
-  dumbbell-shoulder-press: {pattern: v_push, groups: [肩, 肱三头肌], stress: [shoulder]}
-  lateral-raise: {pattern: shoulder, groups: [肩], stress: [shoulder]}
-  band-face-pull: {pattern: shoulder, groups: [肩, 背], stress: [], friendly: [shoulder]}
-  dumbbell-curl: {pattern: curl, groups: [肱二头肌], stress: []}
-  bench-dip: {pattern: extension, groups: [肱三头肌], stress: [shoulder, wrist]}
-  plank: {pattern: core, groups: [核心], stress: []}
-  dead-bug: {pattern: core, groups: [核心], stress: [], friendly: [back]}
-  side-plank: {pattern: core, groups: [核心], stress: [shoulder]}
-  bird-dog: {pattern: core, groups: [核心, 臀], stress: [], friendly: [back]}
-  kettlebell-swing: {pattern: hinge, groups: [臀, 腘绳肌], stress: [back]}
-  burpee: {pattern: plyo, groups: [全身], stress: [knee, ankle, wrist, shoulder]}
+  bodyweight-squat: {pattern: squat, groups: [股四头肌, 臀], stress: [knee], muscles: [股四头肌, 臀大肌], assist: [内收肌]}
+  goblet-squat: {pattern: squat, groups: [股四头肌, 臀], stress: [knee], muscles: [股四头肌, 臀大肌], assist: [内收肌, 腹直肌]}
+  box-squat: {pattern: squat, groups: [股四头肌, 臀], stress: [], friendly: [knee], muscles: [股四头肌, 臀大肌], assist: [内收肌]}
+  back-squat: {pattern: squat, groups: [股四头肌, 臀], stress: [knee, back], muscles: [股四头肌, 臀大肌], assist: [内收肌, 竖脊肌]}
+  romanian-deadlift: {pattern: hinge, groups: [腘绳肌, 臀], stress: [back], muscles: [腘绳肌, 臀大肌], assist: [竖脊肌, 前臂]}
+  deadlift: {pattern: hinge, groups: [臀, 腘绳肌, 背], stress: [back], muscles: [臀大肌, 腘绳肌, 竖脊肌], assist: [股四头肌, 斜方肌, 背阔肌, 前臂]}
+  bulgarian-split-squat: {pattern: lunge, groups: [股四头肌, 臀], stress: [knee], muscles: [股四头肌, 臀大肌], assist: [内收肌, 臀中肌]}
+  reverse-lunge: {pattern: lunge, groups: [股四头肌, 臀], stress: [knee], muscles: [股四头肌, 臀大肌], assist: [内收肌, 臀中肌]}
+  glute-bridge: {pattern: bridge, groups: [臀, 腘绳肌], stress: [], friendly: [knee], muscles: [臀大肌], assist: [腘绳肌]}
+  step-up: {pattern: lunge, groups: [股四头肌, 臀], stress: [knee], muscles: [股四头肌, 臀大肌], assist: [臀中肌]}
+  calf-raise: {pattern: calf, groups: [小腿], stress: [ankle], muscles: [小腿]}
+  band-lateral-walk: {pattern: abduction, groups: [臀], stress: [], friendly: [knee, back], muscles: [臀中肌]}
+  leg-press: {pattern: squat, groups: [股四头肌, 臀], stress: [knee], friendly: [back], muscles: [股四头肌, 臀大肌], assist: [内收肌]}
+  push-up: {pattern: h_push, groups: [胸, 肱三头肌], stress: [shoulder, wrist], muscles: [胸大肌, 肱三头肌], assist: [三角肌前束, 腹直肌]}
+  dumbbell-bench-press: {pattern: h_push, groups: [胸, 肱三头肌], stress: [shoulder], muscles: [胸大肌, 肱三头肌], assist: [三角肌前束]}
+  bench-press: {pattern: h_push, groups: [胸, 肱三头肌], stress: [shoulder], muscles: [胸大肌, 肱三头肌], assist: [三角肌前束]}
+  one-arm-row: {pattern: h_pull, groups: [背, 肱二头肌], stress: [], friendly: [back], muscles: [背阔肌, 斜方肌], assist: [三角肌后束, 肱二头肌, 前臂]}
+  band-row: {pattern: h_pull, groups: [背], stress: [], friendly: [back, knee], muscles: [背阔肌, 斜方肌], assist: [三角肌后束, 肱二头肌]}
+  pull-up: {pattern: v_pull, groups: [背, 肱二头肌], stress: [shoulder], muscles: [背阔肌, 肱二头肌], assist: [斜方肌, 前臂, 腹直肌]}
+  lat-pulldown: {pattern: v_pull, groups: [背, 肱二头肌], stress: [shoulder], muscles: [背阔肌], assist: [肱二头肌, 斜方肌]}
+  dumbbell-shoulder-press: {pattern: v_push, groups: [肩, 肱三头肌], stress: [shoulder], muscles: [三角肌前束, 三角肌中束], assist: [肱三头肌, 斜方肌]}
+  lateral-raise: {pattern: shoulder, groups: [肩], stress: [shoulder], muscles: [三角肌中束], assist: [斜方肌]}
+  band-face-pull: {pattern: shoulder, groups: [肩, 背], stress: [], friendly: [shoulder], muscles: [三角肌后束, 斜方肌], assist: [三角肌中束]}
+  dumbbell-curl: {pattern: curl, groups: [肱二头肌], stress: [], muscles: [肱二头肌], assist: [前臂]}
+  bench-dip: {pattern: extension, groups: [肱三头肌], stress: [shoulder, wrist], muscles: [肱三头肌], assist: [胸大肌, 三角肌前束]}
+  plank: {pattern: core, groups: [核心], stress: [], muscles: [腹直肌], assist: [腹斜肌]}
+  dead-bug: {pattern: core, groups: [核心], stress: [], friendly: [back], muscles: [腹直肌], assist: [腹斜肌]}
+  side-plank: {pattern: core, groups: [核心], stress: [shoulder], muscles: [腹斜肌], assist: [臀中肌, 腹直肌]}
+  bird-dog: {pattern: core, groups: [核心, 臀], stress: [], friendly: [back], muscles: [竖脊肌, 臀大肌], assist: [腹直肌, 腹斜肌]}
+  kettlebell-swing: {pattern: hinge, groups: [臀, 腘绳肌], stress: [back], muscles: [臀大肌, 腘绳肌], assist: [竖脊肌, 腹直肌, 前臂]}
+  burpee: {pattern: plyo, groups: [全身], stress: [knee, ankle, wrist, shoulder], assist: [股四头肌, 臀大肌, 胸大肌, 肱三头肌, 腹直肌]}
   cycling: {pattern: cardio, groups: [有氧], stress: [], friendly: [knee]}
   brisk-walk: {pattern: cardio, groups: [有氧], stress: []}

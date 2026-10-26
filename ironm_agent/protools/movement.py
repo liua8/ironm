@@ -51,6 +51,8 @@ LEVELS = {"入门": 0, "进阶": 1}
 class Tag(ContractModel):
     pattern: Pattern
     groups: tuple[str, ...] = Field(min_length=1)
+    muscles: tuple[str, ...] = ()  # 人体图的细分肌肉：主要练到
+    assist: tuple[str, ...] = ()  # 辅助练到
     stress: tuple[Joint, ...] = ()
     friendly: tuple[Joint, ...] = ()
 

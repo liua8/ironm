@@ -550,9 +550,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .muscle { cursor: pointer; outline: none; }
 .muscle > * { stroke: var(--surface); stroke-width: 1.2; transition: opacity .15s; }
 .muscle:hover > *, .muscle:focus-visible > * { opacity: .75; }
-.m-recent > *, i.m-recent { fill: var(--accent); background: var(--accent); }
-.m-week > *, i.m-week { fill: color-mix(in srgb, var(--accent) 42%, var(--surface)); background: color-mix(in srgb, var(--accent) 42%, var(--surface)); }
-.m-none > *, i.m-none { fill: color-mix(in srgb, var(--muted) 30%, var(--surface)); background: color-mix(in srgb, var(--muted) 30%, var(--surface)); }
 .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12.5px; color: var(--muted); justify-content: center; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
@@ -856,3 +853,33 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .inbox-why[open] summary .i { transform: rotate(90deg); }
 .inbox-why p { margin: 6px 0 0; }
 .lack-row { flex-wrap: nowrap; } .lack-row .row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+
+/* ==== 人体图细化（spec [2026-10-23] §30）：按近 7 天组数分四档深浅，恢复中的描一圈虚线 ==== */
+.body-svg { max-width: 190px; }
+.body-base { fill: var(--sunken); stroke: var(--line); stroke-width: .6; }
+.muscle > * { stroke: var(--surface); stroke-width: .9; }
+.lv-none > *, i.lv-none { fill: color-mix(in srgb, var(--muted) 22%, var(--surface)); background: color-mix(in srgb, var(--muted) 22%, var(--surface)); }
+.lv-low > *, i.lv-low { fill: color-mix(in srgb, var(--fire) 28%, var(--surface)); background: color-mix(in srgb, var(--fire) 28%, var(--surface)); }
+.lv-mid > *, i.lv-mid { fill: color-mix(in srgb, var(--fire) 62%, var(--surface)); background: color-mix(in srgb, var(--fire) 62%, var(--surface)); }
+.lv-high > *, i.lv-high { fill: var(--fire-2); background: linear-gradient(90deg, var(--fire), var(--fire-2)); }
+.muscle.recovering > path { stroke: var(--ink); stroke-width: .8; stroke-dasharray: 1.6 1.2; }
+.muscle-line { fill: none; stroke: var(--surface); stroke-width: .7; stroke-linecap: round; opacity: .85; pointer-events: none; }
+.muscle-rows { display: flex; flex-direction: column; gap: 2px; }
+.muscle-row { display: grid; grid-template-columns: 136px 1fr 52px; align-items: center; gap: 10px; padding: 7px 2px; cursor: pointer; font-size: 14px; }
+.muscle-row .mr-name { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.muscle-row .mr-name em { font-style: normal; font-size: 11px; color: var(--warn); background: var(--warn-soft); padding: 1px 6px; border-radius: 6px; }
+.muscle-row .mr-bar { height: 8px; border-radius: 4px; background: var(--sunken); overflow: hidden; }
+.muscle-row .mr-bar i { display: block; height: 100%; border-radius: 4px; }
+.muscle-row .mr-sets { text-align: right; font-family: var(--mono); font-size: 13px; color: var(--ink-2); }
+.legend i.dash { background: transparent; border: 1.2px dashed var(--ink); }
+.recover-box { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 10px; background: var(--good-soft); }
+.recover-box b { font-size: 15.5px; color: var(--good); }
+.recover-box.recovering, .recover-box.today { background: var(--warn-soft); }
+.recover-box.recovering b, .recover-box.today b { color: var(--warn); }
+.recover-box.sore { background: var(--heat-soft); }
+.recover-box.sore b { color: var(--heat); }
+.recover-box p { margin: 0; line-height: 1.6; }
+.rest-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.rest-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 10px; border-radius: 8px; background: var(--warn-soft); cursor: pointer; font-size: 13.5px; }
+.rest-chip small { color: var(--warn); font-size: 12px; }
+.rest-chip.sore { background: var(--heat-soft); } .rest-chip.sore small { color: var(--heat); }

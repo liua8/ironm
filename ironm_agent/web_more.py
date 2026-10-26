@@ -219,14 +219,47 @@ async def get_calendar(
     }
 
 
+def feel_store() -> Any:
+    from ironm_agent.muscle_feel import default_feel
+
+    return default_feel()
+
+
+FEEL = Depends(feel_store)  # 测试时用 dependency_overrides 换成内存版
+
+
 @router.get("/iron/api/muscles")
 async def get_muscles(
-    user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
+    user_id: str = Depends(_verify()), store: TrainingStore = TRAINING, feel: Any = FEEL
 ) -> dict[str, Any]:
     today = date.today()
     plan = await store.plan(user_id)
-    logs = [x.log for x in await store.workouts(user_id, today - timedelta(days=27))]
-    return muscle_map(logs, today, plan.plan if plan else None)
+    # 恢复要看"4 周内练过没有"：多读一段
+    logs = [x.log for x in await store.workouts(user_id, today - timedelta(days=35))]
+    return muscle_map(logs, today, plan.plan if plan else None, await feel.latest(user_id))
+
+
+class FeelIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    muscle: str
+    feel: Literal["sore", "fine"]
+
+
+@router.post("/iron/api/muscles/feel")
+async def post_muscle_feel(
+    body: FeelIn,
+    user_id: str = Depends(_verify()),
+    store: TrainingStore = TRAINING,
+    feel: Any = FEEL,
+) -> dict[str, Any]:
+    """本人说某块肌肉还酸 / 已经不酸了（spec [2026-10-23] §30）：恢复判断以本人说的为准。"""
+    from ironm_agent.protools.muscle_map import MUSCLES
+
+    if body.muscle not in MUSCLES:
+        raise HTTPException(422, "没有这块肌肉")
+    await feel.add(user_id, body.muscle, body.feel, date.today())
+    return await get_muscles(user_id, store, feel)
 
 
 # ---- 动作视频（官方上传）--------------------------------------------------------------------

@@ -89,27 +89,33 @@ def test_safe_fetch_returns_none_on_error(monkeypatch: pytest.MonkeyPatch) -> No
 # ---- 人体图 ---------------------------------------------------------------------------------
 
 
-def _group(m: dict[str, Any], name: str) -> dict[str, Any]:
-    return next(g for side in ("front", "back") for g in m[side] if g["name"] == name)  # type: ignore[attr-defined]
+def _muscle(m: dict[str, Any], name: str) -> dict[str, Any]:
+    return next(x for x in m["muscles"] if x["name"] == name)  # type: ignore[attr-defined]
 
 
-def test_muscle_map_recent_week_none() -> None:
+def test_muscle_map_sets_by_main_and_assist() -> None:
+    """spec [2026-10-23] §30：细分肌肉；主要练到每组记 1 组，辅助练到按半组；按近 7 天组数分档。"""
     logs = [
         WorkoutLog(day=TODAY - timedelta(days=2), items=[LogItem(exercise="高脚杯深蹲", sets=3)]),
         WorkoutLog(day=TODAY - timedelta(days=5), items=[LogItem(exercise="哑铃卧推", sets=4)]),
+        WorkoutLog(day=TODAY - timedelta(days=6), items=[LogItem(exercise="哑铃卧推", sets=6)]),
         WorkoutLog(
             day=TODAY - timedelta(days=12), items=[LogItem(exercise="单臂哑铃划船", sets=3)]
         ),
     ]
     m = muscle_map(logs, TODAY)
-    quad = _group(m, "股四头肌")
+    quad = _muscle(m, "股四头肌")
+    assert quad["sets_7d"] == 3 and quad["level"] == "low" and quad["last"] == "2026-10-21"
+    assert "高脚杯深蹲 3 组" in quad["history"][0]
+    assert _muscle(m, "胸大肌")["sets_7d"] == 10 and _muscle(m, "胸大肌")["level"] == "high"
     assert (
-        quad["status"] == "recent" and quad["status_name"] == "两天内练过" and quad["sets_7d"] == 3
+        _muscle(m, "三角肌前束")["sets_7d"] == 5
+        and "（辅助）" in _muscle(m, "三角肌前束")["history"][0]
     )
-    assert "高脚杯深蹲 3 组" in quad["history"][0] and quad["last"] == "2026-10-21"
-    assert _group(m, "胸")["status"] == "week"
-    assert _group(m, "背")["status"] == "none" and "背" in m["untrained"]  # type: ignore[operator]
-    assert _group(m, "背")["last"] == "2026-10-11"  # 练过但 7 天以上了
+    assert _muscle(m, "腹直肌")["sets_7d"] == 1.5  # 高脚杯深蹲辅助练到核心
+    lat = _muscle(m, "背阔肌")
+    assert lat["level"] == "none" and lat["last"] == "2026-10-11" and "背阔肌" in m["untrained"]  # type: ignore[operator]
+    assert set(m["front"]) | set(m["back"]) == {x["name"] for x in m["muscles"]}  # type: ignore[arg-type, union-attr]
 
 
 def test_muscle_map_uses_plan_for_quick_checkin() -> None:
@@ -118,7 +124,17 @@ def test_muscle_map_uses_plan_for_quick_checkin() -> None:
          "sessions": [{"day": 3, "name": "上肢拉", "items": [{"exercise": "单臂哑铃划船", "sets": 4, "reps": "10"}]}]}
     )  # fmt: skip
     logs = [WorkoutLog(day=TODAY - timedelta(days=1), session="上肢拉")]  # 首页一键打卡，没写动作
-    assert _group(muscle_map(logs, TODAY, plan), "背")["status"] == "recent"
+    assert _muscle(muscle_map(logs, TODAY, plan), "背阔肌")["sets_7d"] == 4
+
+
+def test_every_tagged_muscle_is_on_the_map() -> None:
+    from ironm_agent.protools.movement import moves
+    from ironm_agent.protools.muscle_map import MUSCLES
+    from ironm_agent.protools.recovery import BASE_DAYS
+
+    assert set(BASE_DAYS) == set(MUSCLES)
+    for mv in moves():
+        assert set(mv.tag.muscles) | set(mv.tag.assist) <= set(MUSCLES), mv.name
 
 
 # ---- 饮食 -----------------------------------------------------------------------------------
@@ -199,6 +215,8 @@ def client(
     app.dependency_overrides[web_more.training_store] = lambda: book
     app.dependency_overrides[web_more.memory_store] = lambda: MemoryBook()
     app.dependency_overrides[web_more.meal_store] = lambda: meals
+    feels = __import__("ironm_agent.muscle_feel", fromlist=["FeelBook"]).FeelBook()
+    app.dependency_overrides[web_more.feel_store] = lambda: feels
     if monkeypatch is not None:
 
         async def no_targets(_: str) -> tuple[Any, str, Any]:
@@ -229,8 +247,15 @@ def test_muscles_endpoint() -> None:
         book.log("42", WorkoutLog(day=date.today(), items=[LogItem(exercise="俯卧撑", sets=3)]))
     )
     got = c.get("/iron/api/muscles").json()
-    chest = next(g for g in got["front"] if g["name"] == "胸")
-    assert chest["status"] == "recent" and "腘绳肌" in got["untrained"]
+    chest = _muscle(got, "胸大肌")
+    assert chest["sets_7d"] == 3 and chest["state"] == "today" and "腘绳肌" in got["untrained"]
+    fine = c.post("/iron/api/muscles/feel", json={"muscle": "胸大肌", "feel": "fine"}).json()
+    assert fine["recovering"] == ["肱三头肌"]  # 本人说胸不酸了：以本人说的为准，只改胸大肌
+    assert (
+        c.post("/iron/api/muscles/feel", json={"muscle": "胸", "feel": "fine"}).status_code == 422
+    )
+    sore = c.post("/iron/api/muscles/feel", json={"muscle": "腘绳肌", "feel": "sore"}).json()
+    assert _muscle(sore, "腘绳肌")["state"] == "sore"
 
 
 def test_meal_log_preset_and_privacy(monkeypatch: pytest.MonkeyPatch) -> None:

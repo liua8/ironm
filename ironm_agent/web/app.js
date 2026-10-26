@@ -1016,7 +1016,7 @@ async function data(view) {
       h("span", { class: "row-end" }, "补记录", icon("chevron", "sm"))), () => lackSheet(lack, m)) : null));
   view.append(section("目标进度", null, goalCard({ empty: true })));
   view.append(calendarCard(brief));
-  view.append(section("肌肉人体图", h("span", { class: "caption" }, "最近 28 天"), muscles ? bodyMap(muscles) : failed(new Error("人体图暂时算不出来"), () => render())));
+  view.append(section("肌肉人体图", h("span", { class: "caption" }, "近 7 天"), muscles ? bodyMap(muscles, brief) : failed(new Error("人体图暂时算不出来"), () => render())));
   if (brief) view.append(section("每周复盘", h("span", { class: "caption" }, `${md(brief.week.from)}–${md(brief.week.to)}`), weekCard(brief.week)));
   const more = [...CALC, ...MORE].map((k) => m[k]).filter((x) => x && x.value != null);
   if (more.length) {
@@ -1119,63 +1119,126 @@ function metricGroup(title, present) {
       h("span", { class: "row-end" }, "暂无", icon("chevron", "sm")))))) : null);
 }
 
-// 人体图：正面、背面两张，每个肌群按近期练没练着色（规则计算，见 protools/muscle_map.py）
-const BODY = {
-  front: [
-    ["肩", [["ellipse", { cx: 35, cy: 47, rx: 9, ry: 8 }], ["ellipse", { cx: 85, cy: 47, rx: 9, ry: 8 }]]],
-    ["胸", [["ellipse", { cx: 50, cy: 54, rx: 10, ry: 9 }], ["ellipse", { cx: 70, cy: 54, rx: 10, ry: 9 }]]],
-    ["肱二头肌", [["rect", { x: 23, y: 58, width: 10, height: 26, rx: 5 }], ["rect", { x: 87, y: 58, width: 10, height: 26, rx: 5 }]]],
-    ["核心", [["rect", { x: 46, y: 66, width: 28, height: 38, rx: 8 }]]],
-    ["股四头肌", [["rect", { x: 42, y: 120, width: 16, height: 50, rx: 7 }], ["rect", { x: 62, y: 120, width: 16, height: 50, rx: 7 }]]],
-  ],
-  back: [
-    ["肩", [["ellipse", { cx: 35, cy: 47, rx: 9, ry: 8 }], ["ellipse", { cx: 85, cy: 47, rx: 9, ry: 8 }]]],
-    ["背", [["path", { d: "M42 42 H78 L76 94 Q60 102 44 94 Z" }]]],
-    ["肱三头肌", [["rect", { x: 23, y: 58, width: 10, height: 26, rx: 5 }], ["rect", { x: 87, y: 58, width: 10, height: 26, rx: 5 }]]],
-    ["臀", [["ellipse", { cx: 51, cy: 112, rx: 10, ry: 10 }], ["ellipse", { cx: 69, cy: 112, rx: 10, ry: 10 }]]],
-    ["腘绳肌", [["rect", { x: 42, y: 124, width: 16, height: 44, rx: 7 }], ["rect", { x: 62, y: 124, width: 16, height: 44, rx: 7 }]]],
-    ["小腿", [["ellipse", { cx: 50, cy: 188, rx: 7, ry: 15 }], ["ellipse", { cx: 70, cy: 188, rx: 7, ry: 15 }]]],
-  ],
+// 人体图（spec [2026-10-23] §30）：正面、背面各一张，按真实肌肉的形状画；只写左半身的点，右半身镜像，点连成平滑曲线
+const OUTLINE = [[60,4],[52,6],[48,13],[48,22],[51,29],[54,33],[53,37],[44,39],[34,41],[28,45],[25,52],[24,62],[23,74],[22,86],[20,96],[18,108],[17,120],[16,130],[15,138],[17,146],[22,147],[24,140],[25,130],[27,118],[30,104],[32,94],[34,82],[36,72],[38,66],[39,78],[40,92],[41,104],[40,114],[38,126],[37,140],[37,156],[39,172],[40,186],[39,196],[38,210],[40,224],[38,232],[41,236],[50,236],[51,230],[50,220],[51,206],[53,194],[54,184],[56,166],[58,148],[59,138],[60,136]];
+const FOREARM = [[25,93],[22,103],[20,115],[19,126],[23,128],[26,118],[29,106],[32,94],[29,91]];
+const MUSCLE_SHAPES = {
+  front: {
+    斜方肌: [[54,34],[50,37],[44,39],[40,41],[46,42],[52,40],[56,37]],
+    三角肌中束: [[34,41],[29,44],[26,50],[25,57],[28,63],[31,62],[32,53],[33,46]],
+    三角肌前束: [[35,41],[41,43],[42,48],[39,56],[34,63],[32,62],[33,53],[34,46]],
+    胸大肌: [[58,44],[58,58],[57,68],[50,71],[43,69],[39,63],[40,54],[44,47],[51,44]],
+    肱二头肌: [[29,65],[26,72],[25,82],[27,89],[31,89],[34,80],[35,70],[33,65]],
+    前臂: FOREARM,
+    腹直肌: [[52,73],[59,73],[59,94],[59,116],[55,118],[52,110],[51,92]],
+    腹斜肌: [[43,72],[49,74],[50,90],[50,108],[47,111],[43,104],[41,90],[41,79]],
+    股四头肌: [[42,129],[39,140],[39,154],[41,168],[44,180],[47,187],[51,186],[53,176],[54,160],[54,143],[52,133],[47,128]],
+    内收肌: [[55,134],[58,139],[59,150],[57,161],[55,166],[55,150]],
+    小腿: [[41,196],[39,206],[40,218],[43,224],[47,222],[50,210],[51,198],[47,193]],
+  },
+  back: {
+    背阔肌: [[42,52],[39,62],[40,76],[43,90],[49,100],[55,104],[57,96],[55,82],[52,68],[48,58]],
+    斜方肌: [[60,30],[55,34],[48,38],[40,41],[46,46],[52,54],[56,66],[60,76]],
+    三角肌后束: [[38,41],[31,43],[27,49],[26,57],[29,62],[34,60],[38,53],[41,46]],
+    肱三头肌: [[29,63],[26,70],[25,82],[27,90],[31,90],[34,80],[35,68],[33,63]],
+    前臂: FOREARM,
+    竖脊肌: [[55,86],[59,86],[59,118],[54,118],[53,104]],
+    臀中肌: [[41,108],[39,116],[41,122],[47,119],[52,113],[48,109]],
+    臀大肌: [[43,119],[41,128],[44,138],[51,142],[58,140],[59,128],[59,117],[52,115]],
+    腘绳肌: [[42,145],[40,158],[41,174],[44,184],[50,186],[54,176],[56,160],[56,147],[50,143]],
+    小腿: [[41,192],[38,202],[39,214],[43,222],[47,221],[51,210],[52,198],[48,191]],
+  },
 };
-// 身体的轮廓（不着色的部分）
-const SILHOUETTE = [
-  ["circle", { cx: 60, cy: 20, r: 12 }], ["rect", { x: 55, y: 31, width: 10, height: 8, rx: 3 }],
-  ["rect", { x: 38, y: 38, width: 44, height: 68, rx: 14 }],
-  ["rect", { x: 21, y: 84, width: 9, height: 30, rx: 4 }], ["rect", { x: 90, y: 84, width: 9, height: 30, rx: 4 }],
-  ["rect", { x: 40, y: 102, width: 40, height: 20, rx: 8 }],
-  ["rect", { x: 43, y: 168, width: 14, height: 46, rx: 6 }], ["rect", { x: 63, y: 168, width: 14, height: 46, rx: 6 }],
-];
+// 肌肉上的分隔细线（腹肌的横纹、大腿和小腿的肌腹分界），只作装饰
+const MUSCLE_LINES = {
+  front: ["M52 84 Q55.5 85 59 84", "M52 95 Q55.5 96 59 95", "M52 106 Q55.5 107 59 106", "M47 132 Q48 158 48.5 182", "M45 198 Q45.5 210 45 220"],
+  back: ["M45 196 Q46 208 45.5 218", "M48 146 Q49 166 48 182"],
+};
+function smoothPath(pts) {
+  const n = pts.length, f = (p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`;
+  let d = `M${f(pts[0])}`;
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+    d += ` C${f([p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6])} ${f([p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6])} ${f(p2)}`;
+  }
+  return `${d}Z`;
+}
+const mirrorPts = (pts) => pts.map(([x, y]) => [120 - x, y]);
+const MIRROR = "matrix(-1 0 0 1 120 0)";
 
-function bodyFigure(side, groups, onPick) {
-  const svg = s("svg", { viewBox: "0 0 120 222", class: "body-svg", role: "img", "aria-label": side === "front" ? "正面" : "背面" });
-  for (const [tag, attrs] of SILHOUETTE) svg.append(s(tag, { ...attrs, class: "body-base" }));
-  const by = Object.fromEntries(groups.map((g) => [g.name, g]));
-  for (const [name, shapes] of BODY[side]) {
-    const g = by[name];
-    const part = s("g", { class: `muscle m-${g?.status || "none"}`, tabindex: "0", role: "button", "aria-label": `${name}：${g?.status_name || ""}` });
-    for (const [tag, attrs] of shapes) part.append(s(tag, attrs));
-    const t = s("title", {}); t.textContent = `${name}：${g?.status_name || ""}`; part.append(t);
-    part.addEventListener("click", () => onPick(g));
-    part.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(g); } });
+function bodyFigure(side, by, onPick) {
+  const svg = s("svg", { viewBox: "0 0 120 240", class: "body-svg", role: "img", "aria-label": side === "front" ? "正面" : "背面" });
+  svg.append(s("path", { d: smoothPath([...OUTLINE, ...mirrorPts(OUTLINE.slice(1, -1)).reverse()]), class: "body-base" }));
+  for (const [name, pts] of Object.entries(MUSCLE_SHAPES[side])) {
+    const m = by[name];
+    const label = m ? `${name}：近 7 天 ${m.sets_7d} 组，${recoverText(m)}` : name;
+    const part = s("g", { class: `muscle lv-${m?.level || "none"}${m && m.state !== "ready" ? " recovering" : ""}`, tabindex: "0", role: "button", "aria-label": label });
+    const d = smoothPath(pts);
+    part.append(s("path", { d }), s("path", { d, transform: MIRROR }));
+    const t = s("title", {}); t.textContent = label; part.append(t);
+    part.addEventListener("click", () => onPick(m));
+    part.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(m); } });
     svg.append(part);
   }
+  for (const d of MUSCLE_LINES[side]) svg.append(s("path", { d, class: "muscle-line" }), s("path", { d, class: "muscle-line", transform: MIRROR }));
   return h("figure", { class: "body-fig" }, svg, h("figcaption", {}, side === "front" ? "正面" : "背面"));
 }
 
-function bodyMap(mm) {
-  const pick = (g) => g && openSheet(g.name,
-    h("div", { class: "sheet-big" }, chip(g.status_name, g.status === "recent" ? "good" : g.status === "none" ? "attention" : "")),
-    h("div", { class: "kv" }, h("span", {}, "最近一次"), h("span", {}, g.last ? md(g.last) : "最近 28 天没练")),
-    h("div", { class: "kv" }, h("span", {}, "近 7 天"), h("span", {}, `${g.sets_7d} 组`)),
-    g.history.length ? h("div", {}, h("h3", {}, "最近练过"), h("ul", { class: "tips" }, g.history.map((x) => h("li", {}, x)))) : null,
-    h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(g.status === "none" ? `我的${g.name}很久没练了，怎么补上？` : `我的${g.name}最近练得够吗？`) }, icon("coach", "sm"), "问问教练"));
+// 每块肌肉的恢复状态（spec [2026-10-23] §30）
+const RECOVER_WORD = { today: "今天刚练", recovering: "恢复中", sore: "还酸" };
+function recoverText(m) {
+  if (m.state === "sore") return "你说还酸：先别练它，等不酸了再练";
+  if (m.state === "ready") return "可以练";
+  return `${m.state === "today" ? "今天刚练" : "恢复中"}，${md(m.ready_on)}可以再练`;
+}
+
+function bodyMap(mm, brief) {
+  const by = Object.fromEntries(mm.muscles.map((m) => [m.name, m]));
+  const tell = async (m, feel, btns) => {
+    for (const b of btns) b.disabled = true;
+    try {
+      await api("/iron/api/muscles/feel", { method: "POST", body: JSON.stringify({ muscle: m.name, feel }) });
+      closeSheet(); render();
+    } catch (err) {
+      for (const b of btns) b.disabled = false;
+      btns.find((b) => b.isConnected)?.parentElement?.after(h("p", { class: "error" }, err.message));
+    }
+  };
+  const pick = (m) => {
+    if (!m) return;
+    const sore = h("button", { class: "btn ghost small", type: "button" }, "还酸");
+    const fine = h("button", { class: "btn ghost small", type: "button" }, "已经不酸了");
+    const btns = [sore, fine];
+    sore.addEventListener("click", () => tell(m, "sore", btns));
+    fine.addEventListener("click", () => tell(m, "fine", btns));
+    openSheet(m.name,
+      h("div", { class: "sheet-big" }, h("span", { class: "v" }, String(m.sets_7d), h("small", {}, "组 · 近 7 天")), chip(m.level_name)),
+      h("div", { class: `recover-box ${m.state}` },
+        h("b", {}, recoverText(m)),
+        m.recover_why.length && m.state !== "ready" ? h("p", { class: "muted" }, `为什么：${m.recover_why.join("；")}`) : null,
+        h("div", { class: "btn-row" }, m.state === "sore" ? fine : m.state === "ready" ? sore : [sore, fine])),
+      m.sore_too_long ? h("div", { class: "notice-line" }, icon("alert", "xs"), "说酸已经超过一周，可能不只是练后酸痛，问问康复恢复师。") : null,
+      h("div", { class: "kv" }, h("span", {}, "最近一次"), h("span", {}, m.last ? md(m.last) : "最近 28 天没练")),
+      m.history.length ? h("div", {}, h("h3", {}, "最近练过"), h("ul", { class: "tips" }, m.history.map((x) => h("li", {}, x)))) : null,
+      h("p", { class: "caption" }, "组数：主要练到的每组记 1 组，辅助练到的按半组；增肌通常每块肌肉每周 10 组以上效果更好。恢复按肌肉、动作、组数和用力程度估算，你说的感受优先。"),
+      h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(m.sore_too_long ? `我的${m.name}酸了一周多还没好，怎么回事？` : m.level === "none" ? `我的${m.name}一周没练了，怎么补上？` : `我的${m.name}这周练了 ${m.sets_7d} 组，够吗？`) }, icon("coach", "sm"), "问问教练"));
+  };
+  const top = [...mm.muscles].filter((m) => m.sets_7d > 0).sort((a, b) => b.sets_7d - a.sets_7d);
   const untrained = mm.untrained || [];
+  const resting = mm.muscles.filter((m) => m.state !== "ready");
+  const rd = brief?.today?.readiness;
   return h("div", { class: "card body-card" },
-    h("div", { class: "body-pair" }, bodyFigure("front", mm.front, pick), bodyFigure("back", mm.back, pick)),
-    h("div", { class: "legend" },
-      h("span", {}, h("i", { class: "m-recent" }), "两天内练过"), h("span", {}, h("i", { class: "m-week" }), "本周练过"), h("span", {}, h("i", { class: "m-none" }), "7 天以上没练")),
-    mm.sessions === 0 ? h("p", { class: "muted" }, "最近 28 天还没有训练记录：在首页打卡，或在对话里说“今天练了……”就会记下来。")
-      : untrained.length ? h("div", { class: "notice-line" }, icon("info", "xs"), `7 天以上没练：${untrained.join("、")}`) : h("p", { class: "muted" }, "这周主要肌群都练到了。"),
+    h("div", { class: "body-pair" }, bodyFigure("front", by, pick), bodyFigure("back", by, pick)),
+    h("div", { class: "legend" }, ["none", "low", "mid", "high"].map((lv) => h("span", {}, h("i", { class: `lv-${lv}` }), { none: "没练", low: "1–4 组", mid: "5–9 组", high: "10 组以上" }[lv])), h("span", {}, h("i", { class: "dash" }), "恢复中")),
+    rd && (rd.level === "poor" || rd.level === "fair") && rd.reasons?.length ? h("div", { class: "notice-line" }, icon("alert", "xs"), `${rd.reasons[0]}：今天整体恢复偏慢，可以降低强度。`) : null,
+    resting.length ? h("div", { class: "rest-list" }, resting.map((m) => pressable(h("span", { class: `rest-chip ${m.state}` },
+      h("b", {}, m.name), h("small", {}, m.state === "sore" ? "还酸" : `${md(m.ready_on)}可练`)), () => pick(m)))) : null,
+    mm.sessions === 0 ? h("p", { class: "muted" }, "最近还没有训练记录：在首页打卡，或在对话里说“今天练了……”就会记下来。") : h("div", { class: "muscle-rows" },
+      top.slice(0, 6).map((m) => pressable(h("div", { class: "muscle-row" },
+        h("span", { class: "mr-name" }, m.name, RECOVER_WORD[m.state] ? h("em", {}, RECOVER_WORD[m.state]) : null),
+        h("span", { class: "mr-bar" }, h("i", { class: `lv-${m.level}`, style: `width:${Math.min(100, (m.sets_7d / 12) * 100)}%` })),
+        h("span", { class: "mr-sets" }, `${m.sets_7d} 组`)), () => pick(m)))),
+    untrained.length && mm.sessions ? h("div", { class: "notice-line" }, icon("info", "xs"), `近 7 天没练：${untrained.join("、")}`) : null,
     untrained.length && mm.sessions ? h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`我最近${untrained.join("、")}没怎么练，下次训练怎么补上？`) }, icon("coach", "sm"), "让教练帮我补上") : null,
     h("p", { class: "caption" }, mm.note));
 }
