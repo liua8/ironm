@@ -43,6 +43,7 @@ SIGNALS: dict[str, tuple[str, str]] = {
     "route_disagree": ("route", "三路意见不一致"),
     "route_fallback": ("route", "按关键词兜底"),
     "route_missed": ("route", "回答里提到该请却没请的角色"),
+    "declined_scope": ("route", "判为超出范围、没请专业角色"),
     "kb_empty": ("knowledge", "查资料查空"),
     "experience_high": ("knowledge", "标〔经验〕的句子过半"),
     "tool_error": ("tool", "工具调用失败"),
@@ -186,6 +187,9 @@ def diagnose(run: Mapping[str, Any]) -> list[Signal]:
         add(Signal("route_disagree", detail="/".join(f"{c}:{r}" for c, r in sorted(tops.items()))))
     if run.get("route_by") == "keyword" and route:
         add(Signal("route_fallback"))
+    # 判成超出范围：便于发现把训练问题误判成超出范围（spec [2026-10-23] §41）
+    if route.get("intent") == "out_of_scope":
+        add(Signal("declined_scope"))
     for x in run.get("_experts") or []:
         role = x.get("role", "")
         for m in x.get("mentions") or []:

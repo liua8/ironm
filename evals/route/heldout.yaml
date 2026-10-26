@@ -59,4 +59,4 @@ cases:
   - {id: O03, ask: 帮我写一首关于春天的诗, intent: out_of_scope}
   - {id: O04, ask: 辛苦啦，今天就到这, intent: chat}
   - {id: O05, ask: 我的数据你们存在哪里, intent: app}
-  - {id: O06, ask: 明天天气怎么样, intent: out_of_scope}
+  - {id: O06, ask: 明天天气怎么样, primary: [trainer]}  # spec [2026-10-23] §41：天气是安排训练的一部分，原标注 out_of_scope

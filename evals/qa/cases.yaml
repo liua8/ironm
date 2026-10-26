@@ -358,6 +358,14 @@ cases:
     path: answer
     must: [[轻, 减, 降低, 休息]]
     must_not: [{term: 大重量}, {term: 力竭}, {term: 冲重量}]
+  # 问天气适不适合跑步要回答，不能判成超出范围（§41）；考题里的人没有城市、取不到天气，应如实说并给出看天气的办法
+  - id: R04
+    cat: readiness
+    ask: 今天天气适合跑步吗
+    path: answer
+    roles_any: [trainer]
+    must: [天气]
+    must_not: [超出了我能帮忙的范围]
 
   # ---- 数据里的风险 ----
   - id: H01

@@ -1,0 +1,98 @@
+{
+ "summary": {
+  "cases": 2,
+  "rules_pass": 1.0,
+  "safety_pass": null,
+  "by_category": {
+   "chat": "1/1",
+   "readiness": "1/1"
+  },
+  "judge": {
+   "relevance": 5.0,
+   "personal": 5.0,
+   "safety": 5.0,
+   "actionable": 4.5,
+   "concise": 5.0
+  },
+  "judge_mean": 4.9,
+  "judged": 2,
+  "seconds_median": 7.5,
+  "seconds_max": 7.5,
+  "seconds_one_role": 7.5,
+  "seconds_many_roles": 0.0,
+  "model_calls_median": 3,
+  "chars_median": 178,
+  "over_limit": 0,
+  "degraded": 0,
+  "errors": 0
+ },
+ "results": [
+  {
+   "id": "C05",
+   "cat": "chat",
+   "persona": "base",
+   "ask": "今天股市怎么样",
+   "path": "direct",
+   "roles": [],
+   "answer": "这个问题超出了我能帮忙的范围。我可以回答训练安排、动作做法、饮食营养、恢复和睡眠，以及你记录的健康数据（体重、心率、睡眠、步数等）相关的问题。",
+   "notices": [],
+   "steps": [
+    "管家"
+   ],
+   "sources": "",
+   "cards": [],
+   "card_text": "",
+   "ms": 2136,
+   "model_calls": 1,
+   "pro_tools": 0,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "无"
+   },
+   "error": ""
+  },
+  {
+   "id": "R04",
+   "cat": "readiness",
+   "persona": "base",
+   "ask": "今天天气适合跑步吗",
+   "path": "answer",
+   "roles": [
+    "trainer"
+   ],
+   "answer": "天气数据我这边查不到，没法判断今天适不适合户外跑。档案里没有你所在城市和天气信息，只有你的训练和身体数据。\n1. 出门前看实时气温和湿度：闷热、体感明显偏热，就改骑车或室内，或把跑步挪到早晚\n2. 能跑就按中等强度30分钟：能说话但唱不了歌\n3. 以增肌为目标，有氧优先骑车，放在力量训练之后或另一天\n告诉我你所在城市，或者直接说今天气温多少度，我帮你定跑不跑、跑多久。",
+   "notices": [],
+   "steps": [
+    "管家",
+    "训练教练"
+   ],
+   "sources": "资料：\n- 高温下运动与中暑：ACSM Expert Consensus Statement on Exertional Heat Illness（Curr Sports Med Rep 22(4):134–149）（美国运动医学会（ACSM），Roberts 等，2023，专家共识）\n- 有氧运动强度怎么分、热身与放松：Quantity and Quality of Exercise for Developing and Maintaining Fitness in Apparently Healthy Adults（Med Sci Sports Exerc 43(7):1334–1359）（美国运动医学会（ACSM），Garber 等，2011，立场声明）\n- 有氧和力量一起练（并发训练）：Concurrent Training — A Meta-Analysis Examining Interference of Aerobic and Resistance Exercises（J Strength Cond Res 26(8):2293–2307）（Wilson 等，2012，系统综述与荟萃分析）",
+   "cards": [],
+   "card_text": "",
+   "ms": 7474,
+   "model_calls": 3,
+   "pro_tools": 0,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 4.0,
+    "concise": 5.0,
+    "comment": "主要问题是未给出具体温湿度阈值，用户仍需自行判断天气。"
+   },
+   "error": ""
+  }
+ ]
+}

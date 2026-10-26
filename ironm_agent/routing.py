@@ -148,6 +148,12 @@ def keyword_intent(text: str, lib: ExampleFile | None = None) -> Intent | None:
     return None
 
 
+def in_scope(text: str, lib: ExampleFile | None = None) -> bool:
+    """这句话提到了运动、训练、饮食或天气（例句库 intents.in_scope 的词）：模型判成超出范围时也按专业问题处理。"""
+    lowered = (text or "").lower().replace(" ", "")
+    return any(w.lower() in lowered for w in (lib or examples()).intents.get("in_scope", ()))
+
+
 # ---- 语义向量：本机中文小模型 ------------------------------------------------------------------
 
 
@@ -215,7 +221,7 @@ _PROMPT = """你是健身 App "AI 健身管家"的问题分类器。只做分类
 {roles}
 
 请判断：
-1. intent：pro（训练、动作、饮食、恢复、身体数据、健康安全相关的专业问题）、chat（打招呼、闲聊、道谢）、app（问 App 怎么用、你是谁、用的什么模型）、out_of_scope（与健身健康无关）。拿不准时选 pro。
+1. intent：pro（训练、动作、饮食、恢复、身体数据、健康安全相关的专业问题）、chat（打招呼、闲聊、道谢）、app（问 App 怎么用、你是谁、用的什么模型）、out_of_scope（与运动、身体、饮食都无关，如写诗、股票、写代码）。问天气、气温、下雨、空气质量（适不适合跑步和户外训练，或者只问今天、明天天气怎么样）算 pro，交给 trainer：天气是安排训练的一部分。拿不准时选 pro。
 2. scores：每个专业角色和这个问题的相关程度，0 到 1 之间：最该负责的接近 1；问题明确涉及它的领域就给 0.6 以上；只是沾边给 0.3 以下；无关给 0。
    - 问到"我的"数据时按领域给分：体重、体脂给 nutrition；睡眠、心率、心率变异性、血压给 recovery；步数、力量进步给 trainer。
    - 身体正疼、受伤、生病时，recovery 给 0.6 以上。
@@ -330,6 +336,8 @@ def combine(
     intent: Intent = llm[0] if llm is not None else keyword_intent(text) or "pro"
     if concerns:
         intent = "pro"  # 提到身体不适或特殊人群，一律按专业问题处理
+    elif intent == "out_of_scope" and in_scope(text):
+        intent = "pro"  # 提到运动、饮食或天气就不算超出范围（spec [2026-10-23] §41）
     weighted: dict[str, float] = {
         n: sum((weights[c] * s.get(n, 0.0) for c, s in channels.items()), 0.0) for n in NAMES
     }
