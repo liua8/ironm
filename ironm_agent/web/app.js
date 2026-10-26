@@ -846,8 +846,6 @@ async function food(view) {
     dietReviewCard(),
     section("记一餐", null, mealForm(redraw)),
     section("今天吃了什么", null, list),
-    section("推荐这一餐", null, recommendBox(redraw)),
-    section("减脂餐", null, await presetsBox(redraw)),
     section("问营养师", null, h("div", { class: "asks" },
       ["早餐怎么吃够蛋白质", "练前练后吃什么", "外卖怎么点更健康", "要不要吃肌酸", "减脂期饿了怎么办"].map((q) => askChip(q)))));
 }
@@ -949,7 +947,7 @@ function mealForm(redraw) {
 }
 
 function mealList(d, redraw) {
-  if (!d.meals.length) return h("div", { class: "card" }, h("div", { class: "empty" }, icon("food"), "今天还没记，拍一张或者从下面的减脂餐里选。"));
+  if (!d.meals.length) return h("div", { class: "card" }, h("div", { class: "empty" }, icon("food"), "今天还没记，拍一张或者说一句就行。"));
   return h("div", { class: "card" }, h("div", { class: "rows" }, d.meals.map((x) => {
     const thumb = h("div", { class: "meal-thumb" }, icon("food", "sm"));
     if (x.has_photo) loadPhoto(x.id, thumb);
@@ -981,6 +979,7 @@ function mealSheet(x, redraw) {
     } }, "删除这条"));
 }
 
+// 推荐这一餐、减脂餐：暂时不在页面上（spec [2026-10-23] §35），接口保留，以后要用时放回饮食页
 function recommendBox(redraw) {
   const out = h("div");
   const go = h("button", { class: "btn block", type: "button" }, icon("food", "sm"), "推荐这一餐");
