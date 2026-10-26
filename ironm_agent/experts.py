@@ -22,7 +22,7 @@ from ironm_agent.answer_format import assemble, is_slots, slots_prompt
 from ironm_agent.casefile import CaseFile
 from ironm_agent.checks import EXPERIENCE, check_text, cited_ids, merge_echoes, repair, sentences
 from ironm_agent.common import ContractModel
-from ironm_agent.frameworks import framework, framework_refs
+from ironm_agent.frameworks import flags_of, framework, framework_refs
 from ironm_agent.harness import problem_kinds
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
 from ironm_agent.memory_view import Recall
@@ -77,34 +77,23 @@ _PROMPT = """你是健身 App 里的「{name}」，负责：{duty}。
 
 {framework}
 
-做法：
-1. 先看这个人的档案和系统已经查好的资料；不够再用工具查：{tools}。可以连续查询，最多 3 次。问到 BMI、基础代谢、每天吃多少热量或蛋白质、体重变化、心率和自己基线比怎么样这类问题，直接用档案里的指标计算结果（没有档案时用 compute_metrics）。
-2. 根据依据作答，每句话写的时候就标好出处：
-   - 用到资料的句子，在这一句的句末写〔K03〕（K 编号是资料编号，写这一句的内容真正出自的那份）；
-   - 用到档案或指标计算结果（C 编号，如 BMI、热量目标、今天的身体状态）的句子，在这一句的句末写〔C2〕，数字照档案写；
-   - 用到用户健康数据的句子，写成 <statement>这句话<cite>[r3]</cite></statement>，[ ] 里是这句话用到的数据行编号（r 开头）；整句放进标记里，不要在标记外面先写一遍同样的数字。
-   例：<statement>你近 30 天的静息心率平均 58 次/分<cite>[r3]</cite></statement>，在成年人正常范围的偏低一端〔K20〕。
-   - 查不到资料、凭你的专业经验说的句子，在句末写〔经验〕。
-3. 你被请来就一定要回答这个问题，从你的专业角度给出实用的建议：依据库里有的就用依据库，没有的就用你的专业知识，不能因为查不到就不回答，也不要说"依据库里没有"这类话。
-4. 数字的规矩：标〔K〕〔C〕或数据句里的数字，必须来自那份资料、那个计算结果或那行数据；凭经验给的数字写在标〔经验〕的句子里；不要编造用户的个人数据。
-5. 查健康数据时：没有记录就如实说"没有找到记录"，不能推测为正常；不同设备的心率变异性（SDNN 与 RMSSD）是不同指标，不要放在一起比较。
-6. 不诊断、不开药。说出他自己的化验或测量数值、日期、参考范围、偏高还是偏低，不算诊断，他问到时要直接说；判断病因、说是什么病、开药才算诊断。涉及疼痛或不适时，写明出现什么情况要停止并就医。
-7. 专业的回答方式：
-   - 先给结论，再用一句话说理由（用到他的情况或依据），再给做法；
-   - 关于这个人的事实（今天的状态、伤病、计划、训练记录、数据）只照档案、数据和他这句话说，不推测、不改写：档案写"状态好"就不能说"状态差"；档案里没有的计划、组次、伤病不能说有；他这句话说的情况以这句话为准；
-   - 给具体能执行的量（组数次数、克数、分钟），不用"适量""多注意""循序渐进"这类空话；
-   - 信息不够时按最常见的情况答，并说明按什么情况答的；拿不准的地方说出来，不装作确定。
-8. 直接回答用户问的那件事，不说空话套话。只用真正改变建议的个人数据和计算结果（比如按体重算剂量）；问跑前吃什么就别列 BMI，问膝盖疼就别提体重；不要把查到的指标都罗列出来。for_you 只写能让建议更具体的个人信息（比如按这个人的体重算出的量），没有就留空；不要罗列"你的记录里没有什么"，除非用户问的就是这个数据。
-9. 用到这个人的体重等数据换算时（例如按 0.3 克/公斤算剂量），把这句话写成 <statement>按你 69.2 公斤算，每天约 21 克〔K10〕<cite>[r3]</cite></statement>，资料编号和数据编号都写上。
+回答方式：
+1. 先给结论，再用一句话说理由，再给做法；只答问的，没问到的不说。
+2. 关于这个人的事实（状态、伤病、计划、记录、数据）只照档案、数据和他这句话说，不推测、不编造；档案里有和问题相关的数据时，结论用上一条。
+3. 给具体的量（组次、克数、分钟），不说"适量、多注意、循序渐进"。
+4. 你被请来就要回答：资料里没有就凭专业经验答；不诊断、不开药。
+先看档案和系统查好的资料，不够再用工具查（{tools}），最多 3 次，拿到要的就作答。
+
+出处（系统会逐句核对）：用到资料的句子句末写〔K03〕，用到档案或计算结果写〔C2〕，凭经验写〔经验〕；用到他的健康数据写成 <statement>这句话<cite>[r3]</cite></statement>。带数字的句子都要有出处，数字照资料、计算或数据写；按他的体重换算时资料编号和数据编号都写上。
 {tail}"""
 
-_OPINION_TAIL = """10. 用中文，口语化，专业、精炼：每个字段不超过 80 字，只写最关键的一两点，不铺垫、不罗列所有可能。
+_OPINION_TAIL = """用中文，口语化，专业、精炼：每个字段不超过 80 字，只写最关键的一两点，不铺垫、不罗列所有可能。
 
 最后只输出 JSON：
 {"conclusion": "一两句结论", "for_you": "结合这个人的情况（没有可留空）", "how": "具体怎么做", "caution": "注意事项（与这件事相关的风险、什么情况要停止或就医；没有可留空）", "uncertain": "不确定的地方（可留空）"}"""
 
 # 只请到一位时（或单 Agent 对照组），由它直接写给用户的回答，不再整合（spec [2026-10-23] §7）
-_SOLO_TAIL = """10. 你是这次唯一作答的角色，直接写给用户的回答（spec [2026-10-23] §38）：第一句就是他问的那件事的答案，理由一句放在后面；只答问的，没问到的不说，用户追问再展开；同一个意思只说一次，不铺垫、不罗列所有可能。上面"输出要写全"的项目，写计划时写进计划，文字里只挑最关键的。出处标记照上面的规矩写在句末（系统展示时会去掉）。用中文，口语、干脆、专业，像私教当面说，用"你"。
+_SOLO_TAIL = """你是这次唯一作答的角色，写的就是给用户的回答（spec [2026-10-23] §38）；写计划时细节写进计划，文字只挑最关键的。用"你"，口语、干脆、专业，像私教当面说。
 
 """
 
@@ -334,11 +323,17 @@ async def consult(
     images：用户这一轮附的图片（给模型看的图片段），只交给主责角色。
     """
     team = _SOLO if solo else (_RELAYED if relay else _ALONE)
+    # 档案里有的少见情况（孕期、血压、伤病……）才把对应规则放进提示词（spec [2026-10-23] §40）
+    flags = (
+        flags_of([x.key for x in case.risks], bool(case.injuries), case.readiness.level)
+        if case is not None
+        else frozenset()
+    )
     system = _PROMPT.format(
         name=spec.name,
         duty=spec.duty,
         team=team,
-        framework=framework(spec.role),
+        framework=framework(spec.role, flags),
         tools=_tool_hint(toolbox),
         tail=(_SOLO_TAIL + slots_prompt(text, task) if solo else _OPINION_TAIL)
         + TASKS.get(task or "", "")
@@ -346,7 +341,9 @@ async def consult(
     )
     toolbox.adopt(e for x in skills for r in x.refs if (e := toolbox.kb.get(r)) is not None)
     # 提示词里的判断规则引用到的资料，回答照抄时也要能通过核对（spec [2026-10-23] §15）
-    toolbox.adopt(e for r in framework_refs(spec.role) if (e := toolbox.kb.get(r)) is not None)
+    toolbox.adopt(
+        e for r in framework_refs(spec.role, flags) if (e := toolbox.kb.get(r)) is not None
+    )
     if memory is None:
         remembered = ""
     else:

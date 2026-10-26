@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 from ironm_agent.experts import consult
-from ironm_agent.frameworks import FRAMEWORKS, framework, framework_refs
+from ironm_agent.frameworks import FRAMEWORKS, flags_of, framework, framework_refs
 from ironm_agent.kb import default_kb
 from ironm_agent.llm import Reply
 from ironm_agent.roles import EXPERTS, SPECS, Role
@@ -13,19 +13,49 @@ from tests.fakes import FakeLLM, jsonr, system_of
 
 SECTIONS = (
     "【你的专业身份】",
+    "【你负责】",
+    "【你不负责，转给谁】",
     "【你的专业思考顺序",
     "【专业判断规则】",
-    "【常见错误，别犯】",
-    "【答之前自检】",
+    "【示例】",
 )
+GONE = ("【输出要写全】", "【处方要写全】", "【常见错误，别犯】", "【答之前自检】")
 
 
 def test_every_role_has_all_sections() -> None:
+    """精简后的结构（spec [2026-10-23] §40）：两个示例，没有"输出要写全""常见错误""答之前自检"。"""
     for role in EXPERTS:
         text = framework(role)
         for s in SECTIONS:
             assert s in text, (role, s)
-        assert "【输出要写全】" in text or "【处方要写全】" in text, role
+        assert not any(g in text for g in GONE), role
+        assert text.count("问：") == 2 and text.count("答：") == 2, role
+
+
+def test_system_prompts_stay_short() -> None:
+    """每个角色的系统提示（共用规矩 + 专业提示词，不含本轮规程和输出格式）不超过 2000 字。"""
+    from ironm_agent.experts import _PROMPT, _SOLO
+
+    for role in EXPERTS:
+        system = _PROMPT.format(
+            name=SPECS[role].name, duty=SPECS[role].duty, team=_SOLO,
+            framework=framework(role), tools="", tail="",
+        )  # fmt: skip
+        assert len(system) <= 2000, (role, len(system))
+
+
+def test_rare_rules_only_when_the_case_has_them() -> None:
+    plain = framework(Role.RECOVERY)
+    assert "孕期" not in plain and "胰岛素" not in plain and "180/110" not in plain
+    preg = framework(Role.RECOVERY, flags_of(["pregnancy"], injured=False))
+    assert "孕期" in preg and "K24" in framework_refs(Role.RECOVERY, {"pregnancy"})
+    assert "180/110" in framework(Role.TRAINER, flags_of(["bp_high"], injured=False))
+    assert "K44" in framework_refs(Role.RECOVERY, flags_of([], injured=True))
+    assert "过度训练" in framework(Role.RECOVERY, flags_of([], False, "poor"))
+    every = frozenset({"injury", "pregnancy", "bp", "diabetes", "cardiac", "poor"})
+    kb = default_kb()
+    for role in EXPERTS:
+        assert all(kb.get(r) is not None for r in framework_refs(role, every)), role
 
 
 def test_refs_exist_in_knowledge_base() -> None:
