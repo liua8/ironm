@@ -44,6 +44,7 @@ const ICONS = {
   chart: [P("M22 12h-4l-3 9L9 3l-3 9H2")],
   back: [P("m15 18-6-6 6-6")],
   plus: [P("M5 12h14"), P("M12 5v14")],
+  history: [P("M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"), P("M3 3v5h5"), P("M12 7v5l4 2")],
   send: [P("m5 12 7-7 7 7"), P("M12 19V5")],
   stop: [["rect", { x: "6", y: "6", width: "12", height: "12", rx: "2" }]],
   chevron: [P("m9 18 6-6-6-6")],
@@ -1853,11 +1854,12 @@ function chatPage(view) {
   const files = h("div", { class: "attach-row", hidden: true });
   const form = h("form", { class: "composer" }, clip, input, send);
   const fresh = h("button", { class: "icon-btn", type: "button", "aria-label": "新对话", title: "新对话", onclick: () => { resetChat(); chat.loaded = true; drawThread(); input.focus(); } }, icon("plus", "sm"));
+  const past = h("button", { class: "icon-btn", type: "button", "aria-label": "以前的对话", title: "以前的对话", onclick: historySheet }, icon("history", "sm"));
   view.append(h("div", { class: "chat" },
     h("div", { class: "chat-bar" },
       h("a", { class: "icon-btn", href: `#${chat.back}`, "aria-label": "返回" }, icon("back", "sm")),
       h("div", { class: "who" }, h("b", {}, "教练"), h("span", {}, "训练教练 · 营养师 · 康复恢复师")),
-      fresh),
+      h("div", { class: "chat-tools" }, past, fresh)),
     thread, files, form));
   chat.els = { thread, input, send, files };
   drawFiles();
@@ -2164,11 +2166,15 @@ async function loadLatest() {
   chat.loaded = true;
   try {
     const list = (await apiData("/api/history")).summaries || [];
-    if (!list.length) return;
-    const latest = list[0];
-    const rows = (await apiData(`/api/history?session_id=${encodeURIComponent(latest.session_id)}`)).history || [];
-    chat.session = latest.session_id;
-    chat.messages = rows.slice(-30).map((row) => {
+    if (list.length) await loadSession(list[0].session_id);
+  } catch { /* 读不到以前的对话就从空白开始 */ }
+}
+
+// 打开某一段以前的对话（spec [2026-10-23] §36）：读出消息，接着在这个会话里问
+async function loadSession(sessionId) {
+  const rows = (await apiData(`/api/history?session_id=${encodeURIComponent(sessionId)}`)).history || [];
+  chat.session = sessionId;
+  chat.messages = rows.slice(-30).map((row) => {
       if (row.role === "user") return { role: "user", text: String(row.content || "") };
       const msg = coachMsg();
       msg.id = row.id || ""; msg.done = true;
@@ -2177,7 +2183,30 @@ async function loadLatest() {
       msg.done = true;
       return msg;
     });
-  } catch { /* 读不到以前的对话就从空白开始 */ }
+}
+
+// 以前的对话：标题和日期，点开回到那段对话
+async function historySheet() {
+  const box = h("div", { class: "rows" }, ...skeleton(48, 48, 48));
+  openSheet("以前的对话", box);
+  let list;
+  try { list = (await apiData("/api/history")).summaries || []; }
+  catch (err) { box.replaceChildren(failed(err, historySheet)); return; }
+  if (!list.length) { box.replaceChildren(h("p", { class: "muted" }, "还没有以前的对话。")); return; }
+  box.replaceChildren(...list.slice(0, 50).map((x) => pressable(h("div", { class: `row-item${x.session_id === chat.session ? " on" : ""}` },
+    h("div", { class: "row-main" }, h("span", { class: "row-title" }, x.summary || "（没有标题）"), h("span", { class: "row-sub" }, sessionTime(x.timestamp))),
+    x.session_id === chat.session ? h("span", { class: "row-end" }, "当前") : icon("chevron", "sm")), async () => {
+    if (chat.busy) return;
+    closeSheet();
+    try { await loadSession(x.session_id); } catch (err) { chat.messages = []; chat.session = x.session_id; }
+    drawThread();
+  })));
+}
+function sessionTime(ts) {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "";
+  const today = isoDay(new Date()), day = isoDay(d), hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return day === today ? `今天 ${hm}` : `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
 }
 
 // ---- 登录 ---------------------------------------------------------------------------------

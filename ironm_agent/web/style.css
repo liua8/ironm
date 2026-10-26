@@ -944,3 +944,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .day-wx.caution { background: var(--warn-soft); } .day-wx.indoor, .day-wx.avoid { background: var(--heat-soft); }
 .day-wx-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .day-wx p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+
+/* ==== 对话历史（spec [2026-10-23] §36） ==== */
+.chat-tools { display: flex; gap: 6px; }
+.row-item.on .row-title { color: var(--accent); }
+.row-item.on .row-end { color: var(--accent); font-size: 12.5px; }

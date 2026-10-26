@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from functools import cache
+from pathlib import Path
 
 from ironm_agent.llm import LLM, ModelUnavailable, load_models
 from ironm_agent.numbers import written_numbers
@@ -30,6 +32,26 @@ _PROMPT = """你是"AI 健身管家"，语气专业又亲切。判断用户这�
 {persona}"""
 
 
+_APP_PROMPT = """你是"AI 健身管家"。用户在问这个 App 怎么用。照下面的使用说明回答：
+- 直接说在哪个页面、点哪里、怎么做，一两步说清楚；他问的事说明里有好几处相关，只挑最相关的说；
+- 说明里没有的功能，如实说目前还没有，可以说可以换个什么方式做到；不要编造按钮或功能；
+- 不给训练量、热量、剂量这类建议数字（说明里写到的数字可以照说）；用中文，简短。
+
+使用说明：
+{guide}
+
+这次对话前面的几轮（只作参考）：
+{history}"""
+
+GUIDE_PATH = Path(__file__).with_name("app_guide.md")
+
+
+@cache
+def app_guide() -> str:
+    """App 使用说明（spec [2026-10-23] §36）：问 App 怎么用时照着答。"""
+    return GUIDE_PATH.read_text(encoding="utf-8")
+
+
 def model_name() -> str:
     return load_models().stages["compose"].model
 
@@ -39,25 +61,22 @@ async def direct(
 ) -> str:
     if intent == "out_of_scope":
         return OUT_OF_SCOPE
+    recent = "\n".join(history[-4:]) or "（无）"
+    if intent == "app":
+        system = _APP_PROMPT.format(guide=app_guide(), history=recent)
+    else:
+        system = _PROMPT.format(model=model_name(), history=recent,
+                                persona=persona or "这个人以前说过的情况：（还没有记录）")  # fmt: skip
     try:
         reply = await llm.chat(
-            "compose",
-            [
-                {
-                    "role": "system",
-                    "content": _PROMPT.format(
-                        model=model_name(),
-                        history="\n".join(history[-4:]) or "（无）",
-                        persona=persona or "这个人以前说过的情况：（还没有记录）",
-                    ),
-                },
-                {"role": "user", "content": text},
-            ],
+            "compose", [{"role": "system", "content": system}, {"role": "user", "content": text}]
         )
     except ModelUnavailable:
         return APP_HELP if intent == "app" else GREETING
     answer = reply.content.strip()
     own = set(written_numbers(text)) | set(written_numbers(persona))  # 他自己说过的数字
+    if intent == "app":
+        own |= set(written_numbers(app_guide()))  # 使用说明里写到的数字可以照说
     if not answer or any(v not in own for v in written_numbers(answer)):
         return APP_HELP if intent == "app" else GREETING
     return answer
