@@ -32,7 +32,7 @@ from ironm_agent.constraints import check as check_constraints
 from ironm_agent.exercises import named_in
 from ironm_agent.experts import Consultation, consult, write_task
 from ironm_agent.harness import TraceStore, mentioned_roles, missing_readings, new_turn, react
-from ironm_agent.indicators import kinds_of, named_indicators
+from ironm_agent.indicators import named_indicators, record_kinds
 from ironm_agent.kb import KnowledgeBase, default_kb
 from ironm_agent.llm import ModelsConfig, TurnLLM, load_models
 from ironm_agent.memory import USER, earlier, last_sources, recent, split_thread, user_lines
@@ -775,19 +775,23 @@ class IronMAgent:
         index = {role: i for i, role in enumerate(roles)}
         # 问自己的数据（点到了指标）又没说哪里疼时，记忆里的伤病、今天的状态不再强制装伤痛和减量的规程
         # （限制照样写在共享档案里），免得问肌酐也装上"疼痛时怎么改动作"（spec [2026-10-23] §37）
-        asks_data = bool(named_indicators(text)) and not _HURT.search(text)
+        # 没点名具体指标、只说"指标""体检报告"也算；路由挑的伤痛、减量规程这时也不装（§39）
+        records = record_kinds(text)
+        asks_data = bool(records) and not _HURT.search(text)
         triggers = {name for name, on in (
             ("poor", (case.readiness.level in ("poor", "fair") or case.readiness.sick) and not asks_data),
             ("injury", bool(case.injuries) and not asks_data), ("plan", job == "plan"), ("log", job == "log"),
             ("image", bool(files.images)), ("move", bool(named_in(text))),
-            *((k, True) for k in kinds_of(named_indicators(text))),
+            *((k, True) for k in records),
         ) if on}  # fmt: skip
         pictures = [x.part() for x in files.images]
         seeing = r.primary or roles[0]  # 图片只交给主责角色
         similar = default_router().similar  # 说法对不上时按语义选规程（spec [2026-10-23] §20）
         picked = {  # 路由选的规程加上系统情况要求的；路由没选的角色按规则选（§21）
-            role: choose(role, text, triggers, similar, r.skills.get(role.value)) for role in roles
-        }
+            role: choose(role, text, triggers, similar, r.skills.get(role.value),
+                         drop={"injury", "poor"} if asks_data else ())
+            for role in roles
+        }  # fmt: skip
         loaded = {role: got for role, (got, _) in picked.items()}
         run["skills_by"] = {role.value: by for role, (_, by) in picked.items()}
         tools_ctx = self._tool_context(user_id, snapshot, case, recall)

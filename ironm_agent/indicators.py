@@ -66,3 +66,20 @@ METRICS: frozenset[str] = frozenset({
 def kinds_of(names: list[str]) -> set[str]:
     """问到的指标属于哪类：lab（化验、体检）、metric（每天测的体征和设备数据）。"""
     return {"metric" if n in METRICS else "lab" for n in names}
+
+
+# 没点名具体指标的说法（spec [2026-10-23] §39）："化验单""体检报告"算化验；"健康指标"化验和每天的数据都可能
+LAB_WORDS: tuple[str, ...] = ("化验", "体检", "检查结果", "检查报告", "检验报告")
+RECORD_WORDS: tuple[str, ...] = ("指标", "健康数据", "身体数据")
+
+
+def record_kinds(text: str) -> set[str]:
+    """这句话问的是不是自己的数据、哪类：点名的指标按 kinds_of；只说"化验""体检报告"算 lab；
+    只说"指标""健康数据"时两类都算。"""
+    names = named_indicators(text)
+    kinds = kinds_of(names)
+    if any(w in text for w in LAB_WORDS):
+        kinds.add("lab")
+    if not names and any(w in text for w in RECORD_WORDS):
+        kinds |= {"lab", "metric"}
+    return kinds

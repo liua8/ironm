@@ -156,13 +156,15 @@ def choose(
     triggers: Collection[str] = (),
     similar: Similar | None = None,
     routed: Sequence[str] | None = None,
+    drop: Collection[str] = (),
 ) -> tuple[list[Skill], str]:
     """这一轮给这个角色装载的规程，以及来自哪里（route 路由选的，rule 按规则选的）。
     路由选了（空列表表示不装讲内容的规程）：先放路由看不到的系统情况要求的，再放路由选的，最多 MAX_SKILLS 份；
-    路由没选：按 pick 的办法。讲法规程都按规则装载。"""
+    路由没选：按 pick 的办法。讲法规程都按规则装载。
+    drop：这些情况触发的规程这一轮不装，路由选了也不装（问自己的数据时的伤痛、减量规程，spec [2026-10-23] §39）。"""
     if routed is None:
         return pick(role, text, triggers, similar), "rule"
-    content = _routable(role)
+    content = [x for x in _routable(role) if not set(x.on) & set(drop)]
     by_id = {x.id: x for x in content}
     required = [x for x in content if any(t in RULE_TRIGGERS and t in triggers for t in x.on)]
     chosen = list(dict.fromkeys([*required, *(by_id[i] for i in routed if i in by_id)]))[
