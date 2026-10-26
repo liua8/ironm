@@ -156,3 +156,41 @@ def hero_line(today: dict[str, Any], week: dict[str, Any]) -> dict[str, str]:
             return {"title": "休息日", "push": "本周目标已经拿下，今天专心恢复。"}
         return {"title": "休息日", "push": "恢复也是训练的一部分：散散步、拉拉伸。"}
     return {"title": "开练吧", "push": "还没有训练计划：让教练按你的目标排一份，从今天开始。"}
+
+
+# 首页一句鼓励的话（spec [2026-10-23] §34）：只鼓劲、不安排任务；按今天的情况选，没有特别情况时按日期轮换
+CHEERS = (
+    "每一次打卡，都在为更好的自己加分。",
+    "动起来，比完美的计划更重要。",
+    "坚持的人，身体都看得见。",
+    "今天流的汗，是明天的底气。",
+    "不求一次练很猛，只求每周都在练。",
+    "比昨天的自己多一点，就是进步。",
+    "身体会记住你的每一次坚持。",
+)
+
+
+def cheer(today: dict[str, Any], week: dict[str, Any], *, rainy: bool = False, hot: bool = False,
+          on: date | None = None) -> str:  # fmt: skip
+    t = today.get("training") or {}
+    level = (today.get("readiness") or {}).get("level")
+    planned, done = week.get("planned") or 0, week.get("done") or 0
+    kind = t.get("kind")
+    if kind == "session" and t.get("done"):
+        return "今天的训练完成了，干得漂亮！"
+    if planned and done >= planned:
+        return "本周目标已经拿下，接下来每一练都是加分。"
+    if kind == "session" and level == "poor":
+        return "状态差也来了，就已经赢了一半。"
+    if kind == "session" and rainy:
+        return "下雨也挡不住你，室内一样练出汗。"
+    if kind == "session" and hot:
+        return "天热也在坚持，练聪明一点，比练得狠更重要。"
+    if kind == "rest":
+        return "休息也是进步的一部分，养足精神明天再来。"
+    if kind not in ("session", "rest"):
+        return "第一步最难，今天就迈出去。"
+    if done >= 2:
+        return f"这周已经练了 {done} 次，保持住这股劲！"
+    day = on or date.today()
+    return CHEERS[day.toordinal() % len(CHEERS)]

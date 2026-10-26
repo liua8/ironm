@@ -16,9 +16,9 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from ironm_agent import imports
+from ironm_agent import imports, weather
 from ironm_agent import profile as profiles
-from ironm_agent.brief import hero_line, today_brief, weekly_review
+from ironm_agent.brief import cheer, hero_line, today_brief, weekly_review
 from ironm_agent.casefile import Snapshot
 from ironm_agent.exercise_images import images_for
 from ironm_agent.exercises import EQUIPMENT, NOTE, PARTS, library
@@ -482,7 +482,18 @@ async def get_brief(
     current = plan.plan if plan else None
     today = today_brief(snap, items, current, logs)
     week = weekly_review(snap, current, logs, plan.since if plan else None)
-    return {"today": today, "week": week, "hero": hero_line(today, week)}
+    hero = hero_line(today, week)
+    rainy = hot = False
+    try:  # 鼓励的话会看今天的天气（spec [2026-10-23] §34）；取不到就不看
+        wx = await weather.for_user(user_id)
+        if wx is not None:
+            level = weather.assess(wx).level
+            rainy = level in ("indoor", "avoid") and wx.code >= 51
+            hot = wx.temperature >= 35
+    except Exception as e:
+        _log.warning("brief weather unavailable: error_type=%s", type(e).__name__)
+    hero["cheer"] = cheer(today, week, rainy=rainy, hot=hot, on=snap.today)
+    return {"today": today, "week": week, "hero": hero}
 
 
 @router.get("/iron")

@@ -26,7 +26,7 @@ from ironm_agent.training import Plan, WorkoutLog, weekday_name
 
 _log = logging.getLogger("ironm_agent.coach_state")
 
-type Kind = Literal["today", "target", "kcal", "goal", "retest", "alert", "proposal"]
+type Kind = Literal["today", "weather", "target", "kcal", "goal", "retest", "alert", "proposal"]
 type Action = Literal["auto", "confirm", "info"]  # 自动生效 / 要用户确认 / 只提醒
 type ChangeKind = Literal[
     "added", "changed", "removed", "accepted", "declined"
@@ -94,7 +94,8 @@ class Inputs:
     pains: list[tuple[str, date]] = field(default_factory=list)
     goal: Any = None  # goal.Goal
     diet: KcalAdjust | None = None
-    advice: Any = None  # weather.Advice
+    advice: Any = None  # weather.Advice（今天的实时天气）
+    forecast: tuple[Any, ...] = ()  # weather.Day：今天起 7 天的预报（spec [2026-10-23] §34）
 
 
 def _today_item(inp: Inputs, today: date) -> Item:
@@ -143,6 +144,33 @@ def _today_item(inp: Inputs, today: date) -> Item:
         value={"original": session.model_dump(mode="json"),
                "today": version.session.model_dump(mode="json")},
     )  # fmt: skip
+
+
+def _weather_items(inp: Inputs, today: date) -> list[Item]:
+    """天气是训练安排的一部分（spec [2026-10-23] §34）：本周以后几天按预报改出的版本，自动生效。"""
+    from ironm_agent.weather_plan import line, week_plan, weekday
+
+    if inp.plan is None or not inp.forecast:
+        return []
+    days = [
+        p
+        for p in week_plan(inp.plan, inp.forecast, today, inp.advice)
+        if p.day > today and p.adjusted
+    ]
+    if not days:
+        return []
+    first = days[0]
+    title = (
+        line(first)
+        if len(days) == 1
+        else f"这周有 {len(days)} 天按天气调整：" + "；".join(line(p) for p in days)
+    )
+    return [Item(key="weather", kind="weather", title=title[:160], action="auto",
+                 why="；".join(dict.fromkeys(r for p in days for r in p.reasons)),
+                 basis="天气预报（Open-Meteo）；高温预警分级；户外运动的天气规则（经验）",
+                 value={"days": [{"date": p.day.isoformat(), "weekday": weekday(p.day),
+                                  "session": p.session.name if p.session else "", "changes": list(p.changes),
+                                  "better": weekday(p.better) if p.better else ""} for p in days]})]  # fmt: skip
 
 
 def _target_items(inp: Inputs) -> list[Item]:
@@ -241,11 +269,25 @@ def _review_item(inp: Inputs) -> list[Item]:
 
 def compute(inp: Inputs, today: date) -> list[Item]:
     """按规则算出当前方案（顺序：今天、提醒、待确认、饮食、目标、下次目标）。"""
-    items = [_today_item(inp, today), *_alert_items(inp, today), *_review_item(inp)]
+    items = [
+        _today_item(inp, today),
+        *_weather_items(inp, today),
+        *_alert_items(inp, today),
+        *_review_item(inp),
+    ]
     items += _food_items(inp)
     items += _goal_items(inp)
     items += _target_items(inp)
-    order = {"today": 0, "alert": 1, "proposal": 2, "kcal": 3, "goal": 4, "retest": 5, "target": 6}
+    order = {
+        "today": 0,
+        "weather": 1,
+        "alert": 2,
+        "proposal": 3,
+        "kcal": 4,
+        "goal": 5,
+        "retest": 6,
+        "target": 7,
+    }
     return sorted(items, key=lambda x: order[x.kind])
 
 
@@ -419,6 +461,7 @@ async def _gather(user_id: str, deps: Deps, today: date) -> Inputs:
 
         wx = await safely("weather", deps.weather(user_id))
         inp.advice = weather.assess(wx) if wx is not None else None
+        inp.forecast = tuple(getattr(wx, "days", ()) or ()) if wx is not None else ()
     return inp
 
 

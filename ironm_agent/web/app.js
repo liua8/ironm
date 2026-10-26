@@ -247,14 +247,22 @@ const QUICK = {
 const WEEK = ["一", "二", "三", "四", "五", "六", "日"];
 const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
+// 首页（spec [2026-10-23] §34）：一句鼓励的话、今日任务、战报、本周计划（带天气）、日历
 async function home(view) {
-  const [brief, wx, training, cal] = await Promise.all([
+  const [brief, training, cal, week, meals] = await Promise.all([
     api("/iron/api/brief").catch(() => null),
-    api("/iron/api/weather").catch(() => ({ status: "unavailable", message: "暂时取不到天气" })),
     api("/iron/api/training").catch(() => null),
     api("/iron/api/calendar").catch(() => null),
+    api("/iron/api/week").catch(() => null),
+    api("/iron/api/meals").catch(() => null),
   ]);
-  view.append(statusCard(brief, wx, cal, training), planTable(training, brief));
+  planSessions = training?.plan?.sessions || []; planTargets = training?.targets || {};
+  view.append(
+    brief?.hero?.cheer ? h("p", { class: "home-cheer" }, brief.hero.cheer) : null,
+    taskCard(brief, training, week, meals),
+    reportCard(brief, cal),
+    weekPlanCard(week, cal, brief),
+    monthCard(brief, week));
 }
 
 // 本周进度环（spec [2026-10-23] §19）
@@ -346,117 +354,116 @@ function wxIcon(text) {
 }
 const aqiTone = (a) => (a <= 100 ? "good" : a <= 150 ? "mid" : "bad");
 
-// 今日战报（spec [2026-10-23] §19）：今天练什么、一句鼓劲的话、本周进度环、本月天数、状态与天气
-function statusCard(brief, wx, cal, tr) {
-  const day = brief?.today, week = brief?.week, hero = brief?.hero;
-  return h("div", { class: "hero" },
-    h("div", { class: "scan", "aria-hidden": "true" }),
-    h("div", { class: "hero-kicker" }, h("span", { class: "hero-tag" }, "今日战报")),
-    h("div", { class: "hero-main" },
-      h("div", { class: "hero-text" },
-        h("h2", { class: "hero-title" }, hero?.title || "今天"),
-        h("p", { class: "hero-push" }, hero?.push || "今天的简报暂时取不到，稍后再看。")),
-      ring(week?.done || 0, week?.planned || 0)),
-    weekCalendar(tr, cal, wx, brief),
-    day?.alert && day?.training?.kind !== "session" ? h("p", { class: "hero-alert" }, icon("alert", "xs"), day.alert) : null,
-    inboxLine());
+// ---- 首页各块（spec [2026-10-23] §34） ----
+function cardHead(title, extra) {
+  return h("div", { class: "home-head" }, h("h3", {}, title), extra || null);
 }
 
-// 本周日历和天气（spec [2026-10-23] §33）：每天练什么、练过没有；今天和以后几天的天气和最高气温；
-// 那天的计划里有户外类动作、天气又不适合户外时，标一个提醒点；点某一天看那天的计划和天气，点"整月"看整月日历
-const OUTDOOR = /跑|骑|快走|徒步|跳绳|爬山|户外/;
-const outdoorOf = (x) => (x?.items || []).filter((it) => OUTDOOR.test(it.exercise)).map((it) => it.exercise);
-const badWeather = (level) => level === "indoor" || level === "avoid";
-function weekCalendar(tr, cal, wx, brief) {
-  const plan = tr?.plan;
-  const now = new Date(), todayNo = now.getDay() || 7, todayIso = isoDay(now);
-  const byDay = Object.fromEntries((plan?.sessions || []).map((x) => [x.day, x]));
-  const lit = new Set(cal?.done_days || []);
-  const forecast = Object.fromEntries((wx?.forecast || []).map((f) => [f.date, f]));
-  const days = WEEK.map((w, i) => {
-    const d = i + 1, iso = isoDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - todayNo + d));
-    const f = forecast[iso];
-    const today = iso === todayIso;
-    // 今天用实时天气的判断（含空气质量），以后几天用预报
-    const level = today && wx?.status === "ok" ? wx.advice.level : f?.level;
-    return { d, w, iso, x: byDay[d], done: lit.has(iso), today, past: iso < todayIso, f, level };
-  });
-  const cells = days.map((c) => {
-    const warn = outdoorOf(c.x).length && !c.past && !c.done && badWeather(c.level);
-    const cls = `wc-day${c.x ? " plan" : ""}${c.done ? " done" : ""}${c.today ? " today" : ""}${c.past ? " past" : ""}`;
-    const temp = c.today && wx?.status === "ok" ? wx.temperature : c.f?.tmax;
-    const text = c.today && wx?.status === "ok" ? wx.text : c.f?.text;
-    return pressable(h("span", { class: cls, "aria-label": `${c.today ? "今天" : `周${c.w}`}，${c.x ? c.x.name : "休息"}${c.done ? "，练过" : ""}${text ? `，${text} ${temp}度` : ""}` },
-      h("i", {}, c.today ? "今" : c.w),
-      text ? h("span", { class: "wc-wx" }, icon(wxIcon(text), "xs"), h("small", {}, `${temp}°`))
-        : h("span", { class: "wc-wx none" }, c.done ? icon("check", "xs") : ""),
-      h("b", {}, c.x ? c.x.name.slice(0, 2) : "休"),
-      warn ? h("em", { class: "wc-warn", "aria-hidden": "true" }) : null), () => daySheet(c, tr, wx, cal, brief));
-  });
-  const note = wx?.status === "ok" && wx.advice.level !== "good" && wx.advice.reasons.length
-    ? pressable(h("p", { class: `wc-note ${wx.advice.level}` }, icon(wxIcon(wx.text), "xs"), h("span", {}, wx.advice.reasons[0])), () => weatherSheet(wx))
-    : wx?.status === "no_city" ? h("a", { class: "wc-note link", href: "#me" }, icon("sun", "xs"), h("span", {}, "设置城市后，日历里会显示天气"))
-      : null;
-  return h("div", { class: "week-cal" },
-    h("div", { class: "wc-head" }, h("span", {}, wx?.status === "ok" ? `本周 · ${wx.place}` : "本周"),
-      h("button", { class: "link", type: "button", onclick: () => monthSheet(brief) }, `这个月练了 ${cal?.done_days?.length ?? 0} 天 · 整月`, icon("chevron", "xs"))),
-    h("div", { class: "wc-row" }, cells),
-    note);
+// 一条任务：做完的打勾；可以点开（展开详情）或跳转
+function taskRow(ic, title, sub, done, onOpen) {
+  const row = h("div", { class: `task${done ? " done" : ""}` },
+    h("span", { class: "task-check", "aria-hidden": "true" }, done ? icon("check", "xs") : null),
+    h("div", { class: "task-main" }, h("b", {}, title), sub ? h("span", {}, sub) : null),
+    onOpen ? icon("chevron", "xs") : null);
+  return onOpen ? pressable(row, onOpen) : row;
 }
 
-// 点日历上的某一天：那天练什么、练过的记录、天气和对训练的影响
-function daySheet(c, tr, wx, cal, brief) {
-  const [, mm, dd] = c.iso.split("-").map(Number);
-  const done = (cal?.days?.[c.iso] || []).filter((e) => e.done);
-  const live = c.today && wx?.status === "ok";
-  const weatherBox = live
-    ? h("div", { class: `day-wx ${wx.advice.level}` },
-      h("div", { class: "day-wx-top" }, icon(wxIcon(wx.text), "sm"), h("b", {}, `${wx.text} ${wx.temperature}°`), h("span", { class: "muted" }, `体感 ${wx.feels_like}°${wx.aqi != null ? ` · 空气${wx.aqi_level}` : ""}`)),
-      h("p", {}, wx.advice.reasons.length ? `${wx.advice.name}：${wx.advice.reasons.join("；")}` : `${wx.advice.name}，天气不影响训练`))
-    : c.f ? h("div", { class: `day-wx ${c.f.level}` },
-      h("div", { class: "day-wx-top" }, icon(wxIcon(c.f.text), "sm"), h("b", {}, `${c.f.text} ${c.f.tmin}–${c.f.tmax}°`), c.f.rain != null ? h("span", { class: "muted" }, `降水概率 ${c.f.rain}%`) : null),
-      h("p", {}, c.f.reasons.length ? `${c.f.name}：${c.f.reasons.join("；")}` : `${c.f.name}，天气不影响训练`))
-      : null;
-  const t = brief?.today?.training;
-  openSheet(`${c.today ? "今天" : `周${c.w}`} · ${mm}月${dd}日`,
-    weatherBox,
-    c.x && !c.past && badWeather(c.level)
-      ? h("p", { class: "muted" }, outdoorOf(c.x).length ? `计划里的${outdoorOf(c.x).join("、")}受天气影响，可以改在室内做（跑步机、动感单车），或者换一天。` : "这天的动作都能在室内做，天气不影响。")
-      : null,
-    c.x ? h("div", {}, h("h3", {}, `${c.x.name} · 约 ${c.x.minutes} 分钟`), h("ol", { class: "plan-items" }, c.x.items.map((it) => h("li", {}, itemLine(it)))))
-      : h("p", { class: "muted" }, "这天是休息日。"),
-    done.length ? h("div", {}, h("h3", {}, "练过"), h("ul", { class: "tips" }, done.map((e) => h("li", {}, e.line)))) : null,
-    c.today && c.x && !t?.done ? h("button", { class: "btn block", type: "button", onclick: () => doneSheet(c.x.name) }, icon("check", "sm"), "练完打卡") : null,
-    c.x && !c.past && badWeather(c.level) && outdoorOf(c.x).length
-      ? h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`周${c.w}${c.today ? "（今天）" : ""}天气是${live ? wx.text : c.f?.text}，我计划练${c.x.name}，里面的${outdoorOf(c.x).join("、")}怎么调整比较合适？`) }, icon("coach", "sm"), "按天气问问教练怎么调整")
-      : null,
-    tr?.plan ? h("button", { class: "btn ghost block", type: "button", onclick: () => weekSheet(tr) }, "看一周计划") : null);
-}
-
-function weekSheet(tr) {
-  const plan = tr.plan, todayNo = new Date().getDay() || 7;
-  const byDay = Object.fromEntries(plan.sessions.map((x) => [x.day, x]));
-  openSheet(plan.title,
-    h("p", { class: "muted" }, `每周 ${plan.days_per_week} 练${plan.goal ? ` · 目标：${plan.goal}` : ""}`),
-    h("div", { class: "pt" }, WEEK.map((w, i) => {
-      const d = i + 1, x = byDay[d], isToday = d === todayNo;
-      const row = h("div", { class: `pt-row${isToday ? " today" : ""}${x ? "" : " rest"}` },
-        h("span", { class: "pt-day" }, isToday ? "今天" : `周${w}`), h("span", { class: "pt-name" }, x ? x.name : "休息"),
-        h("span", { class: "pt-min" }, x ? `${x.minutes} 分钟` : ""), x ? icon("chevron", "xs") : h("span"));
-      return x ? pressable(row, () => sessionSheet(x, isToday, null)) : row;
-    })),
-    h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach("帮我看看现在的训练计划，需要调整吗？") }, icon("coach", "sm"), "让教练调整计划"));
-}
-
-// 有待确认的调整时，今日战报里一行入口，点了进对话（spec [2026-10-23] §26）
-function inboxLine() {
-  const box = h("a", { class: "hero-inbox", href: "#chat", hidden: true });
+// 今日任务：今天的训练（按状态和天气调整过的版本）、记饮食、确认管家的调整
+function taskCard(brief, tr, week, meals) {
+  const t = brief?.today?.training, today = week?.days?.find((d) => d.today);
+  const rows = [];
+  let total = 0, finished = 0;
+  const count = (done) => { total += 1; if (done) finished += 1; };
+  if (!tr?.plan) {
+    count(false);
+    rows.push(taskRow("dumbbell", "排一份训练计划", "告诉教练你的目标、每周能练几天、有什么器械", false, () => askCoach("帮我排一个每周训练计划")));
+  } else if (!today?.session) {
+    count(true);
+    rows.push(taskRow("dumbbell", "今天休息", "散散步、拉拉伸，让身体恢复", true));
+  } else {
+    const done = Boolean(t?.done || today.done);
+    count(done);
+    const minutes = (today.version || today.session).minutes;
+    const wx = today.weather;
+    const sub = done ? "已完成，好好恢复" : [`约 ${minutes} 分钟`, wx ? `${wx.text} ${wx.temp}°` : "", today.changes.length ? "已按天气调整" : ""].filter(Boolean).join(" · ");
+    const detail = h("div", { class: "task-detail", hidden: true });  // 动作清单默认收起，点开再看
+    if (!done) detail.append(todayVersion(today.session, { compact: true }));
+    rows.push(taskRow("dumbbell", `练${today.session.name}`, sub, done, done ? null : () => { detail.hidden = !detail.hidden; }), detail);
+  }
+  const n = meals?.meals?.length || 0;
+  count(n > 0);
+  rows.push(taskRow("food", "记录今天吃了什么", n ? `已记 ${n} 餐，约 ${Math.round(meals.totals.kcal)} 千卡` : "拍一张或说一句就行", n > 0, () => { location.hash = "#food"; }));
+  const inbox = h("div", { hidden: true });
+  const progress = h("span", { class: "muted mono" }, `${finished}/${total}`);
   api("/iron/api/coach/inbox").then((r) => {
     if (!r.pending.length) return;
-    box.replaceChildren(icon("coach", "sm"), h("span", {}, `管家有 ${r.pending.length} 条调整要你确认`), icon("chevron", "xs"));
-    box.hidden = false;
+    total += 1;
+    progress.textContent = `${finished}/${total}`;
+    inbox.replaceChildren(taskRow("coach", `确认管家的 ${r.pending.length} 条调整`, r.pending.map((x) => x.title).join("；").slice(0, 40), false, () => { location.hash = "#chat"; }));
+    inbox.hidden = false;
   }).catch(() => {});
-  return box;
+  return h("section", { class: "card home-card" }, cardHead("今日任务", progress), ...rows, inbox);
+}
+
+// 战报：本周进度环、本周练了几次、本月练了几天、本周还差几练
+function reportCard(brief, cal) {
+  const w = brief?.week, done = w?.done || 0, planned = w?.planned || 0;
+  const stat = (k, v, u) => h("div", { class: "rep-stat" }, h("span", {}, k), h("b", {}, v, h("small", {}, u)));
+  return h("section", { class: "card home-card" }, cardHead("战报", h("span", { class: "muted" }, "本周")),
+    h("div", { class: "report" }, ring(done, planned),
+      h("div", { class: "rep-stats" },
+        stat("本周练了", `${done}`, planned ? ` / ${planned} 次` : " 次"),
+        stat("本月练了", `${cal?.done_days?.length ?? 0}`, " 天"),
+        stat(planned && done >= planned ? "本周目标" : "本周还差", planned && done >= planned ? "达成" : `${Math.max(0, planned - done)}`, planned && done >= planned ? "" : " 练"))));
+}
+
+// 本周计划：七天各练什么、天气、按天气调整过的标出来；下面逐条写按天气做的调整
+function weekPlanCard(week, cal, brief) {
+  if (!week) return null;
+  const cells = week.days.map((c) => {
+    const w = c.weather;
+    const mark = c.changes.length && !c.past && !c.done;
+    const cls = `wc-day${c.session ? " plan" : ""}${c.done ? " done" : ""}${c.today ? " today" : ""}${c.past ? " past" : ""}`;
+    return pressable(h("span", { class: cls, "aria-label": `${c.today ? "今天" : c.weekday}，${c.session ? c.session.name : "休息"}${c.done ? "，练过" : ""}${w ? `，${w.text} ${w.temp}度` : ""}${mark ? "，按天气调整过" : ""}` },
+      h("i", {}, c.today ? "今" : c.weekday.slice(1)),
+      w && !c.past ? h("span", { class: "wc-wx" }, icon(wxIcon(w.text), "xs"), h("small", {}, `${w.temp}°`))
+        : h("span", { class: "wc-wx none" }, c.done ? icon("check", "xs") : ""),
+      h("b", {}, c.session ? c.session.name.slice(0, 2) : "休"),
+      mark ? h("em", { class: `wc-warn ${badWeather(w?.level) ? "bad" : "hot"}`, "aria-hidden": "true" }) : null), () => daySheet(c, cal, brief));
+  });
+  const moved = week.days.filter((c) => c.changes.length && !c.past && !c.done);
+  const notes = moved.map((c) => h("li", {}, h("b", {}, `${c.today ? "今天" : c.weekday}${c.weather ? c.weather.text : ""}`),
+    `：${c.changes.join("；")}${c.better ? `，也可以挪到${c.better}（天气好）` : ""}`));
+  return h("section", { class: "card home-card" },
+    cardHead(week.place ? `本周计划 · ${week.place}` : "本周计划",
+      h("button", { class: "link", type: "button", onclick: () => askCoach("帮我看看现在的训练计划，需要调整吗？") }, "调整", icon("chevron", "xs"))),
+    h("div", { class: "wc-row" }, cells),
+    notes.length ? h("ul", { class: "wc-notes" }, notes)
+      : week.weather === "no_city" ? h("a", { class: "wc-note link", href: "#me" }, icon("sun", "xs"), h("span", {}, "设置城市后，管家会按天气安排训练"))
+        : week.weather === "ok" ? h("p", { class: "muted small" }, "这周的天气不影响训练安排。") : null);
+}
+const badWeather = (level) => level === "indoor" || level === "avoid";
+
+// 点本周计划上的某一天：天气和影响、那天练什么（按天气调整过的版本）、练过的记录
+function daySheet(c, cal, brief) {
+  const [, mm, dd] = c.date.split("-").map(Number);
+  const w = c.weather;
+  const done = (cal?.days?.[c.date] || []).filter((e) => e.done);
+  const shown = c.version || c.session;
+  const t = brief?.today?.training;
+  openSheet(`${c.today ? "今天" : c.weekday} · ${mm}月${dd}日`,
+    w && !c.past ? h("div", { class: `day-wx ${w.level}` },
+      h("div", { class: "day-wx-top" }, icon(wxIcon(w.text), "sm"),
+        h("b", {}, w.live ? `${w.text} ${w.temp}°` : `${w.text} ${w.tmin}–${w.tmax}°`),
+        h("span", { class: "muted" }, [w.live ? `体感 ${w.feels_like}°` : "", w.aqi_level ? `空气${w.aqi_level}` : "", w.rain != null ? `降水概率 ${w.rain}%` : ""].filter(Boolean).join(" · "))),
+      h("p", {}, w.reasons.length ? `${w.name}：${w.reasons.join("；")}` : `${w.name}，天气不影响训练`)) : null,
+    c.changes.length && !c.past ? h("div", { class: "callout" }, icon("coach", "sm"), h("div", {}, h("strong", {}, "管家按天气调整："), c.changes.join("；"), c.better ? `；也可以挪到${c.better}（天气好）。` : "。")) : null,
+    c.session && !c.changes.length && !c.past && badWeather(w?.level) ? h("p", { class: "muted" }, "这天的动作都能在室内做，天气不影响。") : null,
+    shown ? h("div", {}, h("h3", {}, `${shown.name} · 约 ${shown.minutes} 分钟`), h("ol", { class: "plan-items" }, shown.items.map((it) => h("li", {}, itemLine(it)))))
+      : h("p", { class: "muted" }, "这天是休息日。"),
+    done.length ? h("div", {}, h("h3", {}, "练过"), h("ul", { class: "tips" }, done.map((e) => h("li", {}, e.line)))) : null,
+    c.today && c.session && !t?.done && !c.done ? h("button", { class: "btn block", type: "button", onclick: () => doneSheet(shown.name, c.version) }, icon("check", "sm"), "练完打卡") : null,
+    c.session && !c.past ? h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`${c.today ? "今天" : c.weekday}${w ? `天气${w.text}，${w.tmin ?? w.temp}–${w.tmax ?? w.temp}℃` : ""}，我计划练${c.session.name}，怎么安排比较合适？`) }, icon("coach", "sm"), "问问教练这天怎么练") : null);
 }
 
 function weatherSheet(wx) {
@@ -475,31 +482,9 @@ function weatherSheet(wx) {
 }
 
 let planSessions = [], planTargets = {};
-function planTable(tr, brief) {
-  const plan = tr?.plan, t = brief?.today?.training;
-  if (!plan) {
-    return h("div", { class: "card plan-card" },
-      h("div", { class: "plan-top" }, h("div", { class: "plan-icon" }, icon("dumbbell")),
-        h("div", {}, h("h3", {}, "训练计划"), h("p", { class: "muted" }, "还没有计划：让教练按你的目标、时间和器械排一份。"))),
-      h("button", { class: "btn block", type: "button", onclick: () => askCoach("帮我排一个每周训练计划") }, "让教练排一份计划"),
-      h("div", { class: "asks" }, Object.entries(QUICK).map(([label, q]) => askChip(label, q))));
-  }
-  planSessions = plan.sessions; planTargets = tr.targets || {};
-  const todayNo = new Date().getDay() || 7;
-  const byDay = Object.fromEntries(plan.sessions.map((x) => [x.day, x]));
-  const todaySession = byDay[todayNo];
-  if (!todaySession || t?.done) {
-    const next = [1, 2, 3, 4, 5, 6].map((n) => byDay[((todayNo - 1 + n) % 7) + 1]).find(Boolean);
-    return h("div", { class: "card plan-card" },
-      h("h3", {}, t?.done ? "今天已打卡" : "今天休息"),
-      next ? h("p", { class: "muted" }, `下一练：${weekdayName(next.day)} ${next.name}，约 ${next.minutes} 分钟`) : null);
-  }
-  return h("div", { class: "card plan-card" }, todayVersion(todaySession));
-}
-
 // 今天的版本（spec [2026-10-23] §18 需求 3）：按状态、天气、可用时间用规则改，原计划不变
 const itemLine = (it) => `${it.exercise} ${it.sets}×${it.reps}${it.load || it.note ? `（${[it.load, it.note].filter(Boolean).join("，")}）` : ""}`;
-function todayVersion(session) {
+function todayVersion(session, { compact = false } = {}) {
   const box = h("div", { class: "tv" });
   const ask = { minutes: null, tired: false };
   const draw = async () => {
@@ -513,11 +498,11 @@ function todayVersion(session) {
     const toggle = (label, on, flip) => h("button", { type: "button", class: `pill${on ? " on" : ""}`, "aria-pressed": String(on), onclick: () => { flip(); draw(); } }, label);
     const items = (v.changed ? v.today : v.original).items;
     box.replaceChildren(
-      h("div", { class: "tv-head" },
+      compact ? null : h("div", { class: "tv-head" },
         h("div", {}, h("h3", {}, `今天 · ${v.today.name}`), h("p", { class: "muted" }, `约 ${v.today.minutes || session.minutes} 分钟 · ${items.length} 个动作`)),
         h("button", { class: "icon-btn", type: "button", "aria-label": "问教练怎么练", onclick: () => askCoach("今天练什么？按我的计划和今天的状态说") }, icon("coach", "sm"))),
       v.changed ? h("details", { class: "tv-adjusted" },
-        h("summary", {}, icon("alert", "xs"), h("span", {}, "已按今天的状态调整"), h("em", {}, "为什么"), icon("chevron", "xs")),
+        h("summary", {}, icon("alert", "xs"), h("span", {}, "今天的版本按状态和天气调整过"), h("em", {}, "为什么"), icon("chevron", "xs")),
         h("p", {}, v.changes.join("；")),
         h("p", { class: "muted" }, `原因：${v.reasons.join("；")}`),
         h("p", { class: "muted" }, `原计划：${v.original.items.map(itemLine).join("、")}`)) : null,
@@ -547,9 +532,10 @@ function sessionSheet(x, isToday, t) {
 const weekdayName = (d) => `周${WEEK[d - 1]}`;
 
 let calMonth = "";
-// 整月训练日历（spec [2026-10-23] §33：从数据页挪到首页，点本周日历上的"整月"打开）
-function monthSheet(brief) {
+// 日历（spec [2026-10-23] §34）：整月训练记录放在首页；本周以后几天带天气图标
+function monthCard(brief, week) {
   calMonth = "";
+  const sky = Object.fromEntries((week?.days || []).filter((d) => d.weather && !d.past).map((d) => [d.date, d.weather]));
   const box = h("div", { class: "cal" });
   const draw = async () => {
     let cal;
@@ -565,14 +551,13 @@ function monthSheet(brief) {
       const iso = `${cal.month}-${String(d).padStart(2, "0")}`;
       const entries = cal.days[iso] || [];
       const cls = `cal-cell${lit.has(iso) ? " lit" : ""}${iso === cal.today ? " today" : ""}${entries.length ? " has" : ""}`;
-      const cell = h("span", { class: cls, "aria-label": `${m}月${d}日${lit.has(iso) ? "，练过" : ""}` }, String(d));
+      const cell = h("span", { class: cls, "aria-label": `${m}月${d}日${lit.has(iso) ? "，练过" : ""}${sky[iso] ? `，${sky[iso].text}` : ""}` }, String(d),
+        sky[iso] && !lit.has(iso) ? h("i", { class: "cal-sky" }, icon(wxIcon(sky[iso].text), "xs")) : null);
       cells.push(entries.length ? pressable(cell, () => openSheet(`${m}月${d}日`,
         h("div", { class: "rows" }, entries.map((e) => h("div", { class: "row-item" },
           h("span", { class: `dot-state ${e.done ? "on" : ""}` }), h("div", { class: "row-main" }, h("span", { class: "row-title" }, e.line))))))) : cell);
     }
     const thisMonth = cal.today.slice(0, 7) === cal.month;
-    const doneToday = lit.has(cal.today);
-    const session = brief?.today?.training?.kind === "session" ? brief.today.training.name : "";
     box.replaceChildren(
       h("div", { class: "cal-head" },
         h("button", { class: "icon-btn", type: "button", "aria-label": "上个月", onclick: () => shift(-1) }, icon("back", "sm")),
@@ -582,11 +567,11 @@ function monthSheet(brief) {
       h("div", { class: "cal-grid" }, cells),
       h("div", { class: "cal-foot" },
         h("span", { class: "muted" }, `这个月练了 ${cal.done_days.length} 天`),
-        thisMonth && !doneToday ? h("button", { class: "btn small", type: "button", onclick: () => doneSheet(session || "训练") }, icon("check", "sm"), "今天打卡") : null));
+));
   };
   box.append(...skeleton(260));
   draw();
-  openSheet("训练日历", box);
+  return h("section", { class: "card home-card" }, cardHead("日历"), box);
 }
 
 // 打卡时可以按计划里的动作填每组的重量和次数（spec [2026-10-23] §18 需求 4，可不填）

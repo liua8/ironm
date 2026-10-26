@@ -13,6 +13,13 @@ from ironm_agent.protools.plan_check import estimate_minutes
 from ironm_agent.training import PlanItem, Session
 
 _OUTDOOR = re.compile(r"跑|快走|户外|徒步|爬山|骑行|跳绳")
+
+
+def is_outdoor(exercise: str) -> bool:
+    """受天气影响的户外动作（跑步、骑车、快走等）。"""
+    return bool(_OUTDOOR.search(exercise))
+
+
 INDOOR = "原地踏步或室内单车"
 TIRED_NOTE = "减轻重量、不练到力竭"
 
@@ -73,7 +80,8 @@ def build(
                     update={"exercise": INDOOR, "note": _note(x, f"原来是{x.exercise}")}
                 )
         if swapped:
-            d.changes.append(f"户外的{'、'.join(swapped)}换成{INDOOR}")
+            names = "、".join(swapped)
+            d.changes.append(f"{'' if names.startswith('户外') else '户外的'}{names}换成{INDOOR}")
             d.reasons.append(indoor_why or "天气不宜户外")
     if minutes is not None:
         trimmed = _fit(d, session, minutes)

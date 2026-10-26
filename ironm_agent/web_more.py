@@ -1208,3 +1208,65 @@ async def harness_turns(
     if bad:
         rows = [r for r in rows if r["signals"]]
     return {"turns": rows[: max(1, min(200, limit))]}
+
+
+# ---- 本周计划和天气（spec [2026-10-23] §34）---------------------------------------------------
+
+
+@router.get("/iron/api/week")
+async def get_week(
+    user_id: str = Depends(_verify()), training: TrainingStore = TRAINING
+) -> dict[str, Any]:
+    """本周一到周日：每天练什么、练过没有、天气和对训练的影响、按天气改出的版本（原计划不变）。"""
+    from ironm_agent.weather_plan import week_plan, weekday
+
+    today = date.today()
+    monday = today - timedelta(days=today.isoweekday() - 1)
+    stored = await training.plan(user_id)
+    done = {x.log.day for x in await training.workouts(user_id, monday) if x.log.done}
+    status, wx = "no_city", None
+    try:
+        _, place = await weather.load_place(user_id)
+        if place is not None:
+            wx = await weather.safe_fetch(place)
+            status = "ok" if wx is not None else "unavailable"
+    except Exception as e:
+        _log.warning("week weather unavailable: error_type=%s", type(e).__name__)
+        status = "unavailable"
+    now = weather.assess(wx) if wx is not None else None
+    days = week_plan(stored.plan if stored else None, wx.days if wx else (), today, now)
+
+    def wx_json(p: Any) -> dict[str, Any] | None:
+        if p.day == today and wx is not None and now is not None:
+            return {"text": wx.text, "temp": round(wx.temperature), "feels_like": round(wx.feels_like),
+                    "tmin": round(p.weather.tmin) if p.weather else None,
+                    "tmax": round(p.weather.tmax) if p.weather else None, "rain": p.weather.rain if p.weather else None,
+                    "aqi_level": weather.aqi_level(wx.aqi)[0] if wx.aqi is not None else None,
+                    "level": now.level, "name": now.name, "reasons": list(now.reasons), "live": True}  # fmt: skip
+        if p.weather is None or p.advice is None:
+            return None
+        return {"text": p.weather.text, "temp": round(p.weather.tmax), "tmin": round(p.weather.tmin),
+                "tmax": round(p.weather.tmax), "rain": p.weather.rain, "level": p.advice.level,
+                "name": p.advice.name, "reasons": list(p.advice.reasons), "live": False}  # fmt: skip
+
+    return {
+        "weather": status,
+        "place": wx.place if wx is not None else "",
+        "days": [
+            {
+                "date": p.day.isoformat(),
+                "weekday": weekday(p.day),
+                "today": p.day == today,
+                "past": p.day < today,
+                "done": p.day in done,
+                "session": p.session.model_dump(mode="json") if p.session else None,
+                "version": p.version.model_dump(mode="json") if p.version else None,
+                "changes": list(p.changes),
+                "reasons": list(p.reasons),
+                "outdoor": list(p.outdoor),
+                "better": weekday(p.better) if p.better else "",
+                "weather": wx_json(p),
+            }
+            for p in days
+        ],
+    }

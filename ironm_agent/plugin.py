@@ -168,6 +168,23 @@ class Prepared:
     decision: Decision
 
 
+def _weather_case(w: Weather, plan: Plan | None, today: date) -> str:
+    """共享档案里的天气（spec [2026-10-23] §34）：现在的天气、未来几天的预报、按天气对本周训练的调整。"""
+    from ironm_agent.weather import assess
+    from ironm_agent.weather_plan import forecast_line, line, week_plan
+
+    parts = [weather_line(w)]
+    ahead = forecast_line(w.days, today)
+    if ahead:
+        parts.append(f"未来几天：{ahead}")
+    moved = [
+        line(p) for p in week_plan(plan, w.days, today, assess(w)) if p.day > today and p.adjusted
+    ]
+    if moved:
+        parts.append("按天气对本周训练的调整：" + "；".join(moved))
+    return "。".join(parts)
+
+
 def layers_of(roles: Sequence[Role]) -> list[list[Role]]:
     return [[r for r in roles if r in layer] for layer in LAYERS if any(r in layer for r in roles)]
 
@@ -1004,7 +1021,7 @@ class IronMAgent:
         )
         current = await wx if wx is not None else None
         if current is not None:
-            case = replace(case, weather=weather_line(current))
+            case = replace(case, weather=_weather_case(current, plan, snapshot.today))
         if run is not None:
             run["weather"] = current is not None
         decision = decide(text, history, recall, snapshot.profile, has_plan=plan is not None)
