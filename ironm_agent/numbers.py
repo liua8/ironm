@@ -2,17 +2,46 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 
 
+class Written(float):
+    """写出来的数值，记着写了几位小数："6.0" 是一位小数，核对时不能拿 5.6 四舍五入成 6 来对上（spec [2026-10-23] §37）。"""
+
+    places: int
+
+    def __new__(cls, value: float, places: int) -> Written:
+        out = super().__new__(cls, value)
+        out.places = places
+        return out
+
+
+_TOKEN = re.compile(r"\d+(?:\.\d+)?")
+
+
 def written_numbers(text: str) -> list[float]:
-    """文字里写出的数值（日期、时间、年份不算）。"""
+    """文字里写出的数值（日期、时间、年份不算，沿用 mirobody 的认法），每个记着原文写了几位小数。"""
     from mirobody.kernel.citations import numbers
 
-    return [float(v) for v in numbers(text)]
+    tokens = [(float(t), len(t.split(".")[1]) if "." in t else 0) for t in _TOKEN.findall(text)]
+    out: list[float] = []
+    start = 0
+    for v in numbers(text):
+        i = next(
+            (j for j in range(start, len(tokens)) if abs(tokens[j][0] - float(v)) < 1e-9), None
+        )
+        if i is None:
+            out.append(float(v))
+            continue
+        out.append(Written(float(v), tokens[i][1]))
+        start = i + 1
+    return out
 
 
 def _decimals(value: float) -> int:
+    if isinstance(value, Written):
+        return value.places
     text = f"{value:.6f}".rstrip("0").rstrip(".")
     return len(text.split(".")[1]) if "." in text else 0
 

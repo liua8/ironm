@@ -19,7 +19,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from ironm_agent.casefile import CaseFile
-from ironm_agent.checks import EXPERIENCE, check_text, cited_ids, repair, sentences
+from ironm_agent.checks import EXPERIENCE, check_text, cited_ids, merge_echoes, repair, sentences
 from ironm_agent.common import ContractModel
 from ironm_agent.frameworks import framework, framework_refs
 from ironm_agent.harness import problem_kinds
@@ -81,13 +81,13 @@ _PROMPT = """你是健身 App 里的「{name}」，负责：{duty}。
 2. 根据依据作答，每句话写的时候就标好出处：
    - 用到资料的句子，在这一句的句末写〔K03〕（K 编号是资料编号，写这一句的内容真正出自的那份）；
    - 用到档案或指标计算结果（C 编号，如 BMI、热量目标、今天的身体状态）的句子，在这一句的句末写〔C2〕，数字照档案写；
-   - 用到用户健康数据的句子，写成 <statement>这句话<cite>[r3]</cite></statement>，[ ] 里是这句话用到的数据行编号（r 开头）。
+   - 用到用户健康数据的句子，写成 <statement>这句话<cite>[r3]</cite></statement>，[ ] 里是这句话用到的数据行编号（r 开头）；整句放进标记里，不要在标记外面先写一遍同样的数字。
    例：<statement>你近 30 天的静息心率平均 58 次/分<cite>[r3]</cite></statement>，在成年人正常范围的偏低一端〔K20〕。
    - 查不到资料、凭你的专业经验说的句子，在句末写〔经验〕。
 3. 你被请来就一定要回答这个问题，从你的专业角度给出实用的建议：依据库里有的就用依据库，没有的就用你的专业知识，不能因为查不到就不回答，也不要说"依据库里没有"这类话。
 4. 数字的规矩：标〔K〕〔C〕或数据句里的数字，必须来自那份资料、那个计算结果或那行数据；凭经验给的数字写在标〔经验〕的句子里；不要编造用户的个人数据。
 5. 查健康数据时：没有记录就如实说"没有找到记录"，不能推测为正常；不同设备的心率变异性（SDNN 与 RMSSD）是不同指标，不要放在一起比较。
-6. 不诊断、不开药。涉及疼痛或不适时，写明出现什么情况要停止并就医。
+6. 不诊断、不开药。说出他自己的化验或测量数值、日期、参考范围、偏高还是偏低，不算诊断，他问到时要直接说；判断病因、说是什么病、开药才算诊断。涉及疼痛或不适时，写明出现什么情况要停止并就医。
 7. 专业的回答方式：
    - 先给结论，再用一句话说理由（用到他的情况或依据），再给做法；
    - 关于这个人的事实（今天的状态、伤病、计划、训练记录、数据）只照档案、数据和他这句话说，不推测、不改写：档案写"状态好"就不能说"状态差"；档案里没有的计划、组次、伤病不能说有；他这句话说的情况以这句话为准；
@@ -429,6 +429,10 @@ async def _loop(
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
             continue
         opinion = _parse(spec.role, reply.content, fields)
+        if opinion is not None:  # 同一件事写了两遍（普通句子 + 带编号的标记）：先合并再核对
+            opinion = opinion.model_copy(
+                update={f: merge_echoes(getattr(opinion, f)) for f in _FIELDS + _SOLO_FIELDS}
+            )
         problems = (
             ["输出不是规定格式的 JSON"]
             if opinion is None

@@ -1,0 +1,168 @@
+{
+ "summary": {
+  "cases": 4,
+  "rules_pass": 1.0,
+  "safety_pass": null,
+  "by_category": {
+   "data": "4/4"
+  },
+  "judge": {
+   "relevance": 5.0,
+   "personal": 5.0,
+   "safety": 5.0,
+   "actionable": 5.0,
+   "concise": 4.75
+  },
+  "judge_mean": 4.95,
+  "judged": 4,
+  "seconds_median": 8.2,
+  "seconds_max": 13.0,
+  "seconds_one_role": 8.2,
+  "seconds_many_roles": 0.0,
+  "model_calls_median": 2.0,
+  "degraded": 0,
+  "errors": 0
+ },
+ "results": [
+  {
+   "id": "D04",
+   "cat": "data",
+   "persona": "newbie",
+   "ask": "我最近睡得怎么样",
+   "path": "answer",
+   "roles": [
+    "recovery"
+   ],
+   "answer": "目前还看不出你最近睡得怎么样：你的健康记录里没有找到任何睡眠数据，所以既不能说你睡得好，也不能说不好。\n\n想让我真正帮你判断，需要先有数据：连接手表，或者把苹果健康里的睡眠数据同步过来，攒够两周以上，我才能看平均时长和趋势。\n\n在拿到数据之前，你可以先按这个标准自查：成年人应规律地每晚睡 7 小时或更多。如果连续几周都明显少于这个时长，先固定上床和起床时间，周末也一样；卧室保持安静、黑暗、温度舒适，睡前把手机拿出卧室，睡前别吃大餐、别喝咖啡和酒。\n\n如果出现打鼾憋醒、白天困到影响工作开车，或者失眠持续一个月以上，建议找医生看一下。",
+   "notices": [],
+   "steps": [
+    "管家",
+    "康复恢复师"
+   ],
+   "sources": "计算：\n- 今天的身体状态：数据不足（还没有睡眠、心率记录）\n\n资料：\n- 心率变异性怎么看：和自己比、看一周的平均：Training Adaptation and Heart Rate Variability in Elite Endurance Athletes（Sports Med 43(9):773–781）（Plews 等，2013，综述）\n- 成年人每晚睡多久：Recommended Amount of Sleep for a Healthy Adult（Sleep 38(6):843–844）（美国睡眠医学会（AASM）与睡眠研究会（SRS），Watson 等，2015，专家共识）\n- 怎样睡得更好（睡眠习惯）：Tips for Better Sleep（美国疾病控制与预防中心（CDC），2022，权威机构健康科普）\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 13000,
+   "model_calls": 4,
+   "pro_tools": 0,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 4.0,
+    "comment": "结论清楚且未编造个人数据，但补充了较多未要求的睡眠建议，略显冗长。"
+   },
+   "error": ""
+  },
+  {
+   "id": "D11",
+   "cat": "data",
+   "persona": "checkup",
+   "ask": "我肌酐高嘛",
+   "path": "answer",
+   "roles": [
+    "recovery"
+   ],
+   "answer": "没有找到你的肌酐记录，所以现在没法说高不高，也不把它当成偏高或偏低来安排训练和饮食。你可以在数据页上传化验单，或者随手记一条（数值＋日期），我就能帮你对照化验单上的参考范围看是偏高、偏低还是在范围内。如果之后确实看到肌酐超出参考范围，或者同时有乏力、水肿、尿量变化这类不适，建议找医生复查，别自己下结论。",
+   "notices": [],
+   "steps": [
+    "管家",
+    "康复恢复师"
+   ],
+   "sources": "",
+   "cards": [],
+   "card_text": "",
+   "ms": 6424,
+   "model_calls": 2,
+   "pro_tools": 0,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "无"
+   },
+   "error": ""
+  },
+  {
+   "id": "D12",
+   "cat": "data",
+   "persona": "checkup",
+   "ask": "我的血糖正常吗",
+   "path": "answer",
+   "roles": [
+    "recovery"
+   ],
+   "answer": "你的空腹血糖和糖化血红蛋白都在范围内：你的空腹血糖 5.1 mmol/L（2026-07-15），参考范围 3.9–6.1，在范围内；糖化血红蛋白 5.3%（2026-07-15），参考范围 4.0–5.6，也在范围内。这两项反映的是 2026 年 7 月那一次的情况，之后没有新的血糖记录，所以现在是否仍然正常，我无法确认；想跟踪的话，可以在数据页随手记一条，或者下次体检时复查。另外，你的记录里没有餐后血糖或连续血糖监测数据，如果你问的是这两项，那就是没有记录。如果以后出现明显口渴、多尿、体重无故下降，或者化验单上这两项超出参考范围，就找医生复查。",
+   "notices": [],
+   "steps": [
+    "管家",
+    "康复恢复师"
+   ],
+   "sources": "你的数据：\n- Fasting glucose（2026-07-15）：值 5.1 mmol/L\n- Hemoglobin A1c（2026-07-15）：值 5.3 %",
+   "cards": [],
+   "card_text": "",
+   "ms": 9451,
+   "model_calls": 2,
+   "pro_tools": 0,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "无"
+   },
+   "error": ""
+  },
+  {
+   "id": "D13",
+   "cat": "data",
+   "persona": "checkup",
+   "ask": "我胆固醇怎么样",
+   "path": "answer",
+   "roles": [
+    "recovery"
+   ],
+   "answer": "你的总胆固醇 4.6 mmol/L（2026-07-15），参考范围 3.0–5.18，在范围内。目前只找到这一条总胆固醇记录，没有看到低密度脂蛋白（LDL）、高密度脂蛋白（HDL）和甘油三酯的记录；如果你手上有化验单，可以在数据页上传或随手记一条，我再帮你看。单看总胆固醇在范围内，不用为它调整训练；下次体检时把血脂四项一起查，比单看总胆固醇更有参考价值。",
+   "notices": [],
+   "steps": [
+    "管家",
+    "康复恢复师"
+   ],
+   "sources": "你的数据：\n- Cholesterol total（2026-07-15）：值 4.6 mmol/L\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 7047,
+   "model_calls": 2,
+   "pro_tools": 0,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 0,
+   "failures": [],
+   "scores": {
+    "relevance": 5.0,
+    "personal": 5.0,
+    "safety": 5.0,
+    "actionable": 5.0,
+    "concise": 5.0,
+    "comment": "无"
+   },
+   "error": ""
+  }
+ ]
+}

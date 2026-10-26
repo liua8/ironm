@@ -22,7 +22,7 @@ FIRST_BATCH = {
     Role.RECOVERY: {"今天状态判断", "睡眠改善", "酸痛还是受伤", "生病时练不练", "过度训练",
                     "疼痛时怎么改动作", "伤后回到训练", "就医信号"},
 }  # fmt: skip
-SHARED = {"趋势解读", "数据缺失时怎么说"}
+SHARED = {"趋势解读", "数据缺失时怎么说", "化验指标怎么看"}
 
 
 def test_first_batch_is_there_and_every_number_has_a_source() -> None:

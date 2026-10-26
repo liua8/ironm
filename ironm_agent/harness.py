@@ -52,6 +52,8 @@ SIGNALS: dict[str, tuple[str, str]] = {
     "health_failed": ("data", "健康数据读取失败"),
     "health_empty": ("data", "查了没有记录"),
     "snapshot_failed": ("data", "没读到档案"),
+    "data_not_queried": ("data", "问到指标却没查到数据"),
+    "indicator_missing": ("data", "问到的指标没有记录"),
     "expert_silent": ("answer", "专业 Agent 没发言"),
     "expert_failed": ("answer", "专业 Agent 失败"),
     "check_fixed": ("answer", "核对第一次没通过、改写后通过"),
@@ -234,6 +236,11 @@ def diagnose(run: Mapping[str, Any]) -> list[Signal]:
         add(Signal("compose_fallback"))
     if run.get("snapshot_failed"):
         add(Signal("snapshot_failed"))
+    pre = run.get("prefetch") or {}
+    if pre.get("asked") and not pre.get("ok"):
+        add(Signal("data_not_queried", detail=str(pre["asked"])))
+    elif pre.get("asked") and not pre.get("rows"):
+        add(Signal("indicator_missing", detail=str(pre["asked"])))
     if run.get("preview") == "invalid":
         add(Signal("preview_invalid"))
     if run.get("plan_check") in ("failed", "partly"):
@@ -522,6 +529,28 @@ def turn_brief(t: Turn) -> dict[str, Any]:
         "roles": [ROLE_NAMES.get(r, r) for r in tr.get("roles") or []],
         "skills": tr.get("skills") or {},
         "route_tops": tops,
+        "skills_by": tr.get("skills_by") or {},
+        "task": tr.get("task"),
+        "experts": [
+            {
+                k: x.get(k)
+                for k in (
+                    "role",
+                    "status",
+                    "rounds",
+                    "calls",
+                    "checks",
+                    "fixed",
+                    "repaired",
+                    "exhausted",
+                    "forced",
+                    "experience",
+                    "ms",
+                    "mentions",
+                )
+            }
+            for x in tr.get("experts") or []
+        ],
         "signals": [
             {"name": SIGNALS[s["kind"]][1], **s} for s in t.signals if s["kind"] not in GOOD
         ],

@@ -21,7 +21,7 @@ from ironm_agent.yamlfile import load_yaml
 
 SKILLS_PATH = Path(__file__).with_name("skills.yaml")
 MAX_SKILLS = 2
-type Trigger = Literal["poor", "injury", "plan", "log", "image", "move"]
+type Trigger = Literal["poor", "injury", "plan", "log", "image", "move", "lab", "metric"]
 TRIGGER_BONUS = 2  # 这一轮的情况对得上时加的分（比问题里一个说法对得上更重要）
 
 
@@ -120,8 +120,8 @@ def prompt_of(chosen: Sequence[Skill]) -> str:
 # ---- 路由选 Skill（spec [2026-10-23] §21）------------------------------------------------------
 
 RULE_TRIGGERS: frozenset[str] = frozenset(
-    {"poor", "plan", "log", "image", "injury"}
-)  # 路由看不到的系统情况
+    {"poor", "plan", "log", "image", "injury", "lab", "metric"}
+)  # 路由看不到的系统情况；lab / metric：问题点到了化验指标 / 每天测的指标（spec [2026-10-23] §37）
 
 
 def _routable(role: Role) -> list[Skill]:

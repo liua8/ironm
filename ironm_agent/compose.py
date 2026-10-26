@@ -12,7 +12,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
-from ironm_agent.checks import CALC_REF, KB_REF, check_text, cited_ids, plain, repair
+from ironm_agent.checks import CALC_REF, KB_REF, check_text, cited_ids, merge_echoes, plain, repair
 from ironm_agent.constraints import Violation, fixes
 from ironm_agent.experts import Consultation, Opinion
 from ironm_agent.harness import problem_kinds
@@ -277,6 +277,7 @@ async def compose(
             break
         draft = reply.content.strip()
         answer, problems = shield.restore(draft)
+        answer = merge_echoes(answer)
         problems += review(
             answer,
             support=support,

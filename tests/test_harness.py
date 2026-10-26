@@ -280,4 +280,15 @@ def test_turn_list_shows_only_bad_turns(api: tuple[TestClient, TraceBook, dict[s
         "keyword": "trainer",
     }
     assert r["signals"][0]["name"] == "改写后仍不通过、被规则修正" and r["good"] == ["rating_up"]
+    assert r["experts"] == []  # 每个专业角色的明细（这里没有）
     assert len(c.get("/iron/api/admin/harness/turns?bad=false").json()["turns"]) == 3
+
+
+def test_named_indicator_signals() -> None:
+    """spec [2026-10-23] §37：问到指标时查询失败、一项都没有记录，各有信号，都归到"数据"。"""
+    assert kinds({"prefetch": {"asked": 1, "rows": 0, "ok": False}}) == {"data_not_queried"}
+    assert kinds({"prefetch": {"asked": 2, "rows": 0, "ok": True}}) == {"indicator_missing"}
+    assert kinds({"prefetch": {"asked": 1, "rows": 3, "ok": True}}) == set()
+    assert {s.stage for s in diagnose({"prefetch": {"asked": 1, "rows": 0, "ok": True}})} == {
+        "data"
+    }

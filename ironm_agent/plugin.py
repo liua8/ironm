@@ -32,6 +32,7 @@ from ironm_agent.constraints import check as check_constraints
 from ironm_agent.exercises import named_in
 from ironm_agent.experts import Consultation, consult, write_task
 from ironm_agent.harness import TraceStore, mentioned_roles, missing_readings, new_turn, react
+from ironm_agent.indicators import kinds_of, named_indicators
 from ironm_agent.kb import KnowledgeBase, default_kb
 from ironm_agent.llm import ModelsConfig, TurnLLM, load_models
 from ironm_agent.memory import USER, earlier, last_sources, recent, split_thread, user_lines
@@ -74,7 +75,7 @@ from ironm_agent.safety.replies import (
     refusal_sections,
 )
 from ironm_agent.skills import choose
-from ironm_agent.tools import Toolbox
+from ironm_agent.tools import Evidence, Toolbox
 from ironm_agent.training import (
     Plan,
     TrainingStore,
@@ -183,6 +184,26 @@ def _weather_case(w: Weather, plan: Plan | None, today: date) -> str:
     if moved:
         parts.append("按天气对本周训练的调整：" + "；".join(moved))
     return "。".join(parts)
+
+
+_HURT = re.compile(r"疼|痛|伤|肿|麻|酸|不舒服|难受")
+
+
+def checked_note(named: Sequence[str], found: str, rows: int, ok: bool) -> str:
+    """规则先查的结果，交给专业角色时怎么说（spec [2026-10-23] §37）。"""
+    names = "、".join(named)
+    if not ok:
+        return (
+            f"系统想先查这个人的{names}记录，但这次没能读到健康记录：如实说这次没读到，不推测高低。"
+        )
+    if rows == 0:
+        return (f"系统按问题先查了这个人的健康记录，没有找到{names}的记录。回答的第一句就如实说没有找到这项记录，"
+                "不推测高低，也不要当作已经偏高或偏低去安排训练和饮食；告诉他可以在数据页上传化验单或随手记一条。")  # fmt: skip
+    return (f"系统按问题先查了这个人的健康记录（{names}）：\n{found}\n"
+            "回答的第一句先说他问的这几项：数值、日期，和这里给的参考范围比是偏高、偏低还是在范围内，每项只说一次，"
+            "写成：<statement>你的空腹血糖 5.1 mmol/L（2025-11-12），参考范围 3.9–6.1<cite>[r1]</cite></statement>，在范围内。"
+            "（例子里的数字只是示范，照上面查到的行写，编号用那一行的。）"
+            "这里没有出现的指标就是没有记录，如实说没有。说出数值和参考范围不算诊断。")  # fmt: skip
 
 
 def layers_of(roles: Sequence[Role]) -> list[list[Role]]:
@@ -749,10 +770,14 @@ class IronMAgent:
             used = sorted({x.category for x in recall.items})
             _log.info("ironm memory use %s", json.dumps({"turn": run["turn"], "categories": used}))
         index = {role: i for i, role in enumerate(roles)}
+        # 问自己的数据（点到了指标）又没说哪里疼时，记忆里的伤病、今天的状态不再强制装伤痛和减量的规程
+        # （限制照样写在共享档案里），免得问肌酐也装上"疼痛时怎么改动作"（spec [2026-10-23] §37）
+        asks_data = bool(named_indicators(text)) and not _HURT.search(text)
         triggers = {name for name, on in (
-            ("poor", case.readiness.level in ("poor", "fair") or case.readiness.sick),
-            ("injury", bool(case.injuries)), ("plan", job == "plan"), ("log", job == "log"),
+            ("poor", (case.readiness.level in ("poor", "fair") or case.readiness.sick) and not asks_data),
+            ("injury", bool(case.injuries) and not asks_data), ("plan", job == "plan"), ("log", job == "log"),
             ("image", bool(files.images)), ("move", bool(named_in(text))),
+            *((k, True) for k in kinds_of(named_indicators(text))),
         ) if on}  # fmt: skip
         pictures = [x.part() for x in files.images]
         seeing = r.primary or roles[0]  # 图片只交给主责角色
@@ -764,6 +789,7 @@ class IronMAgent:
         run["skills_by"] = {role.value: by for role, (_, by) in picked.items()}
         tools_ctx = self._tool_context(user_id, snapshot, case, recall)
         run["skills"] = {role.value: [x.id for x in loaded[role]] for role in roles}
+        checked, checked_note = await self._check_named(user_id, session_id, text, roles, run)
         results: dict[int, Consultation] = {}
         before: list[Consultation] = []
         solo = len(roles) == 1
@@ -796,9 +822,11 @@ class IronMAgent:
                 )
                 for c in before:
                     toolbox.evidence.absorb(c.evidence)
+                if checked is not None:  # 规则先查到的数据：每位都能引用
+                    toolbox.evidence.absorb(checked)
                 lead = role in (Role.TRAINER, Role.GENERAL)
                 note = "\n".join(x for x in (decision.note if lead else "",
-                                              files.note_for_experts() if role is seeing else "") if x)  # fmt: skip
+                                              files.note_for_experts() if role is seeing else "", checked_note) if x)  # fmt: skip
                 task = asyncio.create_task(
                     consult(
                         spec,
@@ -885,6 +913,30 @@ class IronMAgent:
         )  # 预览卡片放在“依据与来源”前面
         for block in [*blocks[: len(blocks) - tail], *cards, *blocks[len(blocks) - tail :]]:
             yield block
+
+    async def _check_named(
+        self, user_id: str, session_id: str, text: str, roles: Sequence[Role], run: dict[str, Any]
+    ) -> tuple[Evidence | None, str]:
+        """问题里点到具体指标时，作答前由规则先查这个人的这几项数据（spec [2026-10-23] §37）。
+        运行记录里只记查了几项、查到几行，不记指标名。"""
+        named = named_indicators(text)
+        holder = next((spec_of(r) for r in roles if spec_of(r).health_data), None)
+        if not named or holder is None:
+            return None, ""
+        pre = Toolbox(
+            holder,
+            kb=self._kb,
+            health=self._health_source(),
+            user_id=user_id,
+            session_id=session_id,
+        )
+        try:
+            found, rows, ok = await pre.prefetch_health(named)
+        except Exception as e:  # 查不了不影响作答
+            _log.warning("prefetch health failed: error_type=%s", type(e).__name__)
+            found, rows, ok = "", 0, False
+        run["prefetch"] = {"asked": len(named), "rows": rows, "ok": ok}
+        return pre.evidence, checked_note(named, found, rows, ok)
 
     async def _preview(
         self,

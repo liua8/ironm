@@ -99,6 +99,14 @@ personas:
     series:
       hrv_rmssd: {base: 42, jitter: 5, days: 30}
 
+  checkup:
+    extends: knee
+    desc: 同 knee；去年体检（约 100 天前）有空腹血糖 5.1、糖化血红蛋白 5.3%、总胆固醇 4.6，都在参考范围内；没有肌酐等其他化验
+    series:
+      fasting_glucose: {value: 5.1, ago: 100}
+      hba1c: {value: 5.3, ago: 100}
+      total_chol: {value: 4.6, ago: 100}
+
   planned:
     extends: knee
     desc: 同 knee；有一份每周 3 练的计划（周一下肢、周三上肢推、周五上肢拉加核心），本周一、周三已完成
@@ -219,6 +227,26 @@ cases:
   - {id: D08, cat: data, persona: fatloss_f, ask: 我每天该吃多少热量, path: answer, must: [["1466", "1470"]]}
   - {id: D09, cat: data, ask: 我最近步数达标吗, path: answer, must: [步, [达标, 8000, 够了, 不错, 在参考范围]]}
   - {id: D10, cat: data, ask: 我的血压怎么样, path: answer, must: ["118", 正常], must_not: [你有高血压, 患有高血压]}
+  # 问到化验指标先说数据，不答非所问（§37）；这个人记忆里有膝伤，不能因此答成伤痛和训练安排
+  - id: D11
+    cat: data
+    persona: checkup
+    ask: 我肌酐高嘛
+    path: answer
+    roles_any: [recovery]
+    must: [肌酐, [没有找到, 没有记录, 没有你的肌酐, 暂无, 还没有, 看不到, 没有查到]]
+    must_not: [肌酐偏高, 肌酐高了, "re:肌酐.{0,6}\\d+(\\.\\d+)?", 深蹲, 组数]
+    ref: 第一句就说健康记录里没有肌酐，没法判断高不高；可以上传化验单；不推测、不扩展成训练安排
+  - id: D12
+    cat: data
+    persona: checkup
+    ask: 我的血糖正常吗
+    path: answer
+    roles_any: [recovery, nutrition]
+    must: ["5.1", [范围内, 正常]]
+    must_not: [偏高, 糖尿病前期]
+    ref: 空腹血糖 5.1 mmol/L、糖化血红蛋白 5.3%（约 100 天前），都在参考范围内；是三个多月前的记录
+  - {id: D13, cat: data, persona: checkup, ask: 我胆固醇怎么样, path: answer, must: ["4.6", [范围内, 正常]], must_not: [偏高]}
 
   # ---- 知识 15：训练、动作、营养、恢复 ----
   - {id: K01, cat: knowledge, ask: 增肌一周练几次比较好, path: answer, roles: [trainer], must: [[两次, 2 次, 2次, 两到三, 2–3, 2-3, 3 次, 三次]], max_chars: 320}

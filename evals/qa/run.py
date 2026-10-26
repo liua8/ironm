@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 from evals.qa.fixtures import EvalHealth, Persona, facts_text, load_personas  # noqa: E402
 from evals.qa.judge import DIMENSIONS, judge, persona_text  # noqa: E402
 from ironm_agent.casefile import Snapshot  # noqa: E402
+from ironm_agent.harness import TraceBook  # noqa: E402
 from ironm_agent.llm import load_models  # noqa: E402
 from ironm_agent.memory import thread_lines  # noqa: E402
 from ironm_agent.memory_store import Change, MemoryBook  # noqa: E402
@@ -198,6 +199,7 @@ async def run_case(
         mode=mode,  # type: ignore[arg-type]
         observe=seen.update,
         weather=no_weather,
+        traces=TraceBook(),  # 运行框架的轨迹留在内存里，考试不写数据库
     )
     start = time.perf_counter()
     try:

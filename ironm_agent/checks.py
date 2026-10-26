@@ -215,6 +215,26 @@ _SPACE_BEFORE_PUNCT = re.compile(r"[ \t]+([，。！？；：、）])")
 _LOOSE_PUNCT = re.compile(r"[，、；：,]+([。！？；])|([，、；：])[，、；：,]+|([。！？])[。]+")
 
 
+_ECHO = re.compile(r"([^。；！？\n<>]*?)<statement>(.*?)(<cite>.*?</cite>)</statement>", re.S)
+
+
+def merge_echoes(text: str) -> str:
+    """模型常把同一件事写两遍：先一句普通的话，后面紧跟一个带数据编号的 <statement> 当作"出处"
+    （"空腹血糖 5.1，参考范围 3.9–6.1，在范围内<statement>空腹血糖 5.1，参考范围 3.9–6.1<cite>[r3]</cite></statement>"）。
+    前面那半句的数字都在紧跟的标记里时，把前面那半句当作带编号的数据句，去掉重复的标记（spec [2026-10-23] §37）。
+    标记里只有编号、句子写在外面（"……参考范围 3.9–6.1<statement><cite>[r3]</cite></statement>"）也照此合并。"""
+
+    def fix(m: re.Match[str]) -> str:
+        before, inner, cite = m.group(1), m.group(2), m.group(3)
+        said = set(written_numbers(before))
+        if not said or (inner.strip() and not said <= set(written_numbers(inner))):
+            return m.group(0)
+        lead = len(before) - len(before.lstrip())
+        return f"{before[:lead]}<statement>{before[lead:].rstrip()}{cite}</statement>"
+
+    return _ECHO.sub(fix, text)
+
+
 def plain(text: str) -> str:
     """给用户看的正文：去掉出处标记和数据引用的标签，只留话本身。"""
     out = _STATEMENT_TAG.sub("", _CITE.sub("", ANY_REF.sub("", text)))

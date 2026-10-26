@@ -31,7 +31,12 @@ INDICATORS: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "steps": ("dailySteps", "Number of steps in 24 hour Measured", "{#}", ("步数", "步", "steps")),
     "systolic": ("systolicPressures", "Systolic blood pressure", "mm[Hg]", ("血压", "收缩压", "blood pressure", "systolic")),
     "diastolic": ("diastolicPressures", "Diastolic blood pressure", "mm[Hg]", ("血压", "舒张压", "blood pressure", "diastolic")),
+    "fasting_glucose": ("glucoseFasting", "Fasting glucose", "mmol/L", ("空腹血糖", "血糖", "glucose")),
+    "hba1c": ("hemoglobinA1c", "Hemoglobin A1c", "%", ("糖化血红蛋白", "血糖", "hba1c", "a1c")),
+    "total_chol": ("cholesterolTotal", "Cholesterol total", "mmol/L", ("总胆固醇", "胆固醇", "血脂", "cholesterol")),
 }  # fmt: skip
+# 化验指标的参考范围（化验单上印的那种），查询结果里放在 ref，和 mirobody 的查询结果一样
+REFS = {"fasting_glucose": "3.9-6.1", "hba1c": "4.0-5.6", "total_chol": "3.0-5.18"}
 DECIMALS = {
     "weight": 1,
     "height": 0,
@@ -131,6 +136,8 @@ def load_personas(raw: Mapping[str, Mapping[str, Any]], today: date) -> dict[str
                 readings = [(today - timedelta(days=int(r["ago"])), r) for r in spec]
                 series["systolic"] = tuple(sorted((d, float(r["sys"])) for d, r in readings))
                 series["diastolic"] = tuple(sorted((d, float(r["dia"])) for d, r in readings))
+            elif "ago" in spec:  # 只有一次的读数（化验单）：{value, ago}
+                series[key] = ((today - timedelta(days=int(spec["ago"])), float(spec["value"])),)
             else:
                 series[key] = _series(name, key, spec, today)
         if profile.height_cm:
@@ -174,6 +181,11 @@ def facts_text(persona: Persona, today: date, ask: str = "") -> str:
         recent = [f"{d.month}/{d.day} {v:g}" for d, v in points if (today - d).days < 3]
         if recent:
             lines.append(f"- 最近三天{label}：" + "，".join(recent))
+    for key in REFS:
+        for d, v in persona.series.get(key, ()):
+            lines.append(
+                f"- 化验 {INDICATORS[key][1]} {d.isoformat()}：{v:g} {INDICATORS[key][2]}（参考范围 {REFS[key]}）"
+            )
     dia = dict(persona.series.get("diastolic", ()))
     for d, s in persona.series.get("systolic", ()):
         lines.append(f"- 血压读数 {d.isoformat()}：{s:g}/{dia.get(d, 0):g} mmHg")
@@ -237,7 +249,12 @@ class EvalHealth:
         ]
         if not points:
             return []
-        head = {"indicator": display, "name": name, "unit": unit}
+        head = {
+            "indicator": display,
+            "name": name,
+            "unit": unit,
+            **({"ref": REFS[key]} if key in REFS else {}),
+        }
         if view == "latest":
             d, v = points[-1]
             return [{**head, "date": d.isoformat(), "time": f"{d.isoformat()} 08:00:00", "value": str(_fmt(key, v)), "rid": self._rid()}]  # fmt: skip

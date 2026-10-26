@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import Awaitable, Callable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -306,6 +306,20 @@ class Toolbox:
         for e in found:
             self.evidence.entries[e.id] = e
         return "\n\n".join(e.as_evidence() for e in found)
+
+    async def prefetch_health(self, names: Sequence[str]) -> tuple[str, int, bool]:
+        """问题里点到的指标，作答前由规则先查一遍最新值（spec [2026-10-23] §37），不占模型的查询次数。
+        返回（给模型看的查询结果、查到几行、查询成没成功）。"""
+        if self.health is None or not names:
+            return "", 0, False
+        before = len(self.evidence.support)
+        self._outcome = "ok"
+        start = time.perf_counter()
+        text = await self._health({"keywords": list(names), "view": "latest"})
+        self.evidence.health_queries -= 1  # 规则预取：不算模型自己的查询
+        ms = int((time.perf_counter() - start) * 1000)
+        self.evidence.calls.append({"tool": "prefetch_health", "result": self._outcome, "ms": ms})
+        return text, len(self.evidence.support) - before, self._outcome != "error"
 
     async def run(self, call: ToolCall) -> str:
         """执行一次工具调用，并记下结果和耗时（spec [2026-10-23] §31）。"""
