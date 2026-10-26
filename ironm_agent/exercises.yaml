@@ -1,6 +1,7 @@
 # 动作库：做法、要点、常见错误、替代动作、什么情况先别做。
 # 内容由 Claude 按常见训练指南整理（claude_draft），待审定；页面上统一提示"出现疼痛就停，有伤病先问医生或康复师"。
-# part：腿臀、胸、背、肩、手臂、核心、全身、有氧；equipment：自重、哑铃、壶铃、弹力带、杠铃、单杠、器械
+# part：腿臀、胸、背、肩、手臂、核心、全身、有氧、拉伸放松；equipment：自重、哑铃、壶铃、弹力带、杠铃、单杠、器械、泡沫轴
+# 第二批（spec [2026-10-23] §32）：参考 free-exercise-db（Unlicense）的动作名称和主次肌肉，中文内容自己写
 version: "0.1"
 review: claude_draft
 
@@ -554,3 +555,1074 @@ exercises:
     easier: 放慢速度、缩短时间
     harder: 走上坡、加快速度
     avoid: 走路时胸闷、胸痛、头晕要马上停下并就医
+
+  - id: front-squat
+    name: 杠铃前蹲
+    part: 腿臀
+    muscles: 股四头肌、臀大肌、核心
+    equipment: [杠铃]
+    level: 进阶
+    steps:
+      - 杠铃架在肩膀前侧和锁骨上，手指托住杠铃，手肘抬高
+      - 双脚与肩同宽，吸气收紧腹部后下蹲
+      - 蹲到大腿接近水平或不疼的深度
+      - 脚掌发力站起，手肘始终抬高
+    cues: [手肘向前抬高，别让杠铃滑下来, 上身比后蹲更直立]
+    mistakes: [手肘下垂导致上身前倾, 蹲到底时腰背变圆]
+    easier: 高脚杯深蹲
+    harder: 暂停前蹲（在最低点停两秒）
+    avoid: 手腕或肩膀够不到托杠姿势时先用交叉手托杠或换高脚杯深蹲；膝盖疼先限制深度
+
+  - id: walking-lunge
+    name: 哑铃行进弓步
+    part: 腿臀
+    muscles: 股四头肌、臀大肌
+    equipment: [哑铃, 自重]
+    level: 入门
+    steps:
+      - 双手各拿一只哑铃垂在身侧
+      - 向前迈一大步，后膝向地面下沉
+      - 前脚发力站起，后脚跟上迈成下一步
+      - 左右交替向前走
+    cues: [前膝顺着脚尖方向, 上身直立，步子迈够大]
+    mistakes: [步子太小，前膝过度前冲, 前膝向内扣]
+    easier: 原地弓步、反向弓步
+    harder: 加重或改成后脚垫高的保加利亚分腿蹲
+    avoid: 膝盖疼时缩小下蹲幅度或换反向弓步；平衡不好先不拿哑铃
+
+  - id: hip-thrust
+    name: 哑铃臀推
+    part: 腿臀
+    muscles: 臀大肌、腘绳肌
+    equipment: [哑铃, 杠铃]
+    level: 入门
+    steps:
+      - 上背靠在凳子边缘，哑铃放在髋部，双手扶住
+      - 双脚踩地，小腿大致垂直地面
+      - 臀部发力把髋向上推到身体成一条直线
+      - 顶端停一秒，慢慢放下
+    cues: [用屁股发力往上顶，不是用腰, 下巴微收，目光看前方]
+    mistakes: [顶到最高时腰往上拱, 脚离身体太远，变成大腿后侧发力]
+    easier: 臀桥（不靠凳子、不负重）
+    harder: 单腿臀推、杠铃臀推
+    avoid: 腰背不适时减轻重量、顶到身体成直线就停，别再往上拱
+
+  - id: sumo-deadlift
+    name: 壶铃相扑硬拉
+    part: 腿臀
+    muscles: 臀大肌、大腿内侧、腘绳肌
+    equipment: [壶铃, 哑铃]
+    level: 入门
+    steps:
+      - 双脚比肩宽很多，脚尖朝外，壶铃放在两脚中间
+      - 屈髋屈膝下蹲，双手握住壶铃，背部挺直
+      - 脚掌发力站起，髋部向前推
+      - 慢慢把壶铃放回地面
+    cues: [膝盖顺着脚尖方向打开, 壶铃贴近身体垂直上下]
+    mistakes: [膝盖向内扣, 起身时先抬屁股，变成弯腰拉]
+    easier: 高脚杯深蹲
+    harder: 杠铃相扑硬拉
+    avoid: 腰背不适时减轻重量；膝盖往里扣说明重量太大
+
+  - id: single-leg-rdl
+    name: 单腿罗马尼亚硬拉
+    part: 腿臀
+    muscles: 腘绳肌、臀大肌、臀中肌
+    equipment: [哑铃, 壶铃, 自重]
+    level: 进阶
+    steps:
+      - 单腿站立，支撑腿膝盖微屈，另一只手拿哑铃
+      - 上身前倾，后腿向后抬起，身体像跷跷板
+      - 感到大腿后侧拉紧时停下
+      - 臀部发力回到站立
+    cues: [髋部保持水平，别向一侧翻开, 背部挺直，从髋部折叠]
+    mistakes: [后腿那侧的髋部向外翻, 弯腰去够地面]
+    easier: 双腿罗马尼亚硬拉、扶墙做
+    harder: 加重或手里拿更重的壶铃
+    avoid: 平衡不稳先扶墙或不负重；腰背不适减小幅度
+
+  - id: leg-extension
+    name: 坐姿腿屈伸
+    part: 腿臀
+    muscles: 股四头肌
+    equipment: [器械]
+    level: 入门
+    steps:
+      - 坐在腿屈伸机上，小腿前侧抵住滚垫
+      - 大腿前侧发力把小腿踢直
+      - 顶端停一秒
+      - 慢慢放回，不让配重砸下来
+    cues: [动作慢、全程控制, 背部贴住靠背]
+    mistakes: [靠甩腿把重量踢上去, 下放太快]
+    easier: 减轻重量或单腿做
+    harder: 顶端多停几秒
+    avoid: 膝盖前侧疼时减小幅度（只做后半程），仍疼就停
+
+  - id: lying-leg-curl
+    name: 俯卧腿弯举
+    part: 腿臀
+    muscles: 腘绳肌
+    equipment: [器械]
+    level: 入门
+    steps:
+      - 趴在腿弯举机上，滚垫压在脚踝后上方
+      - 大腿后侧发力把小腿往屁股方向弯
+      - 顶端停一秒
+      - 慢慢放回
+    cues: [髋部贴住垫子不抬起, 放回时慢慢来]
+    mistakes: [屁股翘起来借力, 放回太快]
+    easier: 减轻重量
+    harder: 单腿做、下放更慢
+    avoid: 大腿后侧拉伤恢复期先用很轻的重量；抽筋就停
+
+  - id: seated-calf-raise
+    name: 坐姿提踵
+    part: 腿臀
+    muscles: 小腿
+    equipment: [哑铃, 器械]
+    level: 入门
+    steps:
+      - 坐在凳子上，前脚掌踩在踏板或书上，哑铃压在膝盖上
+      - 脚跟尽量抬高
+      - 顶端停一秒
+      - 慢慢放下到脚跟低于前脚掌
+    cues: [全程慢、幅度做满, 膝盖保持弯着]
+    mistakes: [弹着做、幅度太小]
+    easier: 不负重做
+    harder: 加重、顶端停更久
+    avoid: 跟腱疼时先不做底部的拉伸位置，只做上半程
+
+  - id: good-morning
+    name: 杠铃早安式
+    part: 腿臀
+    muscles: 腘绳肌、竖脊肌、臀大肌
+    equipment: [杠铃]
+    level: 进阶
+    steps:
+      - 杠铃放在上背，双脚与肩同宽，膝盖微屈
+      - 屁股向后推，上身前倾到接近水平或大腿后侧拉紧
+      - 背部始终挺直
+      - 臀部发力回到站立
+    cues: [从髋部折叠，不是弯腰, 重量要轻]
+    mistakes: [背部弯曲, 重量太大]
+    easier: 罗马尼亚硬拉、空杆早安式
+    harder: 加重
+    avoid: 腰背有伤先别做；用很轻的重量学动作
+
+  - id: hack-squat
+    name: 哈克深蹲
+    part: 腿臀
+    muscles: 股四头肌、臀大肌
+    equipment: [器械]
+    level: 入门
+    steps:
+      - 背靠哈克深蹲机的靠垫，肩膀顶住肩垫
+      - 双脚在踏板中间、与肩同宽
+      - 屈膝下蹲到不疼的深度
+      - 脚掌发力推起，不锁死膝盖
+    cues: [背部全程贴住靠垫, 膝盖顺着脚尖方向]
+    mistakes: [蹲到底时屁股离开靠垫, 顶端膝盖锁死]
+    easier: 腿举
+    harder: 加重、下放更慢
+    avoid: 膝盖疼时脚放高一点、限制深度
+
+  - id: side-lunge
+    name: 哑铃侧弓步
+    part: 腿臀
+    muscles: 大腿内侧、臀大肌、股四头肌
+    equipment: [哑铃, 自重]
+    level: 入门
+    steps:
+      - 双脚并拢站立，双手捧一只哑铃在胸前
+      - 一只脚向侧面迈一大步，屈这侧膝盖、屁股向后坐
+      - 另一条腿伸直
+      - 迈出的脚发力推回
+    cues: [屈的那侧膝盖顺着脚尖, 脚跟踩实]
+    mistakes: [膝盖向内扣, 上身过度前倾]
+    easier: 不负重、迈小一点
+    harder: 加重、侧滑弓步
+    avoid: 膝盖内侧疼时减小幅度；大腿内侧拉伤恢复期先别做
+
+  - id: hip-abduction
+    name: 坐姿髋外展
+    part: 腿臀
+    muscles: 臀中肌
+    equipment: [器械, 弹力带]
+    level: 入门
+    steps:
+      - 坐在髋外展机上，垫子贴住大腿外侧
+      - 大腿向外打开
+      - 顶端停一秒
+      - 慢慢收回
+    cues: [动作慢, 上身稳定不晃]
+    mistakes: [靠身体前后晃动借力]
+    easier: 弹力带坐姿外展
+    harder: 上身稍前倾做、顶端停更久
+    avoid: 髋部疼时减小幅度
+
+  - id: pistol-squat
+    name: 单腿深蹲
+    part: 腿臀
+    muscles: 股四头肌、臀大肌、臀中肌
+    equipment: [自重]
+    level: 进阶
+    steps:
+      - 单腿站立，另一条腿向前伸直
+      - 双臂向前平举保持平衡
+      - 支撑腿慢慢蹲到能控制的深度
+      - 支撑腿发力站起
+    cues: [支撑腿膝盖顺着脚尖, 全脚掌踩地]
+    mistakes: [膝盖向内扣, 蹲到底失去控制摔坐下去]
+    easier: 坐到箱子上再站起的单腿蹲
+    harder: 手里拿一个小重量配重
+    avoid: 膝盖疼或平衡不好先别做，用箱子限制深度练
+
+  - id: band-kickback
+    name: 弹力带臀部后踢
+    part: 腿臀
+    muscles: 臀大肌
+    equipment: [弹力带]
+    level: 入门
+    steps:
+      - 四点跪姿，弹力带一头套在脚上、一头压在手下
+      - 一条腿向后上方蹬直
+      - 顶端停一秒
+      - 慢慢收回
+    cues: [腰背保持平直，别塌腰, 用屁股发力]
+    mistakes: [踢腿时腰往下塌]
+    easier: 不加弹力带
+    harder: 换更紧的弹力带
+    avoid: 腰背不适时幅度减小，蹬到和身体平齐就停
+
+  - id: incline-dumbbell-press
+    name: 上斜哑铃卧推
+    part: 胸
+    muscles: 胸大肌上部、三角肌前束、肱三头肌
+    equipment: [哑铃]
+    level: 入门
+    steps:
+      - 凳子调到约三十度，躺好，双手持哑铃在胸部上方
+      - 慢慢把哑铃放到胸部两侧
+      - 推起到手臂接近伸直
+      - 保持肩膀贴着凳子
+    cues: [手肘和身体夹角约四十五度, 肩膀往下沉]
+    mistakes: [凳子调得太陡，变成推肩, 手肘张得太开]
+    easier: 平板哑铃卧推、上斜俯卧撑
+    harder: 上斜杠铃卧推
+    avoid: 肩膀前侧疼时减小下放深度或换平板卧推
+
+  - id: incline-bench-press
+    name: 上斜杠铃卧推
+    part: 胸
+    muscles: 胸大肌上部、三角肌前束、肱三头肌
+    equipment: [杠铃]
+    level: 进阶
+    steps:
+      - 躺在上斜卧推凳上，双手比肩略宽握杠
+      - 把杠铃慢慢放到上胸
+      - 推起到手臂接近伸直
+      - 双脚踩实，肩膀贴凳
+    cues: [肩胛收紧贴凳, 杠铃落在上胸]
+    mistakes: [屁股离开凳子, 杠铃落点太靠下]
+    easier: 上斜哑铃卧推
+    harder: 加重
+    avoid: 肩膀不适时改用哑铃或减小下放深度；做大重量要有人保护
+
+  - id: dumbbell-fly
+    name: 哑铃飞鸟
+    part: 胸
+    muscles: 胸大肌
+    equipment: [哑铃]
+    level: 入门
+    steps:
+      - 平躺在凳子上，双手持哑铃举在胸部上方，手肘微屈
+      - 双臂向两侧打开，像抱一棵大树
+      - 打开到胸部拉紧、和肩平齐就停
+      - 胸部发力把哑铃合拢
+    cues: [手肘始终微屈不变, 重量要轻]
+    mistakes: [放得太低，肩膀前侧被拉得疼, 手臂完全伸直]
+    easier: 绳索夹胸、减轻重量
+    harder: 上斜飞鸟
+    avoid: 肩膀前侧疼时减小打开幅度，或换绳索夹胸
+
+  - id: cable-crossover
+    name: 绳索夹胸
+    part: 胸
+    muscles: 胸大肌
+    equipment: [器械]
+    level: 入门
+    steps:
+      - 站在绳索架中间，双手各握一个把手，身体稍前倾
+      - 手肘微屈，双手向身体前下方合拢
+      - 合拢时停一秒
+      - 慢慢打开回到起始位置
+    cues: [手肘角度不变, 用胸部发力把手合拢]
+    mistakes: [弯手肘变成推, 身体前后晃]
+    easier: 减轻重量
+    harder: 单臂做、合拢时停更久
+    avoid: 肩膀前侧疼时打开幅度小一点
+
+  - id: machine-chest-press
+    name: 坐姿推胸机
+    part: 胸
+    muscles: 胸大肌、肱三头肌、三角肌前束
+    equipment: [器械]
+    level: 入门
+    steps:
+      - 调好座椅，把手和胸部中间平齐
+      - 背靠靠垫，双手握住把手
+      - 向前推到手臂接近伸直
+      - 慢慢收回
+    cues: [肩膀往下沉、贴住靠背, 推的时候呼气]
+    mistakes: [耸肩, 收回太快]
+    easier: 减轻重量
+    harder: 哑铃卧推
+    avoid: 肩膀不适时把座椅调高一点、减小幅度
+
+  - id: pec-deck
+    name: 蝴蝶机夹胸
+    part: 胸
+    muscles: 胸大肌
+    equipment: [器械]
+    level: 入门
+    steps:
+      - 坐在蝴蝶机上，前臂或双手放在把手上
+      - 胸部发力把双臂向中间合拢
+      - 合拢时停一秒
+      - 慢慢打开到胸部拉紧
+    cues: [动作慢, 肩膀不耸起]
+    mistakes: [打开太大，肩膀前侧疼, 借甩动合拢]
+    easier: 减轻重量
+    harder: 合拢时停更久
+    avoid: 肩膀前侧疼时减小打开幅度
+
+  - id: decline-push-up
+    name: 下斜俯卧撑
+    part: 胸
+    muscles: 胸大肌上部、三角肌前束、肱三头肌
+    equipment: [自重]
+    level: 进阶
+    steps:
+      - 双脚放在凳子或台阶上，双手撑地比肩略宽
+      - 身体从头到脚成一条直线
+      - 屈肘把胸部降向地面
+      - 推起
+    cues: [身体保持一条直线, 手肘约四十五度]
+    mistakes: [塌腰, 头往下扎]
+    easier: 标准俯卧撑
+    harder: 单脚垫高、加负重背心
+    avoid: 肩膀或手腕疼时先做标准俯卧撑
+
+  - id: dumbbell-floor-press
+    name: 哑铃地板卧推
+    part: 胸
+    muscles: 胸大肌、肱三头肌
+    equipment: [哑铃]
+    level: 入门
+    steps:
+      - 仰卧在地上，屈膝踩地，双手持哑铃
+      - 上臂贴地时停一下
+      - 推起到手臂接近伸直
+      - 慢慢放下到上臂碰地
+    cues: [上臂碰地后再推, 手肘约四十五度]
+    mistakes: [上臂砸到地上]
+    easier: 俯卧撑
+    harder: 哑铃卧推
+    avoid: 肩膀不适的人比较友好；仍疼就停
+
+  - id: parallel-dip
+    name: 双杠臂屈伸
+    part: 胸
+    muscles: 胸大肌下部、肱三头肌
+    equipment: [器械]
+    level: 进阶
+    steps:
+      - 双手撑在双杠上，手臂伸直
+      - 身体稍前倾，屈肘下沉到上臂接近水平
+      - 推起到手臂伸直
+      - 动作慢、不晃
+    cues: [肩膀往下沉，别耸到耳朵, 下沉到不疼的深度]
+    mistakes: [下沉太深，肩膀前侧被拉疼, 身体乱晃]
+    easier: 凳上臂屈伸、助力双杠
+    harder: 加负重
+    avoid: 肩膀有伤先别做；肩膀前侧疼就减小深度
+
+  - id: barbell-row
+    name: 杠铃俯身划船
+    part: 背
+    muscles: 背阔肌、斜方肌、三角肌后束
+    equipment: [杠铃]
+    level: 进阶
+    steps:
+      - 双手比肩略宽握杠，屈髋上身前倾约四十五度，背挺直
+      - 把杠铃拉向肚脐
+      - 顶端停一秒
+      - 慢慢放下
+    cues: [背部全程挺直, 手肘贴着身体往后拉]
+    mistakes: [起身借力把杠铃甩上来, 弯腰拱背]
+    easier: 单臂哑铃划船、俯卧上斜哑铃划船
+    harder: 加重
+    avoid: 腰背不适时换有胸部支撑的划船
+
+  - id: seated-cable-row
+    name: 坐姿绳索划船
+    part: 背
+    muscles: 背阔肌、斜方肌
+    equipment: [器械]
+    level: 入门
+    steps:
+      - 坐在划船机上，双脚踩住踏板，膝盖微屈
+      - 双手握把，背挺直
+      - 把把手拉向肚子，肩膀向后收
+      - 慢慢伸直手臂回去
+    cues: [上身不前后大幅摆动, 拉到底时挺胸]
+    mistakes: [身体后仰借力, 耸肩]
+    easier: 弹力带坐姿划船
+    harder: 单臂做、顶端停更久
+    avoid: 腰背不适时上身保持不动、减轻重量
+
+  - id: inverted-row
+    name: 反向划船
+    part: 背
+    muscles: 背阔肌、斜方肌、三角肌后束
+    equipment: [单杠, 自重]
+    level: 入门
+    steps:
+      - 躺在低单杠或史密斯杠下，双手握杠
+      - 身体伸直成一条线，脚跟着地
+      - 把胸口拉向杠
+      - 慢慢放下
+    cues: [身体保持一条直线, 胸口去碰杠]
+    mistakes: [屁股下垂, 只用手臂拉]
+    easier: 身体站得更直（杠调高）
+    harder: 脚垫高、加负重
+    avoid: 肩膀不适时减小幅度
+
+  - id: chin-up
+    name: 反手引体向上
+    part: 背
+    muscles: 背阔肌、肱二头肌
+    equipment: [单杠]
+    level: 进阶
+    steps:
+      - 掌心朝自己，双手与肩同宽握杠
+      - 身体悬垂，肩膀往下沉
+      - 把身体拉起到下巴过杠
+      - 慢慢放下到手臂伸直
+    cues: [起拉前先沉肩, 下放慢]
+    mistakes: [蹬腿摆动借力, 只拉一半]
+    easier: 弹力带助力引体、反向划船
+    harder: 加负重
+    avoid: 肩膀或肘部疼时先别做，换高位下拉
+
+  - id: straight-arm-pulldown
+    name: 直臂下压
+    part: 背
+    muscles: 背阔肌
+    equipment: [器械, 弹力带]
+    level: 入门
+    steps:
+      - 面对绳索架站立，双手握住高处的直杆，手臂伸直
+      - 身体稍前倾
+      - 手臂保持伸直，把杆向下压到大腿前
+      - 慢慢回到起始位置
+    cues: [手肘角度不变, 肩膀往下沉]
+    mistakes: [弯手肘变成下压三头, 身体上下起伏借力]
+    easier: 弹力带直臂下压
+    harder: 单臂做
+    avoid: 肩膀不适时减小向上的幅度
+
+  - id: chest-supported-row
+    name: 俯卧上斜哑铃划船
+    part: 背
+    muscles: 背阔肌、斜方肌、三角肌后束
+    equipment: [哑铃]
+    level: 入门
+    steps:
+      - 凳子调成上斜，胸口趴在靠背上，双手拿哑铃垂下
+      - 把哑铃拉向身体两侧
+      - 顶端停一秒
+      - 慢慢放下
+    cues: [胸口一直贴住靠背, 手肘往后拉]
+    mistakes: [胸口离开靠背借力]
+    easier: 减轻重量
+    harder: 加重、顶端停更久
+    avoid: 腰背不适的人比较友好；肩膀疼时减小幅度
+
+  - id: back-extension
+    name: 山羊挺身
+    part: 背
+    muscles: 下背、臀大肌、腘绳肌
+    equipment: [器械, 自重]
+    level: 入门
+    steps:
+      - 趴在罗马椅上，髋部在垫子边缘，双手交叉抱胸
+      - 上身慢慢向下弯
+      - 臀部和下背发力抬起到身体成一条直线
+      - 不要抬过头
+    cues: [抬到身体成直线就停, 动作慢]
+    mistakes: [抬过头，腰往后拱, 甩上去]
+    easier: 地面俯卧挺身（小幅度）
+    harder: 怀抱重物
+    avoid: 腰背急性疼痛时先别做；有腰椎问题先问医生或康复师
+
+  - id: dumbbell-shrug
+    name: 哑铃耸肩
+    part: 背
+    muscles: 斜方肌
+    equipment: [哑铃, 杠铃]
+    level: 入门
+    steps:
+      - 双手各拿一只哑铃垂在身侧
+      - 肩膀向耳朵方向耸起
+      - 顶端停一秒
+      - 慢慢放下
+    cues: [直上直下，不要转圈, 手臂放松只是挂钩]
+    mistakes: [肩膀转圈, 弯手肘去拉]
+    easier: 减轻重量
+    harder: 加重、顶端停更久
+    avoid: 脖子不适时减轻重量；有颈椎问题先问医生
+
+  - id: overhead-press
+    name: 杠铃站姿推举
+    part: 肩
+    muscles: 三角肌前束和中束、肱三头肌
+    equipment: [杠铃]
+    level: 进阶
+    steps:
+      - 杠铃放在锁骨前，双手比肩略宽握杠
+      - 收紧腹部和臀部
+      - 把杠铃推过头顶，头稍后让再回正
+      - 慢慢放回锁骨
+    cues: [身体不后仰, 杠铃走直线]
+    mistakes: [腰往后弯借力, 杠铃推到身体前方]
+    easier: 哑铃推举、坐姿推肩机
+    harder: 加重
+    avoid: 肩膀有伤先别做；腰背不适时改坐姿有靠背的推举
+
+  - id: machine-shoulder-press
+    name: 坐姿推肩机
+    part: 肩
+    muscles: 三角肌前束和中束、肱三头肌
+    equipment: [器械]
+    level: 入门
+    steps:
+      - 调好座椅，把手在肩膀高度
+      - 背靠靠垫，双手握把
+      - 向上推到手臂接近伸直
+      - 慢慢放回
+    cues: [背部贴住靠垫, 不耸肩]
+    mistakes: [推的时候屁股离开座椅, 放得太低肩膀疼]
+    easier: 减轻重量
+    harder: 哑铃推举
+    avoid: 肩膀不适时减小下放幅度
+
+  - id: front-raise
+    name: 哑铃前平举
+    part: 肩
+    muscles: 三角肌前束
+    equipment: [哑铃]
+    level: 入门
+    steps:
+      - 双手持哑铃放在大腿前
+      - 手肘微屈，把哑铃向前举到与肩同高
+      - 停一秒
+      - 慢慢放下
+    cues: [不超过肩膀高度, 身体不晃]
+    mistakes: [身体后仰甩上去]
+    easier: 减轻重量、单臂交替
+    harder: 顶端停更久
+    avoid: 肩膀前侧疼时减小幅度
+
+  - id: rear-delt-fly
+    name: 俯身哑铃反向飞鸟
+    part: 肩
+    muscles: 三角肌后束、斜方肌
+    equipment: [哑铃]
+    level: 入门
+    steps:
+      - 屈髋上身前倾，双手持哑铃垂在胸下，手肘微屈
+      - 双臂向两侧打开到与身体平齐
+      - 停一秒
+      - 慢慢放下
+    cues: [用肩膀后侧发力, 重量轻、动作慢]
+    mistakes: [耸肩, 身体上下起伏]
+    easier: 弹力带面拉
+    harder: 顶端停更久
+    avoid: 肩膀不适的人比较友好；腰背不适时改趴在上斜凳上做
+
+  - id: upright-row
+    name: 哑铃直立划船
+    part: 肩
+    muscles: 三角肌中束、斜方肌
+    equipment: [哑铃]
+    level: 进阶
+    steps:
+      - 双手持哑铃放在大腿前
+      - 手肘带动把哑铃沿身体拉到胸口高度
+      - 手肘不高过肩膀
+      - 慢慢放下
+    cues: [手肘带动、不超过肩, 哑铃贴着身体]
+    mistakes: [拉得太高，肩膀夹着疼]
+    easier: 侧平举
+    harder: 加重
+    avoid: 肩膀有夹挤感或疼痛就换侧平举
+
+  - id: cable-lateral-raise
+    name: 单臂绳索侧平举
+    part: 肩
+    muscles: 三角肌中束
+    equipment: [器械, 弹力带]
+    level: 入门
+    steps:
+      - 侧身站在绳索架旁，远侧的手握住低处把手
+      - 手肘微屈，把手臂向侧面抬到与肩同高
+      - 停一秒
+      - 慢慢放下
+    cues: [身体不晃, 不耸肩]
+    mistakes: [身体侧倾借力]
+    easier: 哑铃侧平举、减轻重量
+    harder: 顶端停更久
+    avoid: 肩膀疼时减小幅度
+
+  - id: hammer-curl
+    name: 锤式弯举
+    part: 手臂
+    muscles: 肱二头肌、前臂
+    equipment: [哑铃]
+    level: 入门
+    steps:
+      - 双手持哑铃，掌心相对
+      - 上臂贴住身体，弯起前臂
+      - 顶端停一秒
+      - 慢慢放下
+    cues: [上臂不动, 掌心始终相对]
+    mistakes: [身体前后晃借力]
+    easier: 减轻重量
+    harder: 加重、交替做
+    avoid: 肘部疼时减轻重量
+
+  - id: barbell-curl
+    name: 杠铃弯举
+    part: 手臂
+    muscles: 肱二头肌
+    equipment: [杠铃]
+    level: 入门
+    steps:
+      - 掌心朝前握住杠铃，双手与肩同宽
+      - 上臂贴住身体，把杠铃弯起
+      - 顶端停一秒
+      - 慢慢放下
+    cues: [上臂不动, 下放慢]
+    mistakes: [身体后仰甩起来]
+    easier: 哑铃弯举
+    harder: 加重
+    avoid: 手腕不适时换曲杆或哑铃
+
+  - id: preacher-curl
+    name: 牧师凳弯举
+    part: 手臂
+    muscles: 肱二头肌
+    equipment: [杠铃, 哑铃, 器械]
+    level: 入门
+    steps:
+      - 上臂贴在牧师凳的斜垫上，握住杠铃或哑铃
+      - 把重量弯起
+      - 顶端停一秒
+      - 慢慢放下，手臂不完全锁直
+    cues: [上臂贴住垫子, 下放慢]
+    mistakes: [下放太快把肘部拉疼]
+    easier: 减轻重量
+    harder: 单臂做
+    avoid: 肘部疼时不放到最底
+
+  - id: cable-curl
+    name: 绳索弯举
+    part: 手臂
+    muscles: 肱二头肌
+    equipment: [器械, 弹力带]
+    level: 入门
+    steps:
+      - 面对绳索架，握住低处的直杆
+      - 上臂贴住身体，把杆弯起
+      - 顶端停一秒
+      - 慢慢放下
+    cues: [上臂不动, 全程有张力]
+    mistakes: [身体后仰]
+    easier: 弹力带弯举
+    harder: 单臂做
+    avoid: 肘部疼时减轻重量
+
+  - id: rope-pushdown
+    name: 绳索下压
+    part: 手臂
+    muscles: 肱三头肌
+    equipment: [器械, 弹力带]
+    level: 入门
+    steps:
+      - 面对绳索架，握住高处的绳索
+      - 上臂贴住身体，把绳索向下压到手臂伸直
+      - 底部把绳子向两边分开
+      - 慢慢回到起始位置
+    cues: [上臂不动, 底部停一秒]
+    mistakes: [身体前倾用体重压, 手肘往前跑]
+    easier: 弹力带下压
+    harder: 单臂做
+    avoid: 肘部疼时减轻重量
+
+  - id: overhead-triceps-extension
+    name: 哑铃颈后臂屈伸
+    part: 手臂
+    muscles: 肱三头肌
+    equipment: [哑铃]
+    level: 入门
+    steps:
+      - 双手捧住一只哑铃举过头顶
+      - 上臂不动，屈肘把哑铃放到脑后
+      - 伸肘把哑铃举回头顶
+      - 动作慢
+    cues: [上臂贴近耳朵, 核心收紧不弯腰]
+    mistakes: [手肘向外张开, 腰往后弯]
+    easier: 绳索下压
+    harder: 加重
+    avoid: 肩膀活动受限或疼痛时换绳索下压
+
+  - id: skull-crusher
+    name: 仰卧曲杆臂屈伸
+    part: 手臂
+    muscles: 肱三头肌
+    equipment: [杠铃]
+    level: 进阶
+    steps:
+      - 仰卧在凳子上，双手窄握曲杆举在胸部上方
+      - 上臂不动，屈肘把杆放到额头上方
+      - 伸肘把杆举回
+      - 动作慢
+    cues: [上臂垂直不动, 下放慢]
+    mistakes: [手肘向外张开, 下放太快]
+    easier: 绳索下压
+    harder: 加重
+    avoid: 肘部疼时减轻重量或换绳索下压；要有人保护
+
+  - id: close-grip-push-up
+    name: 窄距俯卧撑
+    part: 手臂
+    muscles: 肱三头肌、胸大肌
+    equipment: [自重]
+    level: 入门
+    steps:
+      - 双手撑地，距离比肩窄
+      - 身体从头到脚成一条直线
+      - 屈肘下降，手肘贴着身体
+      - 推起
+    cues: [手肘贴着身体往后, 身体一条直线]
+    mistakes: [手肘向外张, 塌腰]
+    easier: 跪姿窄距俯卧撑
+    harder: 脚垫高
+    avoid: 手腕疼时用俯卧撑支架或握哑铃做
+
+  - id: crunch
+    name: 卷腹
+    part: 核心
+    muscles: 腹直肌
+    equipment: [自重]
+    level: 入门
+    steps:
+      - 仰卧屈膝，双脚踩地，双手轻放耳侧
+      - 腹部发力把肩膀抬离地面
+      - 顶端停一秒
+      - 慢慢放下
+    cues: [下巴和胸口之间留一个拳头的距离, 只卷到肩膀离地]
+    mistakes: [双手抱头用力拽脖子, 起得太高变成仰卧起坐]
+    easier: 减小幅度
+    harder: 手持重物
+    avoid: 脖子不适时双手交叉抱胸；腰背疼就停
+
+  - id: lying-leg-raise
+    name: 仰卧举腿
+    part: 核心
+    muscles: 腹直肌下部
+    equipment: [自重]
+    level: 入门
+    steps:
+      - 仰卧，双手放在身体两侧或屁股下面
+      - 双腿伸直并拢，慢慢抬到与地面垂直
+      - 慢慢放下到离地一点
+      - 腰背始终贴地
+    cues: [腰背贴住地面, 下放慢]
+    mistakes: [腰离开地面拱起来]
+    easier: 屈膝举腿
+    harder: 悬垂举腿
+    avoid: 腰背不适时屈膝做、下放幅度小一点
+
+  - id: russian-twist
+    name: 俄罗斯转体
+    part: 核心
+    muscles: 腹斜肌
+    equipment: [自重, 哑铃]
+    level: 入门
+    steps:
+      - 坐在地上，屈膝，上身稍后倾
+      - 双手合握或捧一只哑铃在胸前
+      - 上身左右转动
+      - 动作慢
+    cues: [转的是上身，不是只甩手, 背部挺直]
+    mistakes: [弯腰驼背, 只甩手臂]
+    easier: 双脚踩地做
+    harder: 双脚离地、加重
+    avoid: 腰背不适时双脚踩地、转动幅度小一点
+
+  - id: ab-wheel
+    name: 健腹轮
+    part: 核心
+    muscles: 腹直肌、背阔肌
+    equipment: [器械]
+    level: 进阶
+    steps:
+      - 跪在垫子上，双手握住健腹轮
+      - 腹部收紧，慢慢把轮子向前推
+      - 推到能控制的位置
+      - 腹部发力把轮子拉回
+    cues: [腰不往下塌, 推得太远就收]
+    mistakes: [推太远塌腰]
+    easier: 推近一点、对着墙推（限制距离）
+    harder: 站姿健腹轮
+    avoid: 腰背有伤先别做；腰往下塌就缩短距离
+
+  - id: pallof-press
+    name: 抗旋转推
+    part: 核心
+    muscles: 腹斜肌、腹直肌
+    equipment: [弹力带, 器械]
+    level: 入门
+    steps:
+      - 侧身站在绳索架或固定好的弹力带旁，双手握把放在胸前
+      - 双手向前推直
+      - 身体保持不被拉转
+      - 停两秒后收回
+    cues: [身体正对前方不转, 肚子收紧]
+    mistakes: [身体被拉得转过去]
+    easier: 弹力带松一点
+    harder: 站得离远一点、单腿跪姿做
+    avoid: 腰背不适的人比较友好
+
+  - id: side-bend
+    name: 哑铃体侧屈
+    part: 核心
+    muscles: 腹斜肌
+    equipment: [哑铃]
+    level: 入门
+    steps:
+      - 单手持哑铃站立
+      - 上身向拿哑铃的一侧弯
+      - 另一侧腰部发力把身体拉直
+      - 做完一侧换另一侧
+    cues: [只向侧面弯，不前后倾, 动作慢]
+    mistakes: [身体前倾或后仰, 重量太大]
+    easier: 不负重
+    harder: 加重
+    avoid: 腰背不适时减小幅度
+
+  - id: plank-shoulder-tap
+    name: 平板支撑交替拍肩
+    part: 核心
+    muscles: 腹直肌、腹斜肌
+    equipment: [自重]
+    level: 入门
+    steps:
+      - 俯卧撑姿势撑住，双脚比肩宽
+      - 一只手抬起拍对侧肩膀
+      - 放回后换另一只手
+      - 身体保持不晃
+    cues: [屁股不左右晃, 身体一条直线]
+    mistakes: [屁股跟着手左右扭]
+    easier: 跪姿做、双脚分更开
+    harder: 双脚并拢
+    avoid: 手腕或肩膀疼时改成肘撑平板
+
+  - id: wall-ball
+    name: 药球蹲起抛墙
+    part: 全身
+    muscles: 股四头肌、臀大肌、肩
+    equipment: [器械]
+    level: 入门
+    steps:
+      - 双手捧药球在胸前，面对墙站立
+      - 下蹲到大腿接近水平
+      - 站起时把药球向墙上高处抛出
+      - 接住球顺势下蹲进入下一次
+    cues: [蹲起和抛球连成一个动作, 膝盖顺着脚尖]
+    mistakes: [只用手臂抛, 膝盖向内扣]
+    easier: 空手蹲起加上推
+    harder: 更重的药球、更高的目标
+    avoid: 膝盖或肩膀疼时先别做
+
+  - id: dumbbell-snatch
+    name: 哑铃单臂抓举
+    part: 全身
+    muscles: 臀大肌、腘绳肌、肩
+    equipment: [哑铃, 壶铃]
+    level: 进阶
+    steps:
+      - 哑铃放在两脚之间，屈髋屈膝单手握住
+      - 腿和髋部爆发发力站起，把哑铃沿身体拉起
+      - 手腕翻转把哑铃举过头顶
+      - 分段放回
+    cues: [力量来自腿和髋, 哑铃贴近身体]
+    mistakes: [只用手臂拉, 弯腰拱背]
+    easier: 壶铃摇摆
+    harder: 加重
+    avoid: 腰背或肩膀有伤先别做；先跟教练学动作
+
+  - id: high-knees
+    name: 原地高抬腿
+    part: 有氧
+    muscles: 全身
+    equipment: [自重]
+    level: 入门
+    steps:
+      - 原地站立
+      - 交替把膝盖抬到腰的高度
+      - 手臂配合前后摆
+      - 前脚掌轻落地
+    cues: [落地轻, 上身直立]
+    mistakes: [身体后仰]
+    easier: 原地快走抬腿
+    harder: 加快速度、延长时间
+    avoid: 膝盖或脚踝疼时改原地快走
+
+  - id: hip-flexor-stretch
+    name: 跪姿髋屈肌拉伸
+    part: 拉伸放松
+    muscles: 大腿前侧上部、髋前侧
+    equipment: [自重]
+    level: 入门
+    steps:
+      - 单膝跪地，另一只脚在前踩地
+      - 收紧臀部，髋部慢慢向前推
+      - 感到后腿大腿根前侧拉伸时停住
+      - 保持二三十秒后换边
+    cues: [臀部收紧, 上身直立]
+    mistakes: [腰往前塌]
+    easier: 幅度小一点
+    harder: 后侧手臂上举
+    avoid: 膝盖跪地疼时下面垫毛巾
+
+  - id: hamstring-band-stretch
+    name: 仰卧弹力带大腿后侧拉伸
+    part: 拉伸放松
+    muscles: 大腿后侧
+    equipment: [弹力带]
+    level: 入门
+    steps:
+      - 仰卧，弹力带套在一只脚上
+      - 这条腿伸直慢慢往上拉
+      - 感到大腿后侧拉伸时停住
+      - 保持二三十秒后换边
+    cues: [另一条腿平放, 腿保持伸直]
+    mistakes: [拉得太猛]
+    easier: 膝盖微屈
+    harder: 拉得更高
+    avoid: 大腿后侧拉伤急性期先别拉
+
+  - id: quad-stretch
+    name: 站姿大腿前侧拉伸
+    part: 拉伸放松
+    muscles: 大腿前侧
+    equipment: [自重]
+    level: 入门
+    steps:
+      - 单腿站立，可以扶墙
+      - 用手抓住另一只脚背，拉向屁股
+      - 两个膝盖并拢
+      - 保持二三十秒后换边
+    cues: [膝盖并拢、朝下, 身体直立]
+    mistakes: [膝盖向外张]
+    easier: 侧躺做
+    harder: 髋部再往前推一点
+    avoid: 膝盖疼时别硬拉
+
+  - id: pigeon-stretch
+    name: 鸽子式拉伸
+    part: 拉伸放松
+    muscles: 臀部、髋外侧
+    equipment: [自重]
+    level: 进阶
+    steps:
+      - 从俯卧撑姿势开始，把一条腿屈膝放到身前
+      - 另一条腿向后伸直
+      - 上身慢慢前倾
+      - 保持二三十秒后换边
+    cues: [髋部摆正, 呼吸放松]
+    mistakes: [膝盖别扭疼还硬压]
+    easier: 仰卧四字拉伸
+    harder: 上身趴得更低
+    avoid: 膝盖或髋部疼时换仰卧四字拉伸
+
+  - id: calf-stretch
+    name: 站姿小腿拉伸
+    part: 拉伸放松
+    muscles: 小腿
+    equipment: [自重]
+    level: 入门
+    steps:
+      - 面对墙，双手扶墙，一只脚向后伸
+      - 后脚跟踩地，前膝弯曲
+      - 身体向墙靠近
+      - 保持二三十秒后换边
+    cues: [后脚跟踩实, 后腿伸直]
+    mistakes: [后脚跟抬起]
+    easier: 幅度小一点
+    harder: 后膝微屈做（拉小腿深层）
+    avoid: 跟腱疼时别拉得太猛
+
+  - id: knee-to-chest
+    name: 仰卧抱膝
+    part: 拉伸放松
+    muscles: 下背、臀部
+    equipment: [自重]
+    level: 入门
+    steps:
+      - 仰卧
+      - 双手抱住一侧或双侧膝盖拉向胸口
+      - 保持二三十秒
+      - 慢慢放下
+    cues: [动作慢, 呼吸放松]
+    mistakes: [猛地拉]
+    easier: 单腿做
+    harder: 双腿一起做
+    avoid: 腰背疼得厉害或腿发麻时停下
+
+  - id: foam-roll-quads
+    name: 泡沫轴放松大腿前侧
+    part: 拉伸放松
+    muscles: 大腿前侧
+    equipment: [泡沫轴]
+    level: 入门
+    steps:
+      - 趴下，把泡沫轴放在大腿前侧下面
+      - 前臂撑地
+      - 身体前后慢慢滚动
+      - 每侧一两分钟
+    cues: [慢慢滚, 遇到酸的地方停一会]
+    mistakes: [在膝盖骨上滚]
+    easier: 压得轻一点
+    harder: 单腿压
+    avoid: 有静脉曲张、皮肤破损的地方别压
+
+  - id: foam-roll-calves
+    name: 泡沫轴放松小腿
+    part: 拉伸放松
+    muscles: 小腿
+    equipment: [泡沫轴]
+    level: 入门
+    steps:
+      - 坐在地上，把泡沫轴放在小腿下面
+      - 双手撑地把屁股抬起
+      - 前后慢慢滚动
+      - 每侧一两分钟
+    cues: [慢慢滚, 可以叠腿加压]
+    mistakes: [滚得太快]
+    easier: 双腿一起压
+    harder: 叠腿加压
+    avoid: 有静脉曲张或小腿急性拉伤时别压

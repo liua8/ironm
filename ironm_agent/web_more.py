@@ -333,6 +333,17 @@ async def get_video(exercise_id: str) -> FileResponse:
     return FileResponse(p, headers={"Cache-Control": "public, max-age=3600"})
 
 
+@router.get("/iron/api/exercise-images/{name}")
+async def get_exercise_image(name: str) -> FileResponse:
+    """动作配图（spec [2026-10-23] §32）：公开内容（来自 wger，CC BY-SA），<img> 带不了登录凭证，不验证登录。"""
+    from ironm_agent.exercise_images import image_path
+
+    p = image_path(name)
+    if p is None:
+        raise HTTPException(404, "没有这张图")
+    return FileResponse(p, headers={"Cache-Control": "public, max-age=86400"})
+
+
 # ---- 饮食记录与推荐 -------------------------------------------------------------------------
 
 

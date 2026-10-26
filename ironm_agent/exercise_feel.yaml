@@ -230,3 +230,263 @@ feel:
       replaces: 中等强度（说话测试）
     - cue: 手臂像钟摆一样前后摆，别横着甩
       replaces: 手臂前后摆动
+
+  front-squat:
+    - cue: 手肘像要去指对面的墙，一直抬着，杠铃就稳稳待在肩上
+      replaces: 手肘抬高保持前架位
+    - cue: 像背靠着一面墙往下坐，上身别往前趴
+      replaces: 躯干保持直立
+
+  walking-lunge:
+    - cue: 像走在两条平行的铁轨上，两只脚别踩到同一条线上
+      replaces: 两脚保持髋宽，避免走成一条线
+
+  hip-thrust:
+    - cue: 想象屁股夹着一张纸，往上顶的时候把它夹紧
+      replaces: 顶端臀部收紧
+    - cue: 肋骨往下收，像有人轻轻按着你的肚子，腰就不会拱
+      replaces: 避免腰椎过伸
+
+  sumo-deadlift:
+    - cue: 站起来时像要把地面往两边撕开
+      replaces: 膝外展，双脚向外发力
+
+  single-leg-rdl:
+    - cue: 身体像一块跷跷板：头往前低多少，后脚就往后抬多少
+      replaces: 躯干与后腿同步，保持一条直线
+    - cue: 两边的胯像车灯一样一直照着地面，别歪向一边
+      replaces: 髋部保持水平
+
+  leg-extension:
+    - cue: 像慢慢踢开一扇很重的门，不是一脚踹开
+      replaces: 控制速度，避免借力
+
+  lying-leg-curl:
+    - cue: 肚子和胯一直贴着垫子，像被粘住了一样
+      replaces: 髋部不离开垫面
+
+  seated-calf-raise:
+    - cue: 像踮脚去看前面人群里的人，踮到最高停一下
+      replaces: 顶端充分收缩
+
+  good-morning:
+    - cue: 像双手端着盘子用屁股去关身后的车门
+      replaces: 屈髋后推
+
+  hack-squat:
+    - cue: 后背像贴在墙上的贴纸，从头到尾别撕下来
+      replaces: 背部贴紧靠垫
+
+  side-lunge:
+    - cue: 像侧身坐到旁边一把椅子上，另一条腿顺势伸直
+      replaces: 侧向屈髋屈膝，另一腿伸直
+
+  hip-abduction:
+    - cue: 像慢慢推开两扇很沉的门
+      replaces: 控制速度向外打开
+
+  pistol-squat:
+    - cue: 像单脚慢慢坐到一把很矮的凳子上
+      replaces: 单腿屈髋屈膝下蹲
+
+  band-kickback:
+    - cue: 像用脚后跟往后上方蹬开一扇门
+      replaces: 伸髋向后上方发力
+    - cue: 背上像放着一杯水，踢腿时别把它晃洒
+      replaces: 保持躯干稳定
+
+  incline-dumbbell-press:
+    - cue: 想象腋下夹着一张纸，推的时候别让它掉下来
+      replaces: 手肘不过度外展
+
+  incline-bench-press:
+    - cue: 像要把凳子从背后挤住，两侧肩膀夹紧贴在凳上
+      replaces: 肩胛收紧下沉
+
+  dumbbell-fly:
+    - cue: 像抱一棵很粗的树，手臂一直保持这个弧度
+      replaces: 肘关节角度固定
+
+  cable-crossover:
+    - cue: 像两只手要在身前合抱一个大气球
+      replaces: 双臂弧线内收
+
+  machine-chest-press:
+    - cue: 后背像被吸在靠垫上，推的时候别离开
+      replaces: 背部贴紧靠垫
+
+  pec-deck:
+    - cue: 像慢慢合上一本很厚的大书
+      replaces: 控制速度内收
+
+  decline-push-up:
+    - cue: 身体像一块木板，脚垫高了也别从中间折
+      replaces: 躯干保持直线
+
+  dumbbell-floor-press:
+    - cue: 上臂轻轻放到地上，像放下一个鸡蛋
+      replaces: 控制下放
+
+  parallel-dip:
+    - cue: 肩膀离耳朵越远越好，别让脖子缩起来
+      replaces: 肩胛下沉
+
+  barbell-row:
+    - cue: 想象手肘去撞身后的墙，手只是挂钩
+      replaces: 以肘带动，背部发力
+
+  seated-cable-row:
+    - cue: 拉到底时像要用两边肩膀把背后一支笔夹住
+      replaces: 肩胛后缩
+
+  inverted-row:
+    - cue: 身体像一块木板被拉上去，别从屁股那里折
+      replaces: 躯干保持直线
+
+  chin-up:
+    - cue: 想象把单杠往下拉弯到胸口，而不是把自己拽上去
+      replaces: 背部主导下拉
+
+  straight-arm-pulldown:
+    - cue: 手臂像两根木棍，用腋下那块地方把它往下压
+      replaces: 伸直手臂，背阔发力
+
+  chest-supported-row:
+    - cue: 胸口像被粘在靠背上，拉的时候别抬起来
+      replaces: 胸部始终贴住支撑
+
+  back-extension:
+    - cue: 起身到身体像一块直直的木板就停，再往上就是在折腰
+      replaces: 避免腰椎过伸
+
+  dumbbell-shrug:
+    - cue: 像要用肩膀去碰耳垂，碰到了停一下
+      replaces: 肩胛上提至顶端
+
+  overhead-press:
+    - cue: 推起时像有人在挠你的肚子，肚子和屁股都绷紧，腰就不会往后弯
+      replaces: 核心收紧，避免腰椎代偿
+
+  machine-shoulder-press:
+    - cue: 后背和屁股像坐进了一张贴身的椅子，推的时候不挪动
+      replaces: 躯干固定
+
+  front-raise:
+    - cue: 像慢慢把一杯水端到眼前，杯里的水不洒
+      replaces: 控制速度前举
+
+  rear-delt-fly:
+    - cue: 像张开翅膀往两边飞，翅膀尖不往上翘
+      replaces: 水平外展
+
+  upright-row:
+    - cue: 手肘像被两根绳子往上吊，吊到和肩膀一样高就停
+      replaces: 肘部主导，不高于肩
+
+  cable-lateral-raise:
+    - cue: 像要把手臂往远处伸，而不是往上抬
+      replaces: 外展时向外延伸
+
+  hammer-curl:
+    - cue: 像握着锤子往上敲钉子，拳眼一直朝上
+      replaces: 中立握
+
+  barbell-curl:
+    - cue: 上臂像被钉在身体两侧，只有前臂在动
+      replaces: 上臂固定
+
+  preacher-curl:
+    - cue: 放下时像慢慢放下一桶水，不让它一下子掉下去
+      replaces: 控制离心
+
+  cable-curl:
+    - cue: 手肘像门的合页，只有前臂这扇门在开关
+      replaces: 肘关节为轴
+
+  rope-pushdown:
+    - cue: 压到底时像把绳子往两边甩开
+      replaces: 底部分绳充分伸肘
+
+  overhead-triceps-extension:
+    - cue: 上臂像两根柱子立在耳朵边，只有前臂在动
+      replaces: 上臂固定
+
+  skull-crusher:
+    - cue: 手肘像门的合页，固定在原地
+      replaces: 上臂固定
+
+  close-grip-push-up:
+    - cue: 手肘像要擦着肋骨往后走
+      replaces: 肘贴近躯干
+
+  crunch:
+    - cue: 像要把肋骨往肚脐方向卷过去，卷成一只虾
+      replaces: 脊柱屈曲，腹肌收缩
+
+  lying-leg-raise:
+    - cue: 后腰像压着一张纸，放腿的时候别让人把纸抽走
+      replaces: 腰椎贴地
+
+  russian-twist:
+    - cue: 像坐在转椅上，肩膀带着手一起转
+      replaces: 以躯干旋转带动手臂
+
+  ab-wheel:
+    - cue: 身体像一块被慢慢推出去的木板，肚子一松就会塌
+      replaces: 躯干保持刚性
+
+  pallof-press:
+    - cue: 有人从侧面拉你的手，你的肚子要像墙一样不被拉转
+      replaces: 抗旋转
+
+  side-bend:
+    - cue: 像夹在两块玻璃之间，只能往侧面弯
+      replaces: 冠状面侧屈
+
+  plank-shoulder-tap:
+    - cue: 背上像放着一杯水，拍肩时别让它洒出来
+      replaces: 保持躯干稳定
+
+  wall-ball:
+    - cue: 像从地上弹起来，把力量从腿一直传到手上把球送出去
+      replaces: 下肢发力传导至上肢
+
+  dumbbell-snatch:
+    - cue: 像拉开割草机的启动绳，力量从腿一路传上来
+      replaces: 髋部爆发伸展带动上拉
+
+  high-knees:
+    - cue: 脚下像踩着烫的沙子，落地轻轻一点就抬起来
+      replaces: 前脚掌快速轻落地
+
+  hip-flexor-stretch:
+    - cue: 像把后腿那侧的胯慢慢往前推，屁股夹紧
+      replaces: 伸髋拉伸髋屈肌
+
+  hamstring-band-stretch:
+    - cue: 像慢慢拉一根橡皮筋，感觉紧了就停住，不硬拽
+      replaces: 温和静态拉伸
+
+  quad-stretch:
+    - cue: 两个膝盖像被绑在一起，往下指着地面
+      replaces: 双膝并拢
+
+  pigeon-stretch:
+    - cue: 前腿像折叠起来的翅膀，身体慢慢趴下去
+      replaces: 前倾加深拉伸
+
+  calf-stretch:
+    - cue: 后脚跟像钉在地上，身体慢慢往墙那边靠
+      replaces: 足跟着地拉伸小腿
+
+  knee-to-chest:
+    - cue: 像把自己团成一个球，后背轻轻贴着地
+      replaces: 屈髋屈膝放松腰背
+
+  foam-roll-quads:
+    - cue: 像用擀面杖慢慢擀面，酸的地方多擀几下
+      replaces: 慢速滚压
+
+  foam-roll-calves:
+    - cue: 像用擀面杖擀小腿，酸的地方多停几秒
+      replaces: 慢速滚压

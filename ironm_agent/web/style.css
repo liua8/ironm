@@ -883,3 +883,18 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .rest-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 10px; border-radius: 8px; background: var(--warn-soft); cursor: pointer; font-size: 13.5px; }
 .rest-chip small { color: var(--warn); font-size: 12px; }
 .rest-chip.sore { background: var(--heat-soft); } .rest-chip.sore small { color: var(--heat); }
+
+/* ==== 动作页按部位收纳、配图（spec [2026-10-23] §32） ==== */
+.move-groups { display: flex; flex-direction: column; gap: 22px; }
+.move-group { display: flex; flex-direction: column; gap: 10px; }
+.move-group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 2px; }
+.move-group-head h2 { margin: 0; font-size: 17px; display: flex; align-items: baseline; gap: 8px; }
+.move-group-head h2 small { font-size: 12.5px; font-weight: 500; color: var(--muted); font-family: var(--mono); }
+.move-group-head .link.open .i { transform: rotate(-90deg); }
+.move-cover .move-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; padding: 8px; }
+.move-figure { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.move-frames { display: grid; gap: 8px; grid-template-columns: 1fr; }
+.move-frames.n2 { grid-template-columns: 1fr 1fr; }
+.move-frames img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #fff; border-radius: var(--radius-sm); border: 1px solid var(--line); }
+.move-figure figcaption a { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
+.move-cover.p-拉伸放松, .empty-video.p-拉伸放松 { color: var(--ink-2); }

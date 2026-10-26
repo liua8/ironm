@@ -20,6 +20,7 @@ from ironm_agent import imports
 from ironm_agent import profile as profiles
 from ironm_agent.brief import hero_line, today_brief, weekly_review
 from ironm_agent.casefile import Snapshot
+from ironm_agent.exercise_images import images_for
 from ironm_agent.exercises import EQUIPMENT, NOTE, PARTS, library
 from ironm_agent.healthdata import read_all
 from ironm_agent.memory_extract import MAX_CONTENT
@@ -137,7 +138,7 @@ async def get_exercises(user_id: str = Depends(_verify())) -> dict[str, Any]:
         "parts": PARTS,
         "equipment": EQUIPMENT,
         "note": NOTE,
-        "exercises": [x.model_dump() for x in lib.exercises],
+        "exercises": [{**x.model_dump(), "images": images_for(x.id)} for x in lib.exercises],
     }
 
 

@@ -15,10 +15,19 @@ from ironm_agent.yamlfile import load_yaml
 EXERCISES_PATH = Path(__file__).with_name("exercises.yaml")
 FEEL_PATH = Path(__file__).with_name("exercise_feel.yaml")
 
-type Part = Literal["腿臀", "胸", "背", "肩", "手臂", "核心", "全身", "有氧"]
-type Equipment = Literal["自重", "哑铃", "壶铃", "弹力带", "杠铃", "单杠", "器械"]
-PARTS: tuple[Part, ...] = ("腿臀", "胸", "背", "肩", "手臂", "核心", "全身", "有氧")
-EQUIPMENT: tuple[Equipment, ...] = ("自重", "哑铃", "壶铃", "弹力带", "杠铃", "单杠", "器械")
+type Part = Literal["腿臀", "胸", "背", "肩", "手臂", "核心", "全身", "有氧", "拉伸放松"]
+type Equipment = Literal["自重", "哑铃", "壶铃", "弹力带", "杠铃", "单杠", "器械", "泡沫轴"]
+PARTS: tuple[Part, ...] = ("腿臀", "胸", "背", "肩", "手臂", "核心", "全身", "有氧", "拉伸放松")
+EQUIPMENT: tuple[Equipment, ...] = (
+    "自重",
+    "哑铃",
+    "壶铃",
+    "弹力带",
+    "杠铃",
+    "单杠",
+    "器械",
+    "泡沫轴",
+)
 NOTE = "出现疼痛就停下；有伤病先问医生或康复师。"
 
 

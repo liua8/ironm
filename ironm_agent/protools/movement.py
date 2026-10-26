@@ -20,7 +20,7 @@ TAGS_PATH = Path(__file__).parent.parent / "exercise_tags.yaml"
 
 type Pattern = Literal[
     "squat", "hinge", "lunge", "bridge", "h_push", "v_push", "h_pull", "v_pull", "shoulder",
-    "curl", "extension", "calf", "abduction", "core", "plyo", "cardio",
+    "curl", "extension", "calf", "abduction", "core", "plyo", "cardio", "stretch",
 ]  # fmt: skip
 type Joint = Literal["knee", "back", "shoulder", "wrist", "ankle", "neck"]
 type Direction = Literal["easier", "similar", "harder", "any"]
@@ -30,6 +30,7 @@ PATTERN_NAMES: dict[str, str] = {
     "h_push": "水平推", "v_push": "垂直推（推举）", "h_pull": "水平拉（划船）",
     "v_pull": "垂直拉（下拉、引体）", "shoulder": "肩部小肌群", "curl": "弯举", "extension": "臂屈伸",
     "calf": "小腿", "abduction": "髋外展", "core": "核心", "plyo": "跳跃全身", "cardio": "有氧",
+    "stretch": "拉伸放松",
 }  # fmt: skip
 JOINT_NAMES: dict[str, str] = {
     "knee": "膝盖", "back": "腰背", "shoulder": "肩", "wrist": "手腕", "ankle": "脚踝", "neck": "颈部",

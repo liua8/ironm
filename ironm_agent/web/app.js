@@ -652,8 +652,10 @@ function draftView(box, d, answer, warning) {
 }
 
 // ---- 动作：卡片流，官方视频，"没看懂"请训练教练用大白话讲（spec [2026-10-23] §13）--------------------
-const PART_MARK = { 腿臀: "腿", 胸: "胸", 背: "背", 肩: "肩", 手臂: "臂", 核心: "核", 全身: "全", 有氧: "氧" };
+const PART_MARK = { 腿臀: "腿", 胸: "胸", 背: "背", 肩: "肩", 手臂: "臂", 核心: "核", 全身: "全", 有氧: "氧", 拉伸放松: "拉" };
 const moveFilter = { part: "全部", equip: "全部器械", q: "" };
+const moveOpen = new Set();  // 展开了全部动作的部位（spec [2026-10-23] §32）
+const GROUP_SHOW = 4;  // 按部位收纳时每组先显示几个
 const VIDEO_EXT = [".mp4", ".webm", ".mov"];
 const videoUrl = (id) => `/iron/api/exercises/${encodeURIComponent(id)}/video`;
 async function whoami() {
@@ -678,7 +680,7 @@ async function moves(view) {
   const [lib, vids, me] = await Promise.all([exercises(), api("/iron/api/videos").catch(() => ({ videos: [] })), whoami()]);
   const has = new Set(vids.videos);
   const count = h("div", { class: "muted", style: "padding:0 2px" });
-  const grid = h("div", { class: "move-grid" });
+  const grid = h("div", { class: "move-groups" });
   const input = h("input", { type: "search", placeholder: "搜索动作或部位，比如深蹲、肩", value: moveFilter.q, "aria-label": "搜索动作" });
   function draw() {
     const q = moveFilter.q.trim();
@@ -687,8 +689,25 @@ async function moves(view) {
       && (moveFilter.equip === "全部器械" || x.equipment.includes(moveFilter.equip))
       && (!q || `${x.name}${x.muscles}${x.part}`.includes(q)));
     count.textContent = `${items.length} 个动作${has.size ? ` · ${items.filter((x) => has.has(x.id)).length} 个有视频` : ""}`;
-    grid.replaceChildren(...(items.length ? items.map((x) => moveCard(x, has.has(x.id), () => exerciseSheet(x, lib.note, has, me.admin, draw)))
-      : [h("div", { class: "card" }, h("div", { class: "empty" }, icon("search"), "没有符合的动作，换个条件试试，或者直接问训练教练。"))]));
+    const card = (x) => moveCard(x, has.has(x.id), () => exerciseSheet(x, lib.note, has, me.admin, draw));
+    if (!items.length) {
+      grid.replaceChildren(h("div", { class: "card" }, h("div", { class: "empty" }, icon("search"), "没有符合的动作，换个条件试试，或者直接问训练教练。")));
+    } else if (moveFilter.part === "全部" && !q) {
+      // 按部位收纳：每组先显示几个，点"全部 N 个"再展开（搜索或选了部位时平铺）
+      grid.replaceChildren(...lib.parts.map((part) => {
+        const shows = (x) => has.has(x.id) || x.images?.length;  // 有视频或配图的排在前面
+        const mine = items.filter((x) => x.part === part).sort((a, b) => Number(Boolean(shows(b))) - Number(Boolean(shows(a))));
+        if (!mine.length) return null;
+        const all = moveOpen.has(part);
+        const toggle = () => { if (all) moveOpen.delete(part); else moveOpen.add(part); draw(); };
+        return h("section", { class: "move-group" },
+          h("div", { class: "move-group-head" }, h("h2", {}, part, h("small", {}, `${mine.length} 个`)),
+            mine.length > GROUP_SHOW ? h("button", { class: `link${all ? " open" : ""}`, type: "button", "aria-expanded": String(all), onclick: toggle }, all ? "收起" : `全部 ${mine.length} 个`, icon("chevron", "xs")) : null),
+          h("div", { class: "move-grid" }, (all ? mine : mine.slice(0, GROUP_SHOW)).map(card)));
+      }).filter(Boolean));
+    } else {
+      grid.replaceChildren(h("div", { class: "move-grid" }, items.map(card)));
+    }
   }
   input.addEventListener("input", () => { moveFilter.q = input.value; draw(); });
   draw();
@@ -706,7 +725,8 @@ async function moves(view) {
 function moveCard(x, video, open) {
   const cover = h("div", { class: `move-cover p-${x.part}` },
     video ? h("video", { src: `${videoUrl(x.id)}#t=0.5`, muted: true, playsinline: true, preload: "metadata", "aria-hidden": "true" })
-      : h("span", { class: "cover-mark" }, PART_MARK[x.part] || x.part[0]),
+      : x.images?.length ? h("img", { class: "move-img", src: x.images[0].url, alt: "", loading: "lazy" })
+        : h("span", { class: "cover-mark" }, PART_MARK[x.part] || x.part[0]),
     video ? h("span", { class: "play" }, icon("play", "sm")) : null,
     h("span", { class: "cover-level" }, x.level));
   return pressable(h("div", { class: "move-card", "aria-label": `${x.name}，点开看做法` }, cover,
@@ -717,7 +737,8 @@ function exerciseSheet(x, note, has, admin, redraw) {
   const list = (items, cls, ic) => h("ul", { class: `marks ${cls}` }, items.map((t) => h("li", {}, icon(ic, "xs"), h("span", {}, t))));
   const video = has.has(x.id)
     ? h("video", { class: "move-video", src: videoUrl(x.id), controls: true, playsinline: true, preload: "metadata" })
-    : h("div", { class: `move-video empty-video p-${x.part}` }, h("span", { class: "cover-mark" }, PART_MARK[x.part] || x.part[0]), h("span", { class: "caption" }, "官方视频还在制作，先看下面的做法和要点"));
+    : x.images?.length ? moveImages(x.images)
+      : h("div", { class: `move-video empty-video p-${x.part}` }, h("span", { class: "cover-mark" }, PART_MARK[x.part] || x.part[0]), h("span", { class: "caption" }, "示范图和视频还在补充，先看下面的做法和要点"));
   openSheet(x.name,
     video,
     h("div", { class: "tags" }, chip(x.part), x.equipment.map((e) => chip(e)), chip(x.level)),
@@ -732,6 +753,15 @@ function exerciseSheet(x, note, has, admin, redraw) {
       h("button", { class: "btn ghost", type: "button", onclick: () => askCoach(`${x.name}有什么替代动作？按我的器械和身体情况选`) }, "换个动作")),
     h("p", { class: "caption" }, note),
     admin ? videoAdmin(x, has, redraw) : null);
+}
+
+// 动作配图（来自 wger，CC BY-SA）：起止两张并排，下面署名（spec [2026-10-23] §32）
+function moveImages(images) {
+  const link = (text, href) => (href ? h("a", { href, target: "_blank", rel: "noopener noreferrer" }, text) : h("span", {}, text));
+  const im = images[0];
+  return h("figure", { class: "move-figure" },
+    h("div", { class: `move-frames n${images.length}` }, images.map((x, i) => h("img", { src: x.url, alt: i ? "动作结束" : "动作开始", loading: "lazy" }))),
+    h("figcaption", { class: "caption" }, "图：", link(im.author, im.author_url), " · 来自 ", link("wger", im.page), " · ", link(im.license, im.license_url)));
 }
 
 // 管理员：给动作上传、更换、删除官方视频
