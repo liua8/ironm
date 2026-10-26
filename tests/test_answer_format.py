@@ -95,3 +95,57 @@ def test_risk_note_is_not_repeated_when_the_answer_already_sends_him_to_a_doctor
     assert drop_said(note, "早餐两个鸡蛋加一杯牛奶。") == note
     assert drop_said(note, "先别上大重量：你血压 164/102，先请医生评估。") == ""
     assert drop_said(note, "血压高的人早餐少放盐。") == note  # 提到血压但没让他看医生，提醒照留
+
+
+def test_stop_reminder_only_when_the_question_is_about_pain() -> None:
+    raw = {
+        "answer": "屁股往后坐，膝盖跟着脚尖。",
+        "steps": [],
+        "alert": "膝盖疼就停下。",
+        "next": "",
+    }
+    assert "疼就停" not in assemble(raw, "深蹲怎么做")
+    assert "疼就停" in assemble(raw, "膝盖疼还能练腿吗")
+
+
+def test_each_role_keeps_one_step_when_merging() -> None:
+    """几位角色一起作答时，模型漏了哪位的做法，就从那位的意见里补第一句（spec [2026-10-23] §42）。"""
+    from ironm_agent.compose import _steps_per_role
+    from ironm_agent.experts import Opinion
+
+    ops = [
+        Opinion(role=Role.TRAINER, speak=True, how="力量每周 3 次。跑步放在另一天。"),
+        Opinion(role=Role.NUTRITION, speak=True, how="跑步日多吃一碗米饭。蛋白质每餐 20–40 克。"),
+    ]
+    got = _steps_per_role(
+        [
+            {"role": "训练教练", "text": "力量每周 3 次"},
+            {"role": "训练教练", "text": "跑步放在另一天"},
+        ],
+        ops,
+    )
+    assert got[:2] == ["力量每周 3 次", "跑步日多吃一碗米饭。"]
+    assert _steps_per_role(["只写了文字"], ops) == ["只写了文字"]  # 没写角色名时照原样
+
+
+def test_repair_keeps_line_breaks() -> None:
+    from ironm_agent.checks import repair
+
+    text = "跑步和力量分开练〔经验〕。你每天热量目标 2896 千卡〔C2〕。\n1. 力量每周 4 次〔经验〕。\n2. 跑步每周 3 次〔经验〕。"
+    assert repair(text, support={}, entries={}, question="", calcs={}).count("\n") == 2
+
+
+def test_long_reason_is_cut_before_listed_items() -> None:
+    raw = {
+        "answer": "给你 3 个：箱式深蹲、罗马尼亚硬拉、臀桥。",
+        "reason": "这三个对膝盖压力小，适合你左膝蹲深会疼。"
+        + "罗马尼亚硬拉主要练大腿后侧和臀部，能补上深蹲练不到的部分，" * 4
+        + "所以一起练。",
+        "steps": [
+            "箱式深蹲：身后放椅子，高度定在蹲下不疼的位置，3 组 × 10 次。",
+            "罗马尼亚硬拉：双手各拿一只 20 公斤哑铃，屁股往后推，3 组 × 8 次。",
+            "臀桥：仰卧屈膝，臀部抬起停 2 秒，3 组 × 12 次。",
+        ],
+    }
+    out = assemble(raw, "推荐几个练腿的动作")
+    assert "3. 臀桥" in out and "补上深蹲" not in out

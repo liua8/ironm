@@ -106,3 +106,35 @@ def test_brief_and_weekly_review_use_rules_only(monkeypatch: Any) -> None:
     assert "平均只睡 6.2 小时" in tips and "少吃约 200 千卡" in tips
     if data["week"]["due"] >= 2:
         assert "不到一半" in tips  # 这周一次都没练
+
+
+def test_brief_carries_the_safety_alert_only_when_there_is_a_risk(monkeypatch: Any) -> None:
+    """安全提醒放首页（spec [2026-10-23] §42）。"""
+    from ironm_agent import web
+
+    today = date.today()
+    profile = Profile(
+        height_cm=170, birth=date(1995, 1, 1), sex="male", goal="muscle", activity="light"
+    )
+
+    def with_bp(systolic: float, diastolic: float) -> Any:
+        readings = Readings(
+            systolic=((today - timedelta(days=2), systolic),),
+            diastolic=((today - timedelta(days=2), diastolic),),
+        )
+
+        async def snap(_: str) -> Snapshot:
+            return Snapshot(profile, readings, tuple(compute_all(readings, profile, today)), today)
+
+        return snap
+
+    monkeypatch.setattr(web, "snapshot_for", with_bp(164, 102))
+    c, _ = client()
+    alerts = c.get("/iron/api/brief").json()["alerts"]
+    assert (
+        [a["key"] for a in alerts] == ["bp_high"]
+        and "164/102" in alerts[0]["text"]
+        and alerts[0]["title"]
+    )
+    monkeypatch.setattr(web, "snapshot_for", with_bp(118, 76))
+    assert c.get("/iron/api/brief").json()["alerts"] == []

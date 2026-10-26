@@ -157,9 +157,9 @@ def test_very_high_blood_pressure_blocks_training_but_not_food(monkeypatch: Any)
     assert "186/114" in text_of(blocks) and "这一轮先不给训练安排" in text_of(blocks)
     food = Team("nutrition")
     blocks, seen = run(agent(food, monkeypatch=monkeypatch, snapshot=snapshot_of(bp)), "早餐吃什么")
-    # 先答早餐，血压提醒放在最后（spec [2026-10-23] §38）
+    # 先答早餐；血压提醒在首页，问饮食时对话里不再附（spec [2026-10-23] §42）
     assert seen["path"] == "answer" and text_of(blocks).startswith("nutrition 的结论")
-    assert text_of(blocks).rstrip().endswith("立即拨打 120。")
+    assert "186/114" not in text_of(blocks)
 
 
 def test_risk_note_shows_once_per_session(monkeypatch: Any) -> None:
@@ -177,6 +177,11 @@ def test_risk_note_shows_once_per_session(monkeypatch: Any) -> None:
 
     async def said_before(_: str) -> str:
         return text_of(first)
+
+    food, _ = run(
+        agent(Team("nutrition"), monkeypatch=monkeypatch, snapshot=snapshot_of(bp)), "早餐吃什么"
+    )
+    assert "164/102" not in text_of(food)  # 问饮食不附，提醒在首页（§42）
 
     a._history, a._earlier = told, said_before
     again, _ = run(a, "那卧推呢")
@@ -390,3 +395,19 @@ def test_how_to_question_teaches_with_feel_cues(monkeypatch: Any) -> None:
     _, seen = run(agent(Spy("trainer"), monkeypatch=monkeypatch, snapshot=snapshot_of()),
                   "膝盖疼换什么动作")  # fmt: skip
     assert "move-feel" not in seen["skills"]["trainer"]
+
+
+def test_mixed_questions_bring_in_the_other_role(monkeypatch: Any) -> None:
+    """问题明确点到另一个领域时把那个领域的角色加上（spec [2026-10-23] §42）。"""
+    from ironm_agent.coverage import missing_roles
+    from ironm_agent.roles import Role
+
+    ask = "准备跑半马，跑步和力量训练怎么搭配，饮食上要注意什么"
+    assert missing_roles(ask, [Role.TRAINER]) == [Role.NUTRITION]
+    assert missing_roles("昨晚只睡了 5 小时，今天还按计划练大重量吗", [Role.TRAINER]) == [
+        Role.RECOVERY
+    ]
+    assert missing_roles("深蹲怎么做", [Role.TRAINER]) == []
+    t = Team("trainer")
+    _, seen = run(agent(t, monkeypatch=monkeypatch, snapshot=snapshot_of()), ask)
+    assert "nutrition" in seen["roles"] and seen["roles_added"] == ["nutrition"]

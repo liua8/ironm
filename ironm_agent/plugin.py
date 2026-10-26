@@ -29,6 +29,7 @@ from ironm_agent.coach import direct
 from ironm_agent.compose import Composed, compose, revise
 from ironm_agent.constraints import Context, Violation, annotate, annotate_plan
 from ironm_agent.constraints import check as check_constraints
+from ironm_agent.coverage import missing_roles
 from ironm_agent.exercises import named_in
 from ironm_agent.experts import Consultation, consult, write_task
 from ironm_agent.harness import TraceStore, mentioned_roles, missing_readings, new_turn, react
@@ -751,6 +752,10 @@ class IronMAgent:
         needs_planner = decision.plan or job is not None
         if needs_planner and r.primary is not Role.GENERAL and Role.TRAINER not in r.experts():
             r = r.model_copy(update={"primary": Role.TRAINER, "helpers": r.experts()[:MAX_HELPERS]})
+        extra = missing_roles(text, r.experts())  # 问题明确点到另一个领域时把它加上（§42）
+        if extra and r.primary not in (None, Role.GENERAL):
+            r = r.model_copy(update={"helpers": (*r.helpers, *extra)[:MAX_HELPERS]})
+            run["roles_added"] = [x.value for x in extra]
         roles = list(r.experts())
         training = decision.plan or (
             bool(set(roles) & TRAINING_ROLES)
@@ -764,7 +769,8 @@ class IronMAgent:
         seen = await (self._earlier or earlier)(session_id)  # 本会话之前的回答：说过的提醒不再重复
         notes = [x.note for x in case.risks if x.note not in seen]
         prefix = "\n\n".join(x for x in (prefix, files.note_for_user()) if x)
-        run["_tail"] = "\n\n".join(notes)  # 数据风险提醒放在回答最后（§38）
+        # 数据风险提醒在首页；对话里只在训练类问题时附在回答最后（§42）
+        run["_tail"] = "\n\n".join(notes) if training else ""
 
         # 4. 专业角色分层接力（§3）：评估 → 方案 → 动作细节；同一层同时作答、互不可见
         personal = await basics

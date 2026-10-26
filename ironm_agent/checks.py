@@ -168,7 +168,10 @@ def repair(
     body = _STATEMENT.sub(hold, text)
     body = re.sub(r"</?statement>|<cite>.*?</cite>", "", body)  # 不成对的残余标记
     out = []
-    for sentence in sentences(body):
+    for sentence in _SENTENCE.findall(body):
+        if not sentence.strip():
+            out.append(sentence)  # 换行原样留着，分段的回答修完还是分段（§42）
+            continue
         unknown = [r for r in KB_REF.findall(sentence) if r not in entries]
         unknown += [r for r in CALC_REF.findall(sentence) if r not in calcs]
         if unknown or _sentence_problems(

@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ironm_agent import imports, weather
 from ironm_agent import profile as profiles
 from ironm_agent.brief import cheer, hero_line, today_brief, weekly_review
-from ironm_agent.casefile import Snapshot
+from ironm_agent.casefile import Snapshot, risks
 from ironm_agent.exercise_images import images_for
 from ironm_agent.exercises import EQUIPMENT, NOTE, PARTS, library
 from ironm_agent.healthdata import read_all
@@ -457,6 +457,18 @@ async def get_training(
     }
 
 
+RISK_TITLES = {
+    "bp_crisis": "血压很高：先别运动，尽快就医",
+    "bp_high": "血压偏高：加大训练前先找医生",
+    "rhr_high": "静息心率偏高：加大训练前先看医生",
+    "pregnancy": "孕期：训练有要避开的动作",
+    "cardiac": "心脏方面：加大强度前先问医生",
+    "diabetes": "糖尿病：留意运动前后的血糖",
+    "hypertension": "高血压：不憋气、不做大重量",
+    "surgery": "近期手术：恢复训练前先问医生",
+}
+
+
 @router.get("/iron/api/brief")
 async def get_brief(
     user_id: str = Depends(_verify()),
@@ -493,7 +505,12 @@ async def get_brief(
     except Exception as e:
         _log.warning("brief weather unavailable: error_type=%s", type(e).__name__)
     hero["cheer"] = cheer(today, week, rainy=rainy, hot=hot, on=snap.today)
-    return {"today": today, "week": week, "hero": hero}
+    # 安全提醒放首页（spec [2026-10-23] §42）：数据或记忆里的风险还在生效时，战报最上面一行，点开看原文
+    alerts = [
+        {"key": x.key, "title": RISK_TITLES.get(x.key, "健康提醒"), "text": x.note}
+        for x in risks(snap.readings, items, snap.today)
+    ]
+    return {"today": today, "week": week, "hero": hero, "alerts": alerts}
 
 
 @router.get("/iron")

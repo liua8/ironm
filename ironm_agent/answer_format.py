@@ -17,6 +17,9 @@ type Kind = Literal["fact", "howto", "card", "detail"]
 LIMITS: dict[Kind, int] = {"fact": 120, "howto": 220, "card": 90, "detail": 500}
 MAX_STEPS: dict[Kind, int] = {"fact": 2, "howto": 3, "card": 1, "detail": 5}
 KEYS = ("answer", "reason", "steps", "alert", "next")
+_RISKY = re.compile(
+    r"疼|痛|伤|肿|麻|晕|胸闷|不舒服|生病|感冒|发烧|血压|孕"
+)  # 问到这些才留停止提醒（§42）
 
 _DETAIL = re.compile(r"详细|展开说|具体说说|多说点|说细一点|讲详细")
 _HOWTO = re.compile(
@@ -33,6 +36,7 @@ SLOTS_PROMPT = """按下面几段写，最后只输出 JSON：
  "alert": "只在问题本身涉及疼痛、受伤、疾病时写一句什么情况要停下或就医；其余留空",
  "next": "今天就能做的一件事，一句话，不和答案、做法重复；纯知识问题留空"}
 每一段里带数字的句子照样在句末写出处标记，答案也不例外，例如 "你的 BMI 是 24.5〔C3〕，属于超重"。
+推荐几个动作或几种吃法时最多 %(steps)d 个，每个占一条做法、写怎么做和具体的量；答案里说几个，做法就列几条。
 写法：先答案、后理由，不铺垫；问"正常吗、高吗、是不是"时，答案以判断开头（正常 / 偏高 / 偏低 / 没有记录），再给数；没问到的不说（问 BMI 不讲饮食，问早餐不讲训练），用户追问再展开；不预防性地加"如果……就医"；数据风险提醒由系统放在最后，你不用写；全文不超过 %(limit)d 字。"""
 
 
@@ -103,6 +107,8 @@ def assemble(raw: Mapping[str, Any], text: str = "", task: str | None = None) ->
         steps_raw = [steps_raw]
     steps = [str(x).strip() for x in steps_raw if str(x).strip()][: MAX_STEPS[k]]
     alert = str(raw.get("alert") or "").strip()
+    if alert and text and not _RISKY.search(text):
+        alert = ""  # 没问到疼痛、伤病、身体不适，就不加"疼就停""就医"（§42）
     nxt = str(raw.get("next") or "").strip()
     if reason and _same(reason, answer):
         reason = ""
@@ -118,10 +124,13 @@ def assemble(raw: Mapping[str, Any], text: str = "", task: str | None = None) ->
 
     out = build()
     limit = LIMITS[k]
-    while _size(out) > limit and steps:  # 先删排在后面的做法
-        steps.pop()
-        out = build()
-    if _size(out) > limit and nxt:
+    if _size(out) > limit and nxt:  # 先删下一步，免得答案说了几个、做法却少列（§42）
         nxt = ""
+        out = build()
+    if _size(out) > limit and reason:  # 理由只留第一句
+        reason = _end(re.split(r"(?<=[。！？!?])", reason, maxsplit=1)[0])
+        out = build()
+    while _size(out) > limit and steps:  # 再删排在后面的做法
+        steps.pop()
         out = build()
     return out

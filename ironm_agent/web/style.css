@@ -950,6 +950,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .row-item.on .row-title { color: var(--accent); }
 .row-item.on .row-end { color: var(--accent); font-size: 12.5px; }
 
+/* 战报最上面的安全提醒（spec [2026-10-23] §42） */
+.rep-alert { margin: 0 0 10px; border-radius: 10px; background: color-mix(in srgb, var(--fire) 10%, transparent); padding: 8px 12px; }
+.rep-alert summary { cursor: pointer; font-weight: 650; display: flex; align-items: center; gap: 6px; list-style: none; }
+.rep-alert summary::-webkit-details-marker { display: none; }
+.rep-alert p { margin: 6px 0 0; font-size: 14px; line-height: 1.6; }
+
 /* 饮食页：拍 / 填两个入口，吃了什么（含两周复盘），spec [2026-10-23] §43 */
 .meal-entry { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-block: 16px; }
 .meal-entry [role="status"] { grid-column: 1 / -1; }

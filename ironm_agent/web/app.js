@@ -410,7 +410,11 @@ function taskCard(brief, tr, week, meals) {
 function reportCard(brief, cal) {
   const w = brief?.week, done = w?.done || 0, planned = w?.planned || 0;
   const stat = (k, v, u) => h("div", { class: "rep-stat" }, h("span", {}, k), h("b", {}, v, h("small", {}, u)));
+  // 安全提醒放首页（spec [2026-10-23] §42）：一行标题，点开看原文
+  const alerts = (brief?.alerts || []).map((a) => h("details", { class: "rep-alert" },
+    h("summary", {}, icon("alert", "sm"), a.title), h("p", {}, a.text)));
   return h("section", { class: "card home-card" }, cardHead("战报", h("span", { class: "muted" }, "本周")),
+    ...alerts,
     h("div", { class: "report" }, ring(done, planned),
       h("div", { class: "rep-stats" },
         stat("本周练了", `${done}`, planned ? ` / ${planned} 次` : " 次"),

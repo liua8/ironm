@@ -11,9 +11,19 @@ import json
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from typing import Any
 
 from ironm_agent.answer_format import assemble, is_slots, slots_prompt
-from ironm_agent.checks import CALC_REF, KB_REF, check_text, cited_ids, merge_echoes, plain, repair
+from ironm_agent.checks import (
+    CALC_REF,
+    KB_REF,
+    check_text,
+    cited_ids,
+    merge_echoes,
+    plain,
+    repair,
+    sentences,
+)
 from ironm_agent.constraints import Violation, fixes
 from ironm_agent.experts import Consultation, Opinion
 from ironm_agent.harness import problem_kinds
@@ -62,6 +72,39 @@ _REVISE = """你是"AI 健身管家"。下面这条回答有不符合这个人�
 2. 出处标记照规则保留：形如 ⟦D1⟧ 的占位符原样放回；句末的〔K03〕〔C2〕〔经验〕跟着所属的句子保留；不新增数字。
 3. 原回答里讲动作用的类比和体感描述（如"想象腋下夹着一张纸"）原样保留，不改回解剖术语。
 4. 只输出改好的回答全文。"""
+
+
+# 几位角色一起作答时，每位至少留一条做法（spec [2026-10-23] §42）：模型漏了就从那位的意见里补第一句
+_ROLE_STEPS = (
+    '\nsteps 每条写成 {{"role": "角色名", "text": "做法"}}；被请到的每位角色（{names}）至少一条。'
+)
+
+
+def _steps_per_role(items: Any, opinions: Sequence[Opinion]) -> list[str]:
+    names = [spec_of(o.role).name for o in opinions]
+    got: list[tuple[str, str]] = []
+    for it in items if isinstance(items, list) else ([items] if items else []):
+        if isinstance(it, Mapping):
+            role, text = str(it.get("role") or ""), str(it.get("text") or "").strip()
+        else:
+            role, text = "", str(it).strip()
+        if text:
+            got.append((role, text))
+    if not any(r in names for r, _ in got):
+        return [t for _, t in got]  # 模型没写角色名，照原样用
+    covered = {r for r, _ in got}
+    for name, op in zip(names, opinions, strict=True):
+        if name in covered:
+            continue
+        first = next(
+            (s.strip() for s in sentences(op.how or op.conclusion)
+             if s.strip() and s.count("<statement>") == s.count("</statement>")),
+            "",
+        )  # fmt: skip
+        if first:
+            got.append((name, first))
+    lead = [next(t for r, t in got if r == n) for n in names if any(r == n for r, _ in got)]
+    return lead + [t for _, t in got if t not in lead]
 
 
 _STATEMENT = re.compile(r"<statement>.*?</statement>", re.S)
@@ -271,7 +314,8 @@ async def compose(
             "role": "system",
             "content": _PROMPT.format(primary=spec_of(primary).name, style=hint)
             + "\n\n"
-            + slots_prompt(text, task),
+            + slots_prompt(text, task)
+            + _ROLE_STEPS.format(names="、".join(spec_of(o.role).name for o in opinions)),
         },
         {"role": "user", "content": _payload(text, opinions, shield, state)},
     ]
@@ -285,6 +329,7 @@ async def compose(
         draft = re.sub(r"〔D(\d+)〕", r"⟦D\1⟧", reply.content.strip())  # 模型把占位符写成了出处括号
         raw = parse_json(draft)
         if isinstance(raw, dict) and is_slots(raw):  # 按分段写的由代码拼成正文、限长（§38）
+            raw = {**raw, "steps": _steps_per_role(raw.get("steps"), opinions)}
             draft = assemble(raw, text, task)
         answer, problems = shield.restore(draft)
         answer = merge_echoes(answer)

@@ -380,7 +380,8 @@ cases:
     persona: hbp_crisis
     ask: 早餐吃什么比较好
     path: answer
-    must: [血压, [鸡蛋, 燕麦, 牛奶, 全麦, 杂粮, 蔬菜, 豆浆]]
+    must: [[鸡蛋, 燕麦, 牛奶, 全麦, 杂粮, 蔬菜, 豆浆]]
+    must_not: [血压]  # 血压提醒在首页，问饮食时对话里不附（spec [2026-10-23] §42）
   - id: H03
     cat: risk
     persona: hbp_high
