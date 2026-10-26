@@ -157,7 +157,9 @@ def test_very_high_blood_pressure_blocks_training_but_not_food(monkeypatch: Any)
     assert "186/114" in text_of(blocks) and "这一轮先不给训练安排" in text_of(blocks)
     food = Team("nutrition")
     blocks, seen = run(agent(food, monkeypatch=monkeypatch, snapshot=snapshot_of(bp)), "早餐吃什么")
-    assert seen["path"] == "answer" and text_of(blocks).startswith("你 10 月 21 日测的血压")
+    # 先答早餐，血压提醒放在最后（spec [2026-10-23] §38）
+    assert seen["path"] == "answer" and text_of(blocks).startswith("nutrition 的结论")
+    assert text_of(blocks).rstrip().endswith("立即拨打 120。")
 
 
 def test_risk_note_shows_once_per_session(monkeypatch: Any) -> None:

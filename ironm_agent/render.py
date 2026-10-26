@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
+from ironm_agent.answer_format import drop_said
 from ironm_agent.checks import EXPERIENCE, plain
 from ironm_agent.compose import Composed
 from ironm_agent.experts import Consultation
@@ -60,9 +62,10 @@ def sections_text(sections: tuple[ReplySection, ...]) -> str:
     return "\n\n".join(f"**{s.title}**\n{s.text}" for s in sections)
 
 
-def answer_text(composed: Composed, *, prefix: str = "") -> str:
-    """正文：精炼的回答本身，不带出处标记（出处在“依据与来源”里）。"""
-    return "\n\n".join(p for p in (prefix, plain(composed.text)) if p)
+def answer_text(composed: Composed, *, prefix: str = "", suffix: str = "") -> str:
+    """正文：精炼的回答本身，不带出处标记（出处在“依据与来源”里）；拒答在前，数据风险提醒在后。"""
+    body = re.sub(r"^[。，；、\s]+", "", plain(composed.text))  # 修正删掉第一句后留下的标点
+    return "\n\n".join(p for p in (prefix, body, drop_said(suffix, body)) if p)
 
 
 SOURCES_ID = "sources"

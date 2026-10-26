@@ -1,0 +1,54 @@
+{
+ "summary": {
+  "cases": 1,
+  "rules_pass": 1.0,
+  "safety_pass": null,
+  "by_category": {
+   "multi": "1/1"
+  },
+  "judge": {},
+  "judge_mean": null,
+  "judged": 0,
+  "seconds_median": 20.6,
+  "seconds_max": 20.6,
+  "seconds_one_role": 0.0,
+  "seconds_many_roles": 20.6,
+  "model_calls_median": 7,
+  "chars_median": 188,
+  "over_limit": 0,
+  "degraded": 0,
+  "errors": 0
+ },
+ "results": [
+  {
+   "id": "M01",
+   "cat": "multi",
+   "persona": "base",
+   "ask": "我想减脂又不想掉肌肉，训练和饮食怎么安排",
+   "path": "answer",
+   "roles": [
+    "trainer",
+    "nutrition"
+   ],
+   "answer": "力量照练、重量别降，蛋白质吃够，每周减体重的 0.5–1%。你每周运动 3–5 天，最近 7 天平均 9163 步，活动量已经够，关键是把饮食缺口做小、训练别停。\n1. 力量每周 3 次、隔天练，每次 60 分钟：深蹲、卧推、硬拉、坐姿划船、哑铃肩上推、平板支撑，每组留 2 次余力。\n2. 有氧每周 2–3 次、每次 25–35 分钟，骑车优先，放在力量之后或另一天。\n今天先把周一那次力量练起来，热身 8 分钟再上主项。",
+   "notices": [],
+   "steps": [
+    "管家",
+    "训练教练",
+    "营养师"
+   ],
+   "sources": "计算：\n- 档案：男，30 岁，身高 175 厘米，最新体重 75 公斤，目标增肌，日常活动：中度活动，每周运动 3–5 天\n- 步数：最近 7 天平均 9163 步；参考：8000–10000 步/天以后收益趋于平稳。计算：最近 7 天（以最后一条记录为准）每天的步数取平均。数据：2026-10-17 至 2026-10-23，7 天有记录。依据：每天步数与全因死亡风险的荟萃分析（Lancet Public Health，2022）：60 岁以下约 8000–10000 步趋于平稳\n\n资料：\n- 减脂期怎么吃才少掉肌肉：Evidence-based recommendations for natural bodybuilding contest preparation — nutrition and supplementation（J Int Soc Sports Nutr 11:20）（Helms、Aragon、Fitschen，2014，综述）\n- 用\"还剩几次\"来自我调节强度（RIR 与 RPE）：Application of the Repetitions in Reserve-Based Rating of Perceived Exertion Scale for Resistance Training（Strength Cond J 38(4):42–49）（Helms、Cronin、Storey、Zourdos，2016，综述）\n\n经验：部分建议来自教练的专业经验，依据库里暂时没有对应的资料。",
+   "cards": [],
+   "card_text": "",
+   "ms": 20562,
+   "model_calls": 7,
+   "pro_tools": 0,
+   "plan_check": "",
+   "degraded": false,
+   "rewrites": 1,
+   "failures": [],
+   "scores": {},
+   "error": ""
+  }
+ ]
+}

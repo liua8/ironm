@@ -620,7 +620,9 @@ class IronMAgent:
             sections = four_section(replies, assessment) + refusal_sections(replies, refusals.kinds)
             yield text_block(sections_text(sections))
             return
-        prefix = sections_text(refusal_sections(replies, refusals.kinds)) if refusals.kinds else ""
+        # 拒答放在最前面，只一句、不加标题；专业角色不再复述（spec [2026-10-23] §38）
+        prefix = "".join(replies.refusals[k] for k in refusals.kinds)
+        run["_refused"] = prefix
 
         asker, _ = split_thread(session_id)
         if asker and asker != user_id:  # 关爱圈里替别人问：只说明不支持
@@ -760,7 +762,8 @@ class IronMAgent:
             return
         seen = await (self._earlier or earlier)(session_id)  # 本会话之前的回答：说过的提醒不再重复
         notes = [x.note for x in case.risks if x.note not in seen]
-        prefix = "\n\n".join(x for x in (prefix, files.note_for_user(), *notes) if x)
+        prefix = "\n\n".join(x for x in (prefix, files.note_for_user()) if x)
+        run["_tail"] = "\n\n".join(notes)  # 数据风险提醒放在回答最后（§38）
 
         # 4. 专业角色分层接力（§3）：评估 → 方案 → 动作细节；同一层同时作答、互不可见
         personal = await basics
@@ -825,8 +828,10 @@ class IronMAgent:
                 if checked is not None:  # 规则先查到的数据：每位都能引用
                     toolbox.evidence.absorb(checked)
                 lead = role in (Role.TRAINER, Role.GENERAL)
+                refused = run.get("_refused") or ""
                 note = "\n".join(x for x in (decision.note if lead else "",
-                                              files.note_for_experts() if role is seeing else "", checked_note) if x)  # fmt: skip
+                                              files.note_for_experts() if role is seeing else "", checked_note,
+                                              f"回答开头系统已经说了：{refused} 不要再复述，直接说能帮他做的部分。" if refused else "") if x)  # fmt: skip
                 task = asyncio.create_task(
                     consult(
                         spec,
@@ -877,7 +882,7 @@ class IronMAgent:
         if not any(c.opinion.speak for c in consultations):
             run["path"] = "no_answer"
             said["answer"] = ""  # 没能回答，也要记下用户这句话里说到的情况
-            yield text_block("\n\n".join(x for x in (prefix, NO_ANSWER) if x))
+            yield text_block("\n\n".join(x for x in (prefix, NO_ANSWER, run.get("_tail")) if x))
             return
         ctx = Context.of(case)
 
@@ -893,8 +898,8 @@ class IronMAgent:
                 consultations[0], text, llm, constraints=rules, memory=recall, annotate=mark
             )
         else:
-            composed = await compose(text, primary, consultations, llm, recall,
-                                     constraints=rules, annotate=mark, state=case.readiness.line())  # fmt: skip
+            composed = await compose(text, primary, consultations, llm, recall, constraints=rules,
+                                     annotate=mark, state=case.readiness.line(), task=job)  # fmt: skip
         run.update(constraints=list(composed.violations), constraint_fixed=composed.fixed)
         run["_compose"] = {"checks": list(composed.checks), "repaired": composed.repaired,
                            "degraded": composed.degraded}  # fmt: skip
@@ -1113,7 +1118,9 @@ class IronMAgent:
         if composed.degraded:
             blocks.append(notice("这次回答受限：整合没有通过核对，下面给出主责角色核对过的意见。"))
         said["answer"] = answer_text(composed)
-        blocks.append(text_block(answer_text(composed, prefix=prefix)))
+        blocks.append(
+            text_block(answer_text(composed, prefix=prefix, suffix=run.get("_tail") or ""))
+        )
         sources = sources_text(composed)
         if sources:  # 出处不写进正文，放进可展开的“依据与来源”
             blocks.append(started(SOURCES_ID, SOURCES_NAME, "这条回答用到的资料、计算和你的数据"))

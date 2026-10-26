@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT))
 
 from evals.qa.fixtures import EvalHealth, Persona, facts_text, load_personas  # noqa: E402
 from evals.qa.judge import DIMENSIONS, judge, persona_text  # noqa: E402
+from ironm_agent.answer_format import limit_of  # noqa: E402
 from ironm_agent.casefile import Snapshot  # noqa: E402
 from ironm_agent.harness import TraceBook  # noqa: E402
 from ironm_agent.llm import load_models  # noqa: E402
@@ -319,6 +320,9 @@ def summarize(results: Sequence[Result]) -> dict[str, Any]:
         "seconds_one_role": round(_median(one), 1),
         "seconds_many_roles": round(_median(many), 1),
         "model_calls_median": _median([r.model_calls for r in answered]),
+        # 回答长度（spec [2026-10-23] §38）：正文字数，以及超过按问题类型定的上限的题数
+        "chars_median": _median([len(squash(r.answer)) for r in answered]),
+        "over_limit": sum(len(squash(r.answer)) > limit_of(r.ask) for r in answered),
         "degraded": sum(r.degraded for r in results),
         "errors": sum(bool(r.error) for r in results),
     }

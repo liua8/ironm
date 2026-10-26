@@ -18,6 +18,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from ironm_agent.answer_format import assemble, is_slots, slots_prompt
 from ironm_agent.casefile import CaseFile
 from ironm_agent.checks import EXPERIENCE, check_text, cited_ids, merge_echoes, repair, sentences
 from ironm_agent.common import ContractModel
@@ -103,9 +104,9 @@ _OPINION_TAIL = """10. 用中文，口语化，专业、精炼：每个字段不
 {"conclusion": "一两句结论", "for_you": "结合这个人的情况（没有可留空）", "how": "具体怎么做", "caution": "注意事项（与这件事相关的风险、什么情况要停止或就医；没有可留空）", "uncertain": "不确定的地方（可留空）"}"""
 
 # 只请到一位时（或单 Agent 对照组），由它直接写给用户的回答，不再整合（spec [2026-10-23] §7）
-_SOLO_TAIL = """10. 你是这次唯一作答的角色，直接写给用户的回答：第一句直接回答用户问的那件事，接着只给最关键的做法；没问到的事（比如问 BMI 时的饮食建议）不要加。简单问题不超过 150 字；需要分步骤的不超过 300 字、最多 5 个要点。同一个意思只说一次，不铺垫、不罗列所有可能，不用小标题。风险提醒只留和这件事最相关的一条，放在最后。出处标记照上面的规矩写在句末（系统展示时会去掉，并把来源放进可展开的"依据与来源"，所以不用在正文里解释出处）。用中文，口语化，像一位专业又亲切的教练。
+_SOLO_TAIL = """10. 你是这次唯一作答的角色，直接写给用户的回答（spec [2026-10-23] §38）：第一句就是他问的那件事的答案，理由一句放在后面；只答问的，没问到的不说，用户追问再展开；同一个意思只说一次，不铺垫、不罗列所有可能。上面"输出要写全"的项目，写计划时写进计划，文字里只挑最关键的。出处标记照上面的规矩写在句末（系统展示时会去掉）。用中文，口语、干脆、专业，像私教当面说，用"你"。
 
-最后只输出 JSON：{"answer": "给用户的回答"}"""
+"""
 
 
 def _tool_hint(toolbox: Toolbox) -> str:
@@ -271,10 +272,20 @@ def _salvage(content: str, fields: Sequence[str]) -> dict[str, Any] | None:
     return out or None
 
 
-def _parse(role: Role, content: str, fields: Sequence[str] = _FIELDS) -> Opinion | None:
+def _parse(
+    role: Role,
+    content: str,
+    fields: Sequence[str] = _FIELDS,
+    question: str = "",
+    task: str | None = None,
+) -> Opinion | None:
     raw = parse_json(content) or _salvage(content, fields)
     if raw is None:
         return None
+    if fields == _SOLO_FIELDS and is_slots(
+        raw
+    ):  # 按分段写的：由代码拼成正文、按问题类型限长（§38）
+        raw = {**raw, "answer": assemble(raw, question, task)}
     data: dict[str, Any] = {k: raw.get(k) for k in ("general", *fields) if k in raw}
     for k in ("plan", "log"):
         if isinstance(raw.get(k), dict):
@@ -329,7 +340,7 @@ async def consult(
         team=team,
         framework=framework(spec.role),
         tools=_tool_hint(toolbox),
-        tail=(_SOLO_TAIL if solo else _OPINION_TAIL)
+        tail=(_SOLO_TAIL + slots_prompt(text, task) if solo else _OPINION_TAIL)
         + TASKS.get(task or "", "")
         + prompt_of(skills),
     )
@@ -366,7 +377,9 @@ async def consult(
     start = time.perf_counter()
     try:
         fields = _SOLO_FIELDS if solo else _FIELDS
-        opinion = await _loop(spec, messages, toolbox, llm, said, fields, task, today, trace)
+        opinion = await _loop(
+            spec, messages, toolbox, llm, said, fields, task, today, trace, question=text
+        )
     except ModelUnavailable as e:
         _log.warning("expert unavailable: role=%s reason=%s", spec.role.value, e)
         silent = Opinion(role=spec.role, speak=False, reason="这次没能调用模型")
@@ -394,6 +407,8 @@ async def _loop(
     task: str | None = None,
     today: date | None = None,
     trace: dict[str, Any] | None = None,
+    *,
+    question: str = "",
 ) -> Opinion:
     trace = trace if trace is not None else {}
     fixes = 0
@@ -428,7 +443,7 @@ async def _loop(
                     result = await toolbox.run(call)
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
             continue
-        opinion = _parse(spec.role, reply.content, fields)
+        opinion = _parse(spec.role, reply.content, fields, question, task)
         if opinion is not None:  # 同一件事写了两遍（普通句子 + 带编号的标记）：先合并再核对
             opinion = opinion.model_copy(
                 update={f: merge_echoes(getattr(opinion, f)) for f in _FIELDS + _SOLO_FIELDS}

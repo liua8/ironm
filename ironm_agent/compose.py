@@ -12,12 +12,13 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
+from ironm_agent.answer_format import assemble, is_slots, slots_prompt
 from ironm_agent.checks import CALC_REF, KB_REF, check_text, cited_ids, merge_echoes, plain, repair
 from ironm_agent.constraints import Violation, fixes
 from ironm_agent.experts import Consultation, Opinion
 from ironm_agent.harness import problem_kinds
 from ironm_agent.kb import Entry
-from ironm_agent.llm import LLM, ModelUnavailable
+from ironm_agent.llm import LLM, ModelUnavailable, parse_json
 from ironm_agent.memory_view import Recall
 from ironm_agent.numbers import written_numbers
 from ironm_agent.roles import Role, spec_of
@@ -46,10 +47,10 @@ type Constraints = Callable[[str], list[Violation]]
 _PROMPT = """你是"AI 健身管家"。几位专业角色已经分别回答了用户的问题（彼此看不到对方的意见），请把它们整合成一个给用户的回答。
 
 要求：
-1. 有效、精炼：第一句直接回答用户问的那件事，接着只给最关键的做法。简单问题不超过 150 字；需要分步骤的问题不超过 300 字、最多 5 个要点。同一个意思只说一次，不铺垫、不罗列所有可能，不用小标题。宁可少说，也不要面面俱到。
+1. 有效、精炼（spec [2026-10-23] §38）：第一句就是用户问的那件事的答案，理由一句放在后面；只答问的，没问到的不说，用户追问再展开；同一个意思只说一次，不铺垫、不罗列所有可能。宁可少说，也不要面面俱到。
 2. 只使用各角色意见里的内容，不新增事实，也不新增数字；几个角色说的是同一件事时合并成一处。
-3. 主责角色（{primary}）的意见是主体。
-4. 风险提醒只保留和这件事直接相关、最重要的一条，放在最后。
+3. 主责角色（{primary}）的意见是主体；问题涉及几个方面（比如又问练又问吃）时，做法第 1 条来自主责角色，第 2 条来自另一位角色，各写最关键的一条。
+4. 停下或就医的提醒只在问题本身涉及疼痛、受伤、疾病时保留一条；数据风险提醒由系统放在最后，不用写；不预防性地加"如果……就医"。
 5. 个人化：只保留真正改变建议的个人数据（比如按体重算出的剂量）；为了显得个人化而提一句体重之类的不要写；不提和这次问题无关的旧话题，不罗列"你的记录里没有什么"。
 6. 出处标记照规则保留（系统展示时会去掉，并把来源放进可展开的"依据与来源"，所以不用在正文里解释出处）：形如 ⟦D1⟧ 的占位符代表一句引用了用户数据的原话，原样放进合适位置，不要改写或自己补写；资料句末尾的〔K03〕、计算结果句末尾的〔C2〕、经验句末尾的〔经验〕跟着它所属的句子保留，不能删、不能挪；改写一句话时它的数字和标记保持不变。含数字的句子都必须带着出处标记或就是占位符。
 7. 用中文，口语化，像一位专业又亲切的教练，不要说"根据各角色的意见""依据库"这类话。讲动作用大白话：训练教练讲动作用的类比和体感描述（如"想象腋下夹着一张纸，别让它掉下来"）原样保留，不要改回解剖术语；其他角色写了解剖术语（如肩胛后缩、外旋、伸髋、肩袖、等长收缩）时，换成身体部位和动作的大白话（如"两块肩胛骨往中间夹"），实在换不了的，紧跟一句大白话说明它是什么。
@@ -249,6 +250,7 @@ async def compose(
     constraints: Constraints | None = None,
     annotate: Callable[[str], str] | None = None,
     state: str = "",
+    task: str | None = None,
 ) -> Composed:
     """constraints：约束核对（不过关的地方和数字问题一起交给改写）；state：这个人今天的身体状态（取舍用）。"""
     others = [c for c in consultations if c.opinion.speak]
@@ -265,17 +267,25 @@ async def compose(
     # 记忆里用户自己说过的数字（如哑铃 20 公斤）和这次问题里的数字一样，可以直接用
     question = "\n".join(x for x in (text, memory.numbers_text() if memory else "") if x)
     messages = [
-        {"role": "system", "content": _PROMPT.format(primary=spec_of(primary).name, style=hint)},
+        {
+            "role": "system",
+            "content": _PROMPT.format(primary=spec_of(primary).name, style=hint)
+            + "\n\n"
+            + slots_prompt(text, task),
+        },
         {"role": "user", "content": _payload(text, opinions, shield, state)},
     ]
     found: list[Violation] = []
     checks: list[str] = []
     for attempt in range(2):
         try:
-            reply = await llm.chat("compose", messages)
+            reply = await llm.chat("compose", messages, json_mode=True)
         except ModelUnavailable:
             break
-        draft = reply.content.strip()
+        draft = re.sub(r"〔D(\d+)〕", r"⟦D\1⟧", reply.content.strip())  # 模型把占位符写成了出处括号
+        raw = parse_json(draft)
+        if isinstance(raw, dict) and is_slots(raw):  # 按分段写的由代码拼成正文、限长（§38）
+            draft = assemble(raw, text, task)
         answer, problems = shield.restore(draft)
         answer = merge_echoes(answer)
         problems += review(
@@ -311,7 +321,7 @@ async def compose(
         messages.append(
             {
                 "role": "user",
-                "content": "回答没有通过核对，请改正后重写全文：" + "；".join(problems),
+                "content": "回答没有通过核对，请改正后按同样的 JSON 重写：" + "；".join(problems),
             }
         )
     degraded = _composed(
