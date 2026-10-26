@@ -949,3 +949,28 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .chat-tools { display: flex; gap: 6px; }
 .row-item.on .row-title { color: var(--accent); }
 .row-item.on .row-end { color: var(--accent); font-size: 12.5px; }
+
+/* 饮食页：拍 / 填两个入口，吃了什么（含两周复盘），spec [2026-10-23] §43 */
+.meal-entry { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-block: 16px; }
+.meal-entry [role="status"] { grid-column: 1 / -1; }
+.entry-btn { display: grid; justify-items: center; gap: 4px; padding: 18px 8px; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--line); color: var(--ink); font: inherit; cursor: pointer; }
+.entry-btn b { font-size: 20px; }
+.entry-btn span { font-size: 12px; color: var(--muted); }
+.entry-btn.primary { background: linear-gradient(120deg, var(--fire), var(--fire-2)); color: var(--accent-ink); border: 0; }
+.entry-btn.primary span { color: var(--accent-ink); opacity: .85; }
+.kind-pick { display: grid; gap: 6px; margin-block: 12px; }
+.sheet textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: inherit; resize: none; }
+.meal-record { display: grid; gap: 4px; }
+.diet-review { display: grid; gap: 4px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px dashed var(--line); }
+.review-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.review-act { display: flex; gap: 12px; align-items: center; }
+.meal-group { padding-block: 8px; }
+.meal-group + .meal-group { border-top: 1px solid var(--line); }
+.meal-group-head { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 4px; }
+.meal-group.empty .meal-group-head { font-weight: 400; color: var(--muted); margin: 0; }
+.meal-record > *, .meal-group > * { min-width: 0; }
+.meal-group .row-item { min-width: 0; }
+.kind-pick .pills { flex-wrap: wrap; overflow: visible; }
+.meal-entry { margin-block: 16px 4px; }
+.replace-hint { color: var(--accent); margin: 0; }

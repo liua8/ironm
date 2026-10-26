@@ -815,13 +815,13 @@ function videoAdmin(x, has, redraw) {
 }
 
 // ---- 饮食：饮食记录（照片 + 描述）、推荐这一餐、减脂餐、今日目标（spec [2026-10-23] §13）----------------
-const MEAL_KINDS = ["早餐", "午餐", "晚餐", "加餐"];
+const MEAL_KINDS = ["早餐", "午餐", "晚餐", "加餐", "夜宵", "练前", "练后"];
 const APPETITES = ["清淡", "正常", "很饿"];
 const SCENES = ["全部", "外卖", "食堂", "便利店", "自己做"];
 const foodState = { kind: null, appetite: "正常", scene: "全部" };
 function mealKindNow() {
   const hr = new Date().getHours();
-  return hr < 10 ? "早餐" : hr < 15 ? "午餐" : hr < 21 ? "晚餐" : "加餐";
+  return hr < 5 ? "夜宵" : hr < 10 ? "早餐" : hr < 11 ? "加餐" : hr < 14 ? "午餐" : hr < 17 ? "加餐" : hr < 21 ? "晚餐" : "夜宵";
 }
 const macroLine = (m) => `${Math.round(m.kcal)} 千卡 · 蛋白质 ${Math.round(m.protein_g)} 克 · 碳水 ${Math.round(m.carbs_g)} 克 · 脂肪 ${Math.round(m.fat_g)} 克`;
 
@@ -837,46 +837,99 @@ async function shrinkPhoto(file) {
 }
 
 async function food(view) {
-  foodState.kind = foodState.kind || mealKindNow();
   const [day, m] = await Promise.all([api("/iron/api/meals"), metrics().then(byKey).catch(() => ({}))]);
   const summary = h("div");
-  const list = h("div");
-  const redraw = (d) => { summary.replaceChildren(daySummary(d, m)); list.replaceChildren(mealList(d, redraw)); };
+  const record = h("div");
+  let today = day;
+  const redraw = (d) => { today = d; summary.replaceChildren(daySummary(d, m)); record.replaceChildren(mealRecord(d, redraw)); };
   redraw(day);
-  view.append(summary,
-    dietReviewCard(),
-    section("记一餐", null, mealForm(redraw)),
-    section("今天吃了什么", null, list),
+  view.append(summary, mealEntry(() => today, redraw),
+    section("吃了什么", null, record),
     section("问营养师", null, h("div", { class: "asks" },
       ["早餐怎么吃够蛋白质", "练前练后吃什么", "外卖怎么点更健康", "要不要吃肌酸", "减脂期饿了怎么办"].map((q) => askChip(q)))));
 }
 
-// 两周饮食复盘（spec [2026-10-23] §18 需求 2）：按体重趋势提出热量调整，确认后才生效，可以撤销
-function dietReviewCard() {
-  const box = h("div", { class: "card" }, ...skeleton(70));
-  const kcal = (n) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n)}`;
-  const act = async (path) => {
-    for (const b of box.querySelectorAll("button")) b.disabled = true;
-    try { draw(await api(path, { method: "POST" })); cache.metrics = null; render(); }
-    catch (err) { box.append(h("p", { class: "error" }, err.message)); for (const b of box.querySelectorAll("button")) b.disabled = false; }
+// 记一餐只有两个入口：拍（手机弹出拍照或从相册选）、填；记完再选是哪一餐（spec [2026-10-23] §43）
+function mealEntry(today, redraw) {
+  const input = h("input", { type: "file", accept: "image/jpeg,image/png,image/webp", class: "sr-only" });
+  const msg = h("div", { class: "muted", role: "status" });
+  input.addEventListener("change", async () => {
+    const f = input.files[0]; input.value = "";
+    if (!f) return;
+    if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { msg.className = "error"; msg.textContent = "照片只支持 JPG、PNG、WebP"; return; }
+    const photo = await shrinkPhoto(f);
+    if (photo.size > 5 * MB) { msg.className = "error"; msg.textContent = "照片太大了，换一张试试"; return; }
+    msg.textContent = "";
+    logMealSheet(photo, today(), redraw);
+  });
+  return h("div", { class: "meal-entry" },
+    h("label", { class: "entry-btn primary" }, input, icon("camera"), h("b", {}, "拍"), h("span", {}, "拍照或从相册选")),
+    h("button", { class: "entry-btn", type: "button", onclick: () => logMealSheet(null, today(), redraw) }, icon("edit"), h("b", {}, "填"), h("span", {}, "写一句吃了什么")),
+    msg);
+}
+
+// 拍完或点了"填"之后：确认这一餐是哪一顿，再记下；每种餐每天一份，选到今天记过的就提示会替换
+function logMealSheet(photo, day, redraw) {
+  let kind = mealKindNow();
+  const hint = h("p", { class: "caption replace-hint" });
+  const showHint = () => {
+    const had = day.meals.filter((x) => x.kind === kind).map((x) => x.name);
+    hint.hidden = !had.length;
+    hint.textContent = had.length ? `今天已记过${kind}：${had.join("、")}，记下后会替换；要合在一起就把两样都写上。` : "";
   };
-  const draw = (r) => {
+  showHint();
+  const said = h("textarea", { rows: photo ? "2" : "3", maxlength: "120",
+    placeholder: photo ? "补一句更准（可不填）：比如吃了一半、少油" : "吃了什么、大概多少：比如一碗牛肉面，吃了一半" });
+  const msg = h("div", { class: "muted", role: "status" });
+  const go = h("button", { class: "btn block", type: "button" }, "记下，估算热量");
+  go.addEventListener("click", async () => {
+    if (!photo && !said.value.trim()) { msg.className = "error"; msg.textContent = "写一句吃了什么"; return; }
+    const form = new FormData();
+    form.append("said", said.value.trim()); form.append("kind", kind);
+    if (photo) form.append("photo", photo, "meal.jpg");
+    go.disabled = true; msg.className = "muted"; msg.textContent = "营养师在估算…";
+    try { const r = await send("/iron/api/meals", form); closeSheet(); redraw(r); }
+    catch (err) { msg.className = "error"; msg.textContent = err.message; go.disabled = false; }
+  });
+  openSheet(photo ? "这是哪一餐？" : "填一餐",
+    photo ? h("div", { class: "meal-photo" }, h("img", { src: URL.createObjectURL(photo), alt: "这一餐的照片" })) : null,
+    photo ? null : said,
+    h("div", { class: "kind-pick" }, h("span", { class: "caption" }, "哪一餐"), pills(MEAL_KINDS, kind, (v) => { kind = v; showHint(); }), hint),
+    photo ? said : null, go, msg);
+  if (!photo) setTimeout(() => said.focus(), 50);
+}
+
+// 吃了什么：今天按餐次排的记录 + 两周复盘，一个整体
+function mealRecord(d, redraw) {
+  const review = h("div", { class: "diet-review", hidden: true });
+  api("/iron/api/diet/review").then((r) => {
     const p = r.proposal, c = r.current;
-    wrap.hidden = !p && !c;
-    box.replaceChildren(...[
-      c ? h("div", { class: "kv" }, h("span", {}, "现在的调整"), h("span", {}, `${kcal(c.kcal)} 千卡/天（${md(c.since)}起）`)) : null,
-      c ? h("p", { class: "caption" }, `原因：${c.reason}`) : null,
-      p ? h("p", { class: "lede" }, `${p.reason}：建议每天${p.delta > 0 ? "多" : "少"}吃约 ${Math.abs(p.delta)} 千卡，目标从 ${p.before} 调到 ${p.after} 千卡。`) : h("p", { class: "muted" }, r.message),
-      p && p.basis ? h("details", { class: "inbox-why" }, h("summary", {}, h("span", { class: "caption" }, "依据"), icon("chevron", "xs")), h("p", { class: "caption" }, p.basis)) : null,
-      h("div", { class: "btn-row" },
-        p ? h("button", { class: "btn", type: "button", onclick: () => act("/iron/api/diet/adjust") }, icon("check", "sm"), "确认调整") : null,
-        c ? h("button", { class: "btn ghost", type: "button", onclick: () => act("/iron/api/diet/adjust/undo") }, "撤销上次调整") : null),
-      h("p", { class: "caption" }, "每两周按体重趋势复盘一次；调整后的目标不会低于基础代谢和安全下限。")].filter(Boolean));
-  };
-  const wrap = section("两周饮食复盘", null, box);
-  wrap.hidden = true;
-  api("/iron/api/diet/review").then(draw).catch(() => {});
-  return wrap;
+    if (!p && !c && !r.message) return;
+    const act = async (path) => { try { await api(path, { method: "POST" }); cache.metrics = null; render(); } catch (err) { review.append(h("p", { class: "error" }, err.message)); } };
+    const kcal = (n) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n)}`;
+    review.hidden = false;
+    review.replaceChildren(
+      h("div", { class: "review-head" }, h("span", { class: "tile-name" }, "两周复盘"),
+        p ? chip(`建议${p.delta > 0 ? "多" : "少"}吃 ${Math.abs(p.delta)} 千卡`, "attention") : c ? chip(`${kcal(c.kcal)} 千卡/天`, "") : chip("不用调", "good")),
+      h("p", { class: "caption" }, p ? `${p.reason}：目标从 ${p.before} 调到 ${p.after} 千卡` : c ? `${c.reason}（${md(c.since)}起）。${r.message || ""}` : r.message),
+      p || c ? h("div", { class: "review-act" },
+        p ? h("button", { class: "btn small", type: "button", onclick: () => act("/iron/api/diet/adjust") }, "确认调整") : null,
+        c ? h("button", { class: "link", type: "button", onclick: () => act("/iron/api/diet/adjust/undo") }, "撤销") : null) : null);
+  }).catch(() => {});
+  const groups = MEAL_KINDS.map((k) => [k, d.meals.filter((x) => x.kind === k)]);
+  const rows = groups.filter(([k, xs]) => xs.length || ["早餐", "午餐", "晚餐"].includes(k)).map(([k, xs]) => {
+    const sum = xs.reduce((a, x) => a + x.macros.kcal, 0);
+    return h("div", { class: `meal-group${xs.length ? "" : " empty"}` },
+      h("div", { class: "meal-group-head" }, h("span", {}, k), h("span", { class: "muted" }, xs.length ? `${Math.round(sum)} 千卡` : "还没记")),
+      ...xs.map((x) => {
+        const thumb = h("div", { class: "meal-thumb" }, icon("food", "sm"));
+        if (x.has_photo) loadPhoto(x.id, thumb);
+        return pressable(h("div", { class: "row-item" }, thumb,
+          h("div", { class: "row-main" }, h("span", { class: "row-title" }, x.name), h("span", { class: "row-sub" }, macroLine(x.macros))),
+          h("span", { class: "row-end" }, icon("chevron", "xs"))), () => mealSheet(x, redraw));
+      }));
+  });
+  return h("div", { class: "card meal-record" }, review, ...rows);
 }
 
 function meter(label, have, target, unit) {
@@ -908,56 +961,6 @@ function daySummary(d, m) {
         [["结论", x.text], ["怎么算的", x.how], ["依据", x.source]].filter(([, v]) => v).map(([k, v]) => h("div", {}, h("dt", {}, k), h("dd", {}, v))))))) }, "目标怎么算的", icon("chevron", "xs")));
 }
 
-function mealForm(redraw) {
-  let photo = null;
-  const preview = h("div", { class: "photo-preview", hidden: true });
-  const input = h("input", { type: "file", accept: "image/jpeg,image/png,image/webp", capture: "environment", class: "sr-only" });
-  const pick = h("label", { class: "photo-pick" }, input, icon("camera"), h("span", {}, "拍照或选照片"));
-  input.addEventListener("change", async () => {
-    const f = input.files[0]; input.value = "";
-    if (!f) return;
-    if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { msg.className = "error"; msg.textContent = "照片只支持 JPG、PNG、WebP（iPhone 可以在相机设置里选“兼容性最佳”）"; return; }
-    photo = await shrinkPhoto(f);
-    if (photo.size > 5 * MB) { msg.className = "error"; msg.textContent = "照片太大了，换一张试试"; photo = null; return; }
-    msg.textContent = "";
-    preview.hidden = false;
-    preview.replaceChildren(h("img", { src: URL.createObjectURL(photo), alt: "这一餐的照片" }),
-      h("button", { class: "icon-btn", type: "button", "aria-label": "去掉照片", onclick: () => { photo = null; preview.hidden = true; preview.replaceChildren(); } }, icon("close", "sm")));
-  });
-  const said = h("input", { type: "text", maxlength: "120", placeholder: "说一句：比如一碗牛肉面，吃了一半" });
-  const msg = h("div", { class: "muted", role: "status" });
-  const go = h("button", { class: "btn block", type: "button" }, "记下，估算热量");
-  go.addEventListener("click", async () => {
-    if (!photo && !said.value.trim()) { msg.className = "error"; msg.textContent = "拍张照片或写一句描述"; return; }
-    const form = new FormData();
-    form.append("said", said.value.trim()); form.append("kind", foodState.kind);
-    if (photo) form.append("photo", photo, "meal.jpg");
-    go.disabled = true; msg.className = "muted"; msg.textContent = "营养师在估算…";
-    try {
-      const r = await send("/iron/api/meals", form);
-      said.value = ""; photo = null; preview.hidden = true; preview.replaceChildren();
-      msg.textContent = `已记下：${r.meal.name}，约 ${Math.round(r.meal.macros.kcal)} 千卡（估算）`;
-      redraw(r);
-    } catch (err) { msg.className = "error"; msg.textContent = err.message; }
-    go.disabled = false;
-  });
-  return h("div", { class: "card" },
-    pills(MEAL_KINDS, foodState.kind, (v) => { foodState.kind = v; }),
-    h("div", { class: "photo-row" }, pick, preview), said, go, msg,
-    h("p", { class: "caption" }, "照片加一句描述估得更准；照片只存在你的记录里。"));
-}
-
-function mealList(d, redraw) {
-  if (!d.meals.length) return h("div", { class: "card" }, h("div", { class: "empty" }, icon("food"), "今天还没记，拍一张或者说一句就行。"));
-  return h("div", { class: "card" }, h("div", { class: "rows" }, d.meals.map((x) => {
-    const thumb = h("div", { class: "meal-thumb" }, icon("food", "sm"));
-    if (x.has_photo) loadPhoto(x.id, thumb);
-    return pressable(h("div", { class: "row-item" }, thumb,
-      h("div", { class: "row-main" }, h("span", { class: "row-title" }, `${x.kind} · ${x.name}`), h("span", { class: "row-sub" }, macroLine(x.macros))),
-      h("span", { class: "row-end" }, `${Math.round(x.macros.kcal)}`, icon("chevron", "xs"))), () => mealSheet(x, redraw));
-  })));
-}
-
 async function loadPhoto(id, box) {
   try {
     const res = await fetch(`/iron/api/meals/${id}/photo`, { headers: { Authorization: `Bearer ${store.get()}` } });
@@ -987,14 +990,14 @@ function recommendBox(redraw) {
   go.addEventListener("click", async () => {
     go.disabled = true; out.replaceChildren(h("p", { class: "muted" }, "营养师在按你的目标、今天还差多少、天气和状态挑…"));
     try {
-      const r = await api("/iron/api/meals/recommend", { method: "POST", body: JSON.stringify({ kind: foodState.kind, appetite: foodState.appetite }) });
+      const r = await api("/iron/api/meals/recommend", { method: "POST", body: JSON.stringify({ kind: foodState.kind || mealKindNow(), appetite: foodState.appetite }) });
       out.replaceChildren(recCard(r, redraw));
     } catch (err) { out.replaceChildren(h("p", { class: "error" }, err.message)); }
     go.disabled = false;
   });
   return h("div", { class: "card" },
     h("div", { class: "muted" }, "胃口"), pills(APPETITES, foodState.appetite, (v) => { foodState.appetite = v; }),
-    h("p", { class: "caption" }, "按上面「记一餐」选的餐次推荐。"), go, out);
+    go, out);
 }
 
 function recCard(r, redraw) {
@@ -1004,7 +1007,7 @@ function recCard(r, redraw) {
     save.disabled = true;
     try {
       const d = await api("/iron/api/meals/record", { method: "POST", body: JSON.stringify({
-        kind: foodState.kind, name: rec.title, items: rec.dishes.map((x) => `${x.name}${x.amount ? ` ${x.amount}` : ""}`), macros: tot }) });
+        kind: foodState.kind || mealKindNow(), name: rec.title, items: rec.dishes.map((x) => `${x.name}${x.amount ? ` ${x.amount}` : ""}`), macros: tot }) });
       save.textContent = "已记下"; redraw(d);
     } catch (err) { save.disabled = false; alert(err.message); }
   });
@@ -1033,7 +1036,7 @@ async function presetsBox(redraw) {
         p.tip ? h("span", { class: "row-sub" }, p.tip) : null),
       h("button", { class: "btn small ghost", type: "button", onclick: async (e) => {
         e.currentTarget.disabled = true;
-        try { redraw(await api("/iron/api/meals/preset", { method: "POST", body: JSON.stringify({ preset: p.id, kind: foodState.kind }) })); e.target.textContent = "已记"; }
+        try { redraw(await api("/iron/api/meals/preset", { method: "POST", body: JSON.stringify({ preset: p.id, kind: foodState.kind || mealKindNow() }) })); e.target.textContent = "已记"; }
         catch (err) { alert(err.message); }
       } }, "记一餐"))));
   draw();

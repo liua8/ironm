@@ -25,6 +25,7 @@ from ironm_agent.meals import (
     Appetite,
     DayContext,
     Macros,
+    Meal,
     MealKind,
     MealStore,
     default_meals,
@@ -377,8 +378,22 @@ def _day(day: str) -> date:
 
 def _kind(kind: str) -> MealKind:
     if kind not in MEAL_KINDS:
-        raise HTTPException(422, "餐次只能是早餐、午餐、晚餐、加餐")
+        raise HTTPException(422, f"餐次只能是{'、'.join(MEAL_KINDS)}")
     return kind
+
+
+async def _save_meal(
+    store: MealStore, user_id: str, meal: Meal, photo: bytes | None = None, mime: str = ""
+) -> dict[str, Any]:
+    """存下这一餐，再删掉今天同一种餐原来的记录：每种餐每天只留一份（spec [2026-10-23] §43）。
+    先存后删，存不上时原来那条还在。"""
+    row = await store.add(user_id, date.today(), meal, photo, mime)
+    replaced = []
+    for old in await store.day(user_id, row.day):
+        if old.id != row.id and old.meal.kind == meal.kind and await store.delete(user_id, old.id):
+            replaced.append(old.meal.name)
+    coach_later(user_id, "记饮食")
+    return {"meal": row.json(), "replaced": replaced, **(await _day_json(user_id, row.day, store))}
 
 
 async def _day_json(user_id: str, day: date, store: MealStore) -> dict[str, Any]:
@@ -440,10 +455,8 @@ async def add_meal(
     meal = await estimate(TurnLLM(load_models(), os.environ), said, meal_kind, image)
     if meal is None:
         raise HTTPException(503, "这次没能估算，请稍后再试，或者换一张更清楚的照片")
-    row = await store.add(user_id, date.today(), meal, data, mime)
     _log.info("meal added: photo=%s", data is not None)
-    coach_later(user_id, "记饮食")
-    return {"meal": row.json(), **(await _day_json(user_id, row.day, store))}
+    return await _save_meal(store, user_id, meal, data, mime)
 
 
 class PresetIn(BaseModel):
@@ -468,9 +481,7 @@ async def add_preset(
     found = next((p for p in presets() if p.id == body.preset), None)
     if found is None:
         raise HTTPException(404, "没有这个减脂餐")
-    row = await store.add(user_id, date.today(), preset_meal(found, _kind(body.kind)))
-    coach_later(user_id, "记饮食")
-    return {"meal": row.json(), **(await _day_json(user_id, row.day, store))}
+    return await _save_meal(store, user_id, preset_meal(found, _kind(body.kind)))
 
 
 @router.delete("/iron/api/meals/{meal_id}")
@@ -578,8 +589,6 @@ class RecordIn(BaseModel):
 async def record_meal(
     body: RecordIn, user_id: str = Depends(_verify()), store: MealStore = MEALS
 ) -> dict[str, Any]:
-    from ironm_agent.meals import Meal
-
     meal = Meal(
         kind=_kind(body.kind),
         name=body.name,
@@ -587,9 +596,7 @@ async def record_meal(
         macros=body.macros.rounded(),
         note="按推荐记下，营养是估算的",
     )
-    row = await store.add(user_id, date.today(), meal)
-    coach_later(user_id, "记饮食")
-    return {"meal": row.json(), **(await _day_json(user_id, row.day, store))}
+    return await _save_meal(store, user_id, meal)
 
 
 # ---- 每周复盘直接出调整方案（spec [2026-10-23] §18 需求 1）---------------------------------------

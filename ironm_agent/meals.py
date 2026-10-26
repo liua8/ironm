@@ -33,9 +33,10 @@ MAX_PHOTO_BYTES = 5 * 1024 * 1024
 KCAL_TOLERANCE = 0.2  # 热量和"蛋白质×4 + 碳水×4 + 脂肪×9"相差超过 20% 时，按营养素重算
 OVER_REMAINING = 1.2  # 推荐一餐的热量超过今天剩余额度的 1.2 倍（且多出 100 千卡以上）就退回
 
-type MealKind = Literal["早餐", "午餐", "晚餐", "加餐"]
+type MealKind = Literal["早餐", "午餐", "晚餐", "加餐", "夜宵", "练前", "练后"]
 type Appetite = Literal["清淡", "正常", "很饿"]
-MEAL_KINDS: tuple[MealKind, ...] = ("早餐", "午餐", "晚餐", "加餐")
+# 覆盖全天的餐次；每种餐每天只留一条，再记一次就替换（spec [2026-10-23] §43）
+MEAL_KINDS: tuple[MealKind, ...] = ("早餐", "午餐", "晚餐", "加餐", "夜宵", "练前", "练后")
 
 
 class Macros(BaseModel):

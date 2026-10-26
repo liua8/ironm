@@ -291,7 +291,7 @@ def test_meal_log_preset_and_privacy(monkeypatch: pytest.MonkeyPatch) -> None:
     assert other.get("/iron/api/meals").json()["meals"] == []
     assert other.delete(f"/iron/api/meals/{meal_id}").status_code == 404
     assert c.post("/iron/api/meals", data={"said": "", "kind": "午餐"}).status_code == 422
-    assert c.post("/iron/api/meals", data={"said": "x", "kind": "夜宵"}).status_code == 422
+    assert c.post("/iron/api/meals", data={"said": "x", "kind": "下午茶"}).status_code == 422
 
 
 def test_video_upload_admin_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
