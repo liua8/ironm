@@ -24,6 +24,8 @@ from ironm_agent.training import Plan
 # 分句里出现这些词，说明已经写了限制或是在说"别做"（注明的限制里不用逗号，免得被拆成两个分句）
 BASE_OK = ("不", "别", "避免", "暂停", "先停", "替代", "代替", "换成", "改成", "改为", "换为", "替换",
            "而不是", "禁止", "停止", "慎", "限制", "控制", "取消", "减少", "免", "跳过", "绕开", "避开")  # fmt: skip
+# 说后果的话：分句里有这些词就是在劝别做（"冲大重量只会加重疲劳"），在哪都算写明了限制（§47）
+DISCOURAGED = ("只会", "会加重", "加重疲劳", "加深疲劳", "容易受伤", "容易变形", "得不偿失", "风险更大")  # fmt: skip
 MAX_SHOWN = 4  # 每类最多列出几个不过关的分句
 MAX_NOTES = 20  # 每类最多注明几处
 _CLAUSE = re.compile(r"[^，,。！？；;\n]+")
@@ -56,7 +58,7 @@ class Rule:
     def allowed(self, clause: str, hit: re.Match[str] | None = None) -> bool:
         """这个分句写了限制：具体的写法（深度、幅度、不疼…）在哪都算；"不、别、避免"这类泛泛的词，
         只在说到这个动作之前、或紧跟在它后面（"先别做深蹲""深蹲先别做"）才算。"""
-        if self.specific(clause):
+        if self.specific(clause) or any(w in clause for w in DISCOURAGED):
             return True
         if hit is None:
             return any(w in clause for w in BASE_OK)
@@ -243,6 +245,51 @@ def _calories(text: str, floor: int) -> Violation | None:
     return None
 
 
+# 三大营养素的克数（取下限）：蛋白质、碳水每克 4 千卡，脂肪每克 9 千卡（§47）
+_GRAMS = {
+    name: (re.compile(rf"{word}[^，,。；;\d]{{0,8}}(\d+(?:\.\d+)?)(?:\s*[-–~至到]\s*\d+(?:\.\d+)?)?\s*(?:克|g)"), kcal)
+    for name, word, kcal in (("protein", "蛋白质?", 4), ("carbs", "碳水(?:化合物)?", 4), ("fat", "脂肪", 9))
+}  # fmt: skip
+MACRO_SLACK = 1.1
+MACRO_NOTE = "（和每天热量对不上，以热量目标为准）"
+
+
+def _daily_kcal(text: str) -> int | None:
+    """回答里建议每天吃多少千卡（取上限）；说消耗、缺口这类的不算。"""
+    for clause in _CLAUSE.findall(text):
+        if _DAILY.search(clause) and not _NOT_INTAKE.search(clause):
+            m = _KCAL.search(clause)
+            if m:
+                return max(int(v) for v in m.groups() if v)
+    return None
+
+
+def _macro_lows(text: str) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for name, (pattern, _) in _GRAMS.items():
+        m = pattern.search(text)
+        if m:
+            out[name] = float(m.group(1))
+    return out
+
+
+def _macros(text: str) -> Violation | None:
+    """三大营养素的下限加起来都放不进每天热量的上限：怎么吃都凑不出来。"""
+    kcal = _daily_kcal(text)
+    lows = _macro_lows(text)
+    if MACRO_NOTE in text or kcal is None or not {"protein", "carbs"} <= lows.keys():
+        return None
+    need = sum(v * _GRAMS[k][1] for k, v in lows.items())
+    if need <= kcal * MACRO_SLACK:
+        return None
+    return Violation(
+        "macros",
+        f"蛋白质、碳水{'、脂肪' if 'fat' in lows else ''}的克数按下限算已经约 {need:.0f} 千卡，"
+        f"超过建议的每天 {kcal} 千卡：把克数改到放得进热量（蛋白质、碳水每克 4 千卡，脂肪每克 9 千卡）",
+        "三大营养素的克数和每天热量对不上时，以每天热量目标为准。",
+    )
+
+
 _RATE_OK = re.compile(r"太快|不要|别|不建议|避免|超过|以内|不宜")
 
 
@@ -274,7 +321,7 @@ def _rules(ctx: Context) -> list[Rule]:
 def check(text: str, ctx: Context) -> list[Violation]:
     """回答（给用户看的正文）违反了哪些约束；为空表示通过。"""
     found = [v for rule in _rules(ctx) if (v := _rule(text, rule))]
-    found += [v for v in (_calories(text, ctx.floor), _rate(text)) if v]
+    found += [v for v in (_calories(text, ctx.floor), _rate(text), _macros(text)) if v]
     return found
 
 
@@ -309,7 +356,12 @@ def annotate(text: str, ctx: Context) -> str:
             )
         return clause
 
-    return _CLAUSE.sub(fix, out)
+    out = _CLAUSE.sub(fix, out)
+    if _macros(out):  # 克数改不了：在碳水的克数后注明以热量为准
+        m = _GRAMS["carbs"][0].search(out)
+        if m:
+            out = out[: m.end()] + MACRO_NOTE + out[m.end() :]
+    return out
 
 
 def annotate_plan(plan: Plan, ctx: Context) -> Plan:

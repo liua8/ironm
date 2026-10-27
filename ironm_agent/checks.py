@@ -126,7 +126,42 @@ def check_text(
             problems += _sentence_problems(
                 sentence, entries=entries, calcs=calcs, own=own, experience=experience
             )
+    for sentence in sentences(_STATEMENT_TAG.sub("", _CITE.sub("", text))):
+        wrong = _false_zero(sentence)
+        if wrong:
+            problems.append(
+                f"「{sentence.strip()[:30]}」说可信范围跨过零，但 {wrong} 并不跨零：范围同号就说在上升或在下降"
+            )
     return problems
+
+
+# "可信范围 a 至 b……跨过零"：a、b 同号时说错了（§47）
+_RANGE = re.compile(r"(-?\d+(?:\.\d+)?)\s*(?:至|到|～|~|–|—)\s*(-?\d+(?:\.\d+)?)")
+_CROSS = re.compile(r"跨过\s*(?:零|0)")
+_CROSS_CLAUSE = re.compile(r"[，,]?[^，,。！？；\n〔<]*跨过\s*(?:零|0)[^，,。！？；\n〔<]*")
+
+
+def _false_zero(sentence: str) -> str | None:
+    """这句说可信范围跨过零，但写的范围不跨零：返回那个范围。"""
+    if not _CROSS.search(sentence):
+        return None
+    ranges = [(float(a), float(b)) for a, b in _RANGE.findall(sentence)]
+    if not ranges or any(a * b <= 0 for a, b in ranges):
+        return None
+    a, b = ranges[0]
+    return f"{a:g} 至 {b:g}"
+
+
+def _drop_false_zero(text: str) -> str:
+    """删掉说"跨过零"却和范围不符的分句，其余保留。"""
+
+    def fix(m: re.Match[str]) -> str:
+        sentence = m.group(0)
+        if _false_zero(_STATEMENT_TAG.sub("", _CITE.sub("", sentence))) is None:
+            return sentence
+        return _CROSS_CLAUSE.sub("", sentence)
+
+    return _SENTENCE.sub(fix, text)
 
 
 def _label_experience(sentence: str) -> str:
@@ -153,6 +188,7 @@ def repair(
 
     calcs = calcs or {}
     own = written_numbers(question)
+    text = _drop_false_zero(text)
     kept: list[str] = []
 
     def hold(m: re.Match[str]) -> str:
