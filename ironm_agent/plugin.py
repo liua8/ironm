@@ -13,7 +13,7 @@ import os
 import re
 import time
 import uuid
-from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from functools import cache
@@ -130,6 +130,7 @@ from ironm_agent.weather import case_line as weather_line
 from ironm_agent.weather import for_user as weather_for
 
 _log = logging.getLogger("ironm_agent.run")
+SYNC_WAIT_S = 20  # 作答前最多等上一轮的档案与记忆更新多少秒（spec [2026-10-23] §51）
 
 FAILED = "IronM 这次没能回答，请稍后再试。"
 CONFLICT_ASK = (
@@ -362,6 +363,9 @@ class IronMAgent:
         self._observe = observe
         self._locks: dict[str, asyncio.Lock] = {}  # 同一个人的记忆提取一次只跑一个
         self._tasks: set[asyncio.Task[None]] = set()  # 后台提取记忆的任务
+        # 每个人还没写完的档案与记忆更新：下一轮作答前先等它们做完（spec [2026-10-23] §51）
+        self._pending: dict[str, set[asyncio.Task[None]]] = {}
+        self._sync_wait = SYNC_WAIT_S
         self._health = health
         self._kb = kb or default_kb()
         self._models = models or load_models()
@@ -596,6 +600,25 @@ class IronMAgent:
         except Exception as e:  # 出错不影响已经发出的回答
             _log.warning("prefs refresh failed: error_type=%s", type(e).__name__)
 
+    def _later(self, user_id: str, work: Coroutine[Any, Any, None]) -> None:
+        """在后台更新这个人的档案或记忆；下一轮作答前会先等它做完。"""
+        task = asyncio.create_task(work)
+        pending = self._pending.setdefault(user_id, set())
+        for group in (self._tasks, pending):
+            group.add(task)
+            task.add_done_callback(group.discard)
+
+    async def _sync(self, user_id: str, run: dict[str, Any]) -> None:
+        """等这个人上一轮还没写完的更新，最多等 _sync_wait 秒；没等完照常作答（spec [2026-10-23] §51）。"""
+        pending = [t for t in self._pending.get(user_id, ()) if not t.done()]
+        if not pending:
+            return
+        start = time.perf_counter()
+        _, left = await asyncio.wait(pending, timeout=self._sync_wait)
+        run["sync_ms"] = int((time.perf_counter() - start) * 1000)
+        if left:
+            run["sync_timeout"] = len(left)
+
     async def settle(self) -> None:
         """等后台的记忆提取做完（测试与停机时用）。"""
         while self._tasks:
@@ -656,28 +679,22 @@ class IronMAgent:
             if "answer" in said and self._remember_on:
                 if worth_extracting(text, run.get("task")):  # 按需提取（spec [2026-10-23] §17）
                     held = take_held(session_id)
-                    task = asyncio.create_task(
+                    self._later(
+                        user_id,
                         self._remember(
                             user_id, text, said["answer"], user_lines(said["history"]), held
-                        )
+                        ),
                     )
-                    self._tasks.add(task)
-                    task.add_done_callback(self._tasks.discard)
                 else:
                     hold(session_id, text)
                     run["memory_extract"] = "skipped"
                 if parts := pain_parts(text):  # 说疼的部位：触发型调整用
                     run["pain_parts"] = len(parts)
-                    task = asyncio.create_task(self._record_pain(user_id, parts))
-                    self._tasks.add(task)
-                    task.add_done_callback(self._tasks.discard)
-                task = asyncio.create_task(self._coach(user_id, "每天第一次提问", False))
-                self._tasks.add(task)  # 每天第一次提问时管家评估一次（今天评估过就不再算）
-                task.add_done_callback(self._tasks.discard)
+                    self._later(user_id, self._record_pain(user_id, parts))
+                # 每天第一次提问时管家评估一次（今天评估过就不再算）
+                self._later(user_id, self._coach(user_id, "每天第一次提问", False))
                 if prefs_due(user_id):  # 每天第一次回答之后，后台更新训练记录得出的偏好
-                    task = asyncio.create_task(self._refresh_prefs(user_id))
-                    self._tasks.add(task)
-                    task.add_done_callback(self._tasks.discard)
+                    self._later(user_id, self._refresh_prefs(user_id))
         except Exception as e:  # 不把异常原文给用户
             _log.error("turn failed: error_type=%s", type(e).__name__)
             run["error_type"] = type(e).__name__
@@ -762,6 +779,7 @@ class IronMAgent:
 
         # 2. 读本会话前几轮与这个人的记忆（全部有效记忆，不靠检索）；同时开始读他的数据（档案、健康数据、
         #    指标），与路由并行（spec [2026-10-23] §7）
+        await self._sync(user_id, run)  # 先等上一轮的档案和记忆写完再读（spec [2026-10-23] §51）
         read = time.perf_counter()
         history, recall, ill = await asyncio.gather(
             (self._history or recent)(session_id, text),
