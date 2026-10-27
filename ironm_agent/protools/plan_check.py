@@ -186,6 +186,21 @@ def check_plan(
             "同一肌群连续两天练，中间没有恢复的一天：" + "、".join(back_to_back) + "（经验规则）"
         )
 
+    for s in plan.sessions:  # 同一次训练里重复的动作（§48）
+        names = [m.name if (m := find(x.exercise)) else x.exercise for x in s.items]
+        twice = [n for n in dict.fromkeys(names) if names.count(n) > 1]
+        if twice:
+            problems.append(
+                f"{weekday_name(s.day)}「{s.name}」里{'、'.join(twice)}重复出现：换成别的动作或合并成一项"
+            )
+    if current is not None:  # 改完后原来练到的主要肌群一周都没练到了（§48）
+        before = _volume(current)[0]
+        lost = [g for g in MAJOR if g in before and g not in sets]
+        if lost:
+            problems.append(
+                f"改完后一周里没练到{'、'.join(lost)}（原来有）：别把这类动作全换掉，挪到别的天或保留一部分"
+            )
+
     for s in plan.sessions:
         for item in s.items:
             move = find(item.exercise)

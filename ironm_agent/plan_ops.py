@@ -22,14 +22,22 @@ from ironm_agent.protools.movement import (
     ranked,
     stressed,
 )
-from ironm_agent.protools.plan_check import SLACK, back_to_back, estimate_minutes, weekly_sets
-from ironm_agent.training import WEEKDAYS, Plan, Session, _Model, weekday_name
+from ironm_agent.protools.plan_check import (
+    MAJOR,
+    SLACK,
+    back_to_back,
+    estimate_minutes,
+    weekly_sets,
+)
+from ironm_agent.training import WEEKDAYS, Plan, PlanItem, Session, _Model, weekday_name
 
-type OpKind = Literal["remove", "move", "swap", "edit", "reduce"]
+MAX_ITEMS = 8  # 加动作后一天最多几个（时长超了 fit_time 再减辅助动作）
+type OpKind = Literal["remove", "move", "swap", "add", "edit", "reduce"]
 ORDER: tuple[OpKind, ...] = (
     "remove",
     "move",
     "swap",
+    "add",
     "edit",
     "reduce",
 )  # 同一句里几条操作的套用顺序
@@ -56,7 +64,7 @@ def day_of(value: Any) -> int | None:
 class Op(_Model):
     kind: OpKind
     day: int | None = None  # 哪天（1 是周一）；减量时为空表示整份计划
-    exercise: str = Field(default="", max_length=30)  # 换、改、删某个动作时写
+    exercise: str = Field(default="", max_length=30)  # 换、加、改、删某个动作时写
     to: str = Field(default="", max_length=30)  # 换动作：换成什么
     to_day: int | None = None  # 挪天：挪到哪天
     sets: int | None = Field(default=None, ge=1, le=10)
@@ -147,7 +155,9 @@ def _where(sessions: list[Session], op: Op) -> list[tuple[Session, int]]:
         return out
 
     found = hits(op.day)
-    return found if found or op.day is None else hits(None)
+    if found or op.day is None or any(s.day == op.day for s in sessions):
+        return found  # 那天还在却没有这个动作：不跨天去找（§48）
+    return hits(None)
 
 
 def _pick(
@@ -155,9 +165,13 @@ def _pick(
     old: str,
     equipment: frozenset[Equipment] | None,
     injured: Collection[str],
+    taken: Collection[str] = (),
 ) -> tuple[str, str]:
-    """换成的动作要在动作库里、器械他有、不压他的伤处；不合格时用替代动作的首选，并说明原因。"""
+    """换成的动作要在动作库里、器械他有、不压他的伤处；不合格时用替代动作的首选，并说明原因。
+    taken：这一天已经有的动作，替代时跳过（同一天不重复，§48）。"""
     move = find(wanted)
+    if move is not None and move.name in taken:
+        return "", f"这一天已经有{move.name}了，这一条没改"
     if move is not None and equipment_ok(move, equipment) and not stressed(move, injured):
         return move.name, ""
     base: Move | None = move or find(old)
@@ -178,10 +192,19 @@ def _pick(
         and not stressed(was, injured)
     ):
         return "", f"你要的{wanted}{why}，原来的{was.name}是同类动作、更适合你，这一条没改"
-    alt = [m for m in ranked(base, equipment=equipment, injured=injured, k=3) if m.name != old]
+    alt = [
+        m
+        for m in ranked(base, equipment=equipment, injured=injured, k=6)
+        if m.name != old and m.name not in taken
+    ]
     if not alt:
         return "", f"「{wanted}」{why}，也没有比{old}更合适的替代，这一条没改"
     return alt[0].name, f"你要的{wanted}{why}，换成了{alt[0].name}"
+
+
+def _canon(name: str) -> str:
+    m = find(name)
+    return m.name if m is not None else name
 
 
 def _scale(sets: int, ratio: float) -> int:
@@ -194,13 +217,15 @@ def apply(
     *,
     equipment: frozenset[Equipment] | None = None,
     injured: Collection[str] = (),
+    blocked: Collection[int] = (),
 ) -> Applied:
-    """按"先删、再挪、再换动作、再改组次、最后减量"的顺序套用；矛盾时抛 Conflict。"""
+    """按"先删、再挪、再换动作、再改组次、最后减量"的顺序套用；矛盾时抛 Conflict。
+    blocked：用户说了没空的日子，不往这些天挪（§48）。"""
     _check_conflicts(ops)
     sessions = [s.model_copy(deep=True) for s in plan.sessions]
     out = Applied(plan, plan)
     for op in sorted(ops, key=lambda o: ORDER.index(o.kind)):
-        line, why = _one(sessions, op, equipment, injured, out)
+        line, why = _one(sessions, op, equipment, injured, out, blocked)
         if line:
             out.done.append(op)
             out.lines.append(line)
@@ -222,6 +247,7 @@ def _one(
     equipment: frozenset[Equipment] | None,
     injured: Collection[str],
     out: Applied,
+    blocked: Collection[int] = (),
 ) -> tuple[str, str]:
     """套一条操作：返回（说明, ""）或（"", 没改的原因）。"""
     day = weekday_name(op.day) if op.day else ""
@@ -247,6 +273,8 @@ def _one(
         s, to = _session(sessions, op.day), op.to_day
         if s is None or to is None or to == op.day:
             return "", f"{day or '那天'}没有训练可以挪" if s is None else "没说挪到哪天"
+        if to in blocked:  # 他这句话里说了这天没空（§48）
+            return "", f"你说{weekday_name(to)}不方便，没挪过去"
         other = _session(sessions, to)
         s.day = to
         out.touched |= {op.day or 0, to}
@@ -258,7 +286,8 @@ def _one(
         hits = _where(sessions, op)
         if not hits or not op.to:
             return "", f"{day}没有{op.exercise}" if not hits else "没说换成什么"
-        name, note = _pick(op.to, op.exercise, equipment, injured)
+        taken = {_canon(x.exercise) for hs, hi in hits for i, x in enumerate(hs.items) if i != hi}
+        name, note = _pick(op.to, op.exercise, equipment, injured, taken)
         if not name:
             return "", note
         was = hits[0][0].items[hits[0][1]].exercise
@@ -271,6 +300,23 @@ def _one(
             out.notes.append(note)
         days = "、".join(dict.fromkeys(weekday_name(hs.day) for hs, _ in hits))
         return f"{days}：{was} → {name}", ""
+    if op.kind == "add":  # 给某天加一个动作（把一类动作挪到别的天时用，§48）
+        s = _session(sessions, op.day)
+        if s is None or not op.exercise:
+            return "", f"{day or '那天'}没有训练" if s is None else "没说加什么动作"
+        taken = {_canon(x.exercise) for x in s.items}
+        name, note = _pick(op.exercise, op.exercise, equipment, injured, taken)
+        if not name:
+            return "", note
+        if len(s.items) >= MAX_ITEMS:
+            return "", f"{day}已经有 {len(s.items)} 个动作了，没再加{name}"
+        s.items.append(
+            PlanItem(exercise=name, sets=op.sets or 3, reps=op.reps or "8–12", load=op.load or "")
+        )
+        out.touched.add(s.day)
+        if note:
+            out.notes.append(note)
+        return f"{day}加上{name}", ""
     if op.kind == "edit":
         if op.minutes is not None and not op.exercise:
             s = _session(sessions, op.day)
@@ -286,6 +332,8 @@ def _one(
         if not update:
             return "", "没说改成多少"
         before = hits[0][0].items[hits[0][1]].line()
+        if all(getattr(hs.items[hi], k) == v for hs, hi in hits for k, v in update.items()):
+            return "", f"{day}{hits[0][0].items[hits[0][1]].exercise}本来就是这样，没有变化"
         for hs, hi in hits:
             hs.items[hi] = hs.items[hi].model_copy(update=update)
             out.touched.add(hs.day)
@@ -320,27 +368,44 @@ def _cn(ratio: float) -> str:
 
 
 def fit_time(applied: Applied, before: Plan | None = None) -> Applied:
-    """只修这次改到、而且比改之前更长的那天：估计时长超过这天的时长时，从最后的辅助动作开始减一组，
-    减到 1 组还超就去掉。原样挪过去的一天本来就超时，不替用户改（只改他要求的地方）。"""
+    """只修这次改到、而且比改之前更长的那天：估计时长超过这天的时长时，先从最后的辅助动作开始逐个减组
+    （每个先减到 2 组），都减到 2 组还超才再往下减、去掉辅助动作；一周里只有它练到某个主要肌群的动作不去掉
+    （§48：挪过来的推的动作不能被减没）。原样挪过去的一天本来就超时，不替用户改（只改他要求的地方）。"""
     was = {s.name: estimate_minutes(s) for s in (before or applied.before).sessions}
     sessions = [s.model_copy(deep=True) for s in applied.plan.sessions]
+
+    def groups(ss: list[Session]) -> set[str]:
+        return {
+            g for g in weekly_sets(applied.plan.model_copy(update={"sessions": ss})) if g in MAJOR
+        }
+
     for s in sessions:
         if s.day not in applied.touched or estimate_minutes(s) <= was.get(s.name, 0):
             continue
         cut: dict[str, str] = {}
-        while estimate_minutes(s) > s.minutes * SLACK and len(s.items) > 1:
+        while estimate_minutes(s) > s.minutes * SLACK:
             order = sorted(
                 range(len(s.items)),
                 key=lambda i: ((m := find(s.items[i].exercise)) is not None and m.compound, -i),
             )
-            i = order[0]
-            name = s.items[i].exercise
-            if s.items[i].sets > 1:
+            floor = 2 if any(s.items[i].sets > 2 for i in order) else 1
+            i = next((i for i in order if s.items[i].sets > floor), None)
+            if i is not None:
+                name = s.items[i].exercise
                 s.items[i] = s.items[i].model_copy(update={"sets": s.items[i].sets - 1})
                 cut[name] = f"{name}减到 {s.items[i].sets} 组"
-            else:
-                cut[name] = f"去掉{name}"
-                del s.items[i]
+                continue
+            have = groups(sessions)
+            i = next(
+                (i for i in order if len(s.items) > 1
+                 and groups([x if x is not s else x.model_copy(update={"items": s.items[:i] + s.items[i + 1:]})
+                             for x in sessions]) >= have),
+                None,
+            )  # fmt: skip
+            if i is None:
+                break  # 再减就丢掉整类训练：不减了，由计划检查提示超时
+            cut[s.items[i].exercise] = f"去掉{s.items[i].exercise}"
+            del s.items[i]
         if cut:
             applied.notes.append(
                 f"{weekday_name(s.day)}估计超过 {s.minutes} 分钟，" + "、".join(cut.values())
@@ -428,6 +493,23 @@ NEW_PLAN = re.compile(
     r"|(?:换成|改成|改为).{0,6}(?:分化|上下肢|推拉腿|全身练|全身训练)"
 )
 _SCOPE_HINT = "只想改这一次的话，跟我说「只改今天」。"
+
+
+_BUSY = re.compile(r"练不了|不能练|不练|没空|没时间|出差|有事|不在家|不在|去不了")
+_WEEKEND = re.compile(r"周末")
+_NAMED_DAY = re.compile(r"(?:周|星期|礼拜)([一二三四五六日天])")
+
+
+def blocked_days(text: str) -> set[int]:
+    """这句话里说了没空的日子（"这周末出差，周五练不了" → 周五、周六、周日），挪动训练时不往这些天挪（§48）。"""
+    out: set[int] = set()
+    for clause in re.split(r"[，。,；;！？!?\n]", text):
+        if not _BUSY.search(clause):
+            continue
+        if _WEEKEND.search(clause):
+            out |= {6, 7}
+        out |= {_DAY[m.group(1)] for m in _NAMED_DAY.finditer(clause)}
+    return out
 
 
 def scope_hint(text: str) -> str:

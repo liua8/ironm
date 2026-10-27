@@ -67,6 +67,7 @@ from ironm_agent.plan_ops import (
     Conflict,
     Op,
     apply,
+    blocked_days,
     describe,
     fit_time,
     only_this_time,
@@ -121,6 +122,7 @@ from ironm_agent.training import (
     plan_content,
     task_of,
     trusted_log,
+    weekday_name,
 )
 from ironm_agent.triggers import PainStore, default_pain, pain_parts
 from ironm_agent.weather import Weather
@@ -299,6 +301,14 @@ def route_summary(r: Route) -> str:
     else:
         how = "按关键词（" + "；".join(r.problems) + "）"
     return f"请了：{names}\n方式：{how}" + (f"\n{r.reason}" if r.reason else "")
+
+
+_WEEKDAY = re.compile(r"(?:周|星期|礼拜)[一二三四五六日天]")
+
+
+def _no_day(problem: str) -> str:
+    """去掉星期几再比较：挪了天的同一个老问题不算新问题。"""
+    return _WEEKDAY.sub("", problem)
 
 
 class IronMAgent:
@@ -1005,7 +1015,9 @@ class IronMAgent:
                     toolbox.evidence.absorb(checked)
                 lead = role in (Role.TRAINER, Role.GENERAL)
                 refused = run.get("_refused") or ""
-                note = "\n".join(x for x in (decision.note if lead else "",
+                busy = "、".join(weekday_name(d) for d in sorted(blocked_days(text)))
+                busy_note = f"他这句话说这些天没空：{busy}。挪训练不要挪到这些天，可以挪到别的空日子，或者这周少练一次。" if lead and busy and expert_task == "edit" else ""  # fmt: skip
+                note = "\n".join(x for x in (decision.note if lead else "", busy_note,
                                               files.note_for_experts() if role is seeing else "", checked_note,
                                               f"回答开头系统已经说了：{refused} 不要再复述，直接说能帮他做的部分。" if refused else "") if x)  # fmt: skip
                 task = asyncio.create_task(
@@ -1087,10 +1099,13 @@ class IronMAgent:
             merge=bool(history),
         )  # fmt: skip
         if cards:
-            note = CONFIRM_NOTE[job or "plan"]
+            note = "\n\n".join(
+                x for x in (run.pop("_plan_extra", ""), CONFIRM_NOTE[job or "plan"]) if x
+            )
             composed = replace(composed, text=composed.text.rstrip() + "\n\n" + note)
-        elif run.get("_plan_note"):  # 操作没套上（矛盾、全都改不了）：说清原因
-            composed = replace(composed, text=composed.text.rstrip() + "\n\n" + run["_plan_note"])
+        elif run.get("_plan_note"):
+            # 操作没套上（矛盾、全都改不了、改了会出问题）：只说系统的话，教练那段说的是没做成的改动（§48）
+            composed = replace(composed, text=run["_plan_note"])
         blocks = self._answer(composed, prefix, run, said)
         tail = (
             2 if blocks[-1].get("tool_call_id") == SOURCES_ID else 0
@@ -1157,6 +1172,10 @@ class IronMAgent:
                 return []
             if not cards:
                 run["_plan_note"] = say
+            elif extra := "；".join(run.pop("_plan_changed_notes", [])):
+                run["_plan_extra"] = (
+                    f"另外：{extra}。"  # 系统换了动作、有没改的：说清楚，和卡片一致
+                )
             return cards
         try:
             raw = lead.opinion.plan if job == "plan" else lead.opinion.log
@@ -1230,7 +1249,8 @@ class IronMAgent:
         if base is None:
             prior, base = None, current
         try:
-            applied = fit_time(apply(base, ops, equipment=tools.equipment, injured=tools.injured))
+            applied = fit_time(apply(base, ops, equipment=tools.equipment, injured=tools.injured,
+                                     blocked=blocked_days(text)))  # fmt: skip
         except Conflict as e:
             run["plan_ops"] = {"by": by, "ops": len(ops), "conflict": True}
             return (
@@ -1242,6 +1262,23 @@ class IronMAgent:
         if not applied.done:
             return [], "这次没改：" + "；".join(applied.skipped) + "。"
         new = annotate_plan(applied.plan, ctx)
+
+        def review(p: Plan) -> tuple[str, ...]:
+            return check_plan(p, current=current, goal=tools.goal, injured=tools.injured,
+                              equipment=tools.equipment).problems  # fmt: skip
+
+        # 只看这次改动新带来的问题（原计划本来就有的不算）；有就不出预览（§48）
+        had = {_no_day(x) for x in review(base)}
+        left = [x for x in review(new) if _no_day(x) not in had]
+        # 他明说删掉某天时，那天练的肌群没了是他要的结果：照改，提醒一句；换动作带丢的才挡下
+        dropped_day = any(o.kind == "remove" and not o.exercise for o in applied.done)
+        warn = [x for x in left if dropped_day and "没练到" in x]
+        left = [x for x in left if x not in warn]
+        run["plan_check"] = "pass" if not left else "failed"
+        if left:
+            return [], "这样改会有问题：" + "；".join(left) + "。这次没改，换个说法告诉我想怎么改。"
+        applied.notes.extend(x.split("：")[0] for x in warn)
+        run["_plan_changed_notes"] = [*applied.notes, *applied.skipped]
         changes = applied.changes
         earlier_ops: list[Any] = []
         if prior is not None:
@@ -1255,9 +1292,7 @@ class IronMAgent:
         )  # fmt: skip
         if prior is not None:
             await store.cancel(user_id, prior.id)
-        left = check_plan(new, current=current, goal=tools.goal, injured=tools.injured,
-                          equipment=tools.equipment).problems  # fmt: skip
-        run.update(preview="plan", plan_check="pass" if not left else "failed")
+        run["preview"] = "plan"
         say = "按你说的改好了：" + "；".join(applied.lines) + "。"
         if applied.notes:
             say += "另外：" + "；".join(applied.notes) + "。"
