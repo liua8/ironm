@@ -381,12 +381,16 @@ function taskCard(brief, tr, week, meals) {
   } else if (!today?.session) {
     count(true);
     rows.push(taskRow("dumbbell", "今天休息", "散散步、拉拉伸，让身体恢复", true));
+  } else if (week?.sick?.mode === "rest" && !(t?.done || today.done)) {
+    count(true);  // 生病还没好：今天先休息（spec [2026-10-23] §46）
+    rows.push(taskRow("dumbbell", "今天先休息", week.sick.why, true));
   } else {
     const done = Boolean(t?.done || today.done);
     count(done);
     const minutes = (today.version || today.session).minutes;
     const wx = today.weather;
-    const sub = done ? "已完成，好好恢复" : [`约 ${minutes} 分钟`, wx ? `${wx.text} ${wx.temp}°` : "", today.changes.length ? "已按天气调整" : ""].filter(Boolean).join(" · ");
+    const ease = { light: "按轻松版：组数减半、不练到力竭", ease: "病后第一次，按平时的七成" }[week?.sick?.mode];
+    const sub = done ? "已完成，好好恢复" : [ease || `约 ${minutes} 分钟`, wx ? `${wx.text} ${wx.temp}°` : "", today.changes.length ? "已按天气调整" : ""].filter(Boolean).join(" · ");
     const detail = h("div", { class: "task-detail", hidden: true });  // 动作清单默认收起，点开再看
     if (!done) detail.append(todayVersion(today.session, { compact: true }));
     rows.push(taskRow("dumbbell", `练${today.session.name}`, sub, done, done ? null : () => { detail.hidden = !detail.hidden; }), detail);
@@ -403,7 +407,32 @@ function taskCard(brief, tr, week, meals) {
     inbox.replaceChildren(taskRow("coach", `确认管家的 ${r.pending.length} 条调整`, r.pending.map((x) => x.title).join("；").slice(0, 40), false, () => { location.hash = "#chat"; }));
     inbox.hidden = false;
   }).catch(() => {});
-  return h("section", { class: "card home-card" }, cardHead("今日任务", progress), ...rows, inbox);
+  return h("section", { class: "card home-card" }, cardHead("今日任务", progress), checkinRow(brief?.checkin), ...rows, inbox);
+}
+
+// 生病追问（spec [2026-10-23] §46）：从第二天起每天问一次"好些了吗"，三个按钮，回答后显示一句回复
+function checkinRow(c) {
+  if (!c) return null;
+  const box = h("div", { class: "checkin" });
+  const reply = (answer) => async () => {
+    for (const b of box.querySelectorAll("button")) b.disabled = true;
+    try {
+      const r = await api(`/iron/api/illness/${encodeURIComponent(c.id)}/check`, { method: "POST", body: JSON.stringify({ answer }) });
+      box.replaceChildren(h("p", {}, r.message));
+      cache.metrics = null;
+    } catch (err) {
+      box.append(h("p", { class: "msg-note" }, err.message));
+      for (const b of box.querySelectorAll("button")) b.disabled = false;
+    }
+  };
+  box.append(
+    h("b", {}, c.text),
+    c.doctor ? h("p", { class: "msg-note" }, c.doctor) : null,
+    h("div", { class: "btn-row" },
+      h("button", { class: "btn small", type: "button", onclick: reply("resolved") }, "好了"),
+      h("button", { class: "btn quiet small", type: "button", onclick: reply("better") }, "好一些"),
+      h("button", { class: "btn quiet small", type: "button", onclick: reply("unwell") }, "还不舒服")));
+  return box;
 }
 
 // 战报：本周进度环、本周练了几次、本月练了几天、本周还差几练

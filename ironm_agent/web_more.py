@@ -616,6 +616,21 @@ def make_agent(training: TrainingStore, memory: MemoryStore) -> Any:
 TRIGGER_ASK = "按首页的提醒调整训练计划"
 
 
+def illness_store() -> Any:
+    from ironm_agent.illness import default_illness
+
+    return default_illness()
+
+
+ILLNESS = Depends(illness_store)  # 生病记录（spec [2026-10-23] §46）；测试时换成内存版
+
+
+async def _episodes(illness: Any, user_id: str, today: date) -> list[Any]:
+    from ironm_agent.illness import recent
+
+    return await recent(illness, user_id, today)
+
+
 def pain_store() -> Any:
     from ironm_agent.triggers import default_pain
 
@@ -625,7 +640,10 @@ def pain_store() -> Any:
 PAIN = Depends(pain_store)  # 测试时用 dependency_overrides 换成内存版
 
 
-async def _triggers(user_id: str, training: TrainingStore, pain: Any, today: date) -> list[Any]:
+async def _triggers(
+    user_id: str, training: TrainingStore, pain: Any, today: date, illness: Any = None
+) -> list[Any]:
+    from ironm_agent.illness import sick_days
     from ironm_agent.triggers import PAIN_DAYS, PLATEAU_LOOKBACK, detect
 
     stored = await training.plan(user_id)
@@ -633,16 +651,21 @@ async def _triggers(user_id: str, training: TrainingStore, pain: Any, today: dat
         x.log for x in await training.workouts(user_id, today - timedelta(days=PLATEAU_LOOKBACK))
     ]
     pains = await pain.since(user_id, today - timedelta(days=PAIN_DAYS))
+    eps = await _episodes(illness, user_id, today) if illness is not None else []
     return detect(
-        stored.plan if stored else None, logs, stored.since if stored else None, pains, today
-    )
+        stored.plan if stored else None, logs, stored.since if stored else None, pains, today,
+        sick_days(eps, today),
+    )  # fmt: skip
 
 
 @router.get("/iron/api/triggers")
 async def get_triggers(
-    user_id: str = Depends(_verify()), training: TrainingStore = TRAINING, pain: Any = PAIN
+    user_id: str = Depends(_verify()),
+    training: TrainingStore = TRAINING,
+    pain: Any = PAIN,
+    illness: Any = ILLNESS,
 ) -> dict[str, Any]:
-    found = await _triggers(user_id, training, pain, date.today())
+    found = await _triggers(user_id, training, pain, date.today(), illness)
     return {"triggers": [
         {"kind": t.kind, "title": t.title, "detail": t.detail, "action": t.action} for t in found
     ]}  # fmt: skip
@@ -655,9 +678,11 @@ async def review_proposal(
     training: TrainingStore = TRAINING,
     memory: MemoryStore = MEMORY,
     pain: Any = PAIN,
+    illness: Any = ILLNESS,
 ) -> dict[str, Any]:
     """按每周复盘（或首页的某条提醒，trigger 为提醒的种类）生成调整方案；提醒在服务端重新判断。"""
     from ironm_agent.brief import weekly_review
+    from ironm_agent.illness import recurring, sick_days
     from ironm_agent.plugin import REVIEW_ASK, REVIEW_MAX_DAYS
     from ironm_agent.protools.plan_check import changed_days
     from ironm_agent.training import parse_plan
@@ -667,7 +692,7 @@ async def review_proposal(
         raise HTTPException(409, "还没有训练计划：先让教练排一份")
     snap = await _web().snapshot_for(user_id)
     if trigger:
-        found = await _triggers(user_id, training, pain, snap.today)
+        found = await _triggers(user_id, training, pain, snap.today, illness)
         hit = next((t for t in found if t.kind == trigger and t.action == "proposal"), None)
         if hit is None:
             return {"status": "no_change", "message": "这条提醒已经不需要处理了。"}
@@ -676,7 +701,9 @@ async def review_proposal(
         ask = f"{TRIGGER_ASK}（只改需要改的地方）：{hit.tip}"
     else:
         logs = [x.log for x in await training.workouts(user_id, snap.today - timedelta(days=14))]
-        review = weekly_review(snap, stored.plan, logs, stored.since)
+        eps = await _episodes(illness, user_id, snap.today)
+        review = weekly_review(snap, stored.plan, logs, stored.since, sick=sick_days(eps, snap.today),
+                               sick_times=recurring(eps, snap.today))  # fmt: skip
         tips, actions = review["tips"], list(review.get("actions") or [])
         if not tips:
             return {"status": "no_change", "message": "这周没有需要调整的地方，照计划来。"}
@@ -858,6 +885,41 @@ async def diet_undo(user_id: str = Depends(_verify()), diet: Any = DIET) -> dict
     return await _diet_state(user_id, diet)
 
 
+# ---- 生病追问（spec [2026-10-23] §46）-----------------------------------------------------------
+
+
+class CheckIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    answer: Literal["resolved", "better", "unwell"]
+
+
+@router.post("/iron/api/illness/{episode_id}/check")
+async def illness_check(
+    episode_id: str, body: CheckIn, user_id: str = Depends(_verify()), illness: Any = ILLNESS
+) -> dict[str, Any]:
+    """首页"好些了吗"的按钮：好了 / 好一些 / 还不舒服。只用规则，不调用模型。"""
+    from ironm_agent.casefile import readiness
+    from ironm_agent.illness import answer
+
+    today = date.today()
+    eps = await _episodes(illness, user_id, today)
+    ep = next((e for e in eps if e.id == episode_id), None)
+    if ep is None:
+        raise HTTPException(404, "这条记录不存在")
+    hr_poor = False
+    if body.answer == "resolved":  # 说好了也看一眼心率（§46 需求 4）
+        try:
+            snap = await _web().snapshot_for(user_id)
+            hr_poor = readiness(snap.readings, "", today).level == "poor"
+        except Exception as e:
+            _log.warning("check snapshot unavailable: error_type=%s", type(e).__name__)
+    ep, message = answer(ep, body.answer, today, hr_poor=hr_poor)
+    await illness.save(user_id, ep)
+    coach_later(user_id, "身体状况")
+    return {"message": message, "status": ep.status}
+
+
 # ---- 今天的版本（spec [2026-10-23] §18 需求 3）---------------------------------------------------
 
 
@@ -867,9 +929,11 @@ async def get_today(
     tired: bool = False,
     user_id: str = Depends(_verify()),
     training: TrainingStore = TRAINING,
+    illness: Any = ILLNESS,
 ) -> dict[str, Any]:
-    """按今天的状态、天气和可用时间，用规则改出今天的版本；原计划不变。"""
+    """按今天的状态、天气、可用时间和生病情况，用规则改出今天的版本；原计划不变。"""
     from ironm_agent.casefile import readiness
+    from ironm_agent.illness import EASE, today_mode
     from ironm_agent.today import build
     from ironm_agent.triggers import gap_scale
 
@@ -884,16 +948,27 @@ async def get_today(
         return {"status": "rest"}
     snap = await _web().snapshot_for(user_id)
     state = readiness(snap.readings, "", today)
-    gap = gap_scale(
-        [x.log for x in await training.workouts(user_id, today - timedelta(days=60))], today
+    logs = [x.log for x in await training.workouts(user_id, today - timedelta(days=60))]
+    gap = gap_scale(logs, today)
+    sick = today_mode(
+        await _episodes(illness, user_id, today),
+        today,
+        trained_since=[x.day for x in logs if x.done],
     )
+    if sick is not None and sick[0] == "rest":  # 生病还没好：今天休息（spec [2026-10-23] §46）
+        return {"status": "sick", "original": session.model_dump(mode="json"),
+                "message": f"今天先休息：{sick[1]}"}  # fmt: skip
+    if sick is not None and sick[0] == "ease":
+        gap = (min(EASE, gap[0]) if gap else EASE, sick[1])
+    light = sick is not None and sick[0] == "light"
     wx = await weather.for_user(user_id)
     advice = weather.assess(wx) if wx else None
     poor = state.level == "poor"
+    why = "你说今天有点累" if tired else "；".join(state.reasons)
     version = build(
         session,
-        tired=tired or poor,
-        tired_why="你说今天有点累" if tired else "；".join(state.reasons),
+        tired=tired or poor or light,
+        tired_why=(sick[1] if light and sick else why),
         indoor=advice is not None and advice.level in ("indoor", "avoid"),
         indoor_why=advice.reasons[0] if advice and advice.reasons else "",
         minutes=minutes,
@@ -1000,6 +1075,7 @@ def coach_deps() -> Any:
         diet=diet_store(),
         store=default_coach(),
         weather=weather.for_user,
+        illness=illness_store(),
     )
 
 
@@ -1306,15 +1382,20 @@ async def harness_turns(
 
 @router.get("/iron/api/week")
 async def get_week(
-    user_id: str = Depends(_verify()), training: TrainingStore = TRAINING
+    user_id: str = Depends(_verify()), training: TrainingStore = TRAINING, illness: Any = ILLNESS
 ) -> dict[str, Any]:
-    """本周一到周日：每天练什么、练过没有、天气和对训练的影响、按天气改出的版本（原计划不变）。"""
+    """本周一到周日：每天练什么、练过没有、天气和对训练的影响、按天气改出的版本（原计划不变）；
+    今天生病时按症状改（spec [2026-10-23] §46）。"""
+    from ironm_agent.illness import today_mode
     from ironm_agent.weather_plan import week_plan, weekday
 
     today = date.today()
     monday = today - timedelta(days=today.isoweekday() - 1)
     stored = await training.plan(user_id)
-    done = {x.log.day for x in await training.workouts(user_id, monday) if x.log.done}
+    rows = await training.workouts(user_id, today - timedelta(days=14))
+    done = {x.log.day for x in rows if x.log.done and x.log.day >= monday}
+    mode = today_mode(await _episodes(illness, user_id, today), today,
+                      trained_since=[x.log.day for x in rows if x.log.done])  # fmt: skip
     status, wx = "no_city", None
     try:
         _, place = await weather.load_place(user_id)
@@ -1343,6 +1424,7 @@ async def get_week(
     return {
         "weather": status,
         "place": wx.place if wx is not None else "",
+        "sick": {"mode": mode[0], "why": mode[1]} if mode else None,
         "days": [
             {
                 "date": p.day.isoformat(),

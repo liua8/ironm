@@ -272,7 +272,7 @@ cases:
     ask: 吃肌酸需要冲击期吗
     path: answer
     roles: [nutrition]
-    must: [["3", "5"], [不需要, 可以不, 不是必须, 非必须, 不必, 可选]]
+    must: [["3", "5"], [不需要, 可以不, 不是必须, 非必须, 不必, 可选, 不用]]
   - {id: K10, cat: knowledge, ask: 练前喝咖啡有用吗，喝多少合适, path: answer, roles: [nutrition], must: [[毫克, mg], [公斤, kg, 体重]]}
   - {id: K11, cat: knowledge, ask: 减脂期怎么吃才不掉肌肉, path: answer, roles: [nutrition], must: [蛋白, 力量]}
   - {id: K12, cat: knowledge, ask: 练完多久吃饭比较好, path: answer, roles: [nutrition], must: [蛋白]}

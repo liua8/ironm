@@ -13,7 +13,7 @@ import json
 import logging
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal, Protocol, cast
@@ -741,9 +741,14 @@ class Week:
 
 
 def week_of(
-    plan: Plan | None, logs: Sequence[WorkoutLog], today: date, since: date | None = None
+    plan: Plan | None,
+    logs: Sequence[WorkoutLog],
+    today: date,
+    since: date | None = None,
+    sick: Collection[date] = (),
 ) -> Week:
     """本周进度。since：这份计划从哪天开始用（计划是这周中间才定的，之前那几天不算没练）。
+    sick：生病的日子，那天的训练不算应练（spec [2026-10-23] §46）。
 
     每条完成的记录只对上一次计划：先按日期对（那天该练的那一次），对不上再按名字对到还没对上的、
     日期不晚于记录那天的那一次（周一、周三、周五都叫"全身"时，记一次不会三天都打勾）。
@@ -754,7 +759,11 @@ def week_of(
     if plan is None:
         return Week(0, 0, len(done_days))
     day_of = {s.day: start + timedelta(days=s.day - 1) for s in plan.sessions}
-    counted = [s for s in plan.sessions if since is None or day_of[s.day] >= since]
+    counted = [
+        s
+        for s in plan.sessions
+        if (since is None or day_of[s.day] >= since) and day_of[s.day] not in sick
+    ]
     matched: set[int] = set()
     for log in this_week:
         same_day = [s for s in counted if day_of[s.day] == log.day and s.day not in matched]

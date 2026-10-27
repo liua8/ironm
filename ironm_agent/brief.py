@@ -6,11 +6,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import date
 from typing import Any
 
 from ironm_agent.casefile import Snapshot, readiness, risks
+from ironm_agent.illness import RECUR_TIMES
 from ironm_agent.memory_store import Item
 from ironm_agent.metrics import Metric
 from ironm_agent.training import Plan, WorkoutLog, week_of, week_start, weekday_name
@@ -82,10 +83,17 @@ def today_brief(
 
 
 def weekly_review(
-    snap: Snapshot, plan: Plan | None, logs: Sequence[WorkoutLog], since: date | None = None
+    snap: Snapshot,
+    plan: Plan | None,
+    logs: Sequence[WorkoutLog],
+    since: date | None = None,
+    *,
+    sick: Collection[date] = (),
+    sick_times: int = 0,
 ) -> dict[str, Any]:
+    """sick：生病的日子（不算应练）；sick_times：最近 4 周病了几次（spec [2026-10-23] §46）。"""
     today = snap.today
-    week = week_of(plan, logs, today, since)
+    week = week_of(plan, logs, today, since, sick)
     weight = _metric(snap.metrics, "weight_trend")
     sleep = _metric(snap.metrics, "sleep")
     rhr = _metric(snap.metrics, "resting_hr")
@@ -109,6 +117,11 @@ def weekly_review(
             f"最近 7 天平均只睡 {_fmt(sleep.value)} 小时：先把睡眠补到每晚 7 小时以上，比加练更有用。"
         )
     tired = [m.name for m in (rhr, hrv) if m is not None and m.tone == "attention"]
+    if sick_times >= RECUR_TIMES:
+        tips.append(
+            f"最近 4 周病了 {sick_times} 次，可能是训练量偏大或休息不够：下周减量，必要时体检。"
+        )
+        actions.append({"kind": "lighter", "why": f"最近 4 周病了 {sick_times} 次"})
     if tired:
         tips.append(f"{'、'.join(tired)}比你平时差：这周适当减量，多休息。")
         actions.append({"kind": "lighter", "why": f"{'、'.join(tired)}比平时差"})

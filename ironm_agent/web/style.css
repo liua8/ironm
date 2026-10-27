@@ -983,3 +983,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 
 /* 按操作改计划的预览：只列变化的行（spec [2026-10-23] §45） */
 .pv-rows { margin: 6px 0; padding-left: 1.1em; display: grid; gap: 4px; }
+
+/* 生病追问（spec [2026-10-23] §46） */
+.checkin { display: grid; gap: 8px; padding: 12px; margin: 0 0 10px; border-radius: 10px; background: color-mix(in srgb, var(--fire) 8%, transparent); }
+.checkin .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.checkin p { margin: 0; }

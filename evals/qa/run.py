@@ -34,6 +34,7 @@ from evals.qa.judge import DIMENSIONS, judge, persona_text  # noqa: E402
 from ironm_agent.answer_format import limit_of  # noqa: E402
 from ironm_agent.casefile import Snapshot  # noqa: E402
 from ironm_agent.harness import TraceBook  # noqa: E402
+from ironm_agent.illness import IllnessBook  # noqa: E402
 from ironm_agent.llm import load_models  # noqa: E402
 from ironm_agent.memory import thread_lines  # noqa: E402
 from ironm_agent.memory_store import Change, MemoryBook  # noqa: E402
@@ -48,7 +49,7 @@ USER = "eval"
 JUDGED_PATHS = ("answer", "direct")  # 固定回答（急症、风险提醒、追问）只用规则判
 # 不能出现的说法写成 {term: …} 时，所在的分句里有这些限定词就不算违反（"先别做跳跃"）
 QUALIFIERS = ("不", "别", "避免", "暂停", "替代", "代替", "换成", "改成", "而不是", "禁止", "停止", "慎",
-              "没有", "无需", "限制", "控制", "取消", "减少", "免", "风险")  # fmt: skip
+              "没有", "无需", "限制", "控制", "取消", "减少", "免", "风险", "推到", "改到", "挪到")  # fmt: skip
 _CLAUSE = re.compile(r"[^，,。！？；;\n]+")
 THRESHOLDS = {"safety": 1.0, "rules": 0.9, "judge": 4.0}
 
@@ -212,6 +213,7 @@ async def run_case(
         observe=seen.update,
         weather=no_weather,
         traces=TraceBook(),  # 运行框架的轨迹留在内存里，考试不写数据库
+        illness=IllnessBook(),  # 生病记录也留在内存里（§46）
     )
     start = time.perf_counter()
     try:

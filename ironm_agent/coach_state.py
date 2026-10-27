@@ -96,6 +96,7 @@ class Inputs:
     diet: KcalAdjust | None = None
     advice: Any = None  # weather.Advice（今天的实时天气）
     forecast: tuple[Any, ...] = ()  # weather.Day：今天起 7 天的预报（spec [2026-10-23] §34）
+    illness: list[Any] = field(default_factory=list)  # illness.Episode：最近的生病记录（§46）
 
 
 def _today_item(inp: Inputs, today: date) -> Item:
@@ -111,13 +112,23 @@ def _today_item(inp: Inputs, today: date) -> Item:
     if session is None:
         return Item(key="today", kind="today", title=f"今天（{name}）按计划休息",
                     why="恢复也是训练的一部分", value={"rest": True})  # fmt: skip
+    from ironm_agent.illness import EASE, today_mode
+
     state = readiness(inp.snapshot.readings, "", today)
     gap = gap_scale(inp.logs, today)
     adv = inp.advice
+    sick = today_mode(inp.illness, today, trained_since=[x.day for x in inp.logs if x.done])
+    if sick is not None and sick[0] == "rest":  # 生病还没好：今天休息（§46）
+        return Item(key="today", kind="today", title=f"今天先休息：{sick[1]}",
+                    why="病好了再练，第一次按平时的七成", basis="生病时练不练〔K23〕",
+                    action="auto", value={"rest": True, "sick": True})  # fmt: skip
+    if sick is not None and sick[0] == "ease":
+        gap = (min(EASE, gap[0]) if gap else EASE, sick[1])
+    light = sick is not None and sick[0] == "light"
     version = build(
         session,
-        tired=state.level == "poor",
-        tired_why="；".join(state.reasons),
+        tired=state.level == "poor" or light,
+        tired_why="；".join(x for x in ((sick[1] if light and sick else ""), *state.reasons) if x),
         indoor=adv is not None and adv.level in ("indoor", "avoid"),
         indoor_why=adv.reasons[0] if adv is not None and adv.reasons else "",
         scale=gap[0] if gap else None,
@@ -177,7 +188,10 @@ def _target_items(inp: Inputs) -> list[Item]:
     from ironm_agent.progression import targets
 
     out = []
-    for name, t in targets(inp.plan, inp.logs).items():
+    from ironm_agent.illness import recovering_days
+
+    recovering = recovering_days(inp.illness, date.today())
+    for name, t in targets(inp.plan, [x for x in inp.logs if x.day not in recovering]).items():
         basis = {"up": "加重 2–10%〔K03〕", "down": "减重约 10%（经验）"}.get(t.action, "进阶规则")
         out.append(Item(key=f"target:{name}", kind="target", title=f"{name} 下次 {t.text()}",
                         why=t.why, basis=basis, action="auto",
@@ -249,7 +263,7 @@ def _alert_items(inp: Inputs, today: date) -> list[Item]:
         Item(key=f"alert:{t.kind}", kind="alert", title=t.title, why=t.detail,
              basis=ALERT_BASIS.get(t.kind, ""),
              action="confirm" if t.action == "proposal" else "info", value={"trigger": t.kind})
-        for t in detect(inp.plan, inp.logs, inp.since, inp.pains, today)
+        for t in detect(inp.plan, inp.logs, inp.since, inp.pains, today, _sick(inp, today))
     ]  # fmt: skip
 
 
@@ -258,13 +272,23 @@ def _review_item(inp: Inputs) -> list[Item]:
 
     if inp.plan is None:
         return []
-    tips = weekly_review(inp.snapshot, inp.plan, inp.logs, inp.since)["tips"]
+    from ironm_agent.illness import recurring
+
+    today = inp.snapshot.today
+    tips = weekly_review(inp.snapshot, inp.plan, inp.logs, inp.since, sick=_sick(inp, today),
+                         sick_times=recurring(inp.illness, today))["tips"]  # fmt: skip
     plan_tips = [t for t in tips if "千卡" not in t]  # 热量的建议由饮食复盘那一项管
     if not plan_tips:
         return []
     return [Item(key="proposal:review", kind="proposal", action="confirm",
                  title="可以按这周的复盘调整训练计划", why="".join(plan_tips)[:200],
                  basis="每周复盘规则（睡眠〔K07〕、心率变异性〔K18〕、完成度）")]  # fmt: skip
+
+
+def _sick(inp: Inputs, today: date) -> frozenset[date]:
+    from ironm_agent.illness import sick_days
+
+    return sick_days(inp.illness, today)
 
 
 def compute(inp: Inputs, today: date) -> list[Item]:
@@ -441,6 +465,7 @@ class Deps:
     diet: Any
     store: CoachStore
     weather: Callable[[str], Awaitable[Any]] | None = None
+    illness: Any = None  # illness.IllnessStore（§46）
 
 
 async def _gather(user_id: str, deps: Deps, today: date) -> Inputs:
@@ -464,6 +489,13 @@ async def _gather(user_id: str, deps: Deps, today: date) -> Inputs:
     inp.pains = await safely("pain", deps.pain.since(user_id, today - timedelta(days=14))) or []
     inp.goal = await safely("goal", deps.goals.get(user_id))
     inp.diet = await safely("diet", deps.diet.current(user_id))
+    if deps.illness is not None:
+        inp.illness = (
+            await safely(
+                "illness", deps.illness.since(user_id, today - timedelta(days=HISTORY_DAYS))
+            )
+            or []
+        )
     if deps.weather is not None:
         from ironm_agent import weather
 

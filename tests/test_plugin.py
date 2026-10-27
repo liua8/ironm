@@ -6,6 +6,7 @@ from importlib.metadata import entry_points
 from typing import Any
 
 from ironm_agent.casefile import Snapshot
+from ironm_agent.illness import IllnessBook
 from ironm_agent.llm import ModelUnavailable, Reply, Stage, load_models
 from ironm_agent.memory_store import MemoryBook, MemoryStore
 from ironm_agent.plugin import FAILED, IronMAgent
@@ -78,6 +79,7 @@ def agent(
         memory=memory if memory is not None else MemoryBook(),
         snapshot=snapshot or no_data,
         pain=PainBook(),
+        illness=IllnessBook(),
     )
 
 

@@ -33,6 +33,25 @@ from ironm_agent.coverage import missing_roles
 from ironm_agent.exercises import named_in
 from ironm_agent.experts import Consultation, consult, write_task
 from ironm_agent.harness import TraceStore, mentioned_roles, missing_readings, new_turn, react
+from ironm_agent.illness import (
+    Episode,
+    IllnessStore,
+    default_illness,
+    detect,
+    due,
+    mentions,
+    merge,
+    question,
+    recovering_days,
+    reply_of,
+    state_line,
+    today_mode,
+)
+from ironm_agent.illness import active as active_illness
+from ironm_agent.illness import answer as answer_illness
+from ironm_agent.illness import (
+    recent as recent_illness,
+)
 from ironm_agent.indicators import named_indicators, record_kinds
 from ironm_agent.kb import KnowledgeBase, default_kb
 from ironm_agent.llm import ModelsConfig, TurnLLM, load_models
@@ -304,6 +323,7 @@ class IronMAgent:
         observe: Callable[[dict[str, Any]], None] | None = None,
         weather: Callable[[str], Awaitable[Weather | None]] | None = None,
         pain: PainStore | None = None,
+        illness: IllnessStore | None = None,
         medications: Any | None = None,
         medical: Any | None = None,
         traces: TraceStore | None = None,
@@ -316,6 +336,7 @@ class IronMAgent:
         self._meds = medications
         self._medical = medical
         self._pain = pain  # 说疼的部位和日期（触发型调整用，默认用数据库里 iron-m 自己的表）
+        self._illness = illness  # 生病记录（spec [2026-10-23] §46，默认用数据库里 iron-m 自己的表）
         self._weather = weather  # 这个人所在城市的天气（默认按"我的"里设置的城市去取）
         self._snapshot = snapshot  # 这个人的档案、健康数据与指标（默认与数据页同一份计算）
         self._files: dict[str, Any] = dict(files or {})  # 读附件的方式（测试时换成假的）
@@ -451,6 +472,54 @@ class IronMAgent:
             self._memory = default_store()
         return self._memory
 
+    def _illness_store(self) -> IllnessStore:
+        if self._illness is None:
+            self._illness = default_illness()
+        return self._illness
+
+    async def _track_illness(self, user_id: str, text: str, run: dict[str, Any]) -> list[Episode]:
+        """这句话里说生病了、或在回答"好了没"：更新生病记录（规则，不调用模型；spec [2026-10-23] §46）。
+        返回更新后的记录；读写失败时当作没有记录。日志只记级别和状态。"""
+        store, today = self._illness_store(), date.today()
+        eps = await recent_illness(store, user_id, today)
+        now = active_illness(eps, today)
+        reply = reply_of(text) if now else None
+        found = detect(text)
+        changed: Episode | None = None
+        if now and reply is not None:
+            changed, _ = answer_illness(now[0], reply, today)
+            run["illness"] = f"answered:{reply}"
+        elif found is not None:
+            changed = merge(eps, found[0], found[1], today)
+            run["illness"] = f"noted:{changed.level}"
+        if changed is not None:
+            try:
+                await store.save(user_id, changed)
+            except Exception as e:
+                _log.warning("illness save failed: error_type=%s", type(e).__name__)
+            eps = [changed if e.id == changed.id else e for e in eps]
+            if all(e.id != changed.id for e in eps):
+                eps.append(changed)
+        return eps
+
+    async def _illness_followup(self, user_id: str, run: dict[str, Any]) -> str:
+        """今天还没问过、也还没回答的生病：返回追问的一句，并记下今天问过了。"""
+        today = date.today()
+        if str(run.get("illness", "")).startswith("answered"):
+            return ""
+        for ep in active_illness(run.get("_ill") or [], today):
+            if due(ep, today) and ep.asked != today:
+                try:
+                    await self._illness_store().save(
+                        user_id, ep.model_copy(update={"asked": today})
+                    )
+                except Exception as e:
+                    _log.warning("illness save failed: error_type=%s", type(e).__name__)
+                    return ""
+                run["illness_asked"] = True
+                return "另外，" + question(ep, today)
+        return ""
+
     async def _recall(self, user_id: str) -> Recall:
         """作答前读这个人的全部有效记忆；读不到时当作没有记忆，不影响作答。"""
         try:
@@ -473,6 +542,7 @@ class IronMAgent:
                 llm = TurnLLM(self._models, self._environ)
                 out = await extract(llm, items, text, answer, context, held)
                 await store.apply(user_id, out.changes)
+            await self._illness_from_memory(user_id, out.changes)
         except Exception as e:  # 提取失败不影响已经发出的回答
             _log.warning("memory extraction failed: error_type=%s", type(e).__name__)
             return
@@ -484,6 +554,31 @@ class IronMAgent:
             "ms": int((time.perf_counter() - start) * 1000),
         }
         _log.info("ironm memory %s", json.dumps(stats))
+
+    async def _illness_from_memory(self, user_id: str, changes: Sequence[Any]) -> None:
+        """词表认不出、后台提取记忆的模型记成身体不适的，也记成一次生病；模型记下"已经好了"的，
+        结束正在进行的那次（spec [2026-10-23] §46）。"""
+        events = [c.item.content for c in changes if c.kind == "insert" and c.item is not None
+                  and c.item.category in ("event", "injury")]  # fmt: skip
+        if not events:
+            return
+        store, today = self._illness_store(), date.today()
+        eps = await recent_illness(store, user_id, today)
+        now = active_illness(eps, today)
+        for text in events:
+            reply = reply_of(text) if now else None
+            found = detect(text)
+            if now and reply is not None:
+                changed, _ = answer_illness(now[0], reply, today)
+            elif found is not None and not now:
+                changed = merge(eps, found[0], found[1], today)
+            else:
+                continue
+            try:
+                await store.save(user_id, changed)
+            except Exception as e:  # 记不了不影响已经发出的回答
+                _log.warning("illness save failed: error_type=%s", type(e).__name__)
+            return
 
     async def _refresh_prefs(self, user_id: str) -> None:
         try:
@@ -658,9 +753,17 @@ class IronMAgent:
         # 2. 读本会话前几轮与这个人的记忆（全部有效记忆，不靠检索）；同时开始读他的数据（档案、健康数据、
         #    指标），与路由并行（spec [2026-10-23] §7）
         read = time.perf_counter()
-        history, recall = await asyncio.gather(
-            (self._history or recent)(session_id, text), self._recall(user_id)
+        history, recall, ill = await asyncio.gather(
+            (self._history or recent)(session_id, text),
+            self._recall(user_id),
+            self._track_illness(user_id, text, run),
         )
+        if not active_illness(ill, date.today()):
+            # 没有正在进行的生病：跟生病有关的近期事件和建议不再交给角色（spec [2026-10-23] §46）
+            recall = recall.without(
+                lambda x: x.category in ("event", "advice") and mentions(x.content)
+            )
+        run["_ill"] = ill
         run["memory"] = len(recall.items)
         if recall.dropped:
             run["memory_dropped"] = (
@@ -830,6 +933,9 @@ class IronMAgent:
         prefix = "\n\n".join(x for x in (prefix, files.note_for_user()) if x)
         # 数据风险提醒在首页；对话里只在训练类问题时附在回答最后（§42）
         run["_tail"] = "\n\n".join(notes) if training else ""
+        ask = await self._illness_followup(user_id, run)
+        if ask:  # 首页还没回答"好些了吗"：回答最后问一句，每天一次（§46）
+            run["_tail"] = "\n\n".join(x for x in (run["_tail"], ask) if x)
 
         # 4. 专业角色分层接力（§3）：评估 → 方案 → 动作细节；同一层同时作答、互不可见
         personal = await basics
@@ -1224,10 +1330,18 @@ class IronMAgent:
     ) -> Prepared:
         """共享档案与要不要追问（都是规则，不调用模型）。数据、计划和天气在这一轮开始时就同时在读了。"""
         snapshot, (plan, logs, since) = await snap, await train
+        ill: list[Episode] = list((run or {}).get("_ill") or [])
         lines = case_lines(plan, logs, snapshot.today, since)
+        recovering = recovering_days(ill, snapshot.today)  # 生病期间的组次不触发减重量（§46）
+        steady = [x for x in logs if x.day not in recovering]
+        mode = today_mode(ill, snapshot.today, trained_since=[x.day for x in logs if x.done])
+        state = state_line(ill, snapshot.today) or (mode[1] if mode else "")
+        level: Literal["poor", "fair"] = "poor" if mode and mode[0] == "rest" else "fair"
+        signal = (level, state) if mode is not None else None  # 病后第一次也告诉角色：按约七成
         case = build_case(
-            snapshot, recall, text, plan=lines + target_lines(plan, logs, snapshot.today)
-        )
+            snapshot, recall, text, plan=lines + target_lines(plan, steady, snapshot.today),
+            illness=signal,
+        )  # fmt: skip
         current = await wx if wx is not None else None
         if current is not None:
             case = replace(case, weather=_weather_case(current, plan, snapshot.today))

@@ -11,7 +11,7 @@ import re
 import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from ironm_agent.memory_store import Item
@@ -81,6 +81,8 @@ def _said(pattern: re.Pattern[str], text: str) -> bool:
     return False
 
 
+said = _said  # 生病记录也用这一套判断（spec [2026-10-23] §46）
+
 _TIRED = re.compile(r"很累|特别累|好累|太累|疲惫|疲劳|没劲|累死|没力气|浑身酸")
 _POOR_NIGHT = re.compile(r"没睡好|失眠|熬夜|通宵|睡不着")
 _SLEPT = re.compile(
@@ -117,9 +119,12 @@ def _f(x: float) -> str:
     return f"{x:.1f}".rstrip("0").rstrip(".")
 
 
-def readiness(r: Readings, text: str, today: date) -> Readiness:
-    """规则判断今天的状态：最近一晚睡眠、最近几天的静息心率与心率变异性对本人基线，再加上这句话里说的情况。"""
-    signals: list[tuple[Level, str]] = []
+def readiness(
+    r: Readings, text: str, today: date, *, illness: tuple[Level, str] | None = None
+) -> Readiness:
+    """规则判断今天的状态：最近一晚睡眠、最近几天的静息心率与心率变异性对本人基线，再加上这句话里说的情况。
+    illness：正在进行的生病（spec [2026-10-23] §46），按症状级别算 poor（休息）或 fair（轻松版）。"""
+    signals: list[tuple[Level, str]] = [illness] if illness else []
     current = False
     nights = _recent(r.sleep_hours, today, 3)
     if nights:
@@ -162,8 +167,8 @@ def readiness(r: Readings, text: str, today: date) -> Readiness:
                 ("fair", f"心率变异性（{label}）最近 {now:.0f} 毫秒，比你平时（{mean:.0f}）低")
             )
     mine = bool(text) and subject_of(text) == "self"  # 整句说的是旁人（"我妈只睡了 4 小时"）不算
-    sick = _said(_SICK, text)
-    if sick:
+    sick = _said(_SICK, text) or bool(illness and illness[0] == "poor")
+    if _said(_SICK, text):
         signals.append(("poor", "你说身体不舒服（生病）"))
     m = _SLEPT.search(text) if mine else None
     if m:
@@ -392,6 +397,7 @@ def build(
     text: str,
     *,
     plan: Sequence[str] = (),
+    illness: tuple[Level, str] | None = None,
 ) -> CaseFile:
     p, today = snapshot.profile, snapshot.today
     metrics = list(snapshot.metrics)
@@ -408,13 +414,19 @@ def build(
         "（这次没读到你的档案和健康数据）" if snapshot.failed else ""
     )
     calcs["C0"] = f"档案：{basics}"
-    state = readiness(snapshot.readings, text, today)
+    state = readiness(snapshot.readings, text, today, illness=illness)
     if snapshot.failed and state.level == "unknown":
         state = Readiness("unknown", ("这次没读到你的健康数据",))
     rid = f"C{len(metrics) + 1}"
     calcs[rid] = state.line()
     limits = tuple(
-        f"{x.content}" + ("（已解决）" if x.status == "resolved" else "")
+        f"{x.content}"
+        + (
+            f"（{_local(x.created).month} 月 {_local(x.created).day} 日说的）"
+            if x.category == "event"
+            else ""
+        )
+        + ("（已解决）" if x.status == "resolved" else "")
         for x in recall.items
         if x.category in LIMIT_CATEGORIES
     )
@@ -438,3 +450,7 @@ def build(
         plan_id=plan_id,
         today=today,
     )
+
+
+def _local(at: datetime) -> date:
+    return at.astimezone().date()

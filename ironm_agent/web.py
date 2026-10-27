@@ -23,6 +23,9 @@ from ironm_agent.casefile import Snapshot, risks
 from ironm_agent.exercise_images import images_for
 from ironm_agent.exercises import EQUIPMENT, NOTE, PARTS, library
 from ironm_agent.healthdata import read_all
+from ironm_agent.illness import active as illness_active
+from ironm_agent.illness import doctor, due, question, recurring, sick_days
+from ironm_agent.illness import recent as recent_illness
 from ironm_agent.memory_extract import MAX_CONTENT
 from ironm_agent.memory_prefs import refresh as refresh_prefs
 from ironm_agent.memory_store import CATEGORIES, ORIGINS, Item, MemoryStore, default_store
@@ -31,7 +34,7 @@ from ironm_agent.metrics import ACTIVITY, GOALS, KcalAdjust, Metric, compute_all
 from ironm_agent.progression import targets
 from ironm_agent.training import LogItem, TrainingStore, WorkoutLog, default_training
 from ironm_agent.triggers import pain_parts
-from ironm_agent.web_more import PAIN, coach_later, plan_change_later
+from ironm_agent.web_more import ILLNESS, PAIN, coach_later, plan_change_later
 
 _log = logging.getLogger("ironm_agent.web")
 
@@ -476,6 +479,7 @@ async def get_brief(
     user_id: str = Depends(_verify()),
     store: TrainingStore = TRAINING,
     memory: MemoryStore = STORE,
+    illness: Any = ILLNESS,
 ) -> dict[str, Any]:
     """首页的今日简报与每周复盘：只用规则，不调用模型。"""
     try:
@@ -494,8 +498,10 @@ async def get_brief(
     except Exception as e:
         _log.warning("brief memory unavailable: error_type=%s", type(e).__name__)
     current = plan.plan if plan else None
+    eps = await recent_illness(illness, user_id, snap.today)
     today = today_brief(snap, items, current, logs)
-    week = weekly_review(snap, current, logs, plan.since if plan else None)
+    week = weekly_review(snap, current, logs, plan.since if plan else None,
+                         sick=sick_days(eps, snap.today), sick_times=recurring(eps, snap.today))  # fmt: skip
     hero = hero_line(today, week)
     rainy = hot = False
     try:  # 鼓励的话会看今天的天气（spec [2026-10-23] §34）；取不到就不看
@@ -512,7 +518,13 @@ async def get_brief(
         {"key": x.key, "title": RISK_TITLES.get(x.key, "健康提醒"), "text": x.note}
         for x in risks(snap.readings, items, snap.today)
     ]
-    return {"today": today, "week": week, "hero": hero, "alerts": alerts}
+    # 生病追问（§46）：从第二天起每天问一次，回答过就不再显示
+    checkin = next(
+        ({"id": e.id, "text": question(e, snap.today), "doctor": doctor(e, snap.today)}
+         for e in illness_active(eps, snap.today) if due(e, snap.today)),
+        None,
+    )  # fmt: skip
+    return {"today": today, "week": week, "hero": hero, "alerts": alerts, "checkin": checkin}
 
 
 @router.get("/iron")

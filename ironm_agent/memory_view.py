@@ -7,8 +7,8 @@ EVENT_DAYS 天、训练记录得出的偏好 DATA_DAYS 天没再被数据支持�
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
 from ironm_agent.memory_store import CATEGORIES, Category, Item, now
@@ -87,6 +87,10 @@ class Recall:
         kept = _trim(facts)
         kept.sort(key=lambda x: (ORDER.index(x.category), x.created))
         return cls((*kept, *advice), len(facts) - len(kept))
+
+    def without(self, drop: Callable[[Item], bool]) -> Recall:
+        """去掉一部分记忆（如没有正在进行的生病时，跟生病有关的事件和建议）。"""
+        return replace(self, items=tuple(x for x in self.items if not drop(x)))
 
     def _facts(self, categories: Sequence[Category]) -> list[Item]:
         return [x for x in self.items if x.category in categories and x.category != "advice"]

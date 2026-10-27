@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Literal, Protocol
@@ -100,9 +100,13 @@ def _last_done(logs: Sequence[WorkoutLog], today: date) -> date | None:
 
 
 def missed_trigger(
-    plan: Plan | None, logs: Sequence[WorkoutLog], since: date | None, today: date
+    plan: Plan | None,
+    logs: Sequence[WorkoutLog],
+    since: date | None,
+    today: date,
+    sick: Collection[date] = (),
 ) -> Trigger | None:
-    """上次练过之后（或计划开始之后），计划里的训练日一次都没练、到了 3 次以上。"""
+    """上次练过之后（或计划开始之后），计划里的训练日一次都没练、到了 3 次以上；生病的日子不算（§46）。"""
     if plan is None:
         return None
     if any(x.done and x.day == today for x in logs):
@@ -114,6 +118,7 @@ def missed_trigger(
         1
         for k in range(1, (today - start).days)
         if (start + timedelta(days=k)).isoweekday() in planned
+        and start + timedelta(days=k) not in sick
     )
     if n < MISSED:
         return None
@@ -166,10 +171,15 @@ def best_e1rm(logs: Sequence[WorkoutLog], exercise: str, start: date, end: date)
     return best
 
 
-def plateau_triggers(plan: Plan | None, logs: Sequence[WorkoutLog], today: date) -> list[Trigger]:
-    """主要动作：最近 3 周的最好成绩没超过之前（再往前 6 周内）的最好成绩，而且最近 3 周至少练了 2 次。"""
-    out = []
+def plateau_triggers(
+    plan: Plan | None, logs: Sequence[WorkoutLog], today: date, sick: Collection[date] = ()
+) -> list[Trigger]:
+    """主要动作：最近 3 周的最好成绩没超过之前（再往前 6 周内）的最好成绩，而且最近 3 周至少练了 2 次。
+    最近 3 周里有生病的日子时不判断（§46）。"""
+    out: list[Trigger] = []
     recent_start = today - timedelta(days=PLATEAU_DAYS - 1)
+    if any(recent_start <= d <= today for d in sick):
+        return out
     earlier_start = today - timedelta(days=PLATEAU_LOOKBACK - 1)
     stuck = []
     for s in plan.sessions if plan else ():
@@ -208,12 +218,13 @@ def detect(
     since: date | None,
     pains: Sequence[tuple[str, date]],
     today: date,
+    sick: Collection[date] = (),
 ) -> list[Trigger]:
     out = pain_triggers(pains, plan, today)
-    for t in (missed_trigger(plan, logs, since, today), gap_trigger(logs, today)):
+    for t in (missed_trigger(plan, logs, since, today, sick), gap_trigger(logs, today)):
         if t is not None:
             out.append(t)
-    return out + plateau_triggers(plan, logs, today)
+    return out + plateau_triggers(plan, logs, today, sick)
 
 
 # ---- 说疼的记录 -------------------------------------------------------------------------------
