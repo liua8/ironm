@@ -277,3 +277,17 @@ def test_training_during_illness_ends_it(monkeypatch: Any) -> None:
     done = ill.rows["42"][e.id]
     assert done.status == "resolved" and done.ended == TODAY
     assert c.get("/iron/api/brief").json()["checkin"] is None
+
+
+def test_asking_about_it_is_not_being_sick() -> None:
+    """问到病情、转述以前说的不算又病了；"不疼啊"算好了（spec [2026-10-23] §50）。"""
+    from ironm_agent.illness import detect, reply_of
+
+    for text in ("我肚子疼不疼", "我多久说了肚子疼", "是不是发烧了", "肚子疼吗", "上次说的头疼"):
+        assert detect(text) is None, text
+    for text in ("肚子疼，今天能练吗", "肚子疼能练吗", "我肚子疼"):
+        assert detect(text) == (["肚子疼"], "below"), text
+    assert reply_of("今天肚子不疼啊") == "resolved"
+    assert reply_of("不疼了") == "resolved"
+    assert reply_of("我肚子疼不疼") is None
+    assert reply_of("还不舒服") == "unwell"

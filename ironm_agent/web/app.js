@@ -2019,8 +2019,9 @@ function paragraphs(text) {
 }
 
 function msgView(msg) {
+  const at = msg.at ? h("time", { class: "msg-time", datetime: msg.at }, sessionTime(msg.at)) : null; // 提问和回答的时间（§50）
   if (msg.role === "user") return h("div", { class: "msg-user" }, msg.text,
-    (msg.files || []).length ? h("div", { class: "msg-files" }, msg.files.map((n) => h("span", {}, icon("file", "xs"), n))) : null);
+    (msg.files || []).length ? h("div", { class: "msg-files" }, msg.files.map((n) => h("span", {}, icon("file", "xs"), n))) : null, at);
   const running = !msg.done;
   const experts = msg.steps.filter((x) => x.id !== "coach");
   let head;
@@ -2051,7 +2052,8 @@ function msgView(msg) {
       h("summary", {}, icon("chevron", "xs"), "依据与来源"), h("div", { class: "src" }, msg.sources)) : null,
     msg.done && msg.id && msg.text ? h("div", { class: "rate" },
       h("button", { type: "button", class: msg.rating === 1 ? "on" : "", onclick: () => rate(msg, 1) }, icon("up", "xs"), "有用"),
-      h("button", { type: "button", class: msg.rating === -1 ? "on" : "", onclick: () => rate(msg, -1) }, icon("down", "xs"), "没用")) : null);
+      h("button", { type: "button", class: msg.rating === -1 ? "on" : "", onclick: () => rate(msg, -1) }, icon("down", "xs"), "没用")) : null,
+    msg.done ? at : null);
 }
 
 function applyBlock(msg, b) {
@@ -2141,7 +2143,8 @@ async function ask(question) {
   const msg = coachMsg();
   const attached = chat.files.filter((f) => f.data).map((f) => f.data);
   chat.files = []; drawFiles();
-  chat.messages.push({ role: "user", text: q, files: attached.map((f) => f.file_name) }, msg);
+  msg.at = new Date().toISOString();
+  chat.messages.push({ role: "user", text: q, files: attached.map((f) => f.file_name), at: msg.at }, msg);
   chat.busy = true;
   drawThread();
   try {
@@ -2218,8 +2221,9 @@ async function loadSession(sessionId) {
   const rows = (await apiData(`/api/history?session_id=${encodeURIComponent(sessionId)}`)).history || [];
   chat.session = sessionId;
   chat.messages = rows.slice(-30).map((row) => {
-      if (row.role === "user") return { role: "user", text: String(row.content || "") };
+      if (row.role === "user") return { role: "user", text: String(row.content || ""), at: row.timestamp || "" };
       const msg = coachMsg();
+      msg.at = row.timestamp || "";
       msg.id = row.id || ""; msg.done = true;
       if (Array.isArray(row.content_dict)) row.content_dict.forEach((b) => applyBlock(msg, b));
       if (!msg.text) msg.text = String(row.content || "");

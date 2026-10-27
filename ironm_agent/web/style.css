@@ -988,3 +988,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .checkin { display: grid; gap: 8px; padding: 12px; margin: 0 0 10px; border-radius: 10px; background: color-mix(in srgb, var(--fire) 8%, transparent); }
 .checkin .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .checkin p { margin: 0; }
+
+/* 提问和回答的时间（spec [2026-10-23] §50） */
+.msg-time { display: block; font-size: 11px; line-height: 1.4; opacity: .7; font-variant-numeric: tabular-nums; }
+.msg-user .msg-time { margin-top: 4px; text-align: right; }
+.msg-coach .msg-time { color: var(--muted); opacity: 1; }

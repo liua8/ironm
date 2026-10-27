@@ -55,10 +55,30 @@ _GENERAL_OK = re.compile(
     r"(?:膝|腰|肩|腕|踝|脖子|颈)[^，。]{0,4}不舒服"
 )  # 关节不舒服是伤痛，不是生病
 
+# 问到病情、转述以前说过的（spec [2026-10-23] §50）："疼不疼""是不是肚子疼""我多久说了肚子疼"
+_CLAUSE = re.compile(r"[^，,。！？?；;\n]+")
+_ASK_BEFORE = re.compile(
+    r"是不是|有没有|多久|什么时候|哪天|几号|说了|说过|提到|讲过|上次说|之前说|昨天说|前天说"
+)
+_ASK_AFTER = re.compile(r"^(?:不(?:疼|痛|舒服|烧)|没(?:有)?(?:疼|痛)|[吗么嘛])")
+
+
+def _asking(pattern: re.Pattern[str], clause: str) -> bool:
+    for m in pattern.finditer(clause):
+        if _ASK_BEFORE.search(clause[: m.start()]) or _ASK_AFTER.search(clause[m.end() :]):
+            return True
+    return False
+
+
+def _reported(pattern: re.Pattern[str], text: str) -> bool:
+    """本人在说自己有这个症状：按分句看，问话和转述的分句不算。"""
+    return any(said(pattern, c) and not _asking(pattern, c) for c in _CLAUSE.findall(text))
+
+
 # 用文字回答"好了没"（规则先认，认不出的交给后台提取记忆的模型）
 _RESOLVED = re.compile(
-    r"(?:已经|都|全)?好了|不疼了|不痛了|不拉了|退烧了|没事了|痊愈|好利索|恢复了|不难受了"
-)
+    r"(?:已经|都|全)?好了|(?<![疼痛])不(?:疼|痛|拉|难受)|退烧了|没事了|痊愈|好利索|恢复了"
+)  # "不疼啊""不疼了"都算；"疼不疼"是问话，不算（§50）
 _BETTER = re.compile(r"好多了|好一些|好点了|好一点|轻了|减轻|缓解了|没那么")
 _UNWELL = re.compile(
     r"还(?:是|在|会)?(?:有点|有些|一点)?(?:疼|痛|拉|烧|发烧|咳|吐|恶心|晕|不舒服|难受)|没好|更严重|更疼|加重"
@@ -100,13 +120,13 @@ class Episode(BaseModel):
 
 def detect(text: str) -> tuple[list[str], Level] | None:
     """这句话里本人说到的症状和级别；否定的（"没发烧"）、已经好了的、说旁人的不算。"""
-    found = [(name, level) for name, pattern, level in SYMPTOMS if said(pattern, text)]
+    found = [(name, level) for name, pattern, level in SYMPTOMS if _reported(pattern, text)]
     if _TRAINED.search(text):  # 练完全身酸痛是练后酸痛，不是生病（§49）
         found = [(n, lv) for n, lv in found if n != "全身酸痛"]
     if found:
         top = max((lv for _, lv in found), key=_RANK.__getitem__)
         return [n for n, _ in found], top
-    if said(_GENERAL, text) and not _GENERAL_OK.search(text):
+    if _reported(_GENERAL, text) and not _GENERAL_OK.search(text):
         return ["身体不适"], "below"
     return None
 
