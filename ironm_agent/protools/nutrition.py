@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Collection
 from typing import Literal
 
-from ironm_agent.metrics import PROTEIN
+from ironm_agent.metrics import PROTEIN, per_meal_protein
 from ironm_agent.protools.result import Finding, Result
 
 type Item = Literal["protein", "carbs", "creatine", "caffeine", "beta_alanine", "hydration"]
@@ -38,8 +38,9 @@ def _protein(w: float, goal: str | None) -> list[Finding]:
         ),
         Finding(
             "每餐蛋白质",
-            f"每餐约 {0.25 * w:.0f}–{0.40 * w:.0f} 克，每 3–4 小时一次",
-            f"{_g(w)}×0.25={0.25 * w:.0f}，{_g(w)}×0.40={0.40 * w:.0f}（每餐每公斤体重 0.25–0.40 克）",
+            "每餐约 {}–{} 克，每 3–4 小时一次".format(*per_meal_protein(w)),
+            f"{_g(w)}×0.25={0.25 * w:.1f}，{_g(w)}×0.40={0.40 * w:.1f}（每餐每公斤体重 0.25–0.40 克），"
+            "取整到 5 克、不少于 20 克（每餐 20–40 克）",
             data,
             "K09、K36",
         ),

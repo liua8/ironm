@@ -233,7 +233,7 @@ def test_nutrition_protein_and_supplements() -> None:
     r = nutrition(70, goal="muscle", items=["protein", "creatine", "caffeine"])
     text = _text(r)
     assert "每天约 112–140 克" in text  # 增肌 1.6–2.0 克/公斤，与数据页同一份系数
-    assert "每餐约 18–28 克" in text
+    assert "每餐约 20–30 克" in text
     assert "每天 3–5 克" in text
     assert "210–420 毫克" in text
     assert "不推荐品牌" in text

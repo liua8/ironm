@@ -23,7 +23,7 @@ from ironm_agent.training import Plan
 
 # 分句里出现这些词，说明已经写了限制或是在说"别做"（注明的限制里不用逗号，免得被拆成两个分句）
 BASE_OK = ("不", "别", "避免", "暂停", "先停", "替代", "代替", "换成", "改成", "改为", "换为", "替换",
-           "而不是", "禁止", "停止", "慎", "限制", "控制", "取消", "减少", "免", "跳过", "绕开", "避开")  # fmt: skip
+           "而不是", "禁止", "停止", "停掉", "停下", "停练", "慎", "限制", "控制", "取消", "减少", "免", "跳过", "绕开", "避开")  # fmt: skip
 # 说后果的话：分句里有这些词就是在劝别做（"冲大重量只会加重疲劳"），在哪都算写明了限制（§47）
 DISCOURAGED = ("只会", "会加重", "加重疲劳", "加深疲劳", "容易受伤", "容易变形", "得不偿失", "风险更大")  # fmt: skip
 MAX_SHOWN = 4  # 每类最多列出几个不过关的分句
@@ -198,6 +198,10 @@ class Context:
     poor: bool = False  # 今天状态差或生病
     risks: frozenset[str] = frozenset()
     floor: int = 1200  # 每日摄入下限
+    state: str = (
+        ""  # 今天的身体状态（good / fair / poor / unknown），核对"今天状态标了差"这类说法（§49）
+    )
+    record: str = ""  # 共享档案原文，核对"档案里写了……"这类说法（§49）
 
     @classmethod
     def of(cls, case: CaseFile) -> Context:
@@ -208,6 +212,8 @@ class Context:
             poor=case.readiness.level == "poor" or case.readiness.sick,
             risks=frozenset(x.key for x in case.risks),
             floor=floor,
+            state=case.readiness.level,
+            record=case.text(),
         )
 
 
@@ -307,6 +313,75 @@ def _rate(text: str) -> Violation | None:
     return None
 
 
+# 说到他的档案、今天状态的话要和档案对得上（§49：标注发现"档案里只写了膝前痛""今天状态也标了差"都是编的）
+_STATE_CLAIM = re.compile(
+    r"状态(?:也|都|已经)?(?:被)?(?:标(?:成|了|的是|为)|显示(?:为)?|算)(很差|差|不好|一般|好|不错)"
+)
+_FILE_CLAIM = re.compile(
+    r"(?:档案|记录|资料)(?:里|上|中)(?:只|也|还)?(?:写了|写着|记着|记了|记的是|标了|有)([^，。；,;：]{2,12})"
+)
+_BAD_STATE = {
+    "很差": "poor",
+    "差": "poor",
+    "不好": "poor",
+    "一般": "fair",
+    "好": "good",
+    "不错": "good",
+}
+_PARTS = "膝腰肩踝腕颈背髋肘"
+
+
+def _supported(claim: str, record: str) -> bool:
+    """档案里有这件事：说到的身体部位档案里都有，并且说法里有连续两个字出现在档案里（或者只是换了说法的同一部位）。"""
+    claim = re.sub(r"[的了这那一个只]", "", claim)
+    parts = [c for c in claim if c in _PARTS]
+    if parts and not all(c in record for c in parts):
+        return False  # 说到的部位档案里都要有（"腰痛和膝前痛"，档案里没有腰）
+    if any(claim[i : i + 2] in record for i in range(len(claim) - 1)):
+        return True
+    return bool(parts)
+
+
+def _false_claims(text: str, ctx: Context) -> list[str]:
+    """和档案对不上的分句。"""
+    out = []
+    for clause in _CLAUSE.findall(text):
+        m = _STATE_CLAIM.search(clause)
+        said = _BAD_STATE.get(m.group(1)) if m else None
+        if said and ctx.state and ctx.state != "unknown" and said != ctx.state:
+            out.append(clause)
+            continue
+        f = _FILE_CLAIM.search(clause)
+        if f and ctx.record and not _supported(f.group(1), ctx.record):
+            out.append(clause)
+    return out
+
+
+def _drop_clause(text: str, clause: str) -> str:
+    """删掉一个分句，连同它和前一个分句之间的逗号；它是句子的第一个分句时，删掉它后面的逗号。"""
+    i = text.find(clause)
+    if i < 0:
+        return text
+    j = i + len(clause)
+    if i > 0 and text[i - 1] in "，,；;":
+        i -= 1
+    elif j < len(text) and text[j] in "，,；;":
+        j += 1
+    return text[:i] + text[j:]
+
+
+def _record(text: str, ctx: Context) -> Violation | None:
+    wrong = _false_claims(text, ctx)
+    if not wrong:
+        return None
+    where = "、".join(f"「{x.strip()[:24]}」" for x in wrong[:MAX_SHOWN])
+    return Violation(
+        "record",
+        f"{where}说的他的档案或今天状态和档案对不上：只说档案里真有的，没有的别说",
+        "",
+    )
+
+
 def _rules(ctx: Context) -> list[Rule]:
     rules = [INJURY_RULES[k] for k in ctx.injuries if k in INJURY_RULES]
     if ctx.poor:
@@ -321,7 +396,9 @@ def _rules(ctx: Context) -> list[Rule]:
 def check(text: str, ctx: Context) -> list[Violation]:
     """回答（给用户看的正文）违反了哪些约束；为空表示通过。"""
     found = [v for rule in _rules(ctx) if (v := _rule(text, rule))]
-    found += [v for v in (_calories(text, ctx.floor), _rate(text), _macros(text)) if v]
+    found += [
+        v for v in (_calories(text, ctx.floor), _rate(text), _macros(text), _record(text, ctx)) if v
+    ]
     return found
 
 
@@ -357,6 +434,8 @@ def annotate(text: str, ctx: Context) -> str:
         return clause
 
     out = _CLAUSE.sub(fix, out)
+    for clause in _false_claims(out, ctx):  # 编的个人情况：删掉这个分句（§49）
+        out = _drop_clause(out, clause)
     if _macros(out):  # 克数改不了：在碳水的克数后注明以热量为准
         m = _GRAMS["carbs"][0].search(out)
         if m:

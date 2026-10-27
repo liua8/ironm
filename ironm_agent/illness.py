@@ -45,6 +45,10 @@ SYMPTOMS: tuple[tuple[str, re.Pattern[str], Level], ...] = (
     ("流鼻涕", re.compile(r"流鼻涕|流涕|鼻塞|打喷嚏"), "above"),
     ("嗓子疼", re.compile(r"(?:嗓子|喉咙|咽)[^不没，。]{0,3}(?:疼|痛|不舒服|哑)"), "above"),
 )
+# 说的是训练之后（练完、练后、昨天练腿……）：全身酸痛是练后酸痛（§49）
+_TRAINED = re.compile(
+    r"练完|练后|训练后|训练完|健身后|健身完|运动后|运动完|跑完|锻炼后|撸铁后|(?:昨天|前天|上次)练"
+)
 # 只说生病了、没说具体症状的：按颈部以下处理（宁可保守）
 _GENERAL = re.compile(r"感冒|生病|病了|不舒服|难受|着凉")
 _GENERAL_OK = re.compile(
@@ -97,6 +101,8 @@ class Episode(BaseModel):
 def detect(text: str) -> tuple[list[str], Level] | None:
     """这句话里本人说到的症状和级别；否定的（"没发烧"）、已经好了的、说旁人的不算。"""
     found = [(name, level) for name, pattern, level in SYMPTOMS if said(pattern, text)]
+    if _TRAINED.search(text):  # 练完全身酸痛是练后酸痛，不是生病（§49）
+        found = [(n, lv) for n, lv in found if n != "全身酸痛"]
     if found:
         top = max((lv for _, lv in found), key=_RANK.__getitem__)
         return [n for n, _ in found], top

@@ -72,6 +72,14 @@ class Metric:
         return self.value is not None and not self.missing
 
 
+def per_meal_protein(weight_kg: float) -> tuple[int, int]:
+    """每餐蛋白质：每公斤体重 0.25–0.40 克，取整到 5 克，下限不少于 20 克（K09：每餐 20–40 克），
+    数据页和营养计算用同一份（§49：原来一处说 19–30、一处说 20–40）。"""
+    lo = max(20, 5 * round(0.25 * weight_kg / 5))
+    hi = max(lo + 5, 5 * round(0.40 * weight_kg / 5))
+    return lo, hi
+
+
 def missing(key: str, name: str, unit: str, *what: str, text: str = "") -> Metric:
     return Metric(key, name, None, unit, text or f"还缺：{'、'.join(what)}", missing=tuple(what))
 
@@ -342,7 +350,9 @@ def protein_target(weight: Point | None, p: Profile) -> Metric:
         name,
         float(a),
         unit,
-        f"每天 {a}–{b} 克（{goal}），分到 3–4 餐，每餐 20–40 克",
+        "每天 {}–{} 克（{}），分到 3–4 餐，每餐约 {}–{} 克".format(
+            a, b, goal, *per_meal_protein(weight[1])
+        ),
         how=f"体重 {_fmt(weight[1])} 公斤 × {lo}–{hi} 克/公斤 = {a}–{b} 克",
         data=f"体重 {_fmt(weight[1])} 公斤（{weight[0].isoformat()}）",
         source="运动人群每天 1.4–2.0 克/公斤体重（国际运动营养学会立场声明，2017）",
