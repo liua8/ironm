@@ -2064,7 +2064,14 @@ function cardView(msg, card) {
   const state = card.state || "pending";
   const expired = state === "pending" && Date.parse(d.expires) < Date.now();
   const plan = card.kind === "plan";
-  const body = plan
+  const body = plan && d.rows
+    ? [d.changes ? h("p", { class: "card-changes" }, d.changes) : null,  // 按操作改的：只列变化的行（spec [2026-10-23] §45）
+      h("ul", { class: "pv-rows" }, d.rows.map((r) => h("li", {}, h("b", {}, r.what), " ",
+        r.before ? h("span", { class: "muted" }, r.before) : null, r.before ? " → " : "", r.after))),
+      ...(d.impact || []).map((x) => h("p", { class: "muted" }, x)),
+      ...(d.skipped || []).map((x) => h("p", { class: "msg-note" }, `没改：${x}`)),
+      d.hint ? h("p", { class: "muted" }, d.hint) : null]
+    : plan
     ? [d.changes ? h("p", { class: "card-changes" }, d.changes) : null,
       ...(d.sessions || []).map((x) => h("div", { class: `pv-session${x.changed && d.replaces ? " changed" : ""}` },
         h("div", { class: "pv-head" }, h("b", {}, `${x.day} · ${x.name}`), h("span", { class: "muted" }, `约 ${x.minutes} 分钟`)),

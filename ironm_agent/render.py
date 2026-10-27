@@ -133,6 +133,15 @@ def plan_card(draft: Draft, plan: Plan, current: Plan | None) -> list[dict[str, 
         "removed": gone,
         "replaces": bool(current),
     }
+    if current is not None and "ops" in draft.content:  # 按操作改的：只列有变化的行和影响（§45）
+        from ironm_agent.plan_ops import impact, rows
+
+        body |= {
+            "rows": rows(current, plan),
+            "impact": impact(current, plan),
+            "skipped": list(draft.content.get("skipped") or []),
+            "hint": str(draft.content.get("hint") or ""),
+        }
     return _card(draft, "计划预览", body)
 
 

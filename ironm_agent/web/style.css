@@ -980,3 +980,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .kind-pick .pills { flex-wrap: wrap; overflow: visible; }
 .meal-entry { margin-block: 16px 4px; }
 .replace-hint { color: var(--accent); margin: 0; }
+
+/* 按操作改计划的预览：只列变化的行（spec [2026-10-23] §45） */
+.pv-rows { margin: 6px 0; padding-left: 1.1em; display: grid; gap: 4px; }

@@ -91,13 +91,16 @@ def weekly_review(
     rhr = _metric(snap.metrics, "resting_hr")
     hrv = _metric(snap.metrics, "hrv_sdnn") or _metric(snap.metrics, "hrv_rmssd")
     tips: list[str] = []
+    actions: list[dict[str, Any]] = []  # 生成调整方案时由规则变成操作（§45）
     if plan is not None and week.due >= 2 and week.done * 2 < week.due:
         head = f"这周计划 {week.due} 次只练了 {week.done} 次，不到一半："
         if plan.days_per_week > 2:
             fewer = max(2, min(plan.days_per_week - 1, week.done + 1))
             tips.append(head + f"可以把每周训练减到 {fewer} 天，更容易坚持。")
+            actions.append({"kind": "fewer_days", "days": fewer, "why": "这周完成不到一半"})
         else:  # 已经只有两练了：不再减天数，减每次的量
             tips.append(head + "每次少做一两个动作、缩短时间，先保证每周练到。")
+            actions.append({"kind": "lighter", "why": "这周完成不到一半"})
     goal = snap.profile.goal
     if goal == "fat_loss" and weight is not None and weight.brief in ("基本持平", "在上升"):
         tips.append("减脂期体重这几周没有下降：建议每天少吃约 200 千卡，两周后再看体重趋势。")
@@ -108,6 +111,7 @@ def weekly_review(
     tired = [m.name for m in (rhr, hrv) if m is not None and m.tone == "attention"]
     if tired:
         tips.append(f"{'、'.join(tired)}比你平时差：这周适当减量，多休息。")
+        actions.append({"kind": "lighter", "why": f"{'、'.join(tired)}比平时差"})
     return {
         "from": week_start(today).isoformat(),
         "to": today.isoformat(),
@@ -124,6 +128,7 @@ def weekly_review(
         "resting_hr": {"value": rhr.value, "brief": rhr.brief} if rhr else None,
         "hrv": {"name": hrv.name, "value": hrv.value, "brief": hrv.brief} if hrv else None,
         "tips": tips[:MAX_TIPS],
+        "actions": actions,
     }
 
 

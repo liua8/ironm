@@ -42,6 +42,8 @@ class Trigger:
     detail: str  # 给用户看的一句话：发现了什么、建议怎么做
     action: Action  # proposal：生成调整方案；today：今天的版本已经按这个改了；info：只提醒
     tip: str = ""  # 交给训练教练改计划时的说明（action 为 proposal 时）
+    part: str = ""  # 反复疼的部位（pain）
+    exercises: tuple[str, ...] = ()  # 进入平台期的动作（plateau）
 
 
 def pain_parts(text: str) -> list[str]:
@@ -76,6 +78,7 @@ def pain_triggers(
                 f"最近 {PAIN_DAYS} 天有 {len(seen)} 天说{name}疼：把{'、'.join(loaded)}换成对{name}友好的动作。"
                 if loaded
                 else "",
+                part=part,
             )
         )
     return out
@@ -193,6 +196,7 @@ def plateau_triggers(plan: Plan | None, logs: Sequence[WorkoutLog], today: date)
                 f"{names}的估算最大重量 3 周以上没有提高：可以换个刺激方式（换次数区间、换变式或安排一周减量）。",
                 "proposal",
                 f"{names}的估算最大重量 3 周以上没有提高（平台期）：换刺激方式，比如换次数区间或换相近的变式。",
+                exercises=tuple(stuck),
             )
         )
     return out

@@ -31,7 +31,7 @@ from ironm_agent.metrics import ACTIVITY, GOALS, KcalAdjust, Metric, compute_all
 from ironm_agent.progression import targets
 from ironm_agent.training import LogItem, TrainingStore, WorkoutLog, default_training
 from ironm_agent.triggers import pain_parts
-from ironm_agent.web_more import PAIN, coach_later
+from ironm_agent.web_more import PAIN, coach_later, plan_change_later
 
 _log = logging.getLogger("ironm_agent.web")
 
@@ -360,6 +360,7 @@ async def confirm_draft(
     out = await _draft_action(store, user_id, draft_id, "confirm")
     if out.get("draft", {}).get("kind") == "log":  # 记下了一次训练：后台更新训练记录得出的偏好
         refresh_later(user_id, memory, store)
+    plan_change_later(user_id, out.get("draft") or {})  # 按操作改的计划：记进调整经历（§45）
     coach_later(user_id, "确认方案")  # 计划或记录变了：管家重新评估（spec [2026-10-23] §23）
     return out
 
@@ -376,6 +377,7 @@ async def undo_draft(
     draft_id: str, user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
 ) -> dict[str, Any]:
     out = await _draft_action(store, user_id, draft_id, "undo")
+    plan_change_later(user_id, out.get("draft") or {}, undone=True)
     coach_later(user_id, "撤销方案")
     return out
 

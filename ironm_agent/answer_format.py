@@ -56,7 +56,7 @@ def drop_said(notes: str, answer: str) -> str:
 
 def kind_of(text: str, task: str | None = None) -> Kind:
     """这一问按哪种长度回答：要写计划或记录的有卡片；说"详细"的放宽；问数值或判断的最短。"""
-    if task in ("plan", "log"):
+    if task in ("plan", "edit", "log"):
         return "card"
     if _DETAIL.search(text):
         return "detail"

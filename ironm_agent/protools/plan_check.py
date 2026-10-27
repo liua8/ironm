@@ -67,6 +67,17 @@ def _volume(plan: Plan) -> tuple[dict[str, int], dict[str, list[int]], list[str]
     return dict(sets), dict(days), list(dict.fromkeys(unknown))
 
 
+def weekly_sets(plan: Plan) -> dict[str, int]:
+    """各肌群每周的组数（和计划检查同一种算法）。"""
+    return _volume(plan)[0]
+
+
+def back_to_back(plan: Plan) -> list[str]:
+    """同一主要肌群连续两天练的肌群。"""
+    days = _volume(plan)[1]
+    return [g for g in MAJOR if g in days and _adjacent(days[g])]
+
+
 def _adjacent(days: list[int]) -> bool:
     ds = sorted(days)
     return any((b - a) == 1 for a, b in pairwise(ds)) or (1 in ds and 7 in ds)

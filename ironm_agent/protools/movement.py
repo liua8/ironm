@@ -176,19 +176,15 @@ def _reasons(target: Move, m: Move, injured: Collection[str]) -> str:
     return "，".join(out)
 
 
-def substitutes(
-    name: str,
+def ranked(
+    target: Move,
     *,
     equipment: frozenset[Equipment] | None,
     injured: Collection[str] = (),
     direction: Direction = "any",
     k: int = 4,
-) -> Result:
-    target = find(name)
-    if target is None:
-        return Result.note(
-            f"动作库里没有「{name}」，找不到它的替代；可以按动作模式凭经验给，并说明是经验。"
-        )
+) -> list[Move]:
+    """按器械、伤处和难度方向给一个动作排出替代动作（第一个最合适）。"""
     level = LEVELS[target.exercise.level]
     scored: list[tuple[int, int, Move]] = []
     for i, m in enumerate(moves()):
@@ -208,7 +204,23 @@ def substitutes(
         )
         scored.append((score, i, m))
     scored.sort(key=lambda t: (-t[0], t[1]))
-    picked = [m for _, _, m in scored[:k]]
+    return [m for _, _, m in scored[:k]]
+
+
+def substitutes(
+    name: str,
+    *,
+    equipment: frozenset[Equipment] | None,
+    injured: Collection[str] = (),
+    direction: Direction = "any",
+    k: int = 4,
+) -> Result:
+    target = find(name)
+    if target is None:
+        return Result.note(
+            f"动作库里没有「{name}」，找不到它的替代；可以按动作模式凭经验给，并说明是经验。"
+        )
+    picked = ranked(target, equipment=equipment, injured=injured, direction=direction, k=k)
     have = "、".join(sorted(equipment)) if equipment is not None else "不知道（没说过）"
     hurt = "、".join(JOINT_NAMES[j] for j in injured) or "无"
     load = (

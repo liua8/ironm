@@ -334,7 +334,7 @@ cases:
     persona: pregnant
     ask: 怀孕了还能做卷腹吗
     path: answer
-    must: [[不建议, 避免, 先别, 不要, 不适合], [仰卧, 平躺, 躺]]
+    must: [[不建议, 避免, 先别, 不要, 不适合, 不能], [仰卧, 平躺, 躺]]
     must_not: [可以照常做卷腹]
 
   # ---- 状态差时的训练 ----
@@ -438,6 +438,44 @@ cases:
     path: answer
     must: [[划船, 上肢拉, 拉]]
     ref: 今天周五，按计划练上肢拉与核心：单臂哑铃划船、弹力带坐姿划船、弯举、死虫式、平板支撑
+  # ---- 改计划用固定操作：代码在当前计划上改，只改指定的地方（spec [2026-10-23] §45）----
+  - id: E01
+    cat: plan
+    persona: planned
+    ask: 把周一的罗马尼亚硬拉换成杠铃深蹲
+    path: answer
+    card: plan
+    card_must: [[周一 下肢：箱式深蹲], [提踵]]
+    card_must_not: [杠铃深蹲, 罗马尼亚硬拉]
+    max_calls: 3
+    ref: 他没有杠铃、左膝蹲深会疼：自动换成替代动作并说明原因，周一其他动作和别的天不动
+  - {id: E02, cat: plan, persona: planned, ask: 把周三挪到周五, path: answer, card: plan, card_must: [周五 上肢推, 周三 上肢拉与核心], max_calls: 0}
+  - {id: E03, cat: plan, persona: planned, ask: 周五删掉, path: answer, card: plan, card_must: [周一 下肢, 周三 上肢推], card_must_not: [周五], max_calls: 0}
+  - id: E04
+    cat: plan
+    persona: planned
+    ask: 周一的臀桥改成 4 组
+    path: answer
+    card: plan
+    card_must: [臀桥 4×, 箱式深蹲 3×, 哑铃卧推 4×]
+    max_calls: 3
+  - {id: E05, cat: plan, persona: planned, ask: 这周整体轻一点, path: answer, card: plan, card_must: [箱式深蹲 2×, 哑铃卧推 3×, 单臂哑铃划船 3×], max_calls: 0}
+  - {id: E06, cat: plan, persona: planned, ask: 把周三挪到周四，周五删掉, path: answer, card: plan, card_must: [周四 上肢推], card_must_not: [周五, 周三], max_calls: 0}
+  - id: E07
+    cat: plan
+    persona: planned
+    ask: 把计划换成上下肢分化，每周练四次
+    path: answer
+    card: plan
+    ref: 换分化方式用固定操作说不清：整份重新生成
+  - id: E08
+    cat: plan
+    persona: planned
+    ask: 周五不练了，再把周五的弯举加到 4 组
+    path: answer
+    no_card: true
+    must: [[分开说, 说清楚, 先说]]
+    ref: 删掉周五又改周五的组数，互相矛盾：不套用，请用户分开说
   - {id: L01, cat: log, persona: planned, ask: 今天练了单臂哑铃划船 4 组 10 次 20 公斤，弯举 3 组 12 次 10 公斤, path: answer, roles: [trainer], card: log}
   - {id: L02, cat: log, persona: planned, ask: 今天的计划练完了，有点累，感觉打 7 分, path: answer, roles: [trainer], card: log}
 

@@ -561,6 +561,7 @@ def test_trigger_endpoints_and_pain_records(monkeypatch: pytest.MonkeyPatch) -> 
     app.dependency_overrides[web_more.training_store] = lambda: book
     app.dependency_overrides[web.training_store] = lambda: book
     app.dependency_overrides[web.memory_store] = MemoryBook
+    app.dependency_overrides[web_more.memory_store] = MemoryBook
     app.dependency_overrides[web_more.pain_store] = lambda: pain
     monkeypatch.setattr(web, "refresh_later", lambda *a: None)
     c = TestClient(app)
@@ -582,10 +583,10 @@ def test_trigger_endpoints_and_pain_records(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(web, "snapshot_for", snap)
     monkeypatch.setattr(web_more, "make_agent", fake_agent)
     r = c.post("/iron/api/review/proposal?trigger=pain").json()
-    assert r["status"] == "ok" and r["warning"] == ""
-    assert (
-        seen["agent"].asked.startswith(web_more.TRIGGER_ASK) and "杠铃深蹲" in seen["agent"].asked
-    )
+    assert r["status"] == "ok" and r["warning"] == "" and r["by"] == "rule"  # 规则直接改（§45）
+    assert "agent" not in seen  # 不调用模型
+    moves = [x["exercise"] for s in r["draft"]["plan"]["sessions"] for x in s["items"]]
+    assert "杠铃深蹲" not in moves and r["draft"]["ops"][0]["kind"] == "swap"
     assert c.post("/iron/api/review/proposal?trigger=plateau").json()["status"] == "no_change"
 
 
@@ -693,3 +694,28 @@ def test_today_tired_and_gap_do_not_stack() -> None:
     )
     assert [x.sets for x in v.session.items] == [2, 1, 1, 1, 1]  # 只减半，不再乘七成
     assert "已包含中断后的降量" in v.changes[0] and v.reasons == ("没睡好", "上次训练是 9 天前")
+
+
+def test_review_with_rule_actions_changes_the_plan_without_a_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """复盘建议能变成固定操作时由规则直接改（spec [2026-10-23] §45）：不调用模型、最多改两天。"""
+    from ironm_agent import brief
+
+    c, book, seen = client(monkeypatch, OLD, [])
+    tips = ["这周计划 3 次只练了 1 次，不到一半：可以把每周训练减到 2 天。"]
+    monkeypatch.setattr(
+        brief,
+        "weekly_review",
+        lambda *a, **k: {
+            "tips": tips,
+            "actions": [{"kind": "fewer_days", "days": 2, "why": "完成不到一半"}],
+        },
+    )
+    r = c.post("/iron/api/review/proposal").json()
+    assert r["status"] == "ok" and r["by"] == "rule" and "agent" not in seen
+    assert r["changed_days"] == 1 and r["draft"]["ops"] == [
+        {"kind": "remove", "day": 5, "why": "完成不到一半"}
+    ]
+    assert c.post(f"/iron/api/drafts/{r['draft']['id']}/confirm").status_code == 200
+    assert [s.day for s in asyncio.run(book.plan("42")).plan.sessions] == [1, 3]  # type: ignore[union-attr]

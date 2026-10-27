@@ -27,6 +27,7 @@ from ironm_agent.harness import problem_kinds
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
 from ironm_agent.memory_view import Recall
 from ironm_agent.personal import Personal
+from ironm_agent.plan_ops import parse_ops
 from ironm_agent.protools import registry as pro
 from ironm_agent.roles import Role, RoleSpec
 from ironm_agent.skills import Skill, prompt_of
@@ -53,6 +54,7 @@ class Opinion(ContractModel):
     answer: str = ""  # 直接给用户的回答（solo 模式），有它时就不再整合
     plan: dict[str, Any] | None = None  # 训练教练写的计划（要写计划的那一轮），系统校验后做成预览
     log: dict[str, Any] | None = None  # 训练教练整理的训练记录（要记训练的那一轮）
+    ops: list[dict[str, Any]] | None = None  # 改计划时只写要改的地方（§45），由代码套到当前计划上
     basis: tuple[str, ...] = ()  # 意见里引用到的编号：K 开头为依据库条目，r 开头为健康数据行
     general: bool = False  # 没有资料依据，只给不带具体数字的一般建议
 
@@ -124,6 +126,20 @@ TASKS = {
 - 动作、组次、时长都要符合档案：他的器械、可练时间、伤病（有伤病的动作在 note 里写明限制或换掉）、今天的身体状态；
 - 再加上 "changes"：一句话说清这份计划是怎么排的、改了什么（如"周三从上肢推改成练背，推的动作挪到周一"）；
 - 给用户的文字只写一两句话：这份计划的思路和改了什么，不要把整份计划再写一遍（系统会把 plan 显示成预览卡片，用户确认后才保存）。""",
+    "edit": """
+
+这一轮要按用户的要求改档案里的当前计划。只写要改的地方，由系统套到当前计划上：
+- 在 JSON 里加上 "ops"：操作列表，每条是下面五种之一（day 写 1 到 7，1 是周一；exercise 写当前计划里的动作名）：
+  {"kind": "swap", "day": 哪天, "exercise": "原动作", "to": "换成的动作", "why": "原因"}
+  {"kind": "move", "day": 哪天, "to_day": 挪到哪天, "why": "原因"}
+  {"kind": "edit", "day": 哪天, "exercise": "动作", "sets": 组数, "reps": "次数", "load": "重量说明", "why": "原因"}（只写要改的字段；改这天的时长写 {"kind": "edit", "day": 哪天, "minutes": 分钟}）
+  {"kind": "remove", "day": 哪天, "exercise": "动作（删整天时不写）", "why": "原因"}
+  {"kind": "reduce", "day": 哪天（整份计划都减时不写）, "ratio": 0.7 或 0.5, "why": "原因"}
+- 用户没提到的地方一律不动；换成的动作要符合他的器械和伤病，不合适时系统会换成替代动作；
+- 用户的几条要求互相矛盾时（如删掉一天又改那天的动作），照原话把每条都写成操作，不要自己取舍，系统会请他说清楚；
+- 用户要的是重新排一份、或者换分化方式（如全身改成上下肢）、用这五种说不清时，不写 ops，改写完整的 "plan"（格式见下）：
+  {"title": "计划名（不超过 12 个字）", "goal": "目标", "days_per_week": 每周几练, "sessions": [{"day": 1 到 7, "name": "这一次练什么", "minutes": 大概多少分钟, "items": [{"exercise": "动作名", "sets": 组数, "reps": "次数", "load": "", "note": ""}]}]}
+- 给用户的文字只写一两句话：改了什么、为什么（系统会把改动显示成预览卡片，用户确认后才保存）。""",
     "log": """
 
 这一轮要把用户说的这次训练整理成一条记录：
@@ -216,6 +232,13 @@ def problems_of(
     if task == "plan":
         _, why = parse_plan(opinion.plan)
         shape = [why or ""] if opinion.plan is not None else ["这一轮要写出 plan（完整的每周计划）"]
+    elif task == "edit":
+        if opinion.ops is not None and parse_ops(opinion.ops) is not None:
+            shape = []
+        elif opinion.plan is not None:
+            shape = [parse_plan(opinion.plan)[1] or ""]
+        else:
+            shape = ["这一轮要写出 ops（要改的地方），或者完整的 plan"]
     elif task == "log":
         _, why = parse_log(opinion.log, today or date.today())
         shape = [why or ""] if opinion.log is not None else ["这一轮要写出 log（这次训练的记录）"]
@@ -279,6 +302,8 @@ def _parse(
     for k in ("plan", "log"):
         if isinstance(raw.get(k), dict):
             data[k] = raw[k]
+    if isinstance(raw.get("ops"), list):
+        data["ops"] = [x for x in raw["ops"] if isinstance(x, dict)]
     if isinstance(data.get("plan"), dict) and isinstance(raw.get("changes"), str):
         data["plan"] = {**data["plan"], "changes": raw["changes"]}  # 改了什么，跟着计划走
     data["speak"] = True  # 被请到就要回答，模型说"不发言"也不算
@@ -410,7 +435,8 @@ async def _loop(
     trace = trace if trace is not None else {}
     fixes = 0
     rounds = 0
-    tools = toolbox.schemas() or None
+    # 改计划只写操作：动作合不合适由代码校验，不用再查（§45，一次改计划最多调用 2 次模型）
+    tools = None if task == "edit" else (toolbox.schemas() or None)
     while True:
         rounds += 1
         trace["rounds"] = rounds

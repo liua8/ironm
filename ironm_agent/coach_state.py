@@ -324,6 +324,7 @@ class CoachStore(Protocol):
     async def get(self, user_id: str) -> State | None: ...
     async def save(self, user_id: str, state: State, changes: Sequence[Change]) -> None: ...
     async def history(self, user_id: str, limit: int = 30) -> list[Change]: ...
+    async def log(self, user_id: str, changes: Sequence[Change]) -> None: ...
 
 
 class CoachBook:
@@ -342,6 +343,9 @@ class CoachBook:
 
     async def history(self, user_id: str, limit: int = 30) -> list[Change]:
         return list(reversed(self.changes.get(user_id, [])))[:limit]
+
+    async def log(self, user_id: str, changes: Sequence[Change]) -> None:
+        self.changes.setdefault(user_id, []).extend(changes)
 
 
 DDL = (
@@ -393,6 +397,10 @@ class PgCoach:
             " ON CONFLICT (user_id) DO UPDATE SET content = EXCLUDED.content, updated_at = now()",
             {"uid": user_id, "c": state.model_dump_json()},
         )
+        await self.log(user_id, changes)
+
+    async def log(self, user_id: str, changes: Sequence[Change]) -> None:
+        """只记调整经历，不动当前方案。"""
         for ch in changes:
             await self._q(
                 "INSERT INTO ironm_coach_change (id, user_id, content)"
@@ -504,6 +512,22 @@ def evaluate_later(user_id: str, deps: Deps, reason: str) -> None:
     task.add_done_callback(_BACKGROUND.discard)
 
 
+def record_plan_later(
+    store: CoachStore, user_id: str, draft: dict[str, Any], *, undone: bool = False
+) -> None:
+    """在后台记一条改计划的调整经历；出错只记错误类型。"""
+
+    async def go() -> None:
+        try:
+            await record_plan(store, user_id, draft, undone=undone)
+        except Exception as e:
+            _log.warning("plan change log failed: error_type=%s", type(e).__name__)
+
+    task = asyncio.create_task(go())
+    _BACKGROUND.add(task)
+    task.add_done_callback(_BACKGROUND.discard)
+
+
 async def settle() -> None:
     """等后台评估做完（测试用）。"""
     while _BACKGROUND:
@@ -538,6 +562,24 @@ async def mark_seen(store: CoachStore, user_id: str, version: int) -> None:
         await store.save(
             user_id, state.model_copy(update={"seen": min(version, state.version)}), []
         )
+
+
+async def record_plan(
+    store: CoachStore, user_id: str, draft: dict[str, Any], *, undone: bool = False
+) -> bool:
+    """确认或撤销一份按操作改的计划时，记一条调整经历：哪几条操作、原因（spec [2026-10-23] §45）。"""
+    ops = draft.get("ops")
+    if not ops:
+        return False
+    state = await store.get(user_id)
+    whys = "；".join(dict.fromkeys(str(o.get("why") or "") for o in ops if o.get("why")))
+    record = Change(id=uuid.uuid4().hex[:16], at=datetime.now(UTC), day=date.today(),
+                    version=state.version if state else 0, key="plan", kind="proposal",
+                    change="removed" if undone else "accepted", before="",
+                    after=str(draft.get("changes") or "")[:200], why=whys[:120],
+                    basis=f"{len(ops)} 条操作", status="confirm")  # fmt: skip
+    await store.log(user_id, [record])
+    return True
 
 
 async def decide(

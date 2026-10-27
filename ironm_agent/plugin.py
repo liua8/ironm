@@ -43,6 +43,19 @@ from ironm_agent.memory_prefs import refresh as refresh_prefs
 from ironm_agent.memory_store import MemoryStore, default_store
 from ironm_agent.memory_view import Recall
 from ironm_agent.personal import Personal, personal_basics
+from ironm_agent.plan_ops import (
+    NEW_PLAN,
+    Conflict,
+    Op,
+    apply,
+    describe,
+    fit_time,
+    only_this_time,
+    parse_ops,
+    rule_conflict,
+    rule_ops,
+    scope_hint,
+)
 from ironm_agent.progression import target_lines
 from ironm_agent.protools.plan_check import check_plan
 from ironm_agent.protools.registry import ToolContext
@@ -98,6 +111,9 @@ from ironm_agent.weather import for_user as weather_for
 _log = logging.getLogger("ironm_agent.run")
 
 FAILED = "IronM 这次没能回答，请稍后再试。"
+CONFLICT_ASK = (
+    "我没法确定你想怎么改。请分开说：先说一条，确认后再说下一条。"  # 改计划的要求互相矛盾时（§45）
+)
 REVIEW_ASK = "按这周的复盘调整训练计划"  # 每周复盘一键生成调整方案时的问法（spec [2026-10-23] §18）
 REVIEW_MAX_DAYS = 2  # 按复盘调整每次最多改几天
 WEATHER_WAIT_S = 4.0  # 天气最多等 4 秒（同一个地方 10 分钟内有缓存）
@@ -712,6 +728,42 @@ class IronMAgent:
             if stop:
                 yield text_block(stop)
                 return
+        if self._mode != "single" and task_of(text) == "plan" and not files.images:
+            # 简单的改计划句式（挪天、删、整体减量）由规则解析、代码改，不调用模型（spec [2026-10-23] §45）
+            if prep is None:
+                prep = await self._prepare(user_id, recall, text, history, snap, train, wx, run)
+                stop = self._stop(prep, text, prefix, run, said, training=training_ask)
+                if stop:
+                    yield text_block(stop)
+                    return
+            clash = rule_conflict(text) if prep.plan is not None else ""
+            if clash:  # 删掉一天又改那天：不猜，请他说清楚（§45）
+                run.update(intent="pro", route_by="plan_ops", task="plan", path="answer",
+                           plan_ops={"by": "rule", "ops": 0, "conflict": True})  # fmt: skip
+                said["answer"] = f"{clash}，{CONFLICT_ASK}"
+                yield text_block("\n\n".join(x for x in (prefix, said["answer"]) if x))
+                return
+            ops = (
+                rule_ops(text, prep.plan)
+                if prep.plan is not None and not only_this_time(text)
+                else None
+            )
+            if ops and prep.plan is not None:
+                run.update(
+                    intent="pro", route_by="plan_ops", task="plan", roles=[Role.TRAINER.value]
+                )
+                tools = self._tool_context(user_id, prep.snapshot, prep.case, recall)
+                cards, say = await self._ops_preview(
+                    user_id, text, prep.plan, ops, Context.of(prep.case), tools, run,
+                    by="rule", merge=bool(history),
+                )  # fmt: skip
+                run["path"] = "answer"
+                said["answer"] = say
+                note = CONFIRM_NOTE["plan"] if cards else ""
+                yield text_block("\n\n".join(x for x in (prefix, say, note) if x))
+                for block in cards:
+                    yield block
+                return
         if self._mode == "single":  # 单 Agent 对照组：一位全能教练一次作答，不调度、不整合
             r = Route(intent="pro", concerns=concerns_of(text), primary=Role.GENERAL, by="rule")
         else:
@@ -748,7 +800,14 @@ class IronMAgent:
         job = task_of(text)
         if job is None and decision.origin and task_of(decision.origin) == "plan":
             job = "plan"  # 回答"帮我做个训练计划"的追问（"你定吧"）：这一轮把计划排出来
+        if job == "plan" and plan is not None and only_this_time(text):
+            job = None  # 只改这一次：走今天的版本，不改计划（§45）
+            run["plan_scope"] = "today"
         run["task"] = job
+        # 已有计划、又不是要重排时，训练教练只写要改的地方，由代码套到当前计划上（§45）
+        expert_task = (
+            "edit" if job == "plan" and plan is not None and not NEW_PLAN.search(text) else job
+        )
         needs_planner = decision.plan or job is not None
         if needs_planner and r.primary is not Role.GENERAL and Role.TRAINER not in r.experts():
             r = r.model_copy(update={"primary": Role.TRAINER, "helpers": r.experts()[:MAX_HELPERS]})
@@ -857,7 +916,7 @@ class IronMAgent:
                         case=case,
                         relay=relay,
                         note=note,
-                        task=job if lead else None,
+                        task=expert_task if lead else None,
                         today=snapshot.today,
                         skills=loaded[role],
                         images=pictures if role is seeing else (),
@@ -918,11 +977,14 @@ class IronMAgent:
             (c for c in consultations if c.opinion.role in (Role.TRAINER, Role.GENERAL)), None
         )
         cards = await self._preview(
-            user_id, job, writer, text, plan, ctx, snapshot.today, run, llm, case, tools_ctx
-        )
+            user_id, job, writer, text, plan, ctx, snapshot.today, run, llm, case, tools_ctx,
+            merge=bool(history),
+        )  # fmt: skip
         if cards:
             note = CONFIRM_NOTE[job or "plan"]
             composed = replace(composed, text=composed.text.rstrip() + "\n\n" + note)
+        elif run.get("_plan_note"):  # 操作没套上（矛盾、全都改不了）：说清原因
+            composed = replace(composed, text=composed.text.rstrip() + "\n\n" + run["_plan_note"])
         blocks = self._answer(composed, prefix, run, said)
         tail = (
             2 if blocks[-1].get("tool_call_id") == SOURCES_ID else 0
@@ -967,6 +1029,8 @@ class IronMAgent:
         llm: TurnLLM,
         case: CaseFile,
         tools: ToolContext | None = None,
+        *,
+        merge: bool = False,
     ) -> list[dict[str, Any]]:
         """训练教练写出的计划或记录：校验、按约束注明限制，存成预览（草稿），给出预览卡片（§9）。
 
@@ -975,6 +1039,19 @@ class IronMAgent:
         """
         if job is None or lead is None or not lead.opinion.speak:
             return []
+        ops = parse_ops(lead.opinion.ops) if job == "plan" and current is not None else None
+        if ops and current is not None and tools is not None:  # 只写了要改的地方：代码套用（§45）
+            try:
+                cards, say = await self._ops_preview(
+                    user_id, text, current, ops, ctx, tools, run, by="model", merge=merge
+                )
+            except Exception as e:  # 存不了预览不影响回答
+                _log.warning("preview failed: error_type=%s", type(e).__name__)
+                run["preview"] = "failed"
+                return []
+            if not cards:
+                run["_plan_note"] = say
+            return cards
         try:
             raw = lead.opinion.plan if job == "plan" else lead.opinion.log
             ok = parse_plan(raw)[0] if job == "plan" else parse_log(raw, today)[0]
@@ -1017,6 +1094,70 @@ class IronMAgent:
             _log.warning("preview failed: error_type=%s", type(e).__name__)
             run["preview"] = "failed"
             return []
+
+    async def _ops_preview(
+        self,
+        user_id: str,
+        text: str,
+        current: Plan,
+        ops: list[Op],
+        ctx: Context,
+        tools: ToolContext,
+        run: dict[str, Any],
+        *,
+        by: str,
+        merge: bool,
+    ) -> tuple[list[dict[str, Any]], str]:
+        """按操作改计划（spec [2026-10-23] §45）：代码套用、时长超了先减辅助动作、注明伤病限制，存成预览。
+
+        同一段对话里上一份预览还没确认时，在它上面接着改，合成一张，旧的那张作废。
+        返回（预览卡片, 给用户的话）；日志只记操作的条数，不记内容。
+        """
+        store = self._training_store()
+        prior = None
+        if merge:
+            try:
+                prior = await store.pending_plan(user_id)
+            except Exception as e:
+                _log.warning("pending plan unavailable: error_type=%s", type(e).__name__)
+        base = parse_plan(prior.content.get("plan"))[0] if prior is not None else None
+        if base is None:
+            prior, base = None, current
+        try:
+            applied = fit_time(apply(base, ops, equipment=tools.equipment, injured=tools.injured))
+        except Conflict as e:
+            run["plan_ops"] = {"by": by, "ops": len(ops), "conflict": True}
+            return (
+                [],
+                f"{e}，{CONFLICT_ASK}",
+            )
+        run["plan_ops"] = {"by": by, "ops": len(applied.done), "skipped": len(applied.skipped),
+                           "merged": prior is not None}  # fmt: skip
+        if not applied.done:
+            return [], "这次没改：" + "；".join(applied.skipped) + "。"
+        new = annotate_plan(applied.plan, ctx)
+        changes = applied.changes
+        earlier_ops: list[Any] = []
+        if prior is not None:
+            earlier_ops = list(prior.content.get("ops") or [])
+            changes = "；".join(x for x in (str(prior.content.get("changes") or ""), changes) if x)
+        extra = describe(applied)
+        draft = await store.add_draft(
+            user_id, "plan",
+            plan_content(new, changes, ops=earlier_ops + extra["ops"], skipped=extra["skipped"],
+                         hint=scope_hint(text)),
+        )  # fmt: skip
+        if prior is not None:
+            await store.cancel(user_id, prior.id)
+        left = check_plan(new, current=current, goal=tools.goal, injured=tools.injured,
+                          equipment=tools.equipment).problems  # fmt: skip
+        run.update(preview="plan", plan_check="pass" if not left else "failed")
+        say = "按你说的改好了：" + "；".join(applied.lines) + "。"
+        if applied.notes:
+            say += "另外：" + "；".join(applied.notes) + "。"
+        if applied.skipped:
+            say += "没改的：" + "；".join(applied.skipped) + "。"
+        return plan_card(draft, new, current), say
 
     async def _check_plan(
         self,

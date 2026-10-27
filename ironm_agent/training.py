@@ -26,6 +26,7 @@ from ironm_agent.numbers import written_numbers
 _log = logging.getLogger("ironm_agent.training")
 
 DRAFT_HOURS = 24
+MERGE_MINUTES = 30  # 这么久之内没确认的计划预览，再改一下时在它上面接着改（§45）
 WEEKDAYS = "一二三四五六日"
 type Kind = Literal["plan", "log"]
 type DraftState = Literal["pending", "confirmed", "cancelled", "undone"]
@@ -271,8 +272,9 @@ def trusted_log(log: WorkoutLog, said: str, plan: Plan | None) -> WorkoutLog:
 PLAN_TASK = re.compile(
     r"(?:计划|课表).{0,4}(?:改|换|调|减|加|删|重新|更新)"
     r"|(?:排|做|制定|定|设计|生成|给我|来|出|重新|更新|调整|修改|改一?下)[^，。？！?!]{0,14}(?:计划|课表)"
-    r"|把?周[一二三四五六日天].{0,8}(?:改|换|调|挪|移|取消|不练|休息)"
-    r"|(?:这周|本周|下周).{0,12}(?:出差|练不了|没时间|减成|改成|调整|少练|多练|加一练|只能练)"
+    r"|把?周[一二三四五六日天].{0,8}(?:改|换|调|挪|移|取消|不练|休息|删|去掉)"
+    r"|(?:这周|本周|下周).{0,12}(?:出差|练不了|没时间|减成|改成|调整|少练|多练|加一练|只能练|轻一?点|轻很多|减量)"
+    r"|(?:计划|每次训练|训练量).{0,6}(?:轻一?点|轻很多|减量|减半)"
 )
 LOG_TASK = re.compile(
     r"(?:记录|记一下|记下|打卡)[^？?]{0,12}(?:训练|练|跑|运动|组|次)"
@@ -349,6 +351,7 @@ class TrainingStore(Protocol):
     async def workouts(self, user_id: str, since: date) -> list[StoredLog]: ...
     async def add_draft(self, user_id: str, kind: Kind, content: dict[str, Any]) -> Draft: ...
     async def draft(self, user_id: str, draft_id: str) -> Draft | None: ...
+    async def pending_plan(self, user_id: str, minutes: int = MERGE_MINUTES) -> Draft | None: ...
     async def confirm(self, user_id: str, draft_id: str) -> Draft | None: ...
     async def cancel(self, user_id: str, draft_id: str) -> Draft | None: ...
     async def undo(self, user_id: str, draft_id: str) -> Draft | None: ...
@@ -391,6 +394,12 @@ class TrainingBook:
 
     async def draft(self, user_id: str, draft_id: str) -> Draft | None:
         return self._drafts.get(user_id, {}).get(draft_id)
+
+    async def pending_plan(self, user_id: str, minutes: int = MERGE_MINUTES) -> Draft | None:
+        since = now() - timedelta(minutes=minutes)
+        rows = [d for d in self._drafts.get(user_id, {}).values()
+                if d.kind == "plan" and d.state == "pending" and d.created >= since]  # fmt: skip
+        return max(rows, key=lambda d: d.created, default=None)
 
     def _put(self, user_id: str, d: Draft) -> Draft:
         self._drafts[user_id][d.id] = d
@@ -563,6 +572,16 @@ class PgTraining:
         rows = await self._q(_DRAFT, {"uid": user_id, "id": draft_id})
         return _draft_row(rows[0]) if rows else None
 
+    async def pending_plan(self, user_id: str, minutes: int = MERGE_MINUTES) -> Draft | None:
+        rows = await self._q(
+            "SELECT id, kind, decrypt_content(content) AS content, state, applied, previous, created_at"
+            " FROM ironm_draft WHERE user_id = :uid AND kind = 'plan' AND state = 'pending'"
+            f" AND created_at > now() - interval '{int(minutes)} minutes'"
+            " ORDER BY created_at DESC LIMIT 1",
+            {"uid": user_id},
+        )
+        return _draft_row(rows[0]) if rows else None
+
     async def confirm(self, user_id: str, draft_id: str) -> Draft | None:
         """确认一份预览：在一个事务里先按人加锁，再改预览状态、换下旧计划、写入新计划（或记录）。
 
@@ -684,8 +703,9 @@ def _dumps(content: dict[str, Any]) -> str:
     return json.dumps(content, ensure_ascii=False)
 
 
-def plan_content(plan: Plan, changes: str = "") -> dict[str, Any]:
-    return {"plan": _dump(plan), "changes": changes}
+def plan_content(plan: Plan, changes: str = "", **extra: Any) -> dict[str, Any]:
+    """extra：按操作改的计划还带上操作、没改成的原因等（§45）。"""
+    return {"plan": _dump(plan), "changes": changes, **extra}
 
 
 def log_content(log: WorkoutLog) -> dict[str, Any]:

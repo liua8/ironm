@@ -81,6 +81,7 @@ class Result:
     sources: str = ""
     cards: list[str] = field(default_factory=list)
     card_text: str = ""  # 预览卡片里的计划或记录（给评委看：这部分不在正文里）
+    card_plan: str = ""  # 预览卡片里改完的计划（每天一行），查必须 / 不能出现的动作用（§45）
     ms: int = 0
     model_calls: int = 0
     pro_tools: int = 0  # 专业工具调用次数（spec [2026-10-23] §12）
@@ -140,6 +141,16 @@ def grade(case: Mapping[str, Any], r: Result, mode: str = "multi") -> list[str]:
         out.append("应当向用户提问")
     if case.get("card") and case["card"] not in r.cards:
         out.append(f"没有出现 {case['card']} 预览卡片")
+    if case.get("no_card") and r.cards:
+        out.append("不该出现预览卡片")
+    for item in case.get("card_must", []):  # 改完的计划里必须有（§45）
+        if not any(squash(a) in squash(r.card_plan) for a in _alternatives(item)):
+            out.append(f"计划里缺少：{'/'.join(_alternatives(item))}")
+    for item in case.get("card_must_not", []):
+        if squash(str(item)) in squash(r.card_plan):
+            out.append(f"计划里不该有：{item}")
+    if "max_calls" in case and r.model_calls > int(case["max_calls"]):
+        out.append(f"调用了 {r.model_calls} 次模型，超过 {case['max_calls']} 次")
     return out
 
 
@@ -223,6 +234,7 @@ async def run_case(
                 r.sources = str(b.get("content", ""))
             elif kind == "tool_result" and str(b.get("tool_call_id", "")).startswith("card-"):
                 r.card_text += card_text(str(b.get("content", "")))
+                r.card_plan += card_plan(str(b.get("content", "")))
     except Exception as e:  # 跑考题时不让一道题的异常停掉整轮
         r.error = f"{type(e).__name__}: {e}"
     r.ms = int(seen.get("ms", (time.perf_counter() - start) * 1000))
@@ -253,6 +265,17 @@ def card_text(content: str) -> str:
     lines += [f"{x['day']} {x['name']}：" + "、".join(x["items"]) for x in card.get("sessions", [])]
     lines += [str(x) for x in card.get("items", [])]
     return "\n".join(x for x in lines if x)
+
+
+def card_plan(content: str) -> str:
+    """卡片里改完的计划：每天一行"周几 名称：动作 组×次、……"。"""
+    try:
+        card = json.loads(content)
+    except json.JSONDecodeError:
+        return ""
+    return "\n".join(
+        f"{x['day']} {x['name']}：" + "、".join(x["items"]) for x in card.get("sessions", [])
+    )
 
 
 def judged(r: Result) -> str:

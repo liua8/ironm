@@ -672,13 +672,18 @@ async def review_proposal(
         if hit is None:
             return {"status": "no_change", "message": "这条提醒已经不需要处理了。"}
         tips = [hit.tip]
+        actions = _trigger_actions(hit, stored.plan)
         ask = f"{TRIGGER_ASK}（只改需要改的地方）：{hit.tip}"
     else:
         logs = [x.log for x in await training.workouts(user_id, snap.today - timedelta(days=14))]
-        tips = weekly_review(snap, stored.plan, logs, stored.since)["tips"]
+        review = weekly_review(snap, stored.plan, logs, stored.since)
+        tips, actions = review["tips"], list(review.get("actions") or [])
         if not tips:
             return {"status": "no_change", "message": "这周没有需要调整的地方，照计划来。"}
         ask = f"{REVIEW_ASK}（每次最多改两处，只改需要改的地方）：" + "".join(tips)
+    ruled = await _rule_proposal(user_id, actions, stored.plan, training, memory, trigger, tips)
+    if ruled is not None:  # 复盘和提醒能变成固定操作的：规则直接改，不调用模型（§45）
+        return ruled
     agent = make_agent(training, memory)
     msgs = [{"role": "user", "content": ask}]
     blocks = [b async for b in agent.generate_response(user_id, msgs, session_id="")]
@@ -711,6 +716,73 @@ async def review_proposal(
         "warning": f"这份方案改动了 {n} 天，超过了每次最多改 {REVIEW_MAX_DAYS} 天"
         if n > REVIEW_MAX_DAYS and not trigger
         else "",
+    }
+
+
+def _trigger_actions(hit: Any, plan: Any) -> list[dict[str, Any]]:
+    """首页提醒对应的调整：反复疼换掉压这个部位的动作，连续没练少一天或减量，平台期换变式。"""
+    if hit.kind == "pain" and hit.part:
+        return [{"kind": "swap_part", "part": hit.part, "why": hit.title}]
+    if hit.kind == "missed":
+        kind = "fewer_days" if plan.days_per_week > 2 else "lighter"
+        return [{"kind": kind, "days": plan.days_per_week - 1, "why": hit.title}]
+    if hit.kind == "plateau" and hit.exercises:
+        return [{"kind": "variant", "exercises": list(hit.exercises), "why": hit.title}]
+    return []
+
+
+async def _rule_proposal(
+    user_id: str,
+    actions: list[dict[str, Any]],
+    plan: Any,
+    training: TrainingStore,
+    memory: MemoryStore,
+    trigger: str,
+    tips: list[str],
+) -> dict[str, Any] | None:
+    """按规则生成操作、由代码改计划（spec [2026-10-23] §45）；变不成操作或一条都套不上时返回 None。"""
+    from ironm_agent.casefile import injured_parts
+    from ironm_agent.constraints import Context, annotate_plan
+    from ironm_agent.memory_view import Recall
+    from ironm_agent.plan_ops import apply, describe, fit_time, review_ops
+    from ironm_agent.protools.movement import equipment_of
+    from ironm_agent.protools.plan_check import changed_days
+    from ironm_agent.training import plan_content
+
+    if not actions:
+        return None
+    try:
+        items = Recall.of(await memory.items(user_id)).items
+    except Exception as e:  # 读不到记忆：当作不知道器械和伤病
+        _log.warning("memory unavailable: error_type=%s", type(e).__name__)
+        items = ()
+    injured = injured_parts(items, "")
+    equipment = equipment_of(
+        [x.content for x in items if x.category == "equipment" and x.status == "active"]
+    )
+    ops = review_ops(actions, plan, equipment=equipment, injured=injured)
+    if not ops:
+        return None
+    applied = fit_time(apply(plan, ops, equipment=equipment, injured=injured))
+    if not applied.done:
+        return None
+    new = annotate_plan(applied.plan, Context(injuries=tuple(injured)))
+    extra = describe(applied)
+    draft = await training.add_draft(
+        user_id,
+        "plan",
+        plan_content(new, applied.changes, ops=extra["ops"], skipped=extra["skipped"]),
+    )
+    _log.info("rule proposal: ops=%d skipped=%d", len(applied.done), len(applied.skipped))
+    where = "首页的提醒" if trigger else "这周的复盘"
+    return {
+        "status": "ok",
+        "tips": tips,
+        "answer": f"按{where}改了：" + "；".join(applied.lines) + "。",
+        "draft": draft.json(),
+        "changed_days": changed_days(new, plan),
+        "warning": "",
+        "by": "rule",
     }
 
 
@@ -929,6 +1001,18 @@ def coach_deps() -> Any:
         store=default_coach(),
         weather=weather.for_user,
     )
+
+
+def plan_change_later(user_id: str, draft: dict[str, Any], *, undone: bool = False) -> None:
+    """确认或撤销按操作改的计划后，在后台记进管家的调整经历（spec [2026-10-23] §45）。"""
+    from ironm_agent.coach_state import record_plan_later
+
+    if draft.get("kind") != "plan" or not draft.get("ops"):
+        return
+    try:
+        record_plan_later(coach_deps().store, user_id, draft, undone=undone)
+    except Exception as e:  # 不影响这次请求
+        _log.warning("plan change schedule failed: error_type=%s", type(e).__name__)
 
 
 def coach_later(user_id: str, reason: str) -> None:
