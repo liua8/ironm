@@ -97,6 +97,7 @@ class Inputs:
     advice: Any = None  # weather.Advice（今天的实时天气）
     forecast: tuple[Any, ...] = ()  # weather.Day：今天起 7 天的预报（spec [2026-10-23] §34）
     illness: list[Any] = field(default_factory=list)  # illness.Episode：最近的生病记录（§46）
+    day: Any = None  # day_state.DayState：今日状态（§54）
 
 
 def _today_item(inp: Inputs, today: date) -> Item:
@@ -125,12 +126,22 @@ def _today_item(inp: Inputs, today: date) -> Item:
     if sick is not None and sick[0] == "ease":
         gap = (min(EASE, gap[0]) if gap else EASE, sick[1])
     light = sick is not None and sick[0] == "light"
+    said = inp.day.tired() if inp.day is not None else None  # 今天说过累或没睡好（§54）
     version = build(
         session,
-        tired=state.level == "poor" or light,
-        tired_why="；".join(x for x in ((sick[1] if light and sick else ""), *state.reasons) if x),
+        tired=state.level == "poor" or light or said is not None,
+        tired_why="；".join(
+            x
+            for x in (
+                (sick[1] if light and sick else ""),
+                said.text() if said else "",
+                *state.reasons,
+            )
+            if x
+        ),
         indoor=adv is not None and adv.level in ("indoor", "avoid"),
         indoor_why=adv.reasons[0] if adv is not None and adv.reasons else "",
+        minutes=inp.day.minutes() if inp.day is not None else None,
         scale=gap[0] if gap else None,
         scale_why=gap[1] if gap else "",
     )
@@ -466,6 +477,7 @@ class Deps:
     store: CoachStore
     weather: Callable[[str], Awaitable[Any]] | None = None
     illness: Any = None  # illness.IllnessStore（§46）
+    day: Any = None  # day_state.DayStore（§54）
 
 
 async def _gather(user_id: str, deps: Deps, today: date) -> Inputs:
@@ -489,6 +501,8 @@ async def _gather(user_id: str, deps: Deps, today: date) -> Inputs:
     inp.pains = await safely("pain", deps.pain.since(user_id, today - timedelta(days=14))) or []
     inp.goal = await safely("goal", deps.goals.get(user_id))
     inp.diet = await safely("diet", deps.diet.current(user_id))
+    if deps.day is not None:
+        inp.day = await safely("day", deps.day.get(user_id, today))
     if deps.illness is not None:
         inp.illness = (
             await safely(

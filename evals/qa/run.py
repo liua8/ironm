@@ -33,6 +33,7 @@ from evals.qa.fixtures import EvalHealth, Persona, facts_text, load_personas  # 
 from evals.qa.judge import DIMENSIONS, judge, persona_text  # noqa: E402
 from ironm_agent.answer_format import limit_of  # noqa: E402
 from ironm_agent.casefile import Snapshot  # noqa: E402
+from ironm_agent.day_state import DayBook  # noqa: E402
 from ironm_agent.harness import TraceBook  # noqa: E402
 from ironm_agent.illness import IllnessBook  # noqa: E402
 from ironm_agent.llm import load_models  # noqa: E402
@@ -214,6 +215,7 @@ async def run_case(
         weather=no_weather,
         traces=TraceBook(),  # 运行框架的轨迹留在内存里，考试不写数据库
         illness=IllnessBook(),  # 生病记录也留在内存里（§46）
+        day=DayBook(),  # 今日状态也留在内存里（§54）
     )
     start = time.perf_counter()
     try:

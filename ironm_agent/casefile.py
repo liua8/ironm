@@ -120,11 +120,17 @@ def _f(x: float) -> str:
 
 
 def readiness(
-    r: Readings, text: str, today: date, *, illness: tuple[Level, str] | None = None
+    r: Readings,
+    text: str,
+    today: date,
+    *,
+    illness: tuple[Level, str] | None = None,
+    earlier: Sequence[tuple[Level, str]] = (),
 ) -> Readiness:
     """规则判断今天的状态：最近一晚睡眠、最近几天的静息心率与心率变异性对本人基线，再加上这句话里说的情况。
     illness：正在进行的生病（spec [2026-10-23] §46），按症状级别算 poor（休息）或 fair（轻松版）。"""
     signals: list[tuple[Level, str]] = [illness] if illness else []
+    signals += earlier  # 今天早些时候说过的状态（今日状态，spec [2026-10-23] §54）
     current = False
     nights = _recent(r.sleep_hours, today, 3)
     if nights:
@@ -339,6 +345,7 @@ class CaseFile:
     plan_id: str = ""
     today: date | None = None
     weather: str = ""  # 现在的天气与对训练的影响（spec [2026-10-23] §13；取不到时为空）
+    day: tuple[str, ...] = ()  # 今日状态（spec [2026-10-23] §54）：打卡、口头说的状态、生病、说疼
 
     def text(self, *, calcs: bool = True) -> str:
         lines = [
@@ -346,9 +353,12 @@ class CaseFile:
             f"- 基本：{self.basics}〔C0〕",
         ]
         if self.today is not None:
-            lines.append(
-                f"- 今天：{self.today.isoformat()}（周{'一二三四五六日'[self.today.weekday()]}）"
-            )
+            head = f"- 今天：{self.today.isoformat()}（周{'一二三四五六日'[self.today.weekday()]}）"
+            if self.day:  # 今天的状态以这里为准（spec [2026-10-23] §54）
+                lines.append(head + "，今天的状态以这里为准（比对话里更早的说法新）：")
+                lines += [f"  {x}" for x in self.day]
+            else:
+                lines.append(head)
         if self.weather:
             lines.append(f"- {self.weather}（安排户外运动、饮食和补水时要照顾到）")
         if self.limits:
@@ -398,6 +408,8 @@ def build(
     *,
     plan: Sequence[str] = (),
     illness: tuple[Level, str] | None = None,
+    day: Sequence[str] = (),
+    earlier: Sequence[tuple[Level, str]] = (),
 ) -> CaseFile:
     p, today = snapshot.profile, snapshot.today
     metrics = list(snapshot.metrics)
@@ -414,7 +426,7 @@ def build(
         "（这次没读到你的档案和健康数据）" if snapshot.failed else ""
     )
     calcs["C0"] = f"档案：{basics}"
-    state = readiness(snapshot.readings, text, today, illness=illness)
+    state = readiness(snapshot.readings, text, today, illness=illness, earlier=earlier)
     if snapshot.failed and state.level == "unknown":
         state = Readiness("unknown", ("这次没读到你的健康数据",))
     rid = f"C{len(metrics) + 1}"
@@ -449,6 +461,7 @@ def build(
         readiness_id=rid,
         plan_id=plan_id,
         today=today,
+        day=tuple(day),
     )
 
 

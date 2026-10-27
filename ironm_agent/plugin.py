@@ -15,7 +15,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from functools import cache
 from typing import Any, Literal
 
@@ -30,6 +30,10 @@ from ironm_agent.compose import Composed, compose, revise
 from ironm_agent.constraints import Context, Violation, annotate, annotate_plan
 from ironm_agent.constraints import check as check_constraints
 from ironm_agent.coverage import missing_roles
+from ironm_agent.day_state import DayState, DayStore, default_day
+from ironm_agent.day_state import lines as day_lines
+from ironm_agent.day_state import note as note_day
+from ironm_agent.day_state import signals as day_signals
 from ironm_agent.exercises import named_in
 from ironm_agent.experts import Consultation, consult, write_task
 from ironm_agent.harness import TraceStore, mentioned_roles, missing_readings, new_turn, react
@@ -52,6 +56,7 @@ from ironm_agent.illness import answer as answer_illness
 from ironm_agent.illness import (
     recent as recent_illness,
 )
+from ironm_agent.illness import summary_line as illness_line
 from ironm_agent.indicators import named_indicators, record_kinds
 from ironm_agent.kb import KnowledgeBase, default_kb
 from ironm_agent.llm import ModelsConfig, TurnLLM, load_models
@@ -335,6 +340,7 @@ class IronMAgent:
         weather: Callable[[str], Awaitable[Weather | None]] | None = None,
         pain: PainStore | None = None,
         illness: IllnessStore | None = None,
+        day: DayStore | None = None,
         medications: Any | None = None,
         medical: Any | None = None,
         traces: TraceStore | None = None,
@@ -348,6 +354,7 @@ class IronMAgent:
         self._medical = medical
         self._pain = pain  # 说疼的部位和日期（触发型调整用，默认用数据库里 iron-m 自己的表）
         self._illness = illness  # 生病记录（spec [2026-10-23] §46，默认用数据库里 iron-m 自己的表）
+        self._day = day  # 今日状态（spec [2026-10-23] §54，默认用数据库里 iron-m 自己的表）
         self._weather = weather  # 这个人所在城市的天气（默认按"我的"里设置的城市去取）
         self._snapshot = snapshot  # 这个人的档案、健康数据与指标（默认与数据页同一份计算）
         self._files: dict[str, Any] = dict(files or {})  # 读附件的方式（测试时换成假的）
@@ -490,6 +497,49 @@ class IronMAgent:
         if self._illness is None:
             self._illness = default_illness()
         return self._illness
+
+    def _day_store(self) -> DayStore:
+        if self._day is None:
+            self._day = default_day()
+        return self._day
+
+    async def _note_day(self, user_id: str, text: str, run: dict[str, Any]) -> DayState | None:
+        """这句话里说到今天的状态（累、没睡好、只有多少分钟）：作答前写进今日状态（规则，spec [2026-10-23] §54）。"""
+        at = datetime.now(UTC)
+        run["_at"] = at
+        state, new = await note_day(self._day_store(), user_id, text, at)
+        if new:
+            run["day_noted"] = len(new)  # 只记条数，不记内容
+            self._later(
+                user_id, self._coach(user_id, "说了今天的状态", True)
+            )  # 首页今天的版本跟着变
+        return state
+
+    async def _today_lines(
+        self,
+        user_id: str,
+        plan: Plan | None,
+        today: date,
+        state: DayState | None,
+        ill: list[Episode],
+    ) -> list[str]:
+        """共享档案第一段"今天"：计划、打卡（带时间）、今天说过的状态、生病、最近说疼的部位。"""
+        session = plan.session_on(today) if plan is not None else None
+        checkins: list[Any] = []
+        pains: list[tuple[str, date]] = []
+        try:
+            checkins = await self._training_store().workouts(user_id, today)
+        except Exception as e:
+            _log.warning("checkins unavailable: error_type=%s", type(e).__name__)
+        try:
+            pains = await self._pain_store().since(user_id, today - timedelta(days=3))
+        except Exception as e:
+            _log.warning("pain unavailable: error_type=%s", type(e).__name__)
+        from ironm_agent.protools.movement import JOINT_NAMES
+
+        named = [(JOINT_NAMES.get(p, p), d) for p, d in pains]
+        return day_lines(state, today=today, plan_name=session.name if session else None,
+                         checkins=checkins, illness=illness_line(ill, today), pains=named)  # fmt: skip
 
     async def _track_illness(self, user_id: str, text: str, run: dict[str, Any]) -> list[Episode]:
         """这句话里说生病了、或在回答"好了没"：更新生病记录（规则，不调用模型；spec [2026-10-23] §46）。
@@ -781,11 +831,13 @@ class IronMAgent:
         #    指标），与路由并行（spec [2026-10-23] §7）
         await self._sync(user_id, run)  # 先等上一轮的档案和记忆写完再读（spec [2026-10-23] §51）
         read = time.perf_counter()
-        history, recall, ill = await asyncio.gather(
+        history, recall, ill, day = await asyncio.gather(
             (self._history or recent)(session_id, text),
             self._recall(user_id),
             self._track_illness(user_id, text, run),
+            self._note_day(user_id, text, run),
         )
+        run["_day"] = day
         if not active_illness(ill, date.today()):
             # 没有正在进行的生病：跟生病有关的近期事件和建议不再交给角色（spec [2026-10-23] §46）
             recall = recall.without(
@@ -1391,9 +1443,12 @@ class IronMAgent:
         state = state_line(ill, snapshot.today) or (mode[1] if mode else "")
         level: Literal["poor", "fair"] = "poor" if mode and mode[0] == "rest" else "fair"
         signal = (level, state) if mode is not None else None  # 病后第一次也告诉角色：按约七成
+        day = (run or {}).get("_day")
+        at = (run or {}).get("_at")
+        today_lines = await self._today_lines(user_id, plan, snapshot.today, day, ill)
         case = build_case(
             snapshot, recall, text, plan=lines + target_lines(plan, steady, snapshot.today),
-            illness=signal,
+            illness=signal, day=today_lines, earlier=day_signals(day, before=at),
         )  # fmt: skip
         current = await wx if wx is not None else None
         if current is not None:

@@ -297,6 +297,19 @@ def state_line(eps: Sequence[Episode], today: date) -> str:
     return f"{e.started.month} 月 {e.started.day} 日开始{e.what()}，现在{how}"
 
 
+def summary_line(eps: Sequence[Episode], today: date) -> str:
+    """今日状态里的生病一行（spec [2026-10-23] §54）：正在生病的写开始日期和现在怎样；两天内好了的写哪天好的。"""
+    now = state_line(eps, today)
+    if now:
+        return "生病：" + now
+    done = [e for e in eps if e.status == "resolved" and e.ended and (today - e.ended).days <= 2]
+    if not done:
+        return ""
+    e = max(done, key=lambda x: x.ended or x.started)
+    end = e.ended or e.started
+    return f"生病：{e.what()} {end.month} 月 {end.day} 日已经好了"
+
+
 def merge(eps: Sequence[Episode], symptoms: list[str], level: Level, today: date) -> Episode:
     """正在进行的那次生病里补上新症状；没有就新记一次。"""
     now = active(eps, today)

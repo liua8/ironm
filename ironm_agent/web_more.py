@@ -625,6 +625,15 @@ def illness_store() -> Any:
 ILLNESS = Depends(illness_store)  # 生病记录（spec [2026-10-23] §46）；测试时换成内存版
 
 
+def day_store() -> Any:
+    from ironm_agent.day_state import default_day
+
+    return default_day()
+
+
+DAY = Depends(day_store)  # 今日状态（spec [2026-10-23] §54）；测试时换成内存版
+
+
 async def _episodes(illness: Any, user_id: str, today: date) -> list[Any]:
     from ironm_agent.illness import recent
 
@@ -930,8 +939,10 @@ async def get_today(
     user_id: str = Depends(_verify()),
     training: TrainingStore = TRAINING,
     illness: Any = ILLNESS,
+    day: Any = DAY,
 ) -> dict[str, Any]:
-    """按今天的状态、天气、可用时间和生病情况，用规则改出今天的版本；原计划不变。"""
+    """按今天的状态、天气、可用时间和生病情况，用规则改出今天的版本；原计划不变。
+    首页点了"有点累""只有 N 分钟"写进今日状态；没点时用今天在对话里说过的（spec [2026-10-23] §54）。"""
     from ironm_agent.casefile import readiness
     from ironm_agent.illness import EASE, today_mode
     from ironm_agent.today import build
@@ -946,6 +957,9 @@ async def get_today(
     session = stored.plan.session_on(today)
     if session is None:
         return {"status": "rest"}
+    said, said_tired = await _day_said(day, user_id, today, tired=tired, minutes=minutes)
+    if minutes is None and said is not None:
+        minutes = said.minutes()
     snap = await _web().snapshot_for(user_id)
     state = readiness(snap.readings, "", today)
     logs = [x.log for x in await training.workouts(user_id, today - timedelta(days=60))]
@@ -964,10 +978,10 @@ async def get_today(
     wx = await weather.for_user(user_id)
     advice = weather.assess(wx) if wx else None
     poor = state.level == "poor"
-    why = "你说今天有点累" if tired else "；".join(state.reasons)
+    why = "你说今天有点累" if tired else said_tired or "；".join(state.reasons)
     version = build(
         session,
-        tired=tired or poor or light,
+        tired=tired or bool(said_tired) or poor or light,
         tired_why=(sick[1] if light and sick else why),
         indoor=advice is not None and advice.level in ("indoor", "avoid"),
         indoor_why=advice.reasons[0] if advice and advice.reasons else "",
@@ -984,6 +998,27 @@ async def get_today(
         "reasons": list(version.reasons),
         "readiness": state.name,
     }
+
+
+async def _day_said(
+    day: Any, user_id: str, today: date, *, tired: bool, minutes: int | None
+) -> tuple[Any, str]:
+    """首页点的写进今日状态；返回（今日状态, 今天说过累或没睡好时的说明）。读写失败当作没有。"""
+    from datetime import UTC, datetime
+
+    from ironm_agent.day_state import Entry
+
+    now = datetime.now(UTC)
+    new = [Entry(kind="tired", at=now, source="home")] if tired else []
+    if minutes is not None:
+        new.append(Entry(kind="minutes", at=now, source="home", minutes=minutes))
+    try:
+        state = await day.add(user_id, today, new) if new else await day.get(user_id, today)
+    except Exception as e:
+        _log.warning("day state unavailable: error_type=%s", type(e).__name__)
+        return None, ""
+    bad = state.tired() if state is not None else None
+    return state, bad.text() if bad is not None else ""
 
 
 # ---- 目标进度与阶段复测（spec [2026-10-23] §18 需求 6）---------------------------------------------
@@ -1076,6 +1111,7 @@ def coach_deps() -> Any:
         store=default_coach(),
         weather=weather.for_user,
         illness=illness_store(),
+        day=day_store(),
     )
 
 
