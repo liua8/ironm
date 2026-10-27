@@ -11,9 +11,10 @@ from typing import Any
 
 _log = logging.getLogger("ironm_agent.memory")
 
-TURNS = 4  # 用户最近几句话
-ANSWERS = 2  # 最近几条回答的要点
-ANSWER_CHARS = 80  # 每条回答取开头多少字作为要点
+TURNS = 10  # 用户最近几句话（spec [2026-10-23] §53）
+ANSWERS = 4  # 最近几条回答的要点
+ANSWER_CHARS = 150  # 每条回答取开头多少字作为要点
+LAST_CHARS = 800  # 上一条回答完整给出，最多这么多字（追问"你刚才第 3 条"时对得上）
 USER = "用户："
 COACH = "教练（要点）："
 
@@ -30,8 +31,14 @@ def _gist(answer: str) -> str:
     return first if len(first) <= ANSWER_CHARS else first[:ANSWER_CHARS] + "…"
 
 
+def _whole(answer: str) -> str:
+    """上一条回答：全文（换行压成空格），最多 LAST_CHARS 个字。"""
+    text = " ".join(x.strip() for x in answer.strip().split("\n") if x.strip())
+    return text if len(text) <= LAST_CHARS else text[:LAST_CHARS] + "…"
+
+
 def thread_lines(rows: list[dict[str, Any]], current: str, turns: int = TURNS) -> list[str]:
-    """从对话记录里排出最近几轮：用户的原话，加上最近 ANSWERS 条回答的要点。"""
+    """从对话记录里排出最近几轮：用户的原话，加上最近 ANSWERS 条回答的要点，上一条回答给全文。"""
     lines: list[tuple[str, str]] = []
     for row in rows:
         content = row.get("content")
@@ -40,7 +47,7 @@ def thread_lines(rows: list[dict[str, Any]], current: str, turns: int = TURNS) -
         if row.get("role") == "user":
             lines.append(("user", content.strip()[:200]))
         elif row.get("role") == "assistant":
-            lines.append(("coach", _gist(content)))
+            lines.append(("coach", content))
     if lines and lines[-1] == ("user", current.strip()[:200]):
         lines.pop()  # 本轮的问题已经先存进去了
     users = [i for i, (who, _) in enumerate(lines) if who == "user"]
@@ -48,15 +55,16 @@ def thread_lines(rows: list[dict[str, Any]], current: str, turns: int = TURNS) -
         return []
     kept = lines[users[-turns] if len(users) >= turns else users[0] :]
     coach = [i for i, (who, _) in enumerate(kept) if who == "coach"][-ANSWERS:]
+    last = coach[-1] if coach else -1
     return [
-        (USER if who == "user" else COACH) + text
+        USER + text if who == "user" else COACH + (_whole(text) if i == last else _gist(text))
         for i, (who, text) in enumerate(kept)
         if who == "user" or i in coach
     ]
 
 
 async def recent(session_id: str, current: str, turns: int = TURNS) -> list[str]:
-    """本会话最近几轮（用户原话 + 最近两条回答的要点）；读不到时返回空列表。"""
+    """本会话最近几轮（用户原话、最近几条回答的要点、上一条回答全文）；读不到时返回空列表。"""
     owner, session = split_thread(session_id)
     if not owner or not session:
         return []

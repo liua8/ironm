@@ -50,27 +50,35 @@ def test_knowledge_numbers_are_not_combined_with_each_other() -> None:
 
 
 def test_history_has_user_words_and_short_answer_gists(monkeypatch: Any) -> None:
-    long_answer = "先把深度控制在不疼的范围" + "，再慢慢加" * 30 + "。\n第二段不带。"
+    """最近 10 句原话、4 条回答要点（各 150 字）、上一条回答全文（spec [2026-10-23] §53）。"""
+    long_answer = "先把深度控制在不疼的范围" + "，再慢慢加" * 40 + "。\n1. 第二段也要在"
+    rows: list[dict[str, Any]] = []
+    for i in range(1, 13):
+        rows.append({"role": "user", "content": f"第{i}句"})
+        rows.append({"role": "assistant", "content": f"第{i}条回答" + "很长" * 100})
+    rows[-1] = {"role": "assistant", "content": long_answer}
+    rows.append({"role": "user", "content": "那它的替代动作呢"})
 
     async def fake_history(owner: str, session: str) -> list[dict[str, Any]]:
         assert (owner, session) == ("1", "abc")
-        return [
-            {"role": "user", "content": "我想练腿"},
-            {"role": "assistant", "content": "第一条回答"},
-            {"role": "user", "content": "深蹲怎么做"},
-            {"role": "assistant", "content": "第二条回答"},
-            {"role": "user", "content": "膝盖有点疼"},
-            {"role": "assistant", "content": long_answer},
-            {"role": "user", "content": "那它的替代动作呢"},
-        ]
+        return rows
 
     import mirobody.agent.chat.message as message
 
     monkeypatch.setattr(message, "get_chat_history", fake_history)
     lines = asyncio.run(recent("1:abc", "那它的替代动作呢"))
-    # 用户的原话都在；回答只带最近两条的开头一小段，第一条回答不带，本轮的问题不重复
-    assert lines[0] == "用户：我想练腿" and "教练（要点）：第一条回答" not in lines
-    assert lines[1:3] == ["用户：深蹲怎么做", "教练（要点）：第二条回答"]
-    assert lines[-1].startswith("教练（要点）：先把深度") and lines[-1].endswith("…")
-    assert len(lines[-1]) <= len("教练（要点）：") + 81 and "第二段" not in lines[-1]
+    users = [x for x in lines if x.startswith("用户：")]
+    coach = [x for x in lines if x.startswith("教练（要点）：")]
+    assert users[0] == "用户：第3句" and len(users) == 10  # 第 1、2 句不带，本轮的问题不重复
     assert "用户：那它的替代动作呢" not in lines
+    assert len(coach) == 4 and coach[0].startswith("教练（要点）：第9条回答")
+    assert all(len(x) <= len("教练（要点）：") + 151 for x in coach[:-1])
+    assert coach[-1].startswith("教练（要点）：先把深度") and "第二段也要在" in coach[-1]
+    assert len(coach[-1]) > len("教练（要点）：") + 151  # 上一条回答给全文
+
+
+def test_last_answer_is_cut_at_800_chars() -> None:
+    from ironm_agent.memory import LAST_CHARS, _whole
+
+    out = _whole("第一段\n" + "字" * 2000)
+    assert out.startswith("第一段 ") and out.endswith("…") and len(out) == LAST_CHARS + 1
