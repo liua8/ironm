@@ -26,6 +26,7 @@ from ironm_agent.healthdata import read_all
 from ironm_agent.illness import active as illness_active
 from ironm_agent.illness import doctor, due, question, recurring, sick_days
 from ironm_agent.illness import recent as recent_illness
+from ironm_agent.illness import trained as illness_trained
 from ironm_agent.memory_extract import MAX_CONTENT
 from ironm_agent.memory_prefs import refresh as refresh_prefs
 from ironm_agent.memory_store import CATEGORIES, ORIGINS, Item, MemoryStore, default_store
@@ -359,10 +360,16 @@ async def confirm_draft(
     user_id: str = Depends(_verify()),
     store: TrainingStore = TRAINING,
     memory: MemoryStore = STORE,
+    illness: Any = ILLNESS,
 ) -> dict[str, Any]:
     out = await _draft_action(store, user_id, draft_id, "confirm")
     if out.get("draft", {}).get("kind") == "log":  # 记下了一次训练：后台更新训练记录得出的偏好
         refresh_later(user_id, memory, store)
+        log = out["draft"].get("log") or {}
+        if log.get("done", True):  # 对话里记的训练同样算练过（§46）
+            await illness_trained(
+                illness, user_id, date.fromisoformat(str(log.get("day") or date.today()))
+            )
     plan_change_later(user_id, out.get("draft") or {})  # 按操作改的计划：记进调整经历（§45）
     coach_later(user_id, "确认方案")  # 计划或记录变了：管家重新评估（spec [2026-10-23] §23）
     return out
@@ -405,8 +412,11 @@ async def add_workout(
     store: TrainingStore = TRAINING,
     memory: MemoryStore = STORE,
     pain: Any = PAIN,
+    illness: Any = ILLNESS,
 ) -> dict[str, Any]:
     row = await store.log(user_id, WorkoutLog(day=date.today(), **body.model_dump()))
+    if row.log.done:  # 生病期间打卡练了：当作已经好了（spec [2026-10-23] §46）
+        await illness_trained(illness, user_id, row.log.day)
     if parts := pain_parts(
         body.note
     ):  # 打卡备注里说疼：触发型调整用（spec [2026-10-23] §18 需求 5）

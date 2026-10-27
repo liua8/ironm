@@ -131,6 +131,16 @@ def refresh(ep: Episode, today: date) -> Episode:
     return ep
 
 
+def end_of(ep: Episode, today: date) -> date:
+    """这次生病算到哪天：好了的到好了那天；没确认的到系统不再问的前一天（那几天一直按生病处理）；
+    还在进行的到今天。"""
+    if ep.ended is not None:
+        return ep.ended
+    if refresh(ep, today).status == "unconfirmed":
+        return ep.last_touch() + timedelta(days=SILENT_DAYS)
+    return today
+
+
 def active(eps: Sequence[Episode], today: date) -> list[Episode]:
     return [e for e in (refresh(x, today) for x in eps) if e.active]
 
@@ -201,10 +211,11 @@ def today_mode(
         if ep.level == "above":
             return "light", f"{when}说{ep.what()}（颈部以上的症状，可以降低强度活动）"
         return "rest", f"{when}说{ep.what()}，还没好，先休息"
-    done = [e for e in eps if e.status == "resolved" and e.ended is not None]
-    for ep in sorted(done, key=lambda e: e.ended or e.started, reverse=True):
-        end = ep.ended or ep.started
-        if ep.level == "fever" and end == today:
+    # 好了的、没确认的（不回答不等于好了，同样按病后第一次七成过渡）
+    done = [e for e in (refresh(x, today) for x in eps) if e.status in ("resolved", "unconfirmed")]
+    for ep in sorted(done, key=lambda e: end_of(e, today), reverse=True):
+        end = end_of(ep, today)
+        if ep.status == "resolved" and ep.level == "fever" and end == today:
             return "rest", "发烧刚好，再休息一天"
         if ep.light_until is not None and ep.light_until >= today:
             return "light", "你说好了，但心率还没回到平时的水平"
@@ -214,11 +225,10 @@ def today_mode(
 
 
 def sick_days(eps: Sequence[Episode], today: date) -> frozenset[date]:
-    """生病期间的日子：开始到好了；没回答而不再追问的，到最后一次确认为止。"""
+    """生病期间的日子：开始到好了；没回答而不再追问的，到系统不再问的前一天。"""
     days: set[date] = set()
     for e in eps:
-        e = refresh(e, today)
-        end = e.ended or (today if e.active else e.last_touch())
+        end = end_of(e, today)
         days |= {e.started + timedelta(days=i) for i in range((end - e.started).days + 1)}
     return frozenset(days)
 
@@ -227,14 +237,28 @@ def recovering_days(eps: Sequence[Episode], today: date) -> frozenset[date]:
     """生病期间和好了之后 AFTER_DAYS 天：这些日子没做到的组次不触发自动减重量。"""
     days = set(sick_days(eps, today))
     for e in eps:
-        if e.ended is not None:
-            days |= {e.ended + timedelta(days=i) for i in range(1, AFTER_DAYS + 1)}
+        if not refresh(e, today).active:
+            end = end_of(e, today)
+            days |= {end + timedelta(days=i) for i in range(1, AFTER_DAYS + 1)}
     return frozenset(days)
 
 
 def recurring(eps: Sequence[Episode], today: date) -> int:
     """最近 4 周开始了几次生病（RECUR_TIMES 次以上要提示减量）。"""
     return sum(1 for e in eps if 0 <= (today - e.started).days < RECUR_DAYS)
+
+
+async def trained(store: IllnessStore, user_id: str, day: date) -> bool:
+    """生病期间打卡练了一次：当作已经好了，结束这次生病、不再追问（§46）。读写失败不影响打卡。"""
+    try:
+        eps = active(await store.since(user_id, day - timedelta(days=LOOKBACK)), day)
+        for ep in eps:
+            done, _ = answer(ep, "resolved", day)
+            await store.save(user_id, done)
+        return bool(eps)
+    except Exception as e:
+        _log.warning("illness update failed: error_type=%s", type(e).__name__)
+        return False
 
 
 def state_line(eps: Sequence[Episode], today: date) -> str:

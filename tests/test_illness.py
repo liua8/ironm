@@ -251,3 +251,29 @@ def test_home_check_in_and_buttons(monkeypatch: Any) -> None:
     today = c.get("/iron/api/today").json()
     assert today["status"] == "ok" and any("七成" in x for x in today["reasons"])
     assert c.post("/iron/api/illness/nope/check", json={"answer": "resolved"}).status_code == 404
+
+
+def test_never_answering_counts_the_rest_days_and_eases_back() -> None:
+    """一直不回答：系统让休息的那几天都算生病的日子；之后第一次训练按七成（§46 补充）。"""
+    start = TODAY - timedelta(days=5)
+    e = ep(started=start)
+    assert not active([e], TODAY)  # 第 5 天：不再问
+    days = sick_days([e], TODAY)
+    assert days == frozenset(start + timedelta(days=i) for i in range(4))  # 第 1 到第 4 天
+    assert today_mode([e], TODAY) == ("ease", "肚子疼刚好，病后第一次训练按平时的七成")
+    assert today_mode([e], TODAY, trained_since=[TODAY]) is None
+    assert (start + timedelta(days=5)) in recovering_days([e], TODAY)  # 之后两天也不触发减重量
+
+
+def test_training_during_illness_ends_it(monkeypatch: Any) -> None:
+    ill = IllnessBook()
+    e = ep()
+    asyncio.run(ill.save("42", e))
+    c = client(monkeypatch, ill)
+    from ironm_agent import web
+
+    monkeypatch.setattr(web, "refresh_later", lambda *a: None)
+    assert c.post("/iron/api/workouts", json={"session": "全身"}).status_code == 200
+    done = ill.rows["42"][e.id]
+    assert done.status == "resolved" and done.ended == TODAY
+    assert c.get("/iron/api/brief").json()["checkin"] is None
