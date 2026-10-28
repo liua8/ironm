@@ -62,6 +62,7 @@ class Muscle:
             "name": n.name,
             "formal": n.formal,
             "says": list(n.says[:3]),
+            "model": list(n.model),
             "group": body.name(n.parent or ""),
             "part": next(a.name for a in body.table().ancestors(self.code) if a.level == "part"),
             "sets_7d": int(sets) if sets == int(sets) else sets,

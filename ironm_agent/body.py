@@ -38,6 +38,7 @@ class Node(ContractModel):
     fedb: str = ""
     uberon: str = Field(default="", pattern=r"^(UBERON:\d{7})?$")
     says: tuple[str, ...] = ()
+    model: tuple[str, ...] = ()  # 3D 人体图模型里对应的分区（只有细分肌肉写）
 
 
 class CodeFile(ContractModel):
@@ -60,6 +61,11 @@ class BodyTable:
             if not n.code.startswith(n.level + "."):
                 raise ValueError(f"编码和层级对不上：{n.code}")
             self.nodes[n.code] = n
+        regions = [r for n in nodes for r in n.model]
+        if len(regions) != len(set(regions)):
+            raise ValueError("模型分区重复对应")
+        if any(n.model for n in nodes if n.level != "muscle"):
+            raise ValueError("只有细分肌肉对应模型分区")
         self.kids: dict[str, list[str]] = {}
         for n in nodes:
             want = PARENT_LEVEL[n.level]

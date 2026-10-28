@@ -542,14 +542,17 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .scene { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--sunken); padding: 2px 6px; border-radius: 6px; }
 .preset .row-sub { white-space: normal; }
 /* 肌肉人体图 */
-.body-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.body-fig { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.body-fig figcaption { font-size: 12px; color: var(--muted); }
-.body-svg { width: 100%; max-width: 170px; height: auto; }
-.body-base { fill: var(--sunken); }
-.muscle { cursor: pointer; outline: none; }
-.muscle > * { stroke: var(--surface); stroke-width: 1.2; transition: opacity .15s; }
-.muscle:hover > *, .muscle:focus-visible > * { opacity: .75; }
+.body3d { position: relative; min-width: 0; }
+.body3d-stage { width: 100%; min-height: 300px; display: grid; place-items: center; border-radius: 12px;
+  background: radial-gradient(ellipse at 50% 40%, var(--surface), var(--sunken)); overflow: hidden; }
+.body3d-canvas { display: block; touch-action: none; cursor: grab; }
+.body3d-canvas:active { cursor: grabbing; }
+.body3d-turn { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; }
+.body3d-turn .btn { height: 30px; min-height: 0; padding: 0 12px; font-size: 13px; border-radius: 15px; background: var(--surface); }
+.body3d-hint { position: absolute; left: 10px; top: 12px; margin: 0; font-size: 11.5px; color: var(--muted); pointer-events: none; }
+.part-list { display: flex; flex-direction: column; gap: 10px; }
+.part-group h3 { margin: 6px 0 2px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.all-muscles summary { cursor: pointer; font-size: 14px; color: var(--ink-2); padding: 6px 0; }
 .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12.5px; color: var(--muted); justify-content: center; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
@@ -846,16 +849,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .inbox-why p { margin: 6px 0 0; }
 .lack-row { flex-wrap: nowrap; } .lack-row .row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 
-/* ==== 人体图细化（spec [2026-10-23] §30）：按近 7 天组数分四档深浅，恢复中的描一圈虚线 ==== */
-.body-svg { max-width: 190px; }
-.body-base { fill: var(--sunken); stroke: var(--line); stroke-width: .6; }
-.muscle > * { stroke: var(--surface); stroke-width: .9; }
-.lv-none > *, i.lv-none { fill: color-mix(in srgb, var(--muted) 22%, var(--surface)); background: color-mix(in srgb, var(--muted) 22%, var(--surface)); }
-.lv-low > *, i.lv-low { fill: color-mix(in srgb, var(--fire) 28%, var(--surface)); background: color-mix(in srgb, var(--fire) 28%, var(--surface)); }
-.lv-mid > *, i.lv-mid { fill: color-mix(in srgb, var(--fire) 62%, var(--surface)); background: color-mix(in srgb, var(--fire) 62%, var(--surface)); }
-.lv-high > *, i.lv-high { fill: var(--fire-2); background: linear-gradient(90deg, var(--fire), var(--fire-2)); }
-.muscle.recovering > path { stroke: var(--ink); stroke-width: .8; stroke-dasharray: 1.6 1.2; }
-.muscle-line { fill: none; stroke: var(--surface); stroke-width: .7; stroke-linecap: round; opacity: .85; pointer-events: none; }
+/* ==== 人体图按近 7 天组数分四档深浅（§30）；3D 图上恢复中的闪烁（§57） ==== */
+i.lv-none { background: color-mix(in srgb, var(--muted) 32%, var(--surface)); }
+i.lv-low { background: color-mix(in srgb, var(--fire) 42%, var(--surface)); }
+i.lv-mid { background: color-mix(in srgb, var(--fire) 80%, var(--surface)); }
+i.lv-high { background: linear-gradient(90deg, var(--fire), var(--fire-2)); }
 .muscle-rows { display: flex; flex-direction: column; gap: 2px; }
 .muscle-row { display: grid; grid-template-columns: 136px 1fr 52px; align-items: center; gap: 10px; padding: 7px 2px; cursor: pointer; font-size: 14px; }
 .muscle-row .mr-name { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -863,7 +861,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .muscle-row .mr-bar { height: 8px; border-radius: 4px; background: var(--sunken); overflow: hidden; }
 .muscle-row .mr-bar i { display: block; height: 100%; border-radius: 4px; }
 .muscle-row .mr-sets { text-align: right; font-family: var(--mono); font-size: 13px; color: var(--ink-2); }
-.legend i.dash { background: transparent; border: 1.2px dashed var(--ink); }
+.legend i.glow { background: var(--fire); box-shadow: 0 0 6px var(--fire); animation: glow 1.3s ease-in-out infinite alternate; }
+@keyframes glow { from { opacity: .45; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .legend i.glow { animation: none; } }
 .recover-box { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 10px; background: var(--good-soft); }
 .recover-box b { font-size: 15.5px; color: var(--good); }
 .recover-box.recovering, .recover-box.today { background: var(--warn-soft); }

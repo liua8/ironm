@@ -260,3 +260,95 @@ def test_recovery_days_follow_the_spec_groups() -> None:
     assert {"muscle.gastrocnemius", "muscle.soleus", "muscle.tibialis_anterior", "muscle.glute_med",
                      "muscle.rectus_abdominis", "muscle.obliques", "muscle.serratus_anterior", "muscle.neck"} == DAILY  # fmt: skip
     assert {m.code for m in table().muscles_under("part.arm")} == ARMS
+
+
+# ---- 需求 3：3D 人体图 -----------------------------------------------------------------------
+
+WEB = Path(__file__).resolve().parents[1] / "ironm_agent" / "web"
+
+
+def _glb_json(path: Path) -> dict:  # type: ignore[type-arg]
+    import json
+    import struct
+
+    data = path.read_bytes()
+    length, kind = struct.unpack("<II", data[12:20])
+    assert data[:4] == b"glTF" and kind == 0x4E4F534A
+    return json.loads(data[20 : 20 + length])  # type: ignore[no-any-return]
+
+
+def test_every_muscle_maps_to_regions_that_exist_in_the_model() -> None:
+    glb = _glb_json(WEB / "muscles-v1.glb")
+    regions = {n.get("name") for n in glb["nodes"]}
+    for m in table().of_level("muscle"):
+        assert m.model, m.code
+        assert set(m.model) <= regions, (m.code, set(m.model) - regions)
+    # 不点的分区：手、足、深层、呼吸肌和身体底色
+    used = {r for m in table().of_level("muscle") for r in m.model}
+    assert regions - used == {
+        "body_context", "context_bone", "context_skin", "context_tendon", "fibularis", "foot_muscles",
+        "hand_muscles", "hip_rotators", "breathing", "transverse_abdominis",
+    }  # fmt: skip
+
+
+def test_model_is_self_contained_and_small() -> None:
+    glb = _glb_json(WEB / "muscles-v1.glb")
+    assert not any("uri" in b for b in glb.get("buffers", []))  # 不引用别的文件
+    assert not glb.get("images") and not glb.get("extensionsRequired")
+    vendored = [WEB / "muscles-v1.glb", *WEB.glob("three-r160*.js")]
+    assert sum(f.stat().st_size for f in vendored) <= 4 * 1024 * 1024
+
+
+def test_vendored_modules_import_only_local_files() -> None:
+    import re
+
+    # three.js 本体是打包好的单个文件，不引用别的；其余几个的 import 都要指向同目录
+    files = [f for f in WEB.glob("three-r160*.js") if not f.name.endswith(".min.js")]
+    for f in [*files, WEB / "body3d.js"]:
+        text = f.read_text()
+        specs = re.findall(r"""^(?:import|\})[^;\n]*?from\s*["']([^"']+)["']""", text, re.M)
+        assert specs, f.name
+        for spec in specs:
+            assert spec.startswith("./"), (f.name, spec)
+    assert "import(" not in (WEB / "three-r160.module.min.js").read_text()
+
+
+def test_versioned_assets_are_cached_and_others_revalidate() -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from ironm_agent.web import router
+
+    app = FastAPI()
+    app.include_router(router)
+    c = TestClient(app)
+    glb = c.get("/iron/muscles-v1.glb")
+    assert glb.status_code == 200 and glb.headers["content-type"] == "model/gltf-binary"
+    assert "max-age=604800" in glb.headers["cache-control"]
+    js = c.get("/iron/three-r160.module.min.js")
+    assert "max-age" in js.headers["cache-control"] and "javascript" in js.headers["content-type"]
+    assert c.get("/iron/app.js").headers["cache-control"] == "no-cache"
+    assert c.get("/iron/body3d.js").headers["cache-control"] == "no-cache"
+
+
+def test_muscles_api_carries_model_regions() -> None:
+    from datetime import date
+
+    from ironm_agent.protools.muscle_map import muscle_map
+
+    got = muscle_map([], date(2026, 10, 28))
+    lats = next(x for x in got["muscles"] if x["code"] == "muscle.lats")  # type: ignore[union-attr, index]
+    assert lats["model"] == ["upper_lats", "lower_lats", "teres_major"] and lats["part"] == "背"
+
+
+def test_third_party_notice_credits_model_and_three() -> None:
+    text = (WEB / "THIRD-PARTY.md").read_text()
+    for must in (
+        "Z-Anatomy",
+        "BodyParts3D",
+        "CC BY-SA 4.0",
+        "muscles-v1.glb",
+        "three.js",
+        "MIT License",
+    ):
+        assert must in text, must
