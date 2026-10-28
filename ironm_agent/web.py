@@ -544,8 +544,8 @@ async def index() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
-# 文件名里带版本号的（three-r160-*.js、muscles-v1.glb）内容不会变：浏览器缓存一周，不再重新下载
-_VERSIONED = re.compile(r"-(?:r|v)\d+[.-]")
+# 文件名里带版本号的（musclemap-v1.json）内容不会变：浏览器缓存一周，不再重新下载
+_VERSIONED = re.compile(r"-v\d+\.")
 
 
 @router.get("/iron/{name}")
@@ -554,8 +554,7 @@ async def asset(name: str) -> FileResponse:
     if path.parent != WEB_DIR.resolve() or not path.is_file():
         raise HTTPException(404)
     cache = "public, max-age=604800, immutable" if _VERSIONED.search(name) else "no-cache"
-    media = "model/gltf-binary" if path.suffix == ".glb" else None
-    return FileResponse(path, media_type=media, headers={"Cache-Control": cache})
+    return FileResponse(path, headers={"Cache-Control": cache})
 
 
 # 前端改版的接口（spec [2026-10-23] §13）放在 web_more.py，挂在同一个 router 上

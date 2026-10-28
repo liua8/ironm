@@ -100,7 +100,7 @@ def test_web_files_load_nothing_external() -> None:
     from pathlib import Path
 
     web = Path(__file__).resolve().parents[1] / "ironm_agent" / "web"
-    for name in ("index.html", "style.css", "app.js", "body3d.js"):
+    for name in ("index.html", "style.css", "app.js"):
         text = (
             (web / name).read_text().replace("http://www.w3.org/2000/svg", "")
         )  # SVG 命名空间不是请求

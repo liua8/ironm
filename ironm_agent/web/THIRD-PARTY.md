@@ -25,29 +25,6 @@ Feather 部分（MIT License）：Copyright (c) 2013-2022 Cole Bemis
 
 第二批动作的名称和主次肌肉参考了 free-exercise-db（https://github.com/yuhonas/free-exercise-db，The Unlicense，公有领域）。中文的做法、要点等内容是自己写的，没有使用它的文字和图片（图片来源不明）。
 
-## 3D 肌肉模型（muscles-v1.glb）
-
-数据页的 3D 人体图用的模型 `muscles-v1.glb` 来自 Gymmetry 的健身改造版（https://github.com/kalibismail/gymmetry-muscle-model ，2026-10-22 版本，文件未做修改），它改编自：
-
-- **Z-Anatomy — The libre 3D atlas of anatomy**，作者 Gauthier Kervyn（https://github.com/Z-Anatomy/Models-of-human-anatomy），CC BY-SA 4.0；
-- **BodyParts3D**，The Database Center for Life Science（Kousaku Okubo）（https://dbarchive.biosciencedbc.jp/en/bodyparts3d/desc.html），CC BY-SA 2.1 Japan。
-
-改编版的说明：只保留有名字的肌肉网格，左右合并成 44 个分区，降低面数、加了烘焙的顶点色，去掉了贴图和原材质；头部、手足骨骼和肌腱作为不可选的背景。这个模型按 **CC BY-SA 4.0** 分发（https://creativecommons.org/licenses/by-sa/4.0/），转发时要保留以上署名、许可链接和这段修改说明。两个许可都允许商用。
-
-## three.js（three-r160-*.js）
-
-显示 3D 模型用的 three.js r160（https://threejs.org）：`three-r160.module.min.js` 是原版文件；`three-r160-gltf-loader.js`、`three-r160-orbit-controls.js`、`three-r160-geometry-utils.js` 分别来自它的 `examples/jsm/loaders/GLTFLoader.js`、`examples/jsm/controls/OrbitControls.js`、`examples/jsm/utils/BufferGeometryUtils.js`，只把 import 的路径改成同目录的文件，其余没有改动。
-
-The MIT License
-
-Copyright © 2010-2023 three.js authors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
 ## 平面肌肉图（musclemap-v1.json）
 
 数据页主图（正面、背面的平面肌肉图）的图形来自 MuscleMap（https://github.com/melihcolpan/MuscleMap），作者 Melih Colpan，MIT 许可。它的路径数据写在 Swift 源码里，这里原样转成了 JSON（男女正面、背面四张图，分区名和路径都没改）。openGym 用的也是这套图；openGym 自己的代码是 AGPL，这里没有用它的代码。

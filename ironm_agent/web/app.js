@@ -1210,15 +1210,15 @@ function metricGroup(title, present) {
       h("span", { class: "row-end" }, "暂无", icon("chevron", "sm")))))) : null);
 }
 
-// 人体图（spec [2026-10-23] §57）：主图是 openGym 那种平面图（MuscleMap 原图，MIT），正面、背面并排；
-// "3D 转着看"点了才加载 3D 模型；都显示不了时退回按部位分组的列表
+// 人体图（spec [2026-10-23] §57）：openGym 那种平面图（MuscleMap 原图，MIT），正面、背面并排；
+// 图没加载出来时退回按部位分组的列表
 let flatShapes = null;
 const loadFlat = () => (flatShapes ||= fetch("/iron/musclemap-v1.json").then((r) => { if (!r.ok) throw new Error("图没加载出来"); return r.json(); }));
 const LEVELS = ["none", "low", "mid", "high"];
 const NOT_MUSCLE = new Set(["head", "hair", "hands", "feet", "ankles", "knees"]);
 
 function flatBody(mm, pick, sex) {
-  const wrap = h("div", { class: "flat-body" }, h("p", { class: "muted body3d-wait" }, "人体图加载中…"));
+  const wrap = h("div", { class: "flat-body" }, h("p", { class: "muted" }, "人体图加载中…"));
   const byRegion = {};
   for (const m of mm.muscles) for (const r of m.flat || []) (byRegion[r] ||= []).push(m);
   // 两块肌肉共用一块图（臀、小腿）：先选是哪一块
@@ -1260,9 +1260,6 @@ function flatBody(mm, pick, sex) {
   return wrap;
 }
 
-let body3dModule = null;
-const loadBody3d = () => (body3dModule ||= import("/iron/body3d.js"));
-
 function partList(mm, pick) {
   const parts = [];
   for (const m of mm.muscles) {
@@ -1276,35 +1273,6 @@ function partList(mm, pick) {
       h("span", { class: "mr-name" }, m.name, RECOVER_WORD[m.state] ? h("em", {}, RECOVER_WORD[m.state]) : null),
       h("span", { class: "mr-bar" }, h("i", { class: `lv-${m.level}`, style: `width:${Math.min(100, (m.sets_7d / 12) * 100)}%` })),
       h("span", { class: "mr-sets" }, `${m.sets_7d} 组`)), () => pick(m))))));
-}
-
-function body3d(mm, pick) {
-  const stage = h("div", { class: "body3d-stage" }, h("p", { class: "muted body3d-wait" }, "人体图加载中…"));
-  const front = h("button", { class: "btn ghost small", type: "button", disabled: true }, "正面");
-  const back = h("button", { class: "btn ghost small", type: "button", disabled: true }, "背面");
-  const wrap = h("div", { class: "body3d" }, stage, h("div", { class: "body3d-turn" }, front, back),
-    h("p", { class: "body3d-hint" }, "拖动旋转 · 点肌肉看详情"));
-  const fallback = (why) => wrap.replaceChildren(h("p", { class: "muted" }, why), partList(mm, pick));
-  loadBody3d().then(async (mod) => {
-    if (!mod.supported()) return fallback("这台设备显示不了 3D 人体图，按部位列出：");
-    const view = await mod.mount(stage, mm.muscles, pick);
-    front.disabled = back.disabled = false;
-    front.onclick = view.front;
-    back.onclick = view.back;
-  }).catch(() => fallback("3D 人体图没加载出来，按部位列出："));
-  return wrap;
-}
-
-function bodyView(mm, pick, sex) {
-  const holder = h("div", { class: "body-view" });
-  const toggle = h("button", { class: "btn ghost small", type: "button" });
-  const show = (three) => {
-    holder.replaceChildren(three ? body3d(mm, pick) : flatBody(mm, pick, sex));
-    toggle.textContent = three ? "回到平面图" : "3D 转着看";
-    toggle.onclick = () => show(!three);
-  };
-  show(false);
-  return h("div", {}, holder, h("div", { class: "body-switch" }, toggle));
 }
 
 // 每块肌肉的恢复状态（spec [2026-10-23] §30）
@@ -1352,7 +1320,7 @@ function bodyMap(mm, brief, sex) {
   const resting = mm.muscles.filter((m) => m.state !== "ready");
   const rd = brief?.today?.readiness;
   return h("div", { class: "card body-card" },
-    bodyView(mm, pick, sex),
+    flatBody(mm, pick, sex),
     h("div", { class: "legend" }, ["none", "low", "mid", "high"].map((lv) => h("span", {}, h("i", { class: `lv-${lv}` }), { none: "没练", low: "1–4 组", mid: "5–9 组", high: "10 组以上" }[lv])), h("span", {}, h("i", { class: "glow" }), "闪烁：恢复中或还酸")),
     rd && (rd.level === "poor" || rd.level === "fair") && rd.reasons?.length ? h("div", { class: "notice-line" }, icon("alert", "xs"), `${rd.reasons[0]}：今天整体恢复偏慢，可以降低强度。`) : null,
     resting.length ? h("div", { class: "rest-list" }, resting.map((m) => pressable(h("span", { class: `rest-chip ${m.state}` },

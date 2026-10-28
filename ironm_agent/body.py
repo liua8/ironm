@@ -39,7 +39,6 @@ class Node(ContractModel):
     fedb: str = ""
     uberon: str = Field(default="", pattern=r"^(UBERON:\d{7})?$")
     says: tuple[str, ...] = ()
-    model: tuple[str, ...] = ()  # 3D 人体图模型里对应的分区（只有细分肌肉写）
     flat: tuple[str, ...] = ()  # 平面人体图上对应的分区："front:upper-chest"（只有细分肌肉写，可以共用）
 
 
@@ -63,13 +62,10 @@ class BodyTable:
             if not n.code.startswith(n.level + "."):
                 raise ValueError(f"编码和层级对不上：{n.code}")
             self.nodes[n.code] = n
-        regions = [r for n in nodes for r in n.model]
-        if len(regions) != len(set(regions)):
-            raise ValueError("模型分区重复对应")
         if any(not re.fullmatch(r"(front|back):[a-z-]+", f) for n in nodes for f in n.flat):
             raise ValueError("平面图分区要写成 front:分区 或 back:分区")
-        if any(n.model or n.flat for n in nodes if n.level != "muscle"):
-            raise ValueError("只有细分肌肉对应模型分区")
+        if any(n.flat for n in nodes if n.level != "muscle"):
+            raise ValueError("只有细分肌肉对应平面图分区")
         self.kids: dict[str, list[str]] = {}
         for n in nodes:
             want = PARENT_LEVEL[n.level]

@@ -6,7 +6,6 @@
 # name：页面和回答里显示的常用名；formal：中文正式名（按全国科学技术名词审定委员会《人体解剖学名词》，和常用名一样时不写）
 # fedb：开放动作库 free-exercise-db 的肌群名（它的 abductors 不单列，当作臀中肌的说法）
 # uberon：国际解剖本体 UBERON 的编号（经 EBI OLS 检索核对；没有一一对应的不填）
-# model：3D 人体图模型（Z-Anatomy 健身改造版）里对应的分区名，一块肌肉可以对应几个分区；只有细分肌肉写
 # flat：平面人体图（MuscleMap 原图）上对应的分区，写成 正面或背面:分区名；两块肌肉可以共用一个分区（臀大肌和臀中肌、
 #   腓肠肌和比目鱼肌），图上画不出的（肱肌）不写
 # says：常见说法。同一个说法只能指一个编码；只有肌群和它唯一的同名细分肌肉可以同名，查的时候落到细分肌肉
@@ -44,34 +43,34 @@ nodes:
   - {code: group.neck, level: group, parent: part.neck, name: 颈部肌群, fedb: neck, says: [neck]}
 
   # ---- 细分肌肉（28 块，人体图上能点的就是这些） ----
-  - {code: muscle.pec_major_upper, level: muscle, parent: group.chest, name: 胸大肌上部, formal: 胸大肌锁骨部, says: [上胸, 上胸肌, 胸肌上部], model: [pec_major_upper], flat: [front:upper-chest]}
-  - {code: muscle.pec_major_lower, level: muscle, parent: group.chest, name: 胸大肌中下部, formal: 胸大肌胸肋部, says: [中下胸, 下胸, 胸肌下部], model: [pec_major_lower], flat: [front:lower-chest, front:chest]}
-  - {code: muscle.serratus_anterior, level: muscle, parent: group.chest, name: 前锯肌, uberon: "UBERON:0001125", says: [前锯], model: [serratus_anterior], flat: [front:serratus]}
-  - {code: muscle.anterior_delt, level: muscle, parent: group.shoulders, name: 三角肌前束, formal: 三角肌锁骨部, says: [前束, 前三角, 肩膀前面, 肩前侧], model: [anterior_delt], flat: [front:front-deltoid]}
-  - {code: muscle.lateral_delt, level: muscle, parent: group.shoulders, name: 三角肌中束, formal: 三角肌肩峰部, says: [中束, 中三角, 肩膀侧面, 肩膀外侧], model: [lateral_delt], flat: [front:deltoids, back:deltoids]}
-  - {code: muscle.posterior_delt, level: muscle, parent: group.shoulders, name: 三角肌后束, formal: 三角肌肩胛冈部, says: [后束, 后三角, 肩膀后面, 肩后侧], model: [posterior_delt], flat: [back:rear-deltoid]}
-  - {code: muscle.rotator_cuff, level: muscle, parent: group.shoulders, name: 肩袖肌群, formal: 肩袖（冈上肌、冈下肌、小圆肌、肩胛下肌）, uberon: "UBERON:0003683", says: [肩袖, 冈上肌, 冈下肌, 小圆肌, 肩胛下肌], model: [rotator_cuff], flat: [back:rotator-cuff]}
-  - {code: muscle.upper_traps, level: muscle, parent: group.traps, name: 斜方肌上部, formal: 斜方肌降部, says: [上斜方, 斜方上束], model: [upper_traps], flat: [front:trapezius, front:upper-trapezius, back:upper-trapezius]}
-  - {code: muscle.mid_lower_traps, level: muscle, parent: group.traps, name: 斜方肌中下部, formal: 斜方肌横部和升部, says: [中下斜方, 斜方中下束], model: [mid_traps, lower_traps], flat: [back:trapezius, back:lower-trapezius]}
-  - {code: muscle.rhomboids, level: muscle, parent: group.middle_back, name: 菱形肌, uberon: "UBERON:0005621", says: [肩胛骨中间], model: [rhomboids], flat: [back:rhomboids]}
-  - {code: muscle.lats, level: muscle, parent: group.lats, name: 背阔肌, uberon: "UBERON:0001112", says: [翅膀, 背阔, 宽背], model: [upper_lats, lower_lats, teres_major], flat: [back:upper-back]}
-  - {code: muscle.erector_spinae, level: muscle, parent: group.lower_back, name: 竖脊肌, uberon: "UBERON:0002462", says: [竖脊], model: [erector_spinae], flat: [back:lower-back]}
-  - {code: muscle.biceps, level: muscle, parent: group.biceps, name: 肱二头肌, uberon: "UBERON:0001507", says: [二头, 二头肌, 小老鼠], model: [biceps], flat: [front:biceps]}
-  - {code: muscle.brachialis, level: muscle, parent: group.biceps, name: 肱肌, uberon: "UBERON:0001506", says: [], model: [brachialis]}
-  - {code: muscle.triceps, level: muscle, parent: group.triceps, name: 肱三头肌, uberon: "UBERON:0001509", says: [三头, 三头肌, 拜拜肉, 胳膊后面, 上臂后侧], model: [triceps_long, triceps_lateral, triceps_medial], flat: [front:triceps, back:triceps]}
-  - {code: muscle.forearms, level: muscle, parent: group.forearms, name: 前臂, formal: 前臂肌, uberon: "UBERON:0004487", says: [小臂, 前臂肌], model: [forearm_flexors, forearm_extensors, brachioradialis], flat: [front:forearm, back:forearm]}
-  - {code: muscle.rectus_abdominis, level: muscle, parent: group.abdominals, name: 腹直肌, uberon: "UBERON:0002382", says: [腹直, 六块腹肌, 八块腹肌], model: [rectus_abdominis], flat: [front:abs, front:upper-abs, front:lower-abs]}
-  - {code: muscle.obliques, level: muscle, parent: group.abdominals, name: 腹斜肌, formal: 腹外斜肌和腹内斜肌, uberon: "UBERON:0035032", says: [侧腹, 腹外斜肌, 腹内斜肌], model: [obliques], flat: [front:obliques]}
-  - {code: muscle.glute_max, level: muscle, parent: group.glutes, name: 臀大肌, uberon: "UBERON:0001370", says: [臀大], model: [glute_max], flat: [back:gluteal]}
-  - {code: muscle.glute_med, level: muscle, parent: group.glutes, name: 臀中肌, uberon: "UBERON:0001371", says: [臀中, 髋外展, abductors, 屁股侧面, 臀部侧面], model: [glute_med], flat: [back:gluteal]}
-  - {code: muscle.quadriceps, level: muscle, parent: group.quadriceps, name: 股四头肌, uberon: "UBERON:0001377", says: [股四, 大腿前面, 大腿前侧], model: [rectus_femoris, vastus_group], flat: [front:quadriceps, front:inner-quad, front:outer-quad]}
-  - {code: muscle.hamstrings, level: muscle, parent: group.hamstrings, name: 腘绳肌, formal: 股后肌群, uberon: "UBERON:0002463", says: [腘绳, 大腿后面, 大腿后侧], model: [lateral_hamstrings, medial_hamstrings], flat: [back:hamstring]}
-  - {code: muscle.adductors, level: muscle, parent: group.adductors, name: 内收肌, formal: 大腿内收肌群, uberon: "UBERON:0011144", says: [大腿内侧], model: [adductors], flat: [front:adductors, back:adductors]}
-  - {code: muscle.hip_flexors, level: muscle, parent: group.hip_flexors, name: 髂腰肌, uberon: "UBERON:0001999", says: [髂腰, 腰大肌], model: [hip_flexors], flat: [front:hip-flexors]}
-  - {code: muscle.gastrocnemius, level: muscle, parent: group.calves, name: 腓肠肌, uberon: "UBERON:0001388", says: [小腿肚, 小腿后面], model: [gastrocnemius], flat: [front:calves, back:calves]}
-  - {code: muscle.soleus, level: muscle, parent: group.calves, name: 比目鱼肌, uberon: "UBERON:0001389", says: [比目鱼], model: [soleus], flat: [front:calves, back:calves]}
-  - {code: muscle.tibialis_anterior, level: muscle, parent: group.calves, name: 胫骨前肌, uberon: "UBERON:0001385", says: [胫前, 小腿前面, 小腿前侧], model: [tibialis_anterior], flat: [front:tibialis]}
-  - {code: muscle.neck, level: muscle, parent: group.neck, name: 颈部肌群, formal: 颈肌, uberon: "UBERON:0004465", says: [颈肌, 脖子肌肉], model: [neck_flexors, neck_extensors], flat: [front:neck, back:neck]}
+  - {code: muscle.pec_major_upper, level: muscle, parent: group.chest, name: 胸大肌上部, formal: 胸大肌锁骨部, says: [上胸, 上胸肌, 胸肌上部], flat: [front:upper-chest]}
+  - {code: muscle.pec_major_lower, level: muscle, parent: group.chest, name: 胸大肌中下部, formal: 胸大肌胸肋部, says: [中下胸, 下胸, 胸肌下部], flat: [front:lower-chest, front:chest]}
+  - {code: muscle.serratus_anterior, level: muscle, parent: group.chest, name: 前锯肌, uberon: "UBERON:0001125", says: [前锯], flat: [front:serratus]}
+  - {code: muscle.anterior_delt, level: muscle, parent: group.shoulders, name: 三角肌前束, formal: 三角肌锁骨部, says: [前束, 前三角, 肩膀前面, 肩前侧], flat: [front:front-deltoid]}
+  - {code: muscle.lateral_delt, level: muscle, parent: group.shoulders, name: 三角肌中束, formal: 三角肌肩峰部, says: [中束, 中三角, 肩膀侧面, 肩膀外侧], flat: [front:deltoids, back:deltoids]}
+  - {code: muscle.posterior_delt, level: muscle, parent: group.shoulders, name: 三角肌后束, formal: 三角肌肩胛冈部, says: [后束, 后三角, 肩膀后面, 肩后侧], flat: [back:rear-deltoid]}
+  - {code: muscle.rotator_cuff, level: muscle, parent: group.shoulders, name: 肩袖肌群, formal: 肩袖（冈上肌、冈下肌、小圆肌、肩胛下肌）, uberon: "UBERON:0003683", says: [肩袖, 冈上肌, 冈下肌, 小圆肌, 肩胛下肌], flat: [back:rotator-cuff]}
+  - {code: muscle.upper_traps, level: muscle, parent: group.traps, name: 斜方肌上部, formal: 斜方肌降部, says: [上斜方, 斜方上束], flat: [front:trapezius, front:upper-trapezius, back:upper-trapezius]}
+  - {code: muscle.mid_lower_traps, level: muscle, parent: group.traps, name: 斜方肌中下部, formal: 斜方肌横部和升部, says: [中下斜方, 斜方中下束], flat: [back:trapezius, back:lower-trapezius]}
+  - {code: muscle.rhomboids, level: muscle, parent: group.middle_back, name: 菱形肌, uberon: "UBERON:0005621", says: [肩胛骨中间], flat: [back:rhomboids]}
+  - {code: muscle.lats, level: muscle, parent: group.lats, name: 背阔肌, uberon: "UBERON:0001112", says: [翅膀, 背阔, 宽背], flat: [back:upper-back]}
+  - {code: muscle.erector_spinae, level: muscle, parent: group.lower_back, name: 竖脊肌, uberon: "UBERON:0002462", says: [竖脊], flat: [back:lower-back]}
+  - {code: muscle.biceps, level: muscle, parent: group.biceps, name: 肱二头肌, uberon: "UBERON:0001507", says: [二头, 二头肌, 小老鼠], flat: [front:biceps]}
+  - {code: muscle.brachialis, level: muscle, parent: group.biceps, name: 肱肌, uberon: "UBERON:0001506", says: []}
+  - {code: muscle.triceps, level: muscle, parent: group.triceps, name: 肱三头肌, uberon: "UBERON:0001509", says: [三头, 三头肌, 拜拜肉, 胳膊后面, 上臂后侧], flat: [front:triceps, back:triceps]}
+  - {code: muscle.forearms, level: muscle, parent: group.forearms, name: 前臂, formal: 前臂肌, uberon: "UBERON:0004487", says: [小臂, 前臂肌], flat: [front:forearm, back:forearm]}
+  - {code: muscle.rectus_abdominis, level: muscle, parent: group.abdominals, name: 腹直肌, uberon: "UBERON:0002382", says: [腹直, 六块腹肌, 八块腹肌], flat: [front:abs, front:upper-abs, front:lower-abs]}
+  - {code: muscle.obliques, level: muscle, parent: group.abdominals, name: 腹斜肌, formal: 腹外斜肌和腹内斜肌, uberon: "UBERON:0035032", says: [侧腹, 腹外斜肌, 腹内斜肌], flat: [front:obliques]}
+  - {code: muscle.glute_max, level: muscle, parent: group.glutes, name: 臀大肌, uberon: "UBERON:0001370", says: [臀大], flat: [back:gluteal]}
+  - {code: muscle.glute_med, level: muscle, parent: group.glutes, name: 臀中肌, uberon: "UBERON:0001371", says: [臀中, 髋外展, abductors, 屁股侧面, 臀部侧面], flat: [back:gluteal]}
+  - {code: muscle.quadriceps, level: muscle, parent: group.quadriceps, name: 股四头肌, uberon: "UBERON:0001377", says: [股四, 大腿前面, 大腿前侧], flat: [front:quadriceps, front:inner-quad, front:outer-quad]}
+  - {code: muscle.hamstrings, level: muscle, parent: group.hamstrings, name: 腘绳肌, formal: 股后肌群, uberon: "UBERON:0002463", says: [腘绳, 大腿后面, 大腿后侧], flat: [back:hamstring]}
+  - {code: muscle.adductors, level: muscle, parent: group.adductors, name: 内收肌, formal: 大腿内收肌群, uberon: "UBERON:0011144", says: [大腿内侧], flat: [front:adductors, back:adductors]}
+  - {code: muscle.hip_flexors, level: muscle, parent: group.hip_flexors, name: 髂腰肌, uberon: "UBERON:0001999", says: [髂腰, 腰大肌], flat: [front:hip-flexors]}
+  - {code: muscle.gastrocnemius, level: muscle, parent: group.calves, name: 腓肠肌, uberon: "UBERON:0001388", says: [小腿肚, 小腿后面], flat: [front:calves, back:calves]}
+  - {code: muscle.soleus, level: muscle, parent: group.calves, name: 比目鱼肌, uberon: "UBERON:0001389", says: [比目鱼], flat: [front:calves, back:calves]}
+  - {code: muscle.tibialis_anterior, level: muscle, parent: group.calves, name: 胫骨前肌, uberon: "UBERON:0001385", says: [胫前, 小腿前面, 小腿前侧], flat: [front:tibialis]}
+  - {code: muscle.neck, level: muscle, parent: group.neck, name: 颈部肌群, formal: 颈肌, uberon: "UBERON:0004465", says: [颈肌, 脖子肌肉], flat: [front:neck, back:neck]}
 
   # ---- 关节 ----
   - {code: joint.shoulder, level: joint, parent: part.shoulder, name: 肩关节, uberon: "UBERON:0016884", says: []}
