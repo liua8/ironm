@@ -362,6 +362,7 @@ class Draft:
 
 class TrainingStore(Protocol):
     async def plan(self, user_id: str) -> StoredPlan | None: ...
+    async def plans(self, user_id: str) -> list[StoredPlan]: ...
     async def workouts(self, user_id: str, since: date) -> list[StoredLog]: ...
     async def add_draft(self, user_id: str, kind: Kind, content: dict[str, Any]) -> Draft: ...
     async def draft(self, user_id: str, draft_id: str) -> Draft | None: ...
@@ -396,6 +397,9 @@ class TrainingBook:
 
     async def plan(self, user_id: str) -> StoredPlan | None:
         return next((p for p, active in self._plans.get(user_id, []) if active), None)
+
+    async def plans(self, user_id: str) -> list[StoredPlan]:
+        return sorted((p for p, _ in self._plans.get(user_id, [])), key=lambda p: p.created)
 
     async def workouts(self, user_id: str, since: date) -> list[StoredLog]:
         rows = [x for x in self._logs.get(user_id, []) if x.log.day >= since]
@@ -561,6 +565,18 @@ class PgTraining:
             return None
         r = rows[0]
         return StoredPlan(str(r["id"]), _plan_of(json.loads(r["content"])), r["created_at"])
+
+    async def plans(self, user_id: str) -> list[StoredPlan]:
+        """所有计划版本（撤销掉的已删除），按启用先后排。"""
+        rows = await self._q(
+            "SELECT id, decrypt_content(content) AS content, created_at FROM ironm_plan"
+            " WHERE user_id = :uid ORDER BY created_at",
+            {"uid": user_id},
+        )
+        return [
+            StoredPlan(str(r["id"]), _plan_of(json.loads(r["content"])), r["created_at"])
+            for r in rows
+        ]
 
     async def workouts(self, user_id: str, since: date) -> list[StoredLog]:
         rows = await self._q(

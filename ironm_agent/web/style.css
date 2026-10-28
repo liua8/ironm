@@ -490,7 +490,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .cal-cell.has:not(.lit) { background: var(--sunken); }
 .cal-cell.today { box-shadow: inset 0 0 0 2px var(--accent); }
 .cal-cell[role="button"] { cursor: pointer; }
-.cal-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .dot-state { width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: none; }
 .dot-state.on { background: var(--accent); }
 /* 动作卡片 */
@@ -635,13 +634,13 @@ body {
 }
 .tile:hover, .add:hover, .add-mini:hover, .move-card:hover { border-color: var(--line-hi); }
 /* 关键面板四角的仪表角标 */
-.hero, .plan-card, .cal, .goal, .msg-coach.inbox { position: relative; }
-.hero::before, .hero::after, .plan-card::before, .plan-card::after, .cal::before, .cal::after,
+.hero, .plan-card, .goal, .msg-coach.inbox { position: relative; }
+.hero::before, .hero::after, .plan-card::before, .plan-card::after,
 .goal::before, .goal::after, .msg-coach.inbox::before, .msg-coach.inbox::after {
   content: ""; position: absolute; width: 12px; height: 12px; border: 0 solid rgb(57 255 136 / 55%); pointer-events: none; z-index: 2; display: block;
 }
-.hero::before, .plan-card::before, .cal::before, .goal::before, .msg-coach.inbox::before { top: -1px; left: -1px; right: auto; bottom: auto; border-width: 1.5px 0 0 1.5px; border-radius: var(--radius) 0 0 0; }
-.hero::after, .plan-card::after, .cal::after, .goal::after, .msg-coach.inbox::after { bottom: -1px; right: -1px; top: auto; left: auto; border-width: 0 1.5px 1.5px 0; border-radius: 0 0 var(--radius) 0; }
+.hero::before, .plan-card::before, .goal::before, .msg-coach.inbox::before { top: -1px; left: -1px; right: auto; bottom: auto; border-width: 1.5px 0 0 1.5px; border-radius: var(--radius) 0 0 0; }
+.hero::after, .plan-card::after, .goal::after, .msg-coach.inbox::after { bottom: -1px; right: -1px; top: auto; left: auto; border-width: 0 1.5px 1.5px 0; border-radius: 0 0 var(--radius) 0; }
 
 /* 按钮：切角，橙到红的渐变 */
 .btn {
@@ -942,8 +941,6 @@ i.lv-high { background: var(--fire-2); }
 .wc-note.link { background: var(--sunken); color: var(--muted); }
 .small { font-size: 13px; }
 .cal-cell { position: relative; }
-.cal-sky { position: absolute; right: 1px; bottom: 0; font-style: normal; color: var(--muted); line-height: 1; }
-.cal-sky .i { width: 11px; height: 11px; }
 .day-wx { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 10px; background: var(--good-soft); }
 .day-wx.caution { background: var(--warn-soft); } .day-wx.indoor, .day-wx.avoid { background: var(--heat-soft); }
 .day-wx-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -955,7 +952,8 @@ i.lv-high { background: var(--fire-2); }
 .row-item.on .row-end { color: var(--accent); font-size: 12.5px; }
 
 /* 战报最上面的安全提醒（spec [2026-10-23] §42） */
-.rep-alert { margin: 0 0 10px; border-radius: 10px; background: color-mix(in srgb, var(--fire) 10%, transparent); padding: 8px 12px; }
+.rep-alert { margin: 0 0 10px; border-radius: 10px; background: var(--warn-soft); box-shadow: inset 0 0 0 1px rgb(242 193 78 / 28%); padding: 8px 12px; }
+.rep-alert summary .i { color: var(--warn); }
 .rep-alert summary { cursor: pointer; font-weight: 650; display: flex; align-items: center; gap: 6px; list-style: none; }
 .rep-alert summary::-webkit-details-marker { display: none; }
 .rep-alert p { margin: 6px 0 0; font-size: 14px; line-height: 1.6; }
@@ -1052,3 +1050,12 @@ a.pill { text-decoration: none; display: inline-flex; align-items: center; gap: 
 .tier-add-card { display: flex; flex-direction: column; gap: 8px; }
 .tier-link { margin-left: 10px; font-size: 12.5px; font-weight: 650; color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 3px; vertical-align: middle; }
 .tier-entry { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* 战报和月历合成一张卡（spec [2026-10-23] §64） */
+.rep-seg { grid-template-columns: repeat(2, minmax(0, 1fr)); width: 124px; padding: 3px; border-radius: 10px; }
+.rep-seg button { border: 0; background: none; padding: 5px 0; border-radius: 8px; color: var(--muted); font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; }
+.rep-seg button.on { background: var(--surface); color: var(--accent); box-shadow: inset 0 0 0 1px var(--line-hi); }
+.rep-body { display: grid; gap: 16px; }
+.cal-cell.wk:not(.lit) { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.home-alerts { display: grid; gap: 8px; }
+.home-alerts .rep-alert { margin: 0; }

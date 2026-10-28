@@ -218,6 +218,8 @@ def client(
     app.dependency_overrides[web_more.meal_store] = lambda: meals
     feels = __import__("ironm_agent.muscle_feel", fromlist=["FeelBook"]).FeelBook()
     app.dependency_overrides[web_more.feel_store] = lambda: feels
+    illness = __import__("ironm_agent.illness", fromlist=["IllnessBook"]).IllnessBook()
+    app.dependency_overrides[web_more.illness_store] = lambda: illness
     if monkeypatch is not None:
 
         async def no_targets(_: str) -> tuple[Any, str, Any]:
@@ -240,6 +242,22 @@ def test_calendar_lights_done_days() -> None:
         and "下肢" in got["days"][today.isoformat()][0]["line"]
     )
     assert c.get("/iron/api/calendar?month=2026-13x").status_code == 422
+
+
+def test_calendar_report_stats() -> None:
+    """战报统计跟着月历一起给（spec [2026-10-23] §64）；上个月的记录不混进这个月的格子。"""
+    c, book, _ = client()
+    today = date.today()
+    asyncio.run(book.log("42", WorkoutLog(day=today, session="下肢", rpe=7)))
+    asyncio.run(book.log("42", WorkoutLog(day=today.replace(day=1) - timedelta(days=3))))
+    got = c.get("/iron/api/calendar").json()
+    assert all(d.startswith(got["month"]) for d in got["days"])
+    assert got["month_stats"]["done_days"] == 1 and got["week"]["rpe"] == 7.0
+    assert got["month_stats"]["planned_days"] is None  # 没有计划：不画环
+    assert got["month_stats"]["versus_label"] == "比上月同期"
+    prev = (today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    old = c.get(f"/iron/api/calendar?month={prev}").json()
+    assert old["month_stats"]["done_days"] == 1 and old["month_stats"]["versus_label"] == "比上个月"
 
 
 def test_muscles_endpoint() -> None:

@@ -38,7 +38,7 @@ from ironm_agent.meals import (
 from ironm_agent.memory_store import MemoryStore
 from ironm_agent.metrics import GOALS
 from ironm_agent.protools.muscle_map import muscle_map
-from ironm_agent.training import TrainingStore
+from ironm_agent.training import TrainingStore, week_start
 
 _log = logging.getLogger("ironm_agent.web_more")
 
@@ -197,19 +197,42 @@ async def get_weather(user_id: str = Depends(_verify())) -> dict[str, Any]:
 _MONTH = re.compile(r"^\d{4}-\d{2}$")
 
 
+def illness_store() -> Any:
+    from ironm_agent.illness import default_illness
+
+    return default_illness()
+
+
+ILLNESS = Depends(illness_store)  # 生病记录（spec [2026-10-23] §46）；测试时换成内存版
+
+
 @router.get("/iron/api/calendar")
 async def get_calendar(
-    month: str = "", user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
+    month: str = "",
+    user_id: str = Depends(_verify()),
+    store: TrainingStore = TRAINING,
+    illness: Any = ILLNESS,
 ) -> dict[str, Any]:
+    """整月的训练记录，加上首页战报的本月、本周统计（spec [2026-10-23] §64）。"""
+    from ironm_agent.illness import sick_days
+    from ironm_agent.report import history_start, report
+
     today = date.today()
     if month and not _MONTH.match(month):
         raise HTTPException(422, "月份写成 2026-10 这样")
     first = date.fromisoformat(f"{month}-01") if month else today.replace(day=1)
     nxt = (first.replace(day=28) + timedelta(days=4)).replace(day=1)
-    logs = await store.workouts(user_id, first)
+    since = min(history_start(first), week_start(today))
+    rows = await store.workouts(user_id, since)
+    sick: frozenset[date] = frozenset()
+    try:  # 生病记录读不到时照样出战报（生病的日子当作应练）
+        sick = sick_days(await illness.since(user_id, since), today)
+    except Exception as e:
+        _log.warning("calendar illness unavailable: error_type=%s", type(e).__name__)
+    stats = report(await store.plans(user_id), [x.log for x in rows], first, today, sick)
     days: dict[str, list[dict[str, Any]]] = {}
-    for x in sorted(logs, key=lambda r: r.log.day):
-        if x.log.day >= nxt:
+    for x in sorted(rows, key=lambda r: r.log.day):
+        if not first <= x.log.day < nxt:
             continue
         days.setdefault(x.log.day.isoformat(), []).append(
             {
@@ -225,6 +248,7 @@ async def get_calendar(
         "today": today.isoformat(),
         "days": days,
         "done_days": sorted(d for d, v in days.items() if any(e["done"] for e in v)),
+        **stats,
     }
 
 
@@ -614,15 +638,6 @@ def make_agent(training: TrainingStore, memory: MemoryStore) -> Any:
 # ---- 触发型调整（spec [2026-10-23] §18 需求 5）---------------------------------------------------
 
 TRIGGER_ASK = "按首页的提醒调整训练计划"
-
-
-def illness_store() -> Any:
-    from ironm_agent.illness import default_illness
-
-    return default_illness()
-
-
-ILLNESS = Depends(illness_store)  # 生病记录（spec [2026-10-23] §46）；测试时换成内存版
 
 
 def day_store() -> Any:

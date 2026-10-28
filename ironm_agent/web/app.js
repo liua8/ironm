@@ -250,7 +250,7 @@ const QUICK = {
 const WEEK = ["一", "二", "三", "四", "五", "六", "日"];
 const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-// 首页（spec [2026-10-23] §34）：一句鼓励的话、今日任务、战报、本周计划（带天气）、日历
+// 首页（spec [2026-10-23] §34、§64）：一句鼓励的话、安全提醒、今日任务、战报（含月历）、本周计划（带天气）
 async function home(view) {
   const [brief, training, cal, week, meals] = await Promise.all([
     api("/iron/api/brief").catch(() => null),
@@ -263,10 +263,10 @@ async function home(view) {
   view.append(
     brief?.hero?.cheer ? h("p", { class: "home-cheer" }, brief.hero.cheer) : null,
     askBox(),
+    alertsBox(brief),
     taskCard(brief, training, week, meals),
     reportCard(brief, cal),
-    weekPlanCard(week, cal, brief),
-    monthCard(brief, week));
+    weekPlanCard(week, cal, brief));
 }
 
 // 首页问教练（spec [2026-10-23] §59 需求 2）：发出去就进入对话直接问
@@ -280,11 +280,11 @@ function askBox() {
     h("button", { class: "link ask-past", type: "button", onclick: historySheet }, icon("history", "xs"), "以前的对话"));
 }
 
-// 本周进度环（spec [2026-10-23] §19）
-function ring(done, planned) {
+// 进度环（spec [2026-10-23] §19）：本周按次数，本月按天数（§64）
+function ring(done, planned, label = "本周", unit = "次") {
   const p = planned ? Math.min(1, done / planned) : 0;
-  return h("div", { class: `ring${planned && done >= planned ? " full" : ""}`, style: `--p:${p}`, role: "img", "aria-label": planned ? `本周完成 ${done} / ${planned} 次` : "本周还没有计划" },
-    h("div", { class: "ring-in" }, h("b", {}, String(done)), h("span", {}, planned ? `/ ${planned}` : "次"), h("small", {}, "本周")));
+  return h("div", { class: `ring${planned && done >= planned ? " full" : ""}`, style: `--p:${p}`, role: "img", "aria-label": planned ? `${label}完成 ${done} / ${planned} ${unit}` : `${label}还没有计划` },
+    h("div", { class: "ring-in" }, h("b", {}, String(done)), h("span", {}, planned ? `/ ${planned}` : unit), h("small", {}, label)));
 }
 
 // 打卡成功的庆祝画面：写明本周第几练；点一下或 2.4 秒后自动消失
@@ -449,20 +449,84 @@ function checkinRow(c) {
   return box;
 }
 
-// 战报：本周进度环、本周练了几次、本月练了几天、本周还差几练
-function reportCard(brief, cal) {
-  const w = brief?.week, done = w?.done || 0, planned = w?.planned || 0;
+// 安全提醒放首页（spec [2026-10-23] §42；§64 挪到今日任务上面）：一行标题，点开看原文
+function alertsBox(brief) {
+  const alerts = brief?.alerts || [];
+  return alerts.length ? h("div", { class: "home-alerts" }, alerts.map((a) => h("details", { class: "rep-alert" },
+    h("summary", {}, icon("alert", "sm"), a.title), h("p", {}, a.text)))) : null;
+}
+
+// 战报（spec [2026-10-23] §64）：本周 / 本月两档统计，下面是月历；在本周翻到别的月份自动切到本月
+function reportCard(brief, first) {
+  const w = brief?.week, wdone = w?.done || 0, wplan = w?.planned || 0;
+  let range = "week", cal = first;
+  const tabs = h("div", { class: "seg rep-seg", role: "tablist", "aria-label": "战报范围" });
+  const body = h("div", { class: "rep-body" });
   const stat = (k, v, u) => h("div", { class: "rep-stat" }, h("span", {}, k), h("b", {}, v, h("small", {}, u)));
-  // 安全提醒放首页（spec [2026-10-23] §42）：一行标题，点开看原文
-  const alerts = (brief?.alerts || []).map((a) => h("details", { class: "rep-alert" },
-    h("summary", {}, icon("alert", "sm"), a.title), h("p", {}, a.text)));
-  return h("section", { class: "card home-card" }, cardHead("战报", h("span", { class: "muted" }, "本周")),
-    ...alerts,
-    h("div", { class: "report" }, ring(done, planned),
-      h("div", { class: "rep-stats" },
-        stat("本周练了", `${done}`, planned ? ` / ${planned} 次` : " 次"),
-        stat("本月练了", `${cal?.done_days?.length ?? 0}`, " 天"),
-        stat(planned && done >= planned ? "本周目标" : "本周还差", planned && done >= planned ? "达成" : `${Math.max(0, planned - done)}`, planned && done >= planned ? "" : " 练"))));
+  const load = async (month) => {
+    body.replaceChildren(...skeleton(260));
+    try { cal = await api(`/iron/api/calendar${month ? `?month=${month}` : ""}`); }
+    catch (err) { body.replaceChildren(failed(err, () => load(month))); return; }
+    draw();
+  };
+  const shift = (n) => {
+    const [y, m] = cal.month.split("-").map(Number);
+    const month = isoDay(new Date(y, m - 1 + n, 1)).slice(0, 7);
+    if (month !== cal.today.slice(0, 7)) range = "month";
+    load(month);
+  };
+  const pick = (k) => {
+    range = k;
+    if (k === "week" && cal && cal.month !== cal.today.slice(0, 7)) load(""); else draw();
+  };
+  const draw = () => {
+    const now = !cal || cal.month === cal.today.slice(0, 7);
+    const m = cal ? Number(cal.month.slice(5)) : 0;
+    tabs.replaceChildren(...[["week", "本周"], ["month", now ? "本月" : `${m}月`]].map(([k, name]) =>
+      h("button", { type: "button", role: "tab", class: range === k ? "on" : "", "aria-selected": String(range === k), onclick: () => pick(k) }, name)));
+    if (!cal) { body.replaceChildren(failed(new Error("战报暂时取不到"), () => load(""))); return; }
+    const won = wplan && wdone >= wplan, s = cal.month_stats, rpe = cal.week?.rpe;
+    const stats = range === "week"
+      ? h("div", { class: "report" }, ring(wdone, wplan),
+        h("div", { class: "rep-stats" },
+          stat("本周练了", `${wdone}`, wplan ? ` / ${wplan} 次` : " 次"),
+          stat(won ? "本周目标" : "本周还差", won ? "达成" : `${Math.max(0, wplan - wdone)}`, won ? "" : " 练"),
+          stat("平均感受", rpe != null ? rpe.toFixed(1) : "未记", rpe != null ? " 分" : "")))
+      : h("div", { class: "report" }, s.planned_days != null ? ring(s.done_days, s.planned_days, now ? "本月" : `${m}月`, "天") : null,
+        h("div", { class: "rep-stats" },
+          stat(now ? "本月练了" : `${m}月练了`, `${s.done_days}`, s.planned_days != null ? ` / ${s.planned_days} 天` : " 天"),
+          stat("连续达标", `${s.streak_weeks}`, " 周"),
+          stat(`${s.versus_label}${s.versus > 0 ? "多" : s.versus < 0 ? "少" : ""}`, s.versus ? `${Math.abs(s.versus)}` : "持平", s.versus ? " 天" : "")));
+    body.replaceChildren(stats, monthGrid(cal, range === "week", shift));
+  };
+  draw();
+  return h("section", { class: "card home-card" }, cardHead("战报", tabs), body);
+}
+
+// 月历：练过的日子点亮，点一天看那天的记录；本周范围时本周那一行高亮（§64 不再显示天气）
+function monthGrid(cal, markWeek, shift) {
+  const [y, m] = cal.month.split("-").map(Number);
+  const days = new Date(y, m, 0).getDate(), lead = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+  const lit = new Set(cal.done_days);
+  const t = new Date(`${cal.today}T00:00:00`), mon = new Date(t.getFullYear(), t.getMonth(), t.getDate() - (t.getDay() + 6) % 7);
+  const thisWeek = new Set(Array.from({ length: 7 }, (_, i) => isoDay(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i))));
+  const cells = Array.from({ length: lead }, () => h("span", { class: "cal-cell blank" }));
+  for (let d = 1; d <= days; d++) {
+    const iso = `${cal.month}-${String(d).padStart(2, "0")}`;
+    const entries = cal.days[iso] || [];
+    const cls = `cal-cell${lit.has(iso) ? " lit" : ""}${iso === cal.today ? " today" : ""}${entries.length ? " has" : ""}${markWeek && thisWeek.has(iso) ? " wk" : ""}`;
+    const cell = h("span", { class: cls, "aria-label": `${m}月${d}日${lit.has(iso) ? "，练过" : ""}` }, String(d));
+    cells.push(entries.length ? pressable(cell, () => openSheet(`${m}月${d}日`,
+      h("div", { class: "rows" }, entries.map((e) => h("div", { class: "row-item" },
+        h("span", { class: `dot-state ${e.done ? "on" : ""}` }), h("div", { class: "row-main" }, h("span", { class: "row-title" }, e.line))))))) : cell);
+  }
+  return h("div", { class: "cal" },
+    h("div", { class: "cal-head" },
+      h("button", { class: "icon-btn", type: "button", "aria-label": "上个月", onclick: () => shift(-1) }, icon("back", "sm")),
+      h("b", {}, `${y}年${m}月`),
+      h("button", { class: "icon-btn", type: "button", "aria-label": "下个月", onclick: () => shift(1), disabled: cal.today.slice(0, 7) === cal.month }, icon("chevron", "sm"))),
+    h("div", { class: "cal-grid cal-week" }, WEEK.map((x) => h("span", {}, x))),
+    h("div", { class: "cal-grid" }, cells));
 }
 
 // 本周计划：七天各练什么、天气、按天气调整过的标出来；下面逐条写按天气做的调整
@@ -578,49 +642,6 @@ function sessionSheet(x, isToday, t) {
     h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`${x.name}这次训练怎么练？每个动作要注意什么？`) }, icon("coach", "sm"), "问教练怎么练"));
 }
 const weekdayName = (d) => `周${WEEK[d - 1]}`;
-
-let calMonth = "";
-// 日历（spec [2026-10-23] §34）：整月训练记录放在首页；本周以后几天带天气图标
-function monthCard(brief, week) {
-  calMonth = "";
-  const sky = Object.fromEntries((week?.days || []).filter((d) => d.weather && !d.past).map((d) => [d.date, d.weather]));
-  const box = h("div", { class: "cal" });
-  const draw = async () => {
-    let cal;
-    try { cal = await api(`/iron/api/calendar${calMonth ? `?month=${calMonth}` : ""}`); }
-    catch (err) { box.replaceChildren(failed(err, draw)); return; }
-    const [y, m] = cal.month.split("-").map(Number);
-    const first = new Date(y, m - 1, 1), days = new Date(y, m, 0).getDate();
-    const lead = (first.getDay() + 6) % 7;
-    const lit = new Set(cal.done_days);
-    const shift = (n) => { const d = new Date(y, m - 1 + n, 1); calMonth = isoDay(d).slice(0, 7); draw(); };
-    const cells = [...Array.from({ length: lead }, () => h("span", { class: "cal-cell blank" }))];
-    for (let d = 1; d <= days; d++) {
-      const iso = `${cal.month}-${String(d).padStart(2, "0")}`;
-      const entries = cal.days[iso] || [];
-      const cls = `cal-cell${lit.has(iso) ? " lit" : ""}${iso === cal.today ? " today" : ""}${entries.length ? " has" : ""}`;
-      const cell = h("span", { class: cls, "aria-label": `${m}月${d}日${lit.has(iso) ? "，练过" : ""}${sky[iso] ? `，${sky[iso].text}` : ""}` }, String(d),
-        sky[iso] && !lit.has(iso) ? h("i", { class: "cal-sky" }, icon(wxIcon(sky[iso].text), "xs")) : null);
-      cells.push(entries.length ? pressable(cell, () => openSheet(`${m}月${d}日`,
-        h("div", { class: "rows" }, entries.map((e) => h("div", { class: "row-item" },
-          h("span", { class: `dot-state ${e.done ? "on" : ""}` }), h("div", { class: "row-main" }, h("span", { class: "row-title" }, e.line))))))) : cell);
-    }
-    const thisMonth = cal.today.slice(0, 7) === cal.month;
-    box.replaceChildren(
-      h("div", { class: "cal-head" },
-        h("button", { class: "icon-btn", type: "button", "aria-label": "上个月", onclick: () => shift(-1) }, icon("back", "sm")),
-        h("b", {}, `${y}年${m}月`),
-        h("button", { class: "icon-btn", type: "button", "aria-label": "下个月", onclick: () => shift(1), disabled: thisMonth }, icon("chevron", "sm"))),
-      h("div", { class: "cal-grid cal-week" }, WEEK.map((w) => h("span", {}, w))),
-      h("div", { class: "cal-grid" }, cells),
-      h("div", { class: "cal-foot" },
-        h("span", { class: "muted" }, `这个月练了 ${cal.done_days.length} 天`),
-));
-  };
-  box.append(...skeleton(260));
-  draw();
-  return h("section", { class: "card home-card" }, cardHead("日历"), box);
-}
 
 // 打卡时可以按计划里的动作填每组的重量和次数（spec [2026-10-23] §18 需求 4，可不填）
 function setsForm(items) {
