@@ -105,6 +105,14 @@ class Plan(_Model):
         return [head, *(s.line() for s in self.sessions)]
 
 
+def schedule_line(plan: Plan) -> str:
+    """现在的计划练哪几天、每次多久（排新计划前确认时间用，spec [2026-10-23] §55）。"""
+    days = "、".join(weekday_name(s.day) for s in sorted(plan.sessions, key=lambda s: s.day))
+    lo, hi = min(s.minutes for s in plan.sessions), max(s.minutes for s in plan.sessions)
+    minutes = f"{lo} 分钟" if lo == hi else f"{lo}–{hi} 分钟"
+    return f"现在的计划每周 {plan.days_per_week} 练：{days}，每次约 {minutes}"
+
+
 class SetDone(_Model):
     """一组实际做了多少（spec [2026-10-23] §18 需求 4）。"""
 
@@ -165,6 +173,12 @@ class LogItem(_Model):
         return " ".join(parts)
 
 
+def rpe_word(rpe: int) -> str:
+    """感受分数的意思（1 很轻松 … 10 到极限）：档案里只写"感受 10 分"，实测模型会说成"很轻松"（spec [2026-10-23] §52）。"""
+    word = "很轻松" if rpe <= 3 else "中等" if rpe <= 6 else "吃力" if rpe <= 8 else "到极限"
+    return f"（{word}）"
+
+
 class WorkoutLog(_Model):
     day: date
     session: str = Field(default="", max_length=16)  # 按计划的哪一次（如"下肢"），没有计划时为空
@@ -183,7 +197,7 @@ class WorkoutLog(_Model):
         if self.minutes:
             parts.append(f"{self.minutes} 分钟")
         if self.rpe:
-            parts.append(f"感受 {self.rpe} 分")
+            parts.append(f"感受 {self.rpe} 分{rpe_word(self.rpe)}")
         if self.note:
             parts.append(self.note)
         return "：".join(parts[:2]) + ("，" + "，".join(parts[2:]) if len(parts) > 2 else "")
@@ -789,9 +803,35 @@ def case_lines(
         s = plan.session_on(today)
         name = weekday_name(today.isoweekday())
         out.append(f"今天（{name}）按计划：{s.name}" if s else f"今天（{name}）按计划：休息")
+    done_today = today_done(logs, today)
+    if done_today is not None:
+        out.append(done_today)
     recent = [x for x in logs if (today - x.day).days < 7]
     if recent:
         out.append("最近 7 天的训练记录：" + "；".join(x.line() for x in recent))
     if plan is not None:
-        out.append(week_of(plan, logs, today, since).line())
+        week = week_of(plan, logs, today, since).line()
+        out.append(week + ("，已含今天这一次" if done_today is not None else ""))
     return out
+
+
+def today_done(logs: Sequence[WorkoutLog], today: date) -> str | None:
+    """今天已经打卡练完时的一句（spec [2026-10-23] §52）：告诉专业角色今天的任务完成了，别再安排今天怎么练。
+    和首页"已拿下"同一个判断：今天有一条练完的记录。"""
+    log = next((x for x in logs if x.day == today and x.done), None)
+    if log is None:
+        return None
+    detail = "、".join(
+        p
+        for p in (
+            f"{log.minutes} 分钟" if log.minutes else "",
+            f"感受 {log.rpe} 分{rpe_word(log.rpe)}" if log.rpe else "",
+        )
+        if p
+    )
+    what = log.session or "训练"
+    return (
+        f"今天的{what}已打卡完成" + (f"（{detail}）" if detail else "")
+        + "：今天的训练任务已经完成，不要再安排今天怎么练、也不要把这次当成额外加练；"
+        "问今天就只答今天已经练完，复盘这次、明天或下一次怎么练等他问到再说（这时做法和下一步都留空）"
+    )  # fmt: skip

@@ -241,6 +241,23 @@ def apply(
     return out
 
 
+def meant(op: Op) -> str:
+    """这条操作理解成了要改哪里（一处都没改成时说给他听，spec [2026-10-23] §55 需求 4）。"""
+    day = weekday_name(op.day) if op.day else ""
+    what = op.exercise or "那天的训练"
+    if op.kind == "remove":
+        return f"去掉{day}的{op.exercise}" if op.exercise else f"删掉{day or '某天'}的训练"
+    if op.kind == "move":
+        return f"把{day or '某天'}的训练挪到{weekday_name(op.to_day) if op.to_day else '别的天'}"
+    if op.kind == "swap":
+        return f"把{day}的{what}换成{op.to or '别的动作'}"
+    if op.kind == "add":
+        return f"给{day or '计划'}加{op.exercise or '动作'}"
+    if op.kind == "edit":
+        return f"改{day}{what}的组次或时长"
+    return "整体减量"
+
+
 def _one(
     sessions: list[Session],
     op: Op,

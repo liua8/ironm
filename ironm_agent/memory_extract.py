@@ -55,9 +55,18 @@ _PROMPT = """你负责替健身教练团队记住"这个用户本人"的情况�
 3. quote 是从用户这一轮的话里一字不差摘出的一段，能支撑这条记忆；advice 的 quote 从教练这一轮的回答里一字不差地摘。
 4. 和已有记忆是同一件事的新情况，用 update，target 写那条记忆的编号，content 写合并后的完整新说法（如原来"家里有一对哑铃"，现在说"最重的是 15 公斤"，更新成"家里有一对哑铃，最重 15 公斤"；目标、可练时间、伤病情况变了也用 update）。已经好了、不再适用的，用 resolve，target 写编号，content 写现在的情况。新的、不同的事用 add（新买的器械是另一件器械，用 add，原来的保留）。
 5. inferred 只在内容是你根据他的话推测出来、他并没有直接说的时候写 true。能不推测就不推测。
-6. 没有要记的，输出空列表。
+6. 明显是临时的变化（"这两周出差""下周旅游""最近加班"）记成 event，不要 update 或 resolve 原来的器械、时间和目标；长期的变化（"我换健身房了""现在每天只有半小时"）才 update 原来那条。
+7. 没有要记的，输出空列表。
 
 只输出 JSON：{"ops": [{"op": "add|update|resolve", "target": "已有记忆的编号（add 不写）", "category": "...", "content": "...", "quote": "...", "inferred": false}]}"""
+
+# 明显是临时的说法（spec [2026-10-23] §55 需求 7）：记成近期事件，不改长期的器械、时间和目标
+# 改原来那条时：带这些词的都算临时；新增一条时只认更明确的（"这周买了壶铃"不是临时的）
+_TEMPORARY = re.compile(
+    r"这两周|这一两周|这几天|这阵子|这段时间|这周|下周|出差|旅游|旅行|度假|回老家|加班|临时|暂时"
+)
+_SURELY_TEMPORARY = re.compile(r"这两周|这一两周|这几天|出差|旅游|旅行|度假|回老家|临时|暂时")
+_LONG_TERM: frozenset[str] = frozenset({"equipment", "schedule", "goal"})
 
 _STATUS_NAMES = {"active": "有效", "pending": "待确认", "resolved": "已解决"}
 _PUNCT = re.compile(r"[\s\W_]+", re.U)
@@ -172,6 +181,10 @@ def _problem(
     if not digits(content) <= allowed:
         return None, "内容里有原话里没有的数字"
     inferred = raw.get("inferred") is True and category != "advice"
+    if category in _LONG_TERM and (
+        _TEMPORARY.search(quote) if target is not None else _SURELY_TEMPORARY.search(quote)
+    ):
+        kind, category, target = "add", "event", None  # 临时的变化不覆盖长期记忆
     op = Op(cast(Literal["add", "update", "resolve"], kind), cast(Category, category), content,
             quote, target, inferred)  # fmt: skip
     return op, ""

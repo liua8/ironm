@@ -7,6 +7,7 @@ from typing import Any
 
 from ironm_agent.casefile import Snapshot
 from ironm_agent.day_state import DayBook
+from ironm_agent.goal import GoalBook
 from ironm_agent.illness import IllnessBook
 from ironm_agent.llm import ModelUnavailable, Reply, Stage, load_models
 from ironm_agent.memory_store import MemoryBook, MemoryStore
@@ -55,6 +56,7 @@ def agent(
     monkeypatch: Any = None,
     memory: MemoryStore | None = None,
     snapshot: Any = None,
+    goals: GoalBook | None = None,
 ) -> IronMAgent:
     from ironm_agent import plugin
 
@@ -82,6 +84,7 @@ def agent(
         pain=PainBook(),
         illness=IllnessBook(),
         day=DayBook(),
+        goals=goals if goals is not None else GoalBook(),
     )
 
 

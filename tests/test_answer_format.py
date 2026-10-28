@@ -17,6 +17,7 @@ def test_question_kinds_set_the_length() -> None:
     assert kind_of("我的 BMI 是多少") == "fact" and kind_of("我的血糖正常吗") == "fact"
     assert kind_of("早餐吃什么比较好") == "howto" and kind_of("膝盖疼还能练腿吗") == "howto"
     assert kind_of("我最近睡得怎么样") == "fact"
+    assert kind_of("我训练完成了，这算加练吗") == "fact" and kind_of("这算练过了吗") == "fact"
     assert kind_of("帮我排个计划", "plan") == "card" and kind_of("今天练了深蹲", "log") == "card"
     assert kind_of("减脂怎么吃，详细说说") == "detail"
     assert LIMITS["fact"] < LIMITS["howto"] < LIMITS["detail"] and LIMITS["card"] < LIMITS["fact"]

@@ -44,6 +44,8 @@ JOIN_MIN = 0.6  # 其他角色得分不低于这个才一起请
 JOIN_GAP = 0.2  # 并且和最高分相差不超过这个
 PATTERN_BONUS = 2.0  # 命中一个句式，相当于 BM25 里多少分
 CHAT_MAX = 12  # 闲聊的话一般很短；长句里带个"谢谢"仍按专业问题
+KEYWORD_MIN = 1.0  # 关键字原始分最高不到这个算没命中（"不太行"只重合一个"不"字，0.56）（§56）
+UNSURE_LLM = 0.6  # 三路各选一个时，模型最高分也不到这个才算没把握（§56）
 NAMES = [r.value for r in EXPERTS]
 
 
@@ -128,7 +130,11 @@ class KeywordScorer:
         return out
 
     def scores(self, text: str) -> dict[str, float]:
-        return _by_max(self.raw(text))
+        """按最高分归一；原始分最高不到 KEYWORD_MIN 时算没命中，各角色都记 0（spec [2026-10-23] §56）。"""
+        raw = self.raw(text)
+        if max(raw.values(), default=0.0) < KEYWORD_MIN:
+            return dict.fromkeys(raw, 0.0)
+        return _by_max(raw)
 
 
 def _by_max(raw: Mapping[str, float]) -> dict[str, float]:
@@ -146,6 +152,46 @@ def keyword_intent(text: str, lib: ExampleFile | None = None) -> Intent | None:
         if hit and (found != "chat" or len(lowered) <= CHAT_MAX):
             return found
     return None
+
+
+_TRAINED = re.compile(r"打(过|了)?卡|练(过|完)了|已经练|训练完成|练过一次")
+_HOW_TO = re.compile(r"怎么|如何|在哪|哪里|哪儿|能不能|可以.*吗")
+
+
+def reported_training(text: str) -> bool:
+    """他在说自己今天打过卡、练过了（不是问 App 里怎么打卡）：按训练问题交给训练教练（spec [2026-10-23] §52）。
+    实测"我不是打卡了嘛""我打卡了你为什么还让我练"被判成问 App 用法，回了"回首页点今天的训练"。"""
+    t = (text or "").replace(" ", "")
+    return bool(_TRAINED.search(t)) and not _HOW_TO.search(re.sub(r"为什么|为啥|怎么还", "", t))
+
+
+_FOLLOW = re.compile(
+    r"(不|还是不|感觉不|好像不)?(太)?(行|好|对|满意|合适)|不怎么样|一般般?|换一个|再换一个|好的?|可以|行吧?|嗯+|"
+    r"然后呢?|为什么|为啥|还有吗?|还有呢|什么意思|啥意思|怎么说|具体点|详细点|没懂|不懂"
+)
+_AGREE = re.compile(r"好的?|可以|行吧?|嗯+")
+_PUNCT = re.compile(r"[\s，。！？!?,.~…啊呀吧呢嘛哦噢]+$")
+
+
+def follow_up(text: str, history: Sequence[str] = ()) -> bool:
+    """很短的承接语，自身没有问题内容（"不太行""然后呢""为什么"），且上一轮有回答：交给管家结合上下文接（§56）。
+    "好的""可以"这类答应，上一条回答以问句结尾时是在答应那件事，照常路由。"""
+    coach = [x for x in history if not x.startswith("用户：")]
+    if not coach:
+        return False
+    t = _PUNCT.sub("", (text or "").strip().replace(" ", ""))
+    if not t or len(t) > 8 or not _FOLLOW.fullmatch(t):
+        return False
+    return not (_AGREE.fullmatch(t) and coach[-1].rstrip().endswith(("？", "?")))
+
+
+def unsure(channels: Mapping[str, Mapping[str, float]]) -> bool:
+    """三路都可用、各自选的角色都不一样，模型最高分也不到 UNSURE_LLM：路由没把握（§56）。"""
+    if set(channels) != {"llm", "keyword", "vector"}:
+        return False
+    tops = [max(s, key=lambda n: s[n]) for s in channels.values() if max(s.values(), default=0) > 0]
+    return (len(tops) == 3 and len(set(tops)) == 3
+            and max(channels["llm"].values(), default=0.0) < UNSURE_LLM)  # fmt: skip
 
 
 def in_scope(text: str, lib: ExampleFile | None = None) -> bool:
@@ -297,6 +343,7 @@ class Decision:
     weights: dict[str, float] = field(default_factory=dict)  # 实际用的权重
     concerns: tuple[str, ...] = ()
     skills: dict[str, tuple[str, ...]] = field(default_factory=dict)  # 请到的角色里路由选了规程的
+    unsure: str = ""  # 路由没把握、交给管家结合上下文接的原因：follow_up / disagree（§56）
 
     @property
     def primary(self) -> Role | None:
@@ -313,6 +360,7 @@ class Decision:
                 c: {k: round(v, 2) for k, v in s.items()} for c, s in self.channels.items()
             },
             "skills": {k: list(v) for k, v in self.skills.items()},
+            **({"unsure": self.unsure} if self.unsure else {}),
         }
 
 
@@ -322,11 +370,14 @@ def combine(
     llm: LLMResult | tuple[Intent, Mapping[str, float]] | None,
     keyword: Mapping[str, float] | None,
     vector: Mapping[str, float] | None,
+    history: Sequence[str] = (),
 ) -> Decision:
     channels: dict[str, dict[str, float]] = {}
     if llm is not None:
         channels["llm"] = dict(llm[1])
-    if keyword is not None:
+    if keyword is not None and any(
+        keyword.values()
+    ):  # 关键字没命中时这一路不算，由其余两路决定（§56）
         channels["keyword"] = dict(keyword)
     if vector is not None:
         channels["vector"] = dict(vector)
@@ -338,11 +389,22 @@ def combine(
         intent = "pro"  # 提到身体不适或特殊人群，一律按专业问题处理
     elif intent == "out_of_scope" and in_scope(text):
         intent = "pro"  # 提到运动、饮食或天气就不算超出范围（spec [2026-10-23] §41）
+    elif intent in ("app", "chat") and reported_training(text):
+        intent = (
+            "pro"  # 说自己打过卡、练过了，是训练上的事，不是问 App 怎么用（spec [2026-10-23] §52）
+        )
     weighted: dict[str, float] = {
         n: sum((weights[c] * s.get(n, 0.0) for c, s in channels.items()), 0.0) for n in NAMES
     }
     if intent != "pro":
         return Decision(intent, (), weighted, channels, weights, concerns)
+    why = (
+        ""
+        if concerns
+        else ("follow_up" if follow_up(text, history) else "disagree" if unsure(channels) else "")
+    )
+    if why:  # 路由没把握：不交给专业角色，由管家结合上下文接（§56）
+        return Decision("chat", (), weighted, channels, weights, concerns, unsure=why)
     ranked = sorted(NAMES, key=lambda n: (-weighted[n], NAMES.index(n)))
     top = weighted[ranked[0]]
     if top <= 0:  # 哪一路都没打出分（比如几路都不可用）：不硬选，交给调用方兜底
@@ -404,7 +466,7 @@ class Router:
         keyword = self.keyword.scores(text) if self.keyword is not None else None
         vector = await asyncio.to_thread(self.vector_scores, text)
         found = await asked if asked is not None else None
-        return combine(text, llm=found, keyword=keyword, vector=vector)
+        return combine(text, llm=found, keyword=keyword, vector=vector, history=history)
 
 
 @cache

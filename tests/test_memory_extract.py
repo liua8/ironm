@@ -138,3 +138,20 @@ def test_only_one_advice_per_turn() -> None:
     )
     assert [o.content for o in ops] == ["全蹲换成箱式深蹲"]
     assert rejected == ["给过的建议超过每轮上限"]
+
+
+def test_temporary_changes_do_not_overwrite_long_term_memory() -> None:
+    """§55 需求 7：确认时说"这两周出差只有酒店健身房"：记成近期事件，原来的器械照旧。"""
+    upd = {"op": "update", "target": "m1", "category": "equipment",
+           "content": "这两周出差只有酒店健身房", "quote": "这两周出差只有酒店健身房"}  # fmt: skip
+    ops, rejected = check([upd], "这两周出差只有酒店健身房", items=[BELLS])
+    assert rejected == [] and ops[0].category == "event" and ops[0].target is None
+    changes = changes_of(ops, T0)
+    assert [c.kind for c in changes] == ["insert"]  # 不把"家里有一对哑铃"标为被取代
+    added = op(category="schedule", content="下周旅游练不了", quote="下周旅游练不了")
+    assert check([added], "下周旅游练不了")[0][0].category == "event"
+    bought = op(category="equipment", content="这周买了一个壶铃", quote="这周买了一个壶铃")
+    assert check([bought], "这周买了一个壶铃")[0][0].category == "equipment"
+    long = {"op": "update", "target": "m1", "content": "晚上 8 点以后练，每次 30 分钟",
+            "quote": "现在每次只有 30 分钟"}  # fmt: skip
+    assert check([long], "现在每次只有 30 分钟", items=[SCHED])[0][0].target is SCHED

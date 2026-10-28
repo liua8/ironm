@@ -156,6 +156,23 @@ def progress(
     return out
 
 
+_PACE = {"ahead": "按现在的速度会提前", "on_track": "按现在的速度能按期", "behind": "按现在的速度会晚一些",
+         "wrong_way": "这几周体重在往反方向变", "reached": "已经达到"}  # fmt: skip
+
+
+def line(goal: Goal, snapshot: Any) -> str:
+    """一句话说清目标（排新计划前确认、计划说明里用，spec [2026-10-23] §55 需求 2）：
+    "2027年10月26日前体重到 65 公斤，现在 67 公斤，按现在的速度会提前（10月26日设的）"。"""
+    trend = next((m for m in snapshot.metrics if m.key == "weight_trend"), None)
+    p = progress(goal, snapshot.readings.weight, trend, snapshot.today)
+    parts = [f"{_cn(goal.by)}前体重到 {_g(goal.value)} 公斤"]
+    if p["current"] is not None:
+        parts.append(f"现在 {_g(p['current'])} 公斤")
+    if p["status"] in _PACE:
+        parts.append(_PACE[p["status"]])
+    return "，".join(parts) + f"（{goal.set_day.month}月{goal.set_day.day}日设的）"
+
+
 def retest(goal: Goal, today: date) -> dict[str, Any]:
     last = goal.retest_day or goal.set_day
     days = (today - last).days

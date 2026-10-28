@@ -24,7 +24,7 @@ from ironm_agent.attachments import read as read_attachments
 from ironm_agent.casefile import CaseFile, Snapshot
 from ironm_agent.casefile import build as build_case
 from ironm_agent.checks import plain
-from ironm_agent.clarify import PLAN_REQUEST, Decision, asked, decide
+from ironm_agent.clarify import PLAN_REQUEST, Decision, asked, decide, wants_new
 from ironm_agent.coach import direct
 from ironm_agent.compose import Composed, compose, revise
 from ironm_agent.constraints import Context, Violation, annotate, annotate_plan
@@ -36,6 +36,8 @@ from ironm_agent.day_state import note as note_day
 from ironm_agent.day_state import signals as day_signals
 from ironm_agent.exercises import named_in
 from ironm_agent.experts import Consultation, consult, write_task
+from ironm_agent.goal import GoalStore, default_goal
+from ironm_agent.goal import line as target_line
 from ironm_agent.harness import TraceStore, mentioned_roles, missing_readings, new_turn, react
 from ironm_agent.illness import (
     Episode,
@@ -66,6 +68,7 @@ from ironm_agent.memory_prefs import due as prefs_due
 from ironm_agent.memory_prefs import refresh as refresh_prefs
 from ironm_agent.memory_store import MemoryStore, default_store
 from ironm_agent.memory_view import Recall
+from ironm_agent.metrics import GOALS
 from ironm_agent.personal import Personal, personal_basics
 from ironm_agent.plan_ops import (
     NEW_PLAN,
@@ -75,6 +78,7 @@ from ironm_agent.plan_ops import (
     blocked_days,
     describe,
     fit_time,
+    meant,
     only_this_time,
     parse_ops,
     rule_conflict,
@@ -125,6 +129,7 @@ from ironm_agent.training import (
     parse_log,
     parse_plan,
     plan_content,
+    schedule_line,
     task_of,
     trusted_log,
     weekday_name,
@@ -292,6 +297,7 @@ def as_route(d: RouteDecision) -> Route:
         by="weighted",
         problems=(f"权重：{used}",) if used else (),
         skills=d.skills,
+        unsure=d.unsure,
     )
 
 
@@ -344,6 +350,7 @@ class IronMAgent:
         medications: Any | None = None,
         medical: Any | None = None,
         traces: TraceStore | None = None,
+        goals: GoalStore | None = None,
         **kwargs: Any,
     ) -> None:
         self._traces = (
@@ -354,6 +361,7 @@ class IronMAgent:
         self._medical = medical
         self._pain = pain  # 说疼的部位和日期（触发型调整用，默认用数据库里 iron-m 自己的表）
         self._illness = illness  # 生病记录（spec [2026-10-23] §46，默认用数据库里 iron-m 自己的表）
+        self._goals = goals  # 目标体重和日期（排新计划前追问时带上，spec [2026-10-23] §55）
         self._day = day  # 今日状态（spec [2026-10-23] §54，默认用数据库里 iron-m 自己的表）
         self._weather = weather  # 这个人所在城市的天气（默认按"我的"里设置的城市去取）
         self._snapshot = snapshot  # 这个人的档案、健康数据与指标（默认与数据页同一份计算）
@@ -497,6 +505,20 @@ class IronMAgent:
         if self._illness is None:
             self._illness = default_illness()
         return self._illness
+
+    def _goal_store(self) -> GoalStore:
+        if self._goals is None:
+            self._goals = default_goal()
+        return self._goals
+
+    async def _target(self, user_id: str, snapshot: Snapshot) -> str:
+        """目标体重和日期的一句话（排新计划前确认时带上，spec [2026-10-23] §55 需求 2）；读不到时当作没有。"""
+        try:
+            g = await self._goal_store().get(user_id)
+        except Exception as e:  # 读不到目标不影响作答
+            _log.warning("goal read failed: error_type=%s", type(e).__name__)
+            return ""
+        return target_line(g, snapshot) if g is not None else ""
 
     def _day_store(self) -> DayStore:
         if self._day is None:
@@ -967,7 +989,16 @@ class IronMAgent:
         run.update(intent=r.intent, route_by=r.by, concerns=list(r.concerns))
         if r.intent != "pro" or r.primary is None:
             run["path"] = "direct"
-            answer = await direct(r.intent, text, history, llm, recall.persona())
+            if r.unsure:
+                run["route_unsure"] = r.unsure
+            context_lines = (
+                await self._context_for_follow(user_id, snap, train, run) if r.unsure else []
+            )
+            preview = any(x.startswith("待确认的计划预览") for x in context_lines)
+            answer = await direct(
+                r.intent, text, history, llm, recall.persona(),
+                unsure=bool(r.unsure), context=context_lines, preview=preview,
+            )  # fmt: skip
             said["answer"] = answer
             yield text_block("\n\n".join(x for x in (prefix, answer) if x))
             return
@@ -989,7 +1020,9 @@ class IronMAgent:
         run["task"] = job
         # 已有计划、又不是要重排时，训练教练只写要改的地方，由代码套到当前计划上（§45）
         expert_task = (
-            "edit" if job == "plan" and plan is not None and not NEW_PLAN.search(text) else job
+            "edit"
+            if job == "plan" and plan is not None and not decision.new and not NEW_PLAN.search(text)
+            else job
         )
         needs_planner = decision.plan or job is not None
         if needs_planner and r.primary is not Role.GENERAL and Role.TRAINER not in r.experts():
@@ -1207,6 +1240,44 @@ class IronMAgent:
         run["prefetch"] = {"asked": len(named), "rows": rows, "ok": ok}
         return pre.evidence, checked_note(named, found, rows, ok)
 
+    async def _context_for_follow(
+        self,
+        user_id: str,
+        snap: asyncio.Task[Snapshot],
+        train: asyncio.Task[tuple[Plan | None, list[WorkoutLog], date | None]],
+        run: dict[str, Any],
+    ) -> list[str]:
+        """路由没把握时管家看的上下文（spec [2026-10-23] §56）：待确认的计划预览、今天的训练状态、计划目标。"""
+        out: list[str] = []
+        try:
+            draft = await self._training_store().pending_plan(user_id)
+        except Exception as e:
+            _log.warning("pending plan unavailable: error_type=%s", type(e).__name__)
+            draft = None
+        drafted = parse_plan(draft.content.get("plan"))[0] if draft is not None else None
+        if drafted is not None:
+            days = "、".join(
+                f"{weekday_name(x.day)}{x.name}约 {x.minutes} 分钟" for x in drafted.sessions
+            )
+            goal = f"，目标：{drafted.goal}" if drafted.goal else ""
+            out.append(
+                f"待确认的计划预览（上一轮给的）：每周练 {drafted.days_per_week} 次（{days}）{goal}"
+            )
+        try:
+            snapshot, (plan, logs, _) = await snap, await train
+        except Exception as e:
+            _log.warning("training unavailable: error_type=%s", type(e).__name__)
+            return out
+        if plan is not None:
+            today = snapshot.today
+            s = plan.session_on(today)
+            done = any(x.day == today and x.done for x in logs)
+            out.append(f"今天按计划：{s.name if s else '休息'}" + ("，已打卡完成" if done else ""))
+            if plan.goal:
+                out.append(f"当前计划的目标：{plan.goal}")
+        run["follow_context"] = {"preview": drafted is not None, "lines": len(out)}
+        return out
+
     async def _preview(
         self,
         user_id: str,
@@ -1330,7 +1401,13 @@ class IronMAgent:
         run["plan_ops"] = {"by": by, "ops": len(applied.done), "skipped": len(applied.skipped),
                            "merged": prior is not None}  # fmt: skip
         if not applied.done:
-            return [], "这次没改：" + "；".join(applied.skipped) + "。"
+            took = "、".join(dict.fromkeys(meant(o) for o in ops))
+            reasons = "；".join(applied.skipped)
+            return (
+                [],
+                f"我理解成要{took}，但没改成：{reasons}。你是想改计划的哪一处，还是重新排一份？"
+                "改某一处就说具体哪天、哪个动作；要重新排就回「重新排一份」。",
+            )
         new = annotate_plan(applied.plan, ctx)
 
         def review(p: Plan) -> tuple[str, ...]:
@@ -1455,7 +1532,19 @@ class IronMAgent:
             case = replace(case, weather=_weather_case(current, plan, snapshot.today))
         if run is not None:
             run["weather"] = current is not None
-        decision = decide(text, history, recall, snapshot.profile, has_plan=plan is not None)
+        has_plan = plan is not None
+        planning = wants_new(text, has_plan=has_plan) or asked(history) is not None
+        target = await self._target(user_id, snapshot) if planning else ""
+        decision = decide(
+            text, history, recall, snapshot.profile, has_plan=has_plan, target=target,
+            plan_line=schedule_line(plan) if plan is not None else "", today=snapshot.today,
+            checked_today=any(x.day == snapshot.today and x.done for x in logs),
+        )  # fmt: skip
+        if decision.new and not decision.ask:  # 排新计划：按具体目标说明怎么排（§55 需求 2）
+            aim = target or (GOALS[snapshot.profile.goal] if snapshot.profile.goal else "")
+            if aim:
+                said = f"他的目标：{aim}。计划说明第一句写这份计划为了这个目标怎么排，目标的数和日期照写。"
+                decision = replace(decision, note="\n".join(x for x in (decision.note, said) if x))
         return Prepared(snapshot, plan, case, decision)
 
     def _stop(

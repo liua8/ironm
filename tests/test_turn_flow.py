@@ -337,7 +337,7 @@ def test_missing_plan_json_is_written_in_a_second_call(monkeypatch: Any) -> None
         snapshot=snapshot_of(),
     )
     a._training = TrainingBook()
-    blocks, seen = run(a, "帮我排一个每周 1 练的计划")
+    blocks, seen = run(a, "帮我排一个每周 1 练的计划，你定")
     assert seen["task"] == "plan" and seen["preview"] == "plan" and seen.get("preview_retry")
     assert "write" in t.stages and any(str(b.get("id", "")).startswith("card-") for b in blocks)
     assert "点「确认」才会保存" in text_of(blocks)

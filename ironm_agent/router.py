@@ -50,6 +50,7 @@ class Route(ContractModel):
     problems: tuple[str, ...] = ()  # 模型方案没通过的原因（改按关键词时记下）
     # 路由给角色选的规程（spec [2026-10-23] §21）；没写的角色按规则选
     skills: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    unsure: str = ""  # 路由没把握，给了管家的原因：follow_up / disagree（§56）
 
     def experts(self) -> tuple[Role, ...]:
         """这一轮要请的专业 Agent：主责与辅助；康复恢复师排在训练教练之前。"""
