@@ -542,6 +542,25 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .scene { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--sunken); padding: 2px 6px; border-radius: 6px; }
 .preset .row-sub { white-space: normal; }
 /* 肌肉人体图 */
+/* 平面人体图（§57 修改：openGym 那种，MuscleMap 原图）：没练的灰、练了的按四档着色，块之间是原图留的白缝 */
+.flat-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; min-height: 260px; align-items: start; }
+.flat-body > .muted, .flat-body > .part-list { grid-column: 1 / -1; }
+.flat-body figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.flat-body figcaption { font-size: 12px; color: var(--muted); }
+.flat-svg { width: 100%; max-width: 230px; height: auto; display: block; }
+.flat-svg .mm-base path { fill: color-mix(in srgb, var(--muted) 22%, var(--surface)); }
+.flat-svg .mm-hair path { fill: var(--ink-2); }
+.flat-svg .mm { cursor: pointer; outline: none; }
+.flat-svg .mm path { transition: opacity .15s; }
+.flat-svg .mm:hover path, .flat-svg .mm:focus-visible path { opacity: .72; }
+.flat-svg .mm.lv-none path { fill: color-mix(in srgb, var(--muted) 34%, var(--surface)); }
+.flat-svg .mm.lv-low path { fill: color-mix(in srgb, var(--fire) 42%, var(--surface)); }
+.flat-svg .mm.lv-mid path { fill: color-mix(in srgb, var(--fire) 80%, var(--surface)); }
+.flat-svg .mm.lv-high path { fill: var(--fire-2); }
+.flat-svg .mm.pulse { animation: mm-pulse 1.1s ease-in-out infinite alternate; }
+@keyframes mm-pulse { from { filter: brightness(1); } to { filter: brightness(1.35); } }
+@media (prefers-reduced-motion: reduce) { .flat-svg .mm.pulse { animation: none; filter: brightness(1.15); } }
+.body-switch { display: flex; justify-content: center; margin-top: 8px; }
 .body3d { position: relative; min-width: 0; }
 .body3d-stage { width: 100%; min-height: 300px; display: grid; place-items: center; border-radius: 12px;
   background: radial-gradient(ellipse at 50% 40%, var(--surface), var(--sunken)); overflow: hidden; }

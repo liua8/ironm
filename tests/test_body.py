@@ -352,3 +352,68 @@ def test_third_party_notice_credits_model_and_three() -> None:
         "MIT License",
     ):
         assert must in text, must
+
+
+# ---- §57 修改：openGym 那种平面图（MuscleMap 原图）--------------------------------------------
+
+COSMETIC = {"head", "hair", "hands", "feet", "ankles", "knees"}
+
+
+def _flat() -> dict:  # type: ignore[type-arg]
+    import json
+
+    return json.loads((WEB / "musclemap-v1.json").read_text())  # type: ignore[no-any-return]
+
+
+def test_flat_regions_exist_on_both_figures() -> None:
+    figures = _flat()["figures"]
+    for sex in ("male", "female"):
+        slugs = {
+            side: {p["slug"] for p in figures[sex][side]["parts"]} for side in ("front", "back")
+        }
+        for m in table().of_level("muscle"):
+            for region in m.flat:
+                side, slug = region.split(":")
+                assert slug in slugs[side], (sex, m.code, region)
+        # 图上每个肌肉分区都有编码对应，点得到
+        mapped = {r for m in table().of_level("muscle") for r in m.flat}
+        for side, names in slugs.items():
+            assert {f"{side}:{s}" for s in names - COSMETIC} <= mapped, (sex, side)
+
+
+def test_only_brachialis_is_off_the_flat_map_and_only_two_regions_are_shared() -> None:
+    from collections import Counter
+
+    muscles = table().of_level("muscle")
+    assert [m.code for m in muscles if not m.flat] == ["muscle.brachialis"]
+    shared = {r for r, n in Counter(r for m in muscles for r in m.flat).items() if n > 1}
+    assert shared == {"back:gluteal", "front:calves", "back:calves"}
+
+
+def test_flat_map_paths_match_the_source_and_credit_is_given() -> None:
+    figures = _flat()["figures"]
+    counts = {
+        (s, v): sum(len(p["d"]) for p in figures[s][v]["parts"])
+        for s in figures
+        for v in ("front", "back")
+    }
+    assert counts == {
+        ("male", "front"): 123,
+        ("male", "back"): 78,
+        ("female", "front"): 124,
+        ("female", "back"): 78,
+    }
+    text = (WEB / "THIRD-PARTY.md").read_text()
+    assert "MuscleMap" in text and "Melih Colpan" in text and "AGPL" in text
+
+
+def test_flat_map_file_is_cached() -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from ironm_agent.web import router
+
+    app = FastAPI()
+    app.include_router(router)
+    got = TestClient(app).get("/iron/musclemap-v1.json")
+    assert got.status_code == 200 and "max-age=604800" in got.headers["cache-control"]

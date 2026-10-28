@@ -1095,8 +1095,8 @@ const CALC_FROM = {
 };
 
 async function data(view) {
-  const [list, muscles, brief] = await Promise.all([
-    metrics(), api("/iron/api/muscles").catch(() => null), api("/iron/api/brief").catch(() => null)]);
+  const [list, muscles, brief, me] = await Promise.all([
+    metrics(), api("/iron/api/muscles").catch(() => null), api("/iron/api/brief").catch(() => null), profile().catch(() => null)]);
   const m = byKey(list);
   view.append(h("div", { class: "fresh" }, icon("info", "xs"),
     list.as_of ? `数据截至 ${md(list.as_of)}${list.stale_days > 1 ? `（${list.stale_days} 天前）` : ""} · 点开任一项看怎么算的、自己记一条` : "还没有同步到健康数据，可以先自己记一条"));
@@ -1107,7 +1107,7 @@ async function data(view) {
       h("div", { class: "row-main" }, h("span", { class: "row-title" }, `还缺 ${lack.length} 项`), h("span", { class: "row-sub" }, lack.map((k) => IMPORTANT_NAMES[k]).join("、"))),
       h("span", { class: "row-end" }, "补记录", icon("chevron", "sm"))), () => lackSheet(lack, m)) : null));
   view.append(section("目标进度", null, goalCard({ empty: true })));
-  view.append(section("肌肉人体图", h("span", { class: "caption" }, "近 7 天"), muscles ? bodyMap(muscles, brief) : failed(new Error("人体图暂时算不出来"), () => render())));
+  view.append(section("肌肉人体图", h("span", { class: "caption" }, "近 7 天"), muscles ? bodyMap(muscles, brief, me?.sex) : failed(new Error("人体图暂时算不出来"), () => render())));
   if (brief) view.append(section("每周复盘", h("span", { class: "caption" }, `${md(brief.week.from)}–${md(brief.week.to)}`), weekCard(brief.week)));
   const more = [...CALC, ...MORE].map((k) => m[k]).filter((x) => x && x.value != null);
   if (more.length) {
@@ -1210,7 +1210,56 @@ function metricGroup(title, present) {
       h("span", { class: "row-end" }, "暂无", icon("chevron", "sm")))))) : null);
 }
 
-// 人体图（spec [2026-10-23] §57 需求 3）：3D 模型，能转、能缩放、点肌肉看详情；设备不支持三维时退回按部位分组的列表
+// 人体图（spec [2026-10-23] §57）：主图是 openGym 那种平面图（MuscleMap 原图，MIT），正面、背面并排；
+// "3D 转着看"点了才加载 3D 模型；都显示不了时退回按部位分组的列表
+let flatShapes = null;
+const loadFlat = () => (flatShapes ||= fetch("/iron/musclemap-v1.json").then((r) => { if (!r.ok) throw new Error("图没加载出来"); return r.json(); }));
+const LEVELS = ["none", "low", "mid", "high"];
+const NOT_MUSCLE = new Set(["head", "hair", "hands", "feet", "ankles", "knees"]);
+
+function flatBody(mm, pick, sex) {
+  const wrap = h("div", { class: "flat-body" }, h("p", { class: "muted body3d-wait" }, "人体图加载中…"));
+  const byRegion = {};
+  for (const m of mm.muscles) for (const r of m.flat || []) (byRegion[r] ||= []).push(m);
+  // 两块肌肉共用一块图（臀、小腿）：先选是哪一块
+  const choose = (ms) => {
+    if (ms.length === 1) return pick(ms[0]);
+    openSheet("是哪一块？", h("div", { class: "muscle-rows" }, ms.map((m) => pressable(h("div", { class: "muscle-row" },
+      h("span", { class: "mr-name" }, m.name, RECOVER_WORD[m.state] ? h("em", {}, RECOVER_WORD[m.state]) : null),
+      h("span", { class: "mr-bar" }, h("i", { class: `lv-${m.level}`, style: `width:${Math.min(100, (m.sets_7d / 12) * 100)}%` })),
+      h("span", { class: "mr-sets" }, `${m.sets_7d} 组`)), () => { closeSheet(); pick(m); }))));
+  };
+  const figure = (fig, side) => {
+    const [x, y, w, hgt] = fig.viewBox;
+    const svg = s("svg", { viewBox: `${x} ${y} ${w} ${hgt}`, class: "flat-svg", role: "img", "aria-label": side === "front" ? "正面" : "背面" });
+    for (const part of fig.parts) {
+      const ms = byRegion[`${side}:${part.slug}`] || [];
+      const g = s("g", {});
+      if (ms.length) {
+        const lv = LEVELS[Math.max(...ms.map((m) => LEVELS.indexOf(m.level)))];
+        const label = ms.map((m) => `${m.name}：近 7 天 ${m.sets_7d} 组，${recoverText(m)}`).join("；");
+        g.setAttribute("class", `mm lv-${lv}${ms.some((m) => m.state !== "ready") ? " pulse" : ""}`);
+        g.setAttribute("tabindex", "0");
+        g.setAttribute("role", "button");
+        g.setAttribute("aria-label", label);
+        const tip = s("title", {}); tip.textContent = label; g.append(tip);
+        g.addEventListener("click", () => choose(ms));
+        g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(ms); } });
+      } else {
+        g.setAttribute("class", part.slug === "hair" ? "mm-hair" : NOT_MUSCLE.has(part.slug) ? "mm-base" : "mm-base mm-other");
+      }
+      for (const d of part.d) g.append(s("path", { d }));
+      svg.append(g);
+    }
+    return h("figure", {}, svg, h("figcaption", {}, side === "front" ? "正面" : "背面"));
+  };
+  loadFlat().then((data) => {
+    const fig = data.figures[sex === "female" ? "female" : "male"];
+    wrap.replaceChildren(figure(fig.front, "front"), figure(fig.back, "back"));
+  }).catch(() => wrap.replaceChildren(h("p", { class: "muted" }, "人体图没加载出来，按部位列出："), partList(mm, pick)));
+  return wrap;
+}
+
 let body3dModule = null;
 const loadBody3d = () => (body3dModule ||= import("/iron/body3d.js"));
 
@@ -1246,6 +1295,18 @@ function body3d(mm, pick) {
   return wrap;
 }
 
+function bodyView(mm, pick, sex) {
+  const holder = h("div", { class: "body-view" });
+  const toggle = h("button", { class: "btn ghost small", type: "button" });
+  const show = (three) => {
+    holder.replaceChildren(three ? body3d(mm, pick) : flatBody(mm, pick, sex));
+    toggle.textContent = three ? "回到平面图" : "3D 转着看";
+    toggle.onclick = () => show(!three);
+  };
+  show(false);
+  return h("div", {}, holder, h("div", { class: "body-switch" }, toggle));
+}
+
 // 每块肌肉的恢复状态（spec [2026-10-23] §30）
 const RECOVER_WORD = { today: "今天刚练", recovering: "恢复中", sore: "还酸" };
 function recoverText(m) {
@@ -1254,7 +1315,7 @@ function recoverText(m) {
   return `${m.state === "today" ? "今天刚练" : "恢复中"}，${md(m.ready_on)}可以再练`;
 }
 
-function bodyMap(mm, brief) {
+function bodyMap(mm, brief, sex) {
   const tell = async (m, feel, btns) => {
     for (const b of btns) b.disabled = true;
     try {
@@ -1291,7 +1352,7 @@ function bodyMap(mm, brief) {
   const resting = mm.muscles.filter((m) => m.state !== "ready");
   const rd = brief?.today?.readiness;
   return h("div", { class: "card body-card" },
-    body3d(mm, pick),
+    bodyView(mm, pick, sex),
     h("div", { class: "legend" }, ["none", "low", "mid", "high"].map((lv) => h("span", {}, h("i", { class: `lv-${lv}` }), { none: "没练", low: "1–4 组", mid: "5–9 组", high: "10 组以上" }[lv])), h("span", {}, h("i", { class: "glow" }), "闪烁：恢复中或还酸")),
     rd && (rd.level === "poor" || rd.level === "fair") && rd.reasons?.length ? h("div", { class: "notice-line" }, icon("alert", "xs"), `${rd.reasons[0]}：今天整体恢复偏慢，可以降低强度。`) : null,
     resting.length ? h("div", { class: "rest-list" }, resting.map((m) => pressable(h("span", { class: `rest-chip ${m.state}` },
