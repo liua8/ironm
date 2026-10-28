@@ -1,4 +1,5 @@
-"""夯榜的接口（spec [2026-10-23] §60）：读一个类别的榜、给条目选档、自己添加和删除条目、最近常吃的食物。"""
+"""夯拉榜的接口（spec [2026-10-23] §60、§66）：读一个类别的榜、投票（改票、撤回）、添加条目、举报、
+最近常吃的食物。返回里没有投票人和添加人；日志只写类别。"""
 
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ from ironm_agent.tier import (
     board,
     default_tier,
     frequent_foods,
-    remove_item,
+    report_item,
     set_tier,
 )
 from ironm_agent.web_more import MEALS, _verify
@@ -39,7 +40,7 @@ class TierIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     category: str = Field(max_length=20)
-    key: str = Field(max_length=60)
+    key: str = Field(max_length=80)
     tier: str = Field(default="", max_length=10)
 
 
@@ -48,6 +49,14 @@ class ItemIn(BaseModel):
 
     category: str = Field(max_length=20)
     name: str = Field(max_length=200)
+    force: bool = False  # 有相似的条目时，确认"不是这些"再新建
+
+
+class ReportIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: str = Field(max_length=20)
+    key: str = Field(max_length=80)
 
 
 async def _board(store: TierStore, user_id: str, category: str) -> dict[str, Any]:
@@ -89,20 +98,21 @@ async def post_item(
     body: ItemIn, user_id: str = Depends(_verify()), store: TierStore = TIER
 ) -> dict[str, Any]:
     try:
-        key = await add_item(store, user_id, body.category, body.name)
-        _log.info("tier item added: category=%s", body.category)
-        return {"key": key, **await _board(store, user_id, body.category)}
+        got = await add_item(store, user_id, body.category, body.name, date.today(), body.force)
+        _log.info("tier item added: category=%s similar=%d", body.category, len(got["similar"]))
+        return got | await _board(store, user_id, body.category)
     except TierError as err:
         raise _bad(err) from None
 
 
-@router.delete("/iron/api/tier/items")
-async def delete_item(
-    category: str, key: str, user_id: str = Depends(_verify()), store: TierStore = TIER
+@router.post("/iron/api/tier/report")
+async def post_report(
+    body: ReportIn, user_id: str = Depends(_verify()), store: TierStore = TIER
 ) -> dict[str, Any]:
     try:
-        await remove_item(store, user_id, category, key)
-        return await _board(store, user_id, category)
+        await report_item(store, user_id, body.category, body.key)
+        _log.info("tier item reported: category=%s", body.category)
+        return await _board(store, user_id, body.category)
     except TierError as err:
         raise _bad(err) from None
 
@@ -116,5 +126,5 @@ async def food_suggest(
     names: list[str] = []
     for i in range(FOOD_DAYS):
         names += [m.meal.name for m in await meals.day(user_id, today - timedelta(days=i))]
-    have = {r.key for r in await store.rows(user_id, "food")}
+    have = {x.key for x in await store.items("food")}
     return {"names": frequent_foods(names, have), "days": FOOD_DAYS}

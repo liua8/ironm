@@ -108,7 +108,7 @@ BMI_SOURCE = "成人体重判定（WS/T 428-2013，国家卫生行业标准）"
 def bmi(weight: Point | None, height_cm: float | None) -> Metric:
     if weight is None or not height_cm:
         what = [
-            w for w, ok in (("体重记录", weight), ("身高（在“我的”里填写）", height_cm)) if not ok
+            w for w, ok in (("体重记录", weight), ("身高（在个人中心填写）", height_cm)) if not ok
         ]
         return missing("bmi", "BMI", "", *what)
     m = height_cm / 100
@@ -254,7 +254,7 @@ def tdee(base: Metric, p: Profile) -> Metric:
     if not base.ok or base.value is None:
         return missing(key, name, unit, *(base.missing or ("基础代谢",)))
     if p.activity is None:
-        return missing(key, name, unit, "日常活动水平（在“我的”里选择）")
+        return missing(key, name, unit, "日常活动水平（在个人中心选择）")
     label, factor = ACTIVITY[p.activity]
     value = round(base.value * factor)
     return Metric(
@@ -290,7 +290,7 @@ def calorie_target(
     if not total.ok or total.value is None or base.value is None:
         return missing(key, name, unit, *(total.missing or ("每日总消耗",)))
     if p.goal is None:
-        return missing(key, name, unit, "目标（在“我的”里选择）")
+        return missing(key, name, unit, "目标（在个人中心选择）")
     t, b = total.value, base.value
     if p.goal == "fat_loss":
         floor = max(b, 1500 if p.sex == "male" else 1200)

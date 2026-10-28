@@ -22,7 +22,7 @@ def test_bmi_categories_follow_chinese_adult_standard() -> None:
     assert "肥胖" in m.bmi((END, 90.0), 175).text  # 29.4
     assert "过低" in m.bmi((END, 55.0), 175).text  # 18.0
     assert m.bmi((END, 73.4), 175).text.startswith("24")  # 23.97 → 24.0 归到超重一侧的写法要一致
-    assert m.bmi(w, None).missing == ("身高（在“我的”里填写）",) and m.bmi(w, None).value is None
+    assert m.bmi(w, None).missing == ("身高（在个人中心填写）",) and m.bmi(w, None).value is None
 
 
 def test_bmr_mifflin_and_missing_inputs() -> None:

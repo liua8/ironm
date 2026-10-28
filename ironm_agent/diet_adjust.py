@@ -48,7 +48,7 @@ def propose(
         _metric(metrics, k) for k in ("kcal_target", "bmr", "weight_trend", "weight")
     )
     if target is None or target.value is None or bmr is None or bmr.value is None:
-        return None, "还算不出每日热量目标：先在「我的」里填好身高、出生日期、性别和活动水平。"
+        return None, "还算不出每日热量目标：先在个人中心填好身高、出生日期、性别和活动水平。"
     if trend is None or trend.value is None or weight is None or weight.value is None:
         why = "；".join(trend.missing) if trend is not None and trend.missing else "体重记录"
         return None, f"体重记录还不够，看不出趋势（还缺：{why}）。"

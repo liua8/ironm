@@ -1059,3 +1059,25 @@ a.pill { text-decoration: none; display: inline-flex; align-items: center; gap: 
 .cal-cell.wk:not(.lit) { background: color-mix(in srgb, var(--accent) 9%, transparent); }
 .home-alerts { display: grid; gap: 8px; }
 .home-alerts .rep-alert { margin: 0; }
+
+/* 夯拉榜（spec [2026-10-23] §66）和个人中心（§65） */
+.seg.seg-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tier-item small { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.tier-item.voted { box-shadow: inset 0 0 0 1px var(--accent); }
+.tier-dist { display: grid; gap: 6px; margin: 4px 0 12px; }
+.td-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) 28px; align-items: center; gap: 8px; font-size: 13px; }
+.td-bar { height: 10px; border-radius: 5px; background: var(--sunken); overflow: hidden; }
+.td-bar i { display: block; height: 100%; border-radius: 5px; }
+.td-n { font-family: var(--mono); text-align: right; color: var(--muted); }
+.tier-similar:empty { display: none; }
+.tier-similar { display: grid; gap: 8px; justify-items: start; }
+.me-head { display: grid; gap: 10px; }
+.me-head .profile-head .link { margin-left: auto; align-self: center; }
+.me-line { margin: 0; font-weight: 600; }
+.me-sum .caption { margin: 2px 0 0; }
+.me-more { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.me-more > summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px; font-weight: 650; }
+.me-more > summary::-webkit-details-marker { display: none; }
+.me-more > summary .i { transition: transform .2s; transform: rotate(90deg); }
+.me-more[open] > summary .i { transform: rotate(-90deg); }
+.me-more-body { display: flex; flex-direction: column; gap: 16px; padding: 0 12px 14px; }
