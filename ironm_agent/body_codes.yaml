@@ -3,7 +3,7 @@
 #
 # code：编码，发布后不改不删；level：part 部位、group 肌群、muscle 细分肌肉、joint 关节
 # parent：唯一上级（肌群挂部位、细分肌肉挂肌群、关节挂部位）
-# name：页面上显示的常用名；formal：中文正式名（按全国科学技术名词审定委员会《人体解剖学名词》，和常用名一样时不写）
+# name：页面和回答里显示的常用名；formal：中文正式名（按全国科学技术名词审定委员会《人体解剖学名词》，和常用名一样时不写）
 # fedb：开放动作库 free-exercise-db 的肌群名（它的 abductors 不单列，当作臀中肌的说法）
 # uberon：国际解剖本体 UBERON 的编号（经 EBI OLS 检索核对；没有一一对应的不填）
 # says：常见说法。同一个说法只能指一个编码；只有肌群和它唯一的同名细分肌肉可以同名，查的时候落到细分肌肉
@@ -28,7 +28,7 @@ nodes:
   - {code: group.middle_back, level: group, parent: part.back, name: 中背, fedb: middle back, says: [middle back, 中背部, 背中间]}
   - {code: group.lats, level: group, parent: part.back, name: 背阔肌, fedb: lats, says: [lats]}
   - {code: group.lower_back, level: group, parent: part.back, name: 下背, fedb: lower back, says: [lower back, 下背部]}
-  - {code: group.biceps, level: group, parent: part.arm, name: 上臂前侧, fedb: biceps, says: [biceps, 胳膊前面, 上臂前面]}
+  - {code: group.biceps, level: group, parent: part.arm, name: 肱二头肌群, fedb: biceps, says: [biceps, 胳膊前面, 上臂前面, 上臂前侧]}
   - {code: group.triceps, level: group, parent: part.arm, name: 肱三头肌, fedb: triceps, says: [triceps]}
   - {code: group.forearms, level: group, parent: part.arm, name: 前臂, fedb: forearms, says: [forearms]}
   - {code: group.abdominals, level: group, parent: part.core, name: 腹肌, fedb: abdominals, says: [abs, abdominals, 腹肌群]}
@@ -72,10 +72,10 @@ nodes:
 
   # ---- 关节 ----
   - {code: joint.shoulder, level: joint, parent: part.shoulder, name: 肩关节, uberon: "UBERON:0016884", says: []}
-  - {code: joint.elbow, level: joint, parent: part.arm, name: 肘关节, uberon: "UBERON:0001490", says: [肘, 手肘, 胳膊肘]}
-  - {code: joint.wrist, level: joint, parent: part.arm, name: 腕关节, uberon: "UBERON:0001491", says: [腕, 手腕]}
+  - {code: joint.elbow, level: joint, parent: part.arm, name: 手肘, formal: 肘关节, uberon: "UBERON:0001490", says: [肘, 胳膊肘]}
+  - {code: joint.wrist, level: joint, parent: part.arm, name: 手腕, formal: 腕关节, uberon: "UBERON:0001491", says: [腕]}
   - {code: joint.cervical, level: joint, parent: part.neck, name: 颈椎, uberon: "UBERON:0002413", says: []}
   - {code: joint.lumbar, level: joint, parent: part.back, name: 腰椎, uberon: "UBERON:0002414", says: [腰间盘, 腰椎间盘]}
   - {code: joint.hip, level: joint, parent: part.leg, name: 髋关节, uberon: "UBERON:0001486", says: [髋, 胯]}
-  - {code: joint.knee, level: joint, parent: part.leg, name: 膝关节, uberon: "UBERON:0001485", says: [膝, 膝盖]}
-  - {code: joint.ankle, level: joint, parent: part.leg, name: 踝关节, uberon: "UBERON:0001488", says: [踝, 脚踝, 脚脖子]}
+  - {code: joint.knee, level: joint, parent: part.leg, name: 膝盖, formal: 膝关节, uberon: "UBERON:0001485", says: [膝]}
+  - {code: joint.ankle, level: joint, parent: part.leg, name: 脚踝, formal: 踝关节, uberon: "UBERON:0001488", says: [踝, 脚脖子]}

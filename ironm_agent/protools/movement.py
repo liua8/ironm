@@ -9,8 +9,9 @@ from functools import cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import model_validator
 
+from ironm_agent import body
 from ironm_agent.common import ContractModel
 from ironm_agent.exercises import EQUIPMENT, LIBRARY_BASE, Equipment, Exercise, library
 from ironm_agent.protools.result import Result
@@ -22,7 +23,10 @@ type Pattern = Literal[
     "squat", "hinge", "lunge", "bridge", "h_push", "v_push", "h_pull", "v_pull", "shoulder",
     "curl", "extension", "calf", "abduction", "core", "plyo", "cardio", "stretch",
 ]  # fmt: skip
-type Joint = Literal["knee", "back", "shoulder", "wrist", "ankle", "neck"]
+type Joint = Literal[
+    "joint.shoulder", "joint.elbow", "joint.wrist", "joint.cervical", "joint.lumbar", "joint.hip",
+    "joint.knee", "joint.ankle",
+]  # fmt: skip
 type Direction = Literal["easier", "similar", "harder", "any"]
 
 PATTERN_NAMES: dict[str, str] = {
@@ -32,9 +36,7 @@ PATTERN_NAMES: dict[str, str] = {
     "calf": "小腿", "abduction": "髋外展", "core": "核心", "plyo": "跳跃全身", "cardio": "有氧",
     "stretch": "拉伸放松",
 }  # fmt: skip
-JOINT_NAMES: dict[str, str] = {
-    "knee": "膝盖", "back": "腰背", "shoulder": "肩", "wrist": "手腕", "ankle": "脚踝", "neck": "颈部",
-}  # fmt: skip
+JOINT_NAMES: dict[str, str] = {n.code: n.name for n in body.table().of_level("joint")}
 # 同一模式里找不到合适的动作时，到相近的模式里找
 RELATED: dict[str, tuple[str, ...]] = {
     "squat": ("lunge", "bridge"), "lunge": ("squat", "bridge"), "hinge": ("bridge",),
@@ -51,11 +53,24 @@ LEVELS = {"入门": 0, "进阶": 1}
 
 class Tag(ContractModel):
     pattern: Pattern
-    groups: tuple[str, ...] = Field(min_length=1)
-    muscles: tuple[str, ...] = ()  # 人体图的细分肌肉：主要练到
+    groups: tuple[str, ...] = ()  # 算每周组数的分组（编码）；有氧、拉伸、全身跳跃类不写
+    muscles: tuple[str, ...] = ()  # 人体图的细分肌肉（编码）：主要练到
     assist: tuple[str, ...] = ()  # 辅助练到
     stress: tuple[Joint, ...] = ()
     friendly: tuple[Joint, ...] = ()
+
+    @model_validator(mode="after")
+    def _codes(self) -> Tag:
+        nodes = body.table().nodes
+        for code in self.groups:
+            if code not in nodes or nodes[code].level not in ("part", "group"):
+                raise ValueError(f"分组不是部位或肌群编码：{code}")
+        for code in (*self.muscles, *self.assist):
+            if code not in nodes or nodes[code].level != "muscle":
+                raise ValueError(f"不是细分肌肉编码：{code}")
+        if set(self.muscles) & set(self.assist):
+            raise ValueError("同一块肌肉不能既是主要又是辅助")
+        return self
 
 
 class TagFile(ContractModel):

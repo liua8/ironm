@@ -107,7 +107,7 @@ def test_muscle_map_sets_by_main_and_assist() -> None:
     quad = _muscle(m, "股四头肌")
     assert quad["sets_7d"] == 3 and quad["level"] == "low" and quad["last"] == "2026-10-21"
     assert "高脚杯深蹲 3 组" in quad["history"][0]
-    assert _muscle(m, "胸大肌")["sets_7d"] == 10 and _muscle(m, "胸大肌")["level"] == "high"
+    assert _muscle(m, "胸大肌中下部")["sets_7d"] == 10 and _muscle(m, "胸大肌中下部")["level"] == "high"
     assert (
         _muscle(m, "三角肌前束")["sets_7d"] == 5
         and "（辅助）" in _muscle(m, "三角肌前束")["history"][0]
@@ -115,7 +115,8 @@ def test_muscle_map_sets_by_main_and_assist() -> None:
     assert _muscle(m, "腹直肌")["sets_7d"] == 1.5  # 高脚杯深蹲辅助练到核心
     lat = _muscle(m, "背阔肌")
     assert lat["level"] == "none" and lat["last"] == "2026-10-11" and "背阔肌" in m["untrained"]  # type: ignore[operator]
-    assert set(m["front"]) | set(m["back"]) == {x["name"] for x in m["muscles"]}  # type: ignore[arg-type, union-attr]
+    assert len(m["muscles"]) == 28 and all(x["code"].startswith("muscle.") and x["part"] for x in m["muscles"])  # type: ignore[union-attr]
+    assert "胫骨前肌" not in m["untrained"]  # type: ignore[operator]  # 动作库里没有主要练它的动作，不列
 
 
 def test_muscle_map_uses_plan_for_quick_checkin() -> None:
@@ -247,14 +248,14 @@ def test_muscles_endpoint() -> None:
         book.log("42", WorkoutLog(day=date.today(), items=[LogItem(exercise="俯卧撑", sets=3)]))
     )
     got = c.get("/iron/api/muscles").json()
-    chest = _muscle(got, "胸大肌")
+    chest = _muscle(got, "胸大肌中下部")
     assert chest["sets_7d"] == 3 and chest["state"] == "today" and "腘绳肌" in got["untrained"]
-    fine = c.post("/iron/api/muscles/feel", json={"muscle": "胸大肌", "feel": "fine"}).json()
+    fine = c.post("/iron/api/muscles/feel", json={"muscle": "muscle.pec_major_lower", "feel": "fine"}).json()
     assert fine["recovering"] == ["肱三头肌"]  # 本人说胸不酸了：以本人说的为准，只改胸大肌
     assert (
         c.post("/iron/api/muscles/feel", json={"muscle": "胸", "feel": "fine"}).status_code == 422
     )
-    sore = c.post("/iron/api/muscles/feel", json={"muscle": "腘绳肌", "feel": "sore"}).json()
+    sore = c.post("/iron/api/muscles/feel", json={"muscle": "muscle.hamstrings", "feel": "sore"}).json()
     assert _muscle(sore, "腘绳肌")["state"] == "sore"
 
 

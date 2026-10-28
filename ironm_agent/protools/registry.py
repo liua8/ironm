@@ -12,9 +12,10 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
+from ironm_agent.body import joint_code
 from ironm_agent.exercises import Equipment
 from ironm_agent.kb import Entry
-from ironm_agent.protools.movement import equipment_of, substitutes
+from ironm_agent.protools.movement import JOINT_NAMES, equipment_of, substitutes
 from ironm_agent.protools.nutrition import ITEMS, Item, nutrition
 from ironm_agent.protools.pain import SIGNS, pain_check
 from ironm_agent.protools.patterns import WINDOWS, training_patterns
@@ -38,7 +39,7 @@ class ToolContext:
     weight_kg: float | None = None  # 最新体重（来自健康数据）
     kcal_target: float | None = None  # 每日热量目标（与数据页同一份计算）
     readings: Any = None  # metrics.Readings；趋势分析用
-    injured: tuple[str, ...] = ()  # 有伤病的部位（knee、back……）
+    injured: tuple[str, ...] = ()  # 有伤病的部位（关节编码 joint.knee、joint.lumbar……）
     equipment: frozenset[Equipment] | None = None  # None 表示不知道
     plan: Loader[StoredPlan | None] | None = None
     workouts: Callable[[date], Awaitable[list[WorkoutLog]]] | None = None
@@ -170,7 +171,9 @@ async def _substitutes(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
     name = str(args.get("exercise") or "").strip()
     if not name:
         return Result.note("要写明替代哪个动作。")
-    extra = [str(x) for x in args.get("avoid_parts") or [] if isinstance(x, str)]
+    extra = [
+        c for x in args.get("avoid_parts") or [] if isinstance(x, str) and (c := joint_code(x))
+    ]
     direction = str(args.get("direction") or "any")
     return substitutes(
         name,
@@ -312,7 +315,7 @@ TOOLS: dict[str, ProTool] = {
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "enum": ["knee", "back", "shoulder", "wrist", "ankle", "neck"],
+                            "enum": list(JOINT_NAMES),
                         },
                     },
                 },

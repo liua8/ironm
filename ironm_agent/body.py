@@ -126,3 +126,40 @@ class BodyTable:
 def table(path: Path = CODES_PATH) -> BodyTable:
     data = CodeFile.model_validate(load_yaml(path), strict=False)
     return BodyTable(data.nodes)
+
+
+def name(code: str) -> str:
+    """页面和回答里用的常用名。"""
+    return table().node(code).name
+
+
+# §57 之前存下的名字（肌肉感受、说疼的部位）：读的时候按规则换成编码，原记录不改。
+# 被拆开的三块旧名对拆出来的每一块都算；其余旧名按编码表的名字查。
+LEGACY_MUSCLES: dict[str, tuple[str, ...]] = {
+    "斜方肌": ("muscle.upper_traps", "muscle.mid_lower_traps"),
+    "胸大肌": ("muscle.pec_major_upper", "muscle.pec_major_lower"),
+    "小腿": ("muscle.gastrocnemius", "muscle.soleus", "muscle.tibialis_anterior"),
+}
+LEGACY_JOINTS: dict[str, str] = {
+    "knee": "joint.knee", "back": "joint.lumbar", "shoulder": "joint.shoulder",
+    "wrist": "joint.wrist", "ankle": "joint.ankle", "neck": "joint.cervical",
+}  # fmt: skip
+
+
+def muscle_codes(stored: str) -> tuple[str, ...]:
+    """存下的肌肉（编码或 §57 之前的名字）对应的细分肌肉编码；认不出是空的。"""
+    t = table()
+    if stored in t.nodes:
+        return (stored,) if t.node(stored).level == "muscle" else ()
+    if stored in LEGACY_MUSCLES:
+        return LEGACY_MUSCLES[stored]
+    n = t.lookup(stored)
+    return (n.code,) if n is not None and n.level == "muscle" else ()
+
+
+def joint_code(stored: str) -> str | None:
+    """存下的关节（编码或 §57 之前的 knee / back 这类）对应的编码；认不出是 None。"""
+    t = table()
+    if stored in t.nodes:
+        return stored if t.node(stored).level == "joint" else None
+    return LEGACY_JOINTS.get(stored)

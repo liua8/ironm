@@ -92,8 +92,8 @@ def test_memory_risks_only_from_active_conditions() -> None:
 
 def test_injured_parts_from_memory_and_current_pain() -> None:
     memory = [item("injury", "左膝旧伤，蹲深了会疼"), item("injury", "腰扭过", status="resolved")]
-    assert injured_parts(memory, "今天练什么") == ("knee",)
-    assert injured_parts(memory, "卧推的时候肩膀前面疼怎么办") == ("knee", "shoulder")
+    assert injured_parts(memory, "今天练什么") == ("joint.knee",)
+    assert injured_parts(memory, "卧推的时候肩膀前面疼怎么办") == ("joint.knee", "joint.shoulder")
     assert injured_parts([], "肩膀训练怎么安排") == ()  # 没说疼就不算
 
 
@@ -118,7 +118,7 @@ def test_case_file_numbers_have_ids_and_match_the_metrics_tool() -> None:
         "今天的身体状态"
     )
     assert "指标计算" not in case.text(calcs=False)
-    assert case.injuries == ("knee",)
+    assert case.injuries == ("joint.knee",)
 
 
 def test_case_file_without_any_data() -> None:
@@ -131,8 +131,8 @@ def test_pain_must_be_the_users_own_and_not_negated() -> None:
     assert injured_parts([], "深蹲会影响膝盖吗") == ()
     assert injured_parts([], "膝盖不疼，深蹲怎么加重") == ()
     assert injured_parts([], "我妈膝盖疼") == ()
-    assert injured_parts([], "我妈膝盖疼，我自己膝盖也疼") == ("knee",)
-    assert injured_parts([], "疼在膝盖外侧") == ("knee",)
+    assert injured_parts([], "我妈膝盖疼，我自己膝盖也疼") == ("joint.knee",)
+    assert injured_parts([], "疼在膝盖外侧") == ("joint.knee",)
 
 
 def test_sickness_and_sleep_must_be_the_users_own() -> None:

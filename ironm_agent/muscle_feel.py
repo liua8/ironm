@@ -9,12 +9,22 @@ import uuid
 from datetime import date
 from typing import Any, Protocol
 
+from ironm_agent.body import muscle_codes
 from ironm_agent.protools.recovery import Feel
 
 
 class FeelStore(Protocol):
     async def add(self, user_id: str, muscle: str, feel: Feel, day: date) -> None: ...
     async def latest(self, user_id: str) -> dict[str, tuple[Feel, date]]: ...
+
+
+def _coded(said: list[tuple[str, Feel, date]]) -> dict[str, tuple[Feel, date]]:
+    """按说的先后，每块肌肉留最后一次；§57 之前存的名字换成编码（被拆开的旧名对拆出来的每一块都算）。"""
+    out: dict[str, tuple[Feel, date]] = {}
+    for muscle, feel, day in said:
+        for code in muscle_codes(muscle):
+            out[code] = (feel, day)
+    return out
 
 
 class FeelBook:
@@ -27,7 +37,7 @@ class FeelBook:
         self.rows.setdefault(user_id, []).append((muscle, feel, day))
 
     async def latest(self, user_id: str) -> dict[str, tuple[Feel, date]]:
-        return {m: (f, d) for m, f, d in self.rows.get(user_id, [])}  # 后说的覆盖先说的
+        return _coded(self.rows.get(user_id, []))
 
 
 DDL = """
@@ -69,12 +79,12 @@ class PgFeel:
             " WHERE user_id = :uid ORDER BY created_at",
             {"uid": user_id},
         )
-        out: dict[str, tuple[Feel, date]] = {}
+        said: list[tuple[str, Feel, date]] = []
         for r in rows:
             muscle, _, feel = str(r["content"]).partition("|")
             if feel in ("sore", "fine"):
-                out[muscle] = (feel, r["day"])  # type: ignore[assignment]
-        return out
+                said.append((muscle, feel, r["day"]))  # type: ignore[arg-type]
+        return _coded(said)
 
 
 _default: FeelStore | None = None

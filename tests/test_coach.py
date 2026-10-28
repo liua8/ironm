@@ -48,7 +48,7 @@ def squat(back: int, reps: int = 9) -> WorkoutLog:
 
 def test_compute_lists_each_item_with_reason_and_basis() -> None:
     inp = Inputs(snapshot=snap(sleep=4.0), plan=plan_today(), logs=[squat(9), squat(5)],
-                 pains=[("knee", TODAY), ("knee", TODAY - timedelta(days=3))],
+                 pains=[("joint.knee", TODAY), ("joint.knee", TODAY - timedelta(days=3))],
                  goal=Goal(72, TODAY + timedelta(days=90), TODAY - timedelta(days=30), start=80))  # fmt: skip
     items = {x.key: x for x in compute(inp, TODAY)}
     today = items["today"]
@@ -100,7 +100,7 @@ def test_evaluate_versions_and_changes() -> None:
     assert same.version == 1 and none == []  # 今天评估过：不重复算
     again, none2 = asyncio.run(evaluate("42", dp, reason="记饮食"))
     assert again.version == 1 and none2 == []  # 有新情况但方案没变：不出新版本
-    pain.rows["42"] = [("knee", TODAY), ("knee", TODAY - timedelta(days=2))]
+    pain.rows["42"] = [("joint.knee", TODAY), ("joint.knee", TODAY - timedelta(days=2))]
     s2, c2 = asyncio.run(evaluate("42", dp, reason="说疼"))
     assert s2.version == 2 and [(c.key, c.change) for c in c2] == [("alert:pain", "added")]
     assert c2[0].why and c2[0].basis and c2[0].status == "confirm"
@@ -146,7 +146,7 @@ def test_coach_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     from ironm_agent import web, web_more
 
     dp = deps(training=with_plan(), pain=PainBook())
-    dp.pain.rows["42"] = [("knee", TODAY), ("knee", TODAY - timedelta(days=1))]
+    dp.pain.rows["42"] = [("joint.knee", TODAY), ("joint.knee", TODAY - timedelta(days=1))]
     monkeypatch.setattr(web_more, "coach_deps", lambda: dp)
     app = FastAPI()
     app.include_router(web.router)
@@ -221,7 +221,7 @@ def test_inbox_pending_unseen_and_choices() -> None:
     from ironm_agent.coach_state import decide, mark_seen, pending, unseen
 
     pain = PainBook()
-    pain.rows["42"] = [("knee", TODAY), ("knee", TODAY - timedelta(days=2))]
+    pain.rows["42"] = [("joint.knee", TODAY), ("joint.knee", TODAY - timedelta(days=2))]
     dp = deps(training=with_plan(), pain=pain)
     s1, _ = asyncio.run(evaluate("42", dp, reason="打卡"))
     history = asyncio.run(dp.store.history("42"))
@@ -256,7 +256,7 @@ def test_inbox_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
     from ironm_agent import web, web_more
 
     pain = PainBook()
-    pain.rows["42"] = [("knee", TODAY), ("knee", TODAY - timedelta(days=1))]
+    pain.rows["42"] = [("joint.knee", TODAY), ("joint.knee", TODAY - timedelta(days=1))]
     dp = deps(training=with_plan(), pain=pain)
     monkeypatch.setattr(web_more, "coach_deps", lambda: dp)
     app = FastAPI()

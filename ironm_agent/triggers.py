@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Literal, Protocol
 
+from ironm_agent.body import joint_code
 from ironm_agent.casefile import PARTS, _hurts
 from ironm_agent.protools.movement import JOINT_NAMES, find
 from ironm_agent.protools.strength import epley
@@ -245,7 +246,17 @@ class PainBook:
         self.rows.setdefault(user_id, []).append((part, day))
 
     async def since(self, user_id: str, start: date) -> list[tuple[str, date]]:
-        return [x for x in self.rows.get(user_id, []) if x[1] >= start]
+        return _coded([x for x in self.rows.get(user_id, []) if x[1] >= start])
+
+
+def _coded(rows: list[tuple[str, date]]) -> list[tuple[str, date]]:
+    """§57 之前存的 knee、back 这类读的时候换成关节编码，认不出的不要。"""
+    out = []
+    for part, day in rows:
+        code = joint_code(part)
+        if code is not None:
+            out.append((code, day))
+    return out
 
 
 DDL = """
@@ -287,7 +298,7 @@ class PgPain:
             " WHERE user_id = :uid AND day >= :start ORDER BY day",
             {"uid": user_id, "start": start},
         )
-        return [(str(r["part"]), r["day"]) for r in rows]
+        return _coded([(str(r["part"]), r["day"]) for r in rows])
 
 
 _default: PainStore | None = None

@@ -65,7 +65,7 @@ def test_equipment_of_memory() -> None:
 
 
 def test_substitutes_respect_equipment_and_injury() -> None:
-    r = substitutes("杠铃深蹲", equipment=frozenset({"自重", "哑铃"}), injured=("knee",))
+    r = substitutes("杠铃深蹲", equipment=frozenset({"自重", "哑铃"}), injured=("joint.knee",))
     text = _text(r)
     assert "箱式深蹲" in text  # 照顾膝盖、只用自重或哑铃
     assert "波比跳" not in text and "保加利亚分腿蹲" not in text  # 跳跃、给膝盖加负担的不出现
@@ -118,7 +118,7 @@ def test_check_plan_injury_equipment_time() -> None:
         minutes=30,
     )
     r = check_plan(
-        plan, injured=("knee",), equipment=frozenset({"自重", "哑铃"}), available_minutes=30
+        plan, injured=("joint.knee",), equipment=frozenset({"自重", "哑铃"}), available_minutes=30
     )
     text = _text(r)
     assert "波比跳" in text and "膝盖有伤" in text
@@ -143,7 +143,7 @@ def test_check_plan_limited_injury_note_is_ok() -> None:
             )
         ],
     )
-    assert "有伤" not in _text(check_plan(plan, injured=("knee",)))
+    assert "有伤" not in _text(check_plan(plan, injured=("joint.knee",)))
 
 
 def test_check_plan_novice_and_back_to_back() -> None:
@@ -342,7 +342,7 @@ def test_registry_runs_with_context() -> None:
         return []
 
     ctx = ToolContext.build(
-        TODAY, goal="muscle", weight_kg=70.0, readings=Readings(), injured=["knee"],
+        TODAY, goal="muscle", weight_kg=70.0, readings=Readings(), injured=["joint.knee"],
         equipment_said=["只有哑铃"], plan=get_plan, workouts=workouts,
     )  # fmt: skip
     r = asyncio.run(run("nutrition_calc", ctx, {"items": ["protein"]}))
@@ -376,5 +376,5 @@ def test_check_plan_flags_unlimited_squat_for_knee() -> None:
             Session(day=2, name="下肢", items=[PlanItem(exercise="高脚杯深蹲", sets=3, reps="10")])
         ],
     )
-    text = _text(check_plan(plan, injured=("knee",)))
+    text = _text(check_plan(plan, injured=("joint.knee",)))
     assert "高脚杯深蹲" in text and "膝盖有伤" in text

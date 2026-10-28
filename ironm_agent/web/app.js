@@ -1283,12 +1283,19 @@ function recoverText(m) {
   return `${m.state === "today" ? "今天刚练" : "恢复中"}，${md(m.ready_on)}可以再练`;
 }
 
+// 平面图的形状比编码表粗：被拆开的几块按里面练得最多的那块上色、点开（§57，3D 图做好前过渡用）
+const SHAPE_OF = { 胸大肌: ["muscle.pec_major_upper", "muscle.pec_major_lower"], 斜方肌: ["muscle.upper_traps", "muscle.mid_lower_traps"], 小腿: ["muscle.gastrocnemius", "muscle.soleus", "muscle.tibialis_anterior"] };
 function bodyMap(mm, brief) {
   const by = Object.fromEntries(mm.muscles.map((m) => [m.name, m]));
+  const byCode = Object.fromEntries(mm.muscles.map((m) => [m.code, m]));
+  for (const [shape, codes] of Object.entries(SHAPE_OF)) {
+    const ms = codes.map((c) => byCode[c]).filter(Boolean);
+    if (ms.length) by[shape] = ms.reduce((a, b) => (b.sets_7d > a.sets_7d || (a.state === "ready" && b.state !== "ready") ? b : a));
+  }
   const tell = async (m, feel, btns) => {
     for (const b of btns) b.disabled = true;
     try {
-      await api("/iron/api/muscles/feel", { method: "POST", body: JSON.stringify({ muscle: m.name, feel }) });
+      await api("/iron/api/muscles/feel", { method: "POST", body: JSON.stringify({ muscle: m.code, feel }) });
       closeSheet(); render();
     } catch (err) {
       for (const b of btns) b.disabled = false;

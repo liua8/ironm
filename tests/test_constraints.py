@@ -6,7 +6,7 @@ from ironm_agent.casefile import CaseFile, Readiness, Risk
 from ironm_agent.constraints import Context, annotate, annotate_plan, check, fixes
 from ironm_agent.metrics import Profile
 
-KNEE = Context(injuries=("knee",))
+KNEE = Context(injuries=("joint.knee",))
 
 
 def kinds(text: str, ctx: Context) -> list[str]:
@@ -81,7 +81,7 @@ def test_calorie_floor_and_weight_loss_rate() -> None:
 
 
 def test_annotate_writes_the_limit_next_to_each_violation() -> None:
-    ctx = Context(injuries=("knee", "back"), poor=True, floor=1500)
+    ctx = Context(injuries=("joint.knee", "joint.lumbar"), poor=True, floor=1500)
     text = "热身做开合跳。高脚杯深蹲 3 组，大重量硬拉 5 组。每天吃 1200 千卡。每周减 2 公斤。"
     marked = annotate(text, ctx)
     assert (
@@ -97,10 +97,10 @@ def test_annotate_writes_the_limit_next_to_each_violation() -> None:
 def test_context_from_case_file() -> None:
     case = CaseFile(
         basics="", limits=(), readiness=Readiness("poor"), risks=(Risk("bp_high", "…"),), calcs={},
-        calc_lines=(), injuries=("knee",), profile=Profile(sex="male", birth=date(1990, 1, 1)), bmr=1699.4,
+        calc_lines=(), injuries=("joint.knee",), profile=Profile(sex="male", birth=date(1990, 1, 1)), bmr=1699.4,
     )  # fmt: skip
     ctx = Context.of(case)
-    assert ctx.poor and ctx.injuries == ("knee",) and ctx.risks == {"bp_high"} and ctx.floor == 1699
+    assert ctx.poor and ctx.injuries == ("joint.knee",) and ctx.risks == {"bp_high"} and ctx.floor == 1699
     assert (
         Context.of(case.__class__(**{**case.__dict__, "bmr": None, "profile": Profile()})).floor
         == 1200
@@ -144,7 +144,7 @@ def test_plan_notes_keep_the_limit_and_skip_todays_state() -> None:
             ]}],
         }
     )  # fmt: skip
-    marked = annotate_plan(plan, Context(injuries=("knee",), poor=True))
+    marked = annotate_plan(plan, Context(injuries=("joint.knee",), poor=True))
     squat, deadlift = marked.sessions[0].items
     assert squat.note.startswith("膝盖有伤") and len(squat.note) == 80
     assert "今天状态不好" not in deadlift.note  # 当天的状态不写进长期的周计划

@@ -8,6 +8,7 @@ from collections import defaultdict
 from collections.abc import Collection
 from itertools import pairwise
 
+from ironm_agent import body
 from ironm_agent.exercises import Equipment
 from ironm_agent.protools.movement import (
     JOINT_NAMES,
@@ -29,8 +30,13 @@ WARMUP_MIN = 10
 COMPOUND_SET_MIN = 3.5
 ACCESSORY_SET_MIN = 2.5
 SLACK = 1.1  # 估算时长超出可用时间 10% 以上才算问题
-MAJOR = ("胸", "背", "股四头肌", "臀", "肩")
-NOT_MUSCLE = frozenset({"有氧", "全身"})
+MAJOR = (
+    "胸",
+    "背",
+    "股四头肌",
+    "臀",
+    "肩",
+)  # 编码表里 part.chest、part.back、group.quadriceps、group.glutes、part.shoulder 的常用名
 # 写了限制的动作（"箱式""控制深度""不疼的范围"），伤病部位不算问题
 _LIMITED = re.compile(r"限制|控制|不疼|无痛|减小幅度|小幅度|箱|浅蹲|半程|先别|替代|换成|扶")
 _MINUTES = re.compile(r"(\d+)\s*分钟")
@@ -58,9 +64,8 @@ def _volume(plan: Plan) -> tuple[dict[str, int], dict[str, list[int]], list[str]
             if move is None:
                 unknown.append(item.exercise)
                 continue
-            for g in move.tag.groups:
-                if g in NOT_MUSCLE:
-                    continue
+            for code in move.tag.groups:
+                g = body.name(code)  # 按常用名汇总，提示里直接用
                 sets[g] += item.sets
                 if s.day not in days[g]:
                     days[g].append(s.day)

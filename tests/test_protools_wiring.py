@@ -101,7 +101,7 @@ def test_number_not_in_tool_result_is_not_accepted() -> None:
 
 
 def test_substitutes_adopt_library_entries_for_citation() -> None:
-    tb = box(Role.RECOVERY, ctx(injured=["knee"], equipment_said=["家里有哑铃"]))
+    tb = box(Role.RECOVERY, ctx(injured=["joint.knee"], equipment_said=["家里有哑铃"]))
     out = asyncio.run(tb.run(ToolCall("x", "find_substitutes", {"exercise": "杠铃深蹲"})))
     assert "箱式深蹲" in out
     assert any(e.title == "箱式深蹲" for e in tb.evidence.entries.values())

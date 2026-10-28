@@ -290,13 +290,14 @@ def risks(r: Readings, memory: Sequence[Item], today: date) -> tuple[Risk, ...]:
 
 # ---- 伤病部位（§4 约束核对用）---------------------------------------------------------------
 
+# 键是身体部位编码表（body_codes.yaml）里的关节编码
 PARTS: dict[str, re.Pattern[str]] = {
-    "knee": re.compile(r"膝|半月板|髌"),
-    "back": re.compile(r"腰|椎间盘|下背|脊柱"),
-    "shoulder": re.compile(r"肩"),
-    "wrist": re.compile(r"手腕|腕关节"),
-    "ankle": re.compile(r"脚踝|踝|跟腱"),
-    "neck": re.compile(r"颈椎|脖子"),
+    "joint.knee": re.compile(r"膝|半月板|髌"),
+    "joint.lumbar": re.compile(r"腰|椎间盘|下背|脊柱"),
+    "joint.shoulder": re.compile(r"肩"),
+    "joint.wrist": re.compile(r"手腕|腕关节"),
+    "joint.ankle": re.compile(r"脚踝|踝|跟腱"),
+    "joint.cervical": re.compile(r"颈椎|脖子"),
 }
 _PAIN = re.compile(r"疼|痛|伤|不舒服|酸|肿|弹响|咔咔响|响了一下|卡住|打软")
 NEAR_PAIN = 8  # 部位和疼痛的说法相隔几个字以内才算一起说的

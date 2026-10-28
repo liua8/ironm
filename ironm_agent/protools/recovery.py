@@ -2,7 +2,7 @@
 
 按规则计算，不调用模型。只有主要练到的肌肉才算恢复，辅助练到的不算。
 - 底数：同一肌群两次训练至少隔 48 小时（K48）；有训练基础时上肢一般 24 小时以内、下肢 48–72 小时，
-  多关节、在肌肉拉长位置发力的动作更慢（K49、K50、K54）。日常用得多的小腿、核心、臀中肌按 1 天
+  多关节、在肌肉拉长位置发力的动作更慢（K49、K50、K54）。日常用得多的小腿、核心、臀中肌、前锯肌、颈部按 1 天
   （由 K52"损伤和日常使用程度有关"推出，没有直接研究）。
 - 加天数：接近力竭（K51）、当次组数多（K55）、4 周内没练过这块肌肉（K52、K53，手臂多加一天）。
 - 封顶 4 天；本人说"还酸""不酸了"优先（个体差异大，K49）。
@@ -20,14 +20,25 @@ from ironm_agent.training import Plan, WorkoutLog
 
 type Feel = Literal["sore", "fine"]
 
+# 键是身体部位编码表里的细分肌肉（§57 需求 2：28 块按原来的分组给天数）
 BASE_DAYS: dict[str, int] = {
-    "股四头肌": 2, "臀大肌": 2, "内收肌": 2, "腘绳肌": 2, "竖脊肌": 2,
-    "胸大肌": 1, "背阔肌": 1, "斜方肌": 1, "三角肌前束": 1, "三角肌中束": 1, "三角肌后束": 1,
-    "肱二头肌": 1, "肱三头肌": 1, "前臂": 1, "小腿": 1, "臀中肌": 1, "腹直肌": 1, "腹斜肌": 1,
+    "muscle.quadriceps": 2, "muscle.glute_max": 2, "muscle.adductors": 2, "muscle.hamstrings": 2,
+    "muscle.erector_spinae": 2, "muscle.hip_flexors": 2,
+    "muscle.pec_major_upper": 1, "muscle.pec_major_lower": 1, "muscle.lats": 1, "muscle.upper_traps": 1,
+    "muscle.mid_lower_traps": 1, "muscle.rhomboids": 1, "muscle.anterior_delt": 1, "muscle.lateral_delt": 1,
+    "muscle.posterior_delt": 1, "muscle.rotator_cuff": 1, "muscle.biceps": 1, "muscle.brachialis": 1,
+    "muscle.triceps": 1, "muscle.forearms": 1,
+    "muscle.gastrocnemius": 1, "muscle.soleus": 1, "muscle.tibialis_anterior": 1, "muscle.glute_med": 1,
+    "muscle.rectus_abdominis": 1, "muscle.obliques": 1, "muscle.serratus_anterior": 1, "muscle.neck": 1,
 }  # fmt: skip
 BASE_WHY: dict[int, str] = {2: "下肢多关节动作，约 48 小时", 1: "上肢，约 24 小时"}
+# 日常用得多的：按 1 天，原因另写
+DAILY = frozenset({
+    "muscle.gastrocnemius", "muscle.soleus", "muscle.tibialis_anterior", "muscle.glute_med",
+    "muscle.rectus_abdominis", "muscle.obliques", "muscle.serratus_anterior", "muscle.neck",
+})  # fmt: skip
 LENGTHENED = frozenset({"hinge"})  # 硬拉、罗马尼亚硬拉、壶铃摇摆：腘绳肌在拉长位置发力
-ARMS = frozenset({"肱二头肌", "肱三头肌", "前臂"})
+ARMS = frozenset({"muscle.biceps", "muscle.brachialis", "muscle.triceps", "muscle.forearms"})
 NEAR_FAILURE_RPE = 9
 BIG_SETS = 8
 UNACCUSTOMED_DAYS = 28
@@ -90,7 +101,7 @@ def _main_sessions(
             for m in move.tag.muscles:
                 s = per.setdefault(m, Session(log.day, rpe=log.rpe))
                 s.sets += sets
-                s.lengthened |= m == "腘绳肌" and move.tag.pattern in LENGTHENED
+                s.lengthened |= m == "muscle.hamstrings" and move.tag.pattern in LENGTHENED
         for m, s in per.items():
             out.setdefault(m, []).append(s)
     return out
@@ -98,7 +109,7 @@ def _main_sessions(
 
 def _need(muscle: str, s: Session, earlier: list[Session]) -> tuple[int, list[str]]:
     days = BASE_DAYS[muscle]
-    daily = muscle in ("小腿", "臀中肌", "腹直肌", "腹斜肌")
+    daily = muscle in DAILY
     why = ["日常用得多，约 24 小时" if daily else BASE_WHY[days]]
     if s.lengthened:
         days += 1

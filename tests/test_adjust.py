@@ -498,18 +498,18 @@ THREE = Plan.model_validate(
 
 
 def test_pain_parts_and_pain_trigger() -> None:
-    assert trig.pain_parts("我膝盖又疼了") == ["knee"]
+    assert trig.pain_parts("我膝盖又疼了") == ["joint.knee"]
     assert trig.pain_parts("深蹲会影响膝盖吗") == [] and trig.pain_parts("我妈膝盖疼") == []
-    same_day = [("knee", TODAY), ("knee", TODAY)]
+    same_day = [("joint.knee", TODAY), ("joint.knee", TODAY)]
     assert trig.pain_triggers(same_day, THREE, TODAY) == []  # 同一天说两次算一次
-    two = [("knee", TODAY - timedelta(days=10)), ("knee", TODAY - timedelta(days=1))]
+    two = [("joint.knee", TODAY - timedelta(days=10)), ("joint.knee", TODAY - timedelta(days=1))]
     [t] = trig.pain_triggers(two, THREE, TODAY)
     assert (
         t.kind == "pain" and t.action == "proposal" and "杠铃深蹲" in t.tip and "医生" in t.detail
     )
-    old = [("knee", TODAY - timedelta(days=20)), ("knee", TODAY - timedelta(days=1))]
+    old = [("joint.knee", TODAY - timedelta(days=20)), ("joint.knee", TODAY - timedelta(days=1))]
     assert trig.pain_triggers(old, THREE, TODAY) == []  # 超过 14 天的不算
-    [w] = trig.pain_triggers([("wrist", TODAY), ("wrist", TODAY - timedelta(days=3))], None, TODAY)
+    [w] = trig.pain_triggers([("joint.wrist", TODAY), ("joint.wrist", TODAY - timedelta(days=3))], None, TODAY)
     assert w.action == "info"  # 没有计划：只提醒
 
 
@@ -566,8 +566,8 @@ def test_trigger_endpoints_and_pain_records(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(web, "refresh_later", lambda *a: None)
     c = TestClient(app)
     c.post("/iron/api/workouts", json={"session": "下肢", "note": "膝盖有点疼"})
-    assert pain.rows["42"] == [("knee", real)]  # 打卡备注里说疼：记下部位和日期
-    pain.rows["42"].append(("knee", real - timedelta(days=4)))
+    assert pain.rows["42"] == [("joint.knee", real)]  # 打卡备注里说疼：记下部位和日期
+    pain.rows["42"].append(("joint.knee", real - timedelta(days=4)))
     kinds = [t["kind"] for t in c.get("/iron/api/triggers").json()["triggers"]]
     assert "pain" in kinds
     seen: dict[str, Any] = {}
@@ -602,7 +602,7 @@ def test_chat_pain_is_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
         await a.settle()
 
     asyncio.run(go())
-    assert book.rows["42"] == [("knee", date.today())]
+    assert book.rows["42"] == [("joint.knee", date.today())]
 
 
 # ---- 需求 6：目标进度与阶段复测 -----------------------------------------------------------------

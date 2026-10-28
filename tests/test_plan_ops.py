@@ -94,12 +94,12 @@ def test_swap_to_an_unsuitable_move_picks_a_substitute() -> None:
         plan(),
         [Op(kind="swap", day=1, exercise="罗马尼亚硬拉", to="杠铃深蹲")],
         equipment=GEAR,
-        injured=("knee",),
+        injured=("joint.knee",),
     )
     new = out.plan.sessions[0].items[1].exercise
     assert new not in ("罗马尼亚硬拉", "杠铃深蹲") and "你要的杠铃深蹲" in out.changes
     keep = apply(plan(), [Op(kind="swap", day=1, exercise="箱式深蹲", to="杠铃深蹲")],
-                 equipment=GEAR, injured=("knee",))  # fmt: skip
+                 equipment=GEAR, injured=("joint.knee",))  # fmt: skip
     assert keep.plan == plan() and keep.skipped  # 替代里最合适的就是原来的动作：不改
     ok = apply(plan(), [Op(kind="swap", day=3, exercise="侧平举", to="俯卧撑")], equipment=GEAR)
     assert ok.plan.sessions[1].items[2].exercise == "俯卧撑" and not ok.notes
@@ -164,7 +164,7 @@ def test_review_actions_become_at_most_two_days_of_change() -> None:
     assert [(o.kind, o.day) for o in fewer] == [("remove", 5)]
     light = review_ops([{"kind": "lighter"}], p, equipment=GEAR)
     assert [o.day for o in light] == [1, 3]  # 整体减量也只改前两天
-    pain = review_ops([{"kind": "swap_part", "part": "back"}], p, equipment=GEAR)
+    pain = review_ops([{"kind": "swap_part", "part": "joint.lumbar"}], p, equipment=GEAR)
     assert [(o.kind, o.exercise) for o in pain] == [("swap", "罗马尼亚硬拉")]
 
 

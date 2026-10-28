@@ -4,7 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from ironm_agent.body import CODES_PATH, BodyTable, CodeFile, Node, table
+from ironm_agent.body import (
+    CODES_PATH,
+    BodyTable,
+    CodeFile,
+    Node,
+    joint_code,
+    muscle_codes,
+    name,
+    table,
+)
 from ironm_agent.yamlfile import load_yaml, load_yaml_text
 
 FEDB_GROUPS = {
@@ -142,3 +151,112 @@ def test_bad_tables_are_rejected(extra: str, message: str) -> None:
 def test_shipped_file_is_marked_as_draft() -> None:
     data = CodeFile.model_validate(load_yaml(Path(CODES_PATH)), strict=False)
     assert data.review == "claude_draft"
+
+
+# ---- 需求 2：动作库和现有数据改用编码 ----------------------------------------------------------
+
+
+def test_every_strength_move_has_a_main_muscle_and_codes_are_valid() -> None:
+    from ironm_agent.protools.movement import moves
+
+    t = table()
+    for mv in moves():
+        for code in (*mv.tag.muscles, *mv.tag.assist):
+            assert t.node(code).level == "muscle"
+        for code in mv.tag.groups:
+            assert t.node(code).level in ("part", "group")
+        for code in (*mv.tag.stress, *mv.tag.friendly):
+            assert t.node(code).level == "joint"
+        if mv.tag.pattern not in ("cardio", "stretch", "plyo"):
+            assert mv.tag.muscles, mv.name
+
+
+def test_incline_press_works_upper_chest_and_flat_press_lower() -> None:
+    from ironm_agent.protools.movement import find
+
+    incline, flat = find("上斜哑铃卧推"), find("哑铃卧推")
+    assert incline is not None and incline.tag.muscles[0] == "muscle.pec_major_upper"
+    assert flat is not None and flat.tag.muscles[0] == "muscle.pec_major_lower"
+
+
+def test_bad_tag_codes_are_rejected() -> None:
+    from pydantic import ValidationError
+
+    from ironm_agent.protools.movement import Tag
+
+    for bad in (
+        {"pattern": "squat", "muscles": ["股四头肌"]},
+        {"pattern": "squat", "muscles": ["group.quadriceps"]},
+        {"pattern": "squat", "groups": ["muscle.quadriceps"]},
+        {"pattern": "squat", "stress": ["knee"]},
+        {"pattern": "squat", "muscles": ["muscle.quadriceps"], "assist": ["muscle.quadriceps"]},
+    ):
+        with pytest.raises(ValidationError):
+            Tag.model_validate(bad, strict=False)
+
+
+def test_weekly_set_groups_keep_their_old_names() -> None:
+    from ironm_agent.protools.plan_check import MAJOR
+
+    names = {n.name for n in table().nodes.values()}
+    assert set(MAJOR) <= names
+    assert [
+        name(c)
+        for c in ("part.chest", "part.back", "group.quadriceps", "group.glutes", "part.shoulder")
+    ] == list(MAJOR)
+
+
+@pytest.mark.parametrize(
+    ("stored", "codes"),
+    [
+        ("muscle.lats", ("muscle.lats",)),
+        ("股四头肌", ("muscle.quadriceps",)),
+        ("胸大肌", ("muscle.pec_major_upper", "muscle.pec_major_lower")),
+        ("斜方肌", ("muscle.upper_traps", "muscle.mid_lower_traps")),
+        ("小腿", ("muscle.gastrocnemius", "muscle.soleus", "muscle.tibialis_anterior")),
+        ("group.glutes", ()),
+        ("不认识", ()),
+    ],
+)
+def test_old_muscle_names_become_codes(stored: str, codes: tuple[str, ...]) -> None:
+    assert muscle_codes(stored) == codes
+
+
+def test_old_joint_keys_become_codes() -> None:
+    assert [joint_code(x) for x in ("knee", "back", "neck", "joint.hip", "muscle.lats", "hand")] == [
+        "joint.knee", "joint.lumbar", "joint.cervical", "joint.hip", None, None,
+    ]  # fmt: skip
+
+
+def test_old_records_read_as_codes() -> None:
+    import asyncio
+    from datetime import date
+
+    from ironm_agent.muscle_feel import FeelBook
+    from ironm_agent.triggers import PainBook
+
+    day = date(2026, 10, 20)
+    feel = FeelBook()
+    feel.rows["1"] = [
+        ("胸大肌", "sore", day),
+        ("muscle.pec_major_upper", "fine", day),
+        ("没这块", "sore", day),
+    ]
+    got = asyncio.run(feel.latest("1"))
+    assert got == {"muscle.pec_major_upper": ("fine", day), "muscle.pec_major_lower": ("sore", day)}
+    pain = PainBook()
+    pain.rows["1"] = [("knee", day), ("joint.lumbar", day), ("hand", day)]
+    assert asyncio.run(pain.since("1", day)) == [("joint.knee", day), ("joint.lumbar", day)]
+
+
+def test_recovery_days_follow_the_spec_groups() -> None:
+    from ironm_agent.protools.recovery import ARMS, BASE_DAYS, DAILY
+
+    assert set(BASE_DAYS) == {n.code for n in table().of_level("muscle")}
+    two = {m for m, d in BASE_DAYS.items() if d == 2}
+    assert two == {"muscle.quadriceps", "muscle.glute_max", "muscle.adductors", "muscle.hamstrings",
+                   "muscle.erector_spinae", "muscle.hip_flexors"}  # fmt: skip
+    assert all(d == 1 for m, d in BASE_DAYS.items() if m not in two)
+    assert {"muscle.gastrocnemius", "muscle.soleus", "muscle.tibialis_anterior", "muscle.glute_med",
+                     "muscle.rectus_abdominis", "muscle.obliques", "muscle.serratus_anterior", "muscle.neck"} == DAILY  # fmt: skip
+    assert {m.code for m in table().muscles_under("part.arm")} == ARMS

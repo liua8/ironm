@@ -211,7 +211,8 @@ class FitnessToolsService:
         Args:
             exercise: 要替代的动作名。
             direction: easier（更容易）、similar（相近）、harder（更难）或 any。
-            avoid_parts: 要避开的部位：knee、back、shoulder、wrist、ankle、neck。
+            avoid_parts: 要避开的关节编码：joint.knee（膝盖）、joint.lumbar（腰椎）、joint.shoulder（肩关节）、
+                joint.wrist（手腕）、joint.ankle（脚踝）、joint.cervical（颈椎）、joint.elbow（手肘）、joint.hip（髋关节）。
         """
         return await _run("find_substitutes", user_info,
                           {"exercise": exercise, "direction": direction, "avoid_parts": avoid_parts})  # fmt: skip

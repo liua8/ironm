@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Literal
 
+from ironm_agent import body
 from ironm_agent.protools.movement import find
 from ironm_agent.protools.recovery import Feel, Recovery, recovery
 from ironm_agent.training import Plan, WorkoutLog
@@ -30,12 +31,15 @@ ASSIST_WEIGHT = 0.5
 WEEK_DAYS = 7
 LOOKBACK_DAYS = 28
 
-# 人体图上的细分肌肉：正面、背面（斜方肌、前臂、小腿两面都画）
-FRONT = ("斜方肌", "三角肌前束", "三角肌中束", "胸大肌", "肱二头肌", "前臂", "腹直肌", "腹斜肌",
-         "股四头肌", "内收肌", "小腿")  # fmt: skip
-BACK = ("斜方肌", "三角肌后束", "背阔肌", "肱三头肌", "前臂", "竖脊肌", "臀中肌", "臀大肌",
-        "腘绳肌", "小腿")  # fmt: skip
-MUSCLES: tuple[str, ...] = tuple(dict.fromkeys((*FRONT, *BACK)))
+# 人体图上的细分肌肉：身体部位编码表里的 28 块（§57），按表里的顺序
+MUSCLES: tuple[str, ...] = tuple(n.code for n in body.table().of_level("muscle"))
+
+
+# 动作库里有动作主要练到的肌肉：只有这些才列进"近 7 天没练"（没有动作能补的不列）
+def _trainable() -> frozenset[str]:
+    from ironm_agent.protools.movement import moves
+
+    return frozenset(m for mv in moves() for m in mv.tag.muscles)
 
 
 def level(sets: float) -> Level:
@@ -44,7 +48,7 @@ def level(sets: float) -> Level:
 
 @dataclass
 class Muscle:
-    name: str
+    code: str  # 编码表里的细分肌肉
     sets_7d: float = 0
     last: date | None = None
     history: list[str] = field(default_factory=list)  # 最近几次：日期、动作、组数
@@ -52,9 +56,14 @@ class Muscle:
     def json(self, today: date, rec: Recovery) -> dict[str, object]:
         sets = round(self.sets_7d * 2) / 2
         lv = level(sets)
+        n = body.table().node(self.code)
         return {
-            "name": self.name,
-            "side": "both" if self.name in FRONT and self.name in BACK else "front" if self.name in FRONT else "back",
+            "code": self.code,
+            "name": n.name,
+            "formal": n.formal,
+            "says": list(n.says[:3]),
+            "group": body.name(n.parent or ""),
+            "part": next(a.name for a in body.table().ancestors(self.code) if a.level == "part"),
             "sets_7d": int(sets) if sets == int(sets) else sets,
             "level": lv,
             "level_name": LEVEL_NAMES[lv],
@@ -109,12 +118,11 @@ def muscle_map(
             item.history.append(f"{log.day.month}月{log.day.day}日：" + "、".join(what))
     rec = recovery(logs, today, plan, _done_items, feels)
     out = [muscles[m].json(today, rec[m]) for m in MUSCLES]
+    trainable = _trainable()
     return {
         "today": today.isoformat(),
         "muscles": out,
-        "front": list(FRONT),
-        "back": list(BACK),
-        "untrained": [x["name"] for x in out if x["level"] == "none"],
+        "untrained": [x["name"] for x in out if x["level"] == "none" and x["code"] in trainable],
         "recovering": [x["name"] for x in out if x["recovering"]],
         "sessions": len(done),
         "note": "组数按近 7 天的训练记录算：主要练到的每组记 1 组，辅助练到的按半组；恢复按肌肉、动作、组数和"
