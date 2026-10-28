@@ -561,3 +561,8 @@ async def asset(name: str) -> FileResponse:
 from ironm_agent.web_more import router as _more  # noqa: E402
 
 router.include_router(_more)
+
+# 夯榜（spec [2026-10-23] §60）
+from ironm_agent.web_tier import router as _tier  # noqa: E402
+
+router.include_router(_tier)

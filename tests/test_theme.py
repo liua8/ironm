@@ -58,9 +58,9 @@ def test_no_light_theme_leftovers() -> None:
         "rgb(255 255 255 / 88%)",
     ):
         assert old not in CSS, old
-    # 写死的白色只留给动作照片底和视频上的播放按钮
+    # 写死的白色只留给动作照片底（动作卡片、详情、夯榜缩略图）和视频上的播放按钮
     whites = [
         ln.split("{")[0].strip() for ln in CSS.splitlines() if re.search(r"#fff\b|#ffffff", ln)
     ]
-    assert whites == [".move-cover .play", ".move-cover .move-img", ".move-frames img"]
+    assert whites == [".move-cover .play", ".move-cover .move-img", ".move-frames img", ".tier-item img"]
     assert 'content="#0a0c0b"' in (WEB / "index.html").read_text()

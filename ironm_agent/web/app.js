@@ -775,7 +775,8 @@ async function moves(view) {
         const all = moveOpen.has(part);
         const toggle = () => { if (all) moveOpen.delete(part); else moveOpen.add(part); draw(); };
         return h("section", { class: "move-group" },
-          h("div", { class: "move-group-head" }, h("h2", {}, part, h("small", {}, `${mine.length} 个`)),
+          h("div", { class: "move-group-head" }, h("h2", {}, part, h("small", {}, `${mine.length} 个`),
+            MOVE_PARTS.includes(part) ? h("a", { class: "tier-link", href: tierHref(`move:${part}`) }, icon("trophy", "xs"), "夯榜") : null),
             mine.length > GROUP_SHOW ? h("button", { class: `link${all ? " open" : ""}`, type: "button", "aria-expanded": String(all), onclick: toggle }, all ? "收起" : `全部 ${mine.length} 个`, icon("chevron", "xs")) : null),
           h("div", { class: "move-grid" }, (all ? mine : mine.slice(0, GROUP_SHOW)).map(card)));
       }).filter(Boolean));
@@ -892,6 +893,7 @@ async function food(view) {
   redraw(day);
   view.append(summary, mealEntry(() => today, redraw),
     section("吃了什么", null, record),
+    h("div", { class: "tier-entry" }, h("a", { class: "pill", href: tierHref("food") }, icon("trophy", "xs"), "食物夯榜"), h("a", { class: "pill", href: tierHref("supplement") }, icon("trophy", "xs"), "补剂和蛋白粉夯榜")),
     section("问营养师", null, h("div", { class: "asks" },
       ["早餐怎么吃够蛋白质", "练前练后吃什么", "外卖怎么点更健康", "要不要吃肌酸", "减脂期饿了怎么办"].map((q) => askChip(q)))));
 }
@@ -1290,8 +1292,66 @@ function partList(mm, pick) {
 }
 
 // ---- 夯（spec [2026-10-23] §60）--------------------------------------------------------------
-async function tierTab(view) {
-  view.append(h("div", { class: "card" }, h("p", { class: "muted" }, "夯榜马上就来。")));
+const MOVE_PARTS = ["胸", "背", "肩", "手臂", "核心", "腿臀"];
+const tierHref = (cat) => `#me/tier/${encodeURIComponent(cat)}`;
+async function tierTab(view, cat) {
+  const category = cat === "supplement" || cat === "food" || MOVE_PARTS.some((p) => cat === `move:${p}`) ? cat : "move:胸";
+  const kind = category.startsWith("move:") ? "move" : category;
+  const link = (href, name, on) => h("a", { class: `pill${on ? " on" : ""}`, href }, name);
+  view.append(
+    h("div", { class: "pills" }, link(tierHref("move:胸"), "动作", kind === "move"), link(tierHref("supplement"), "补剂和蛋白粉", kind === "supplement"), link(tierHref("food"), "食物", kind === "food")),
+    kind === "move" ? h("div", { class: "pills" }, MOVE_PARTS.map((p) => link(tierHref(`move:${p}`), p, category === `move:${p}`))) : null);
+  const box = h("div", { class: "tier-box" });
+  view.append(box);
+  const draw = (b) => box.replaceChildren(tierBoard(b, draw), b.custom ? tierAdd(b, draw) : null);
+  draw(await api(`/iron/api/tier?category=${encodeURIComponent(category)}`));
+  view.append(h("p", { class: "caption", style: "padding:0 2px" }, "点一个条目选它在哪一档。榜只有你自己看得到。"));
+}
+
+function tierBoard(b, draw) {
+  const rows = [...b.tiers.map((t) => [t.key, t.name]), ["", "还没排"]];
+  const pick = (x) => {
+    const go = async (tier) => {
+      try { draw(await api("/iron/api/tier", { method: "PUT", body: JSON.stringify({ category: b.category, key: x.key, tier }) })); closeSheet(); }
+      catch (err) { alert(err.message); }
+    };
+    const del = async () => {
+      try { draw(await api(`/iron/api/tier/items?category=${encodeURIComponent(b.category)}&key=${encodeURIComponent(x.key)}`, { method: "DELETE" })); closeSheet(); }
+      catch (err) { alert(err.message); }
+    };
+    openSheet(x.name,
+      h("div", { class: "tier-pick" }, b.tiers.map((t) => h("button", { class: `tier-btn t-${t.key}${x.tier === t.key ? " on" : ""}`, type: "button", onclick: () => go(t.key) }, t.name))),
+      x.tier ? h("button", { class: "btn ghost block", type: "button", onclick: () => go("") }, "移回还没排") : null,
+      b.custom ? h("button", { class: "btn danger block", type: "button", onclick: del }, "删除这一项") : null);
+  };
+  return h("div", { class: "tier-board" }, rows.map(([key, name]) => {
+    const items = b.items.filter((x) => x.tier === key);
+    if (!key && !items.length) return null;
+    return h("div", { class: `tier-row${key ? "" : " rest"}` },
+      h("div", { class: `tier-label t-${key || "rest"}` }, name),
+      h("div", { class: "tier-items" }, items.length ? items.map((x) => pressable(h("span", { class: "tier-item", "aria-label": `${x.name}，点了选档` },
+        x.image ? h("img", { src: x.image, alt: "", loading: "lazy" }) : null, h("span", {}, x.name)), () => pick(x)))
+        : h("span", { class: "tier-empty" }, "空")));
+  }));
+}
+
+function tierAdd(b, draw) {
+  const input = h("input", { type: "text", maxlength: "30", placeholder: b.category === "food" ? "加一种食物，比如鸡胸肉" : "加一种，比如乳清蛋白粉、肌酸", "aria-label": "添加" });
+  const msg = h("p", { class: "error" });
+  const add = async (name) => {
+    msg.textContent = "";
+    try { draw(await api("/iron/api/tier/items", { method: "POST", body: JSON.stringify({ category: b.category, name }) })); }
+    catch (err) { msg.textContent = err.message; }
+  };
+  const form = h("form", { class: "tier-add" }, input, h("button", { class: "btn small", type: "submit" }, "添加"));
+  form.addEventListener("submit", (e) => { e.preventDefault(); add(input.value); });
+  const wrap = h("div", { class: "card tier-add-card" }, form, msg);
+  if (b.category === "food") {
+    api("/iron/api/tier/food-suggest").then((s) => {
+      if (s.names.length) wrap.append(h("p", { class: "caption" }, `最近 ${s.days} 天常吃的：`), h("div", { class: "asks" }, s.names.map((n) => h("button", { class: "ask-chip", type: "button", onclick: () => add(n) }, n))));
+    }).catch(() => {});
+  }
+  return wrap;
 }
 
 // 每块肌肉的恢复状态（spec [2026-10-23] §30）
@@ -1782,11 +1842,11 @@ function indicatorSheet(r) {
 // ---- 我的 ---------------------------------------------------------------------------------
 const SEX = { male: "男", female: "女" };
 const ME_TABS = [["data", "数据"], ["tier", "夯"], ["profile", "档案"]];
-async function me(view, sub) {
+async function me(view, sub, extra) {
   const tab = ME_TABS.some(([k]) => k === sub) ? sub : "data";
   view.append(h("nav", { class: "seg", "aria-label": "我的" }, ME_TABS.map(([k, name]) =>
     h("a", { href: `#me/${k}`, class: k === tab ? "on" : "", "aria-current": k === tab ? "page" : null }, name))));
-  await { data, tier: tierTab, profile: profileTab }[tab](view);
+  await { data, tier: tierTab, profile: profileTab }[tab](view, extra);
 }
 
 async function profileTab(view) {
@@ -2333,7 +2393,7 @@ async function render() {
     $("bar").hidden = true; $("tabs").hidden = true; $("fab").hidden = true; chat.els = null;
     view.replaceChildren(); loginView(view); return;
   }
-  const [name, sub] = (location.hash.slice(1) || "home").split("/");
+  const [name, sub, ...rest] = (location.hash.slice(1) || "home").split("/");
   if (name === "data") { location.replace("#me/data"); return; } // 原来的数据页并进了"我的"
   const page = PAGES[name] ? name : "home";
   const cfg = PAGES[page];
@@ -2355,7 +2415,7 @@ async function render() {
   const box = document.createDocumentFragment();
   const holder = h("div");
   try {
-    await cfg.render(holder, sub);
+    await cfg.render(holder, sub, decodeURIComponent(rest.join("/")));
     if (seq !== renderSeq) return;
     box.append(...holder.childNodes);
     view.replaceChildren(box);

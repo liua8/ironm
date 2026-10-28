@@ -1026,3 +1026,29 @@ i.lv-high { background: var(--fire-2); }
 .fab .ti svg.i { width: 20px; height: 20px; }
 body.locked .fab { display: none; }
 body:has(.fab:not([hidden])) .app { padding-bottom: calc(var(--tabs-h) + 84px + env(safe-area-inset-bottom, 0px)); }
+
+/* ==== 夯：个人的从夯到拉榜单（spec [2026-10-23] §60） ==== */
+a.pill { text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+.tier-board { display: flex; flex-direction: column; gap: 6px; }
+.tier-row { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 6px; min-height: 56px; }
+.tier-label { display: grid; place-items: center; border-radius: 10px; font-weight: 800; font-size: 16px; letter-spacing: .04em; text-align: center; padding: 4px; }
+.t-hang { background: var(--fire-2); color: var(--accent-ink); }
+.t-top { background: var(--accent); color: var(--accent-ink); }
+.t-elite { background: #1fae68; color: var(--accent-ink); }
+.t-npc { background: #3a443e; color: var(--ink); }
+.t-la { background: #262b28; color: var(--muted); }
+.t-rest { background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
+.tier-items { display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; padding: 6px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+.tier-item { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 8px; background: var(--sunken); border: 1px solid var(--line); font-size: 13.5px; cursor: pointer; max-width: 100%; }
+.tier-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tier-item:not(:has(img)) { padding-left: 10px; }
+.tier-item img { width: 30px; height: 30px; border-radius: 6px; object-fit: contain; background: #fff; flex: none; }
+.tier-empty { color: var(--muted); font-size: 12.5px; align-self: center; padding: 0 4px; }
+.tier-pick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+.tier-btn { border: 0; border-radius: 10px; padding: 12px 0; font: inherit; font-weight: 800; cursor: pointer; }
+.tier-btn.on { outline: 2px solid var(--ink); outline-offset: 2px; }
+.tier-add { flex-direction: row; gap: 8px; }
+.tier-add input { flex: 1; min-width: 0; }
+.tier-add-card { display: flex; flex-direction: column; gap: 8px; }
+.tier-link { margin-left: 10px; font-size: 12.5px; font-weight: 650; color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 3px; vertical-align: middle; }
+.tier-entry { display: flex; gap: 8px; flex-wrap: wrap; }
