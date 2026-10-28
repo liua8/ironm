@@ -42,6 +42,8 @@ const ICONS = {
   coach: [P("M12 8V4H8"), ["rect", { width: "16", height: "12", x: "4", y: "8", rx: "2" }], P("M2 14h2"), P("M20 14h2"), P("M15 13v2"), P("M9 13v2")],
   food: [P("M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"), P("M7 2v20"), P("M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7")],
   chart: [P("M22 12h-4l-3 9L9 3l-3 9H2")],
+  user: [P("M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"), ["circle", { cx: "12", cy: "7", r: "4" }]],
+  trophy: [P("M6 9H4.5a2.5 2.5 0 0 1 0-5H6"), P("M18 9h1.5a2.5 2.5 0 0 0 0-5H18"), P("M4 22h16"), P("M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"), P("M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"), P("M18 2H6v7a6 6 0 0 0 12 0V2Z")],
   back: [P("m15 18-6-6 6-6")],
   plus: [P("M5 12h14"), P("M12 5v14")],
   history: [P("M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"), P("M3 3v5h5"), P("M12 7v5l4 2")],
@@ -230,10 +232,10 @@ function metricSheet(m) {
     m.value != null ? h("div", { class: "sheet-big" }, h("span", { class: "v" }, valueText(m), m.unit ? h("small", {}, m.unit) : null), chip(m.brief, m.tone)) : null,
     (m.series || []).length > 1 ? chart(m) : null,
     h("dl", { class: "facts" }, facts.map(([k, v]) => h("div", {}, h("dt", {}, k), h("dd", {}, v)))),
-    (m.missing || []).some((x) => x.includes("我的")) ? h("a", { class: "btn block", href: "#me" }, "去「我的」填写") : null,
+    (m.missing || []).some((x) => x.includes("我的")) ? h("a", { class: "btn block", href: "#me/profile" }, "去「我的」填写") : null,
     (m.missing || []).some((x) => x.includes("手表")) ? h("button", { class: "btn block", type: "button", onclick: appleSheet }, icon("phone", "sm"), "导入苹果健康数据") : null,
     CALC_FROM[m.key] ? h("div", { class: "calc-from" }, h("h3", {}, "这个数不能直接改"), h("p", {}, CALC_FROM[m.key][0]), h("p", { class: "muted" }, CALC_FROM[m.key][1]),
-      h("a", { class: "btn ghost block", href: "#me", onclick: closeSheet }, "去「我的」修改")) : null,
+      h("a", { class: "btn ghost block", href: "#me/profile", onclick: closeSheet }, "去「我的」修改")) : null,
     MANUAL[m.key] ? h("div", {}, h("h3", {}, "自己记一条、改或删"), recordBox(MANUAL[m.key])) : null,
     h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`我的${m.name}最近怎么样？说明什么？`) }, icon("coach", "sm"), "问问教练"));
 }
@@ -260,10 +262,22 @@ async function home(view) {
   planSessions = training?.plan?.sessions || []; planTargets = training?.targets || {};
   view.append(
     brief?.hero?.cheer ? h("p", { class: "home-cheer" }, brief.hero.cheer) : null,
+    askBox(),
     taskCard(brief, training, week, meals),
     reportCard(brief, cal),
     weekPlanCard(week, cal, brief),
     monthCard(brief, week));
+}
+
+// 首页问教练（spec [2026-10-23] §59 需求 2）：发出去就进入对话直接问
+function askBox() {
+  const input = h("input", { type: "text", placeholder: "问教练，比如今天练什么", "aria-label": "问教练", enterkeyhint: "send", maxlength: "500" });
+  const form = h("form", { class: "ask-box" },
+    h("span", { class: "ask-icon" }, icon("coach", "sm")), input,
+    h("button", { class: "send", type: "submit", "aria-label": "发送" }, icon("send", "sm")));
+  form.addEventListener("submit", (e) => { e.preventDefault(); const q = input.value.trim(); if (q) askCoach(q); else location.hash = "#chat"; });
+  return h("div", { class: "ask-wrap" }, form,
+    h("button", { class: "link ask-past", type: "button", onclick: historySheet }, icon("history", "xs"), "以前的对话"));
 }
 
 // 本周进度环（spec [2026-10-23] §19）
@@ -297,7 +311,7 @@ function goalCard({ empty = false } = {}) {
     if (!g) {
       if (!empty) { box.replaceChildren(); return; }
       box.replaceChildren(h("div", { class: "card" }, h("p", { class: "muted" }, "还没有设目标体重和日期。"),
-        h("a", { class: "link", href: "#me" }, "到「我的」设置", icon("chevron", "xs"))));
+        h("a", { class: "link", href: "#me/profile" }, "到「我的」设置", icon("chevron", "xs"))));
       return;
     }
     const kg = (v) => (v == null ? "—" : `${num(v)}`);
@@ -473,7 +487,7 @@ function weekPlanCard(week, cal, brief) {
       h("button", { class: "link", type: "button", onclick: () => askCoach("帮我看看现在的训练计划，需要调整吗？") }, "调整", icon("chevron", "xs"))),
     h("div", { class: "wc-row" }, cells),
     notes.length ? h("ul", { class: "wc-notes" }, notes)
-      : week.weather === "no_city" ? h("a", { class: "wc-note link", href: "#me" }, icon("sun", "xs"), h("span", {}, "设置城市后，管家会按天气安排训练"))
+      : week.weather === "no_city" ? h("a", { class: "wc-note link", href: "#me/profile" }, icon("sun", "xs"), h("span", {}, "设置城市后，管家会按天气安排训练"))
         : week.weather === "ok" ? h("p", { class: "muted small" }, "这周的天气不影响训练安排。") : null);
 }
 const badWeather = (level) => level === "indoor" || level === "avoid";
@@ -979,7 +993,7 @@ function daySummary(d, m) {
   if (!t) {
     return h("div", { class: "card" },
       h("div", { class: "empty" }, icon("info"), "在「我的」里填好身高、出生日期、性别和目标，就能算出每天该吃多少。"),
-      h("a", { class: "btn ghost small", href: "#me" }, "去填写"),
+      h("a", { class: "btn ghost small", href: "#me/profile" }, "去填写"),
       tot.kcal ? h("p", { class: "muted" }, `今天已记：${macroLine(tot)}`) : null);
   }
   const kcal = m.kcal_target, protein = m.protein_target;
@@ -1275,6 +1289,11 @@ function partList(mm, pick) {
       h("span", { class: "mr-sets" }, `${m.sets_7d} 组`)), () => pick(m))))));
 }
 
+// ---- 夯（spec [2026-10-23] §60）--------------------------------------------------------------
+async function tierTab(view) {
+  view.append(h("div", { class: "card" }, h("p", { class: "muted" }, "夯榜马上就来。")));
+}
+
 // 每块肌肉的恢复状态（spec [2026-10-23] §30）
 const RECOVER_WORD = { today: "今天刚练", recovering: "恢复中", sore: "还酸" };
 function recoverText(m) {
@@ -1360,7 +1379,7 @@ function addGrid() {
     h("span", { class: "add-icon" }, icon(ic)), h("span", { class: "add-text" }, h("b", {}, title), h("span", {}, sub))), go)));
 }
 function addRow() {
-  const items = [...ADD.slice(0, 3), ["more", "更多", "", () => { location.hash = "#data"; }]];
+  const items = [...ADD.slice(0, 3), ["more", "更多", "", () => { location.hash = "#me/data"; }]];
   return h("div", { class: "add-row" }, items.map(([ic, title, , go]) => h("button", { class: "add-mini", type: "button", onclick: go },
     h("span", { class: "add-icon" }, icon(ic)), title)));
 }
@@ -1501,7 +1520,7 @@ async function appleSheet() {
         h("div", { class: "kv" }, h("span", {}, "读到的记录"), h("span", {}, `${job.records.toLocaleString("zh-CN")} 条`)),
         h("div", { class: "kv" }, h("span", {}, "新增读数"), h("span", {}, `${job.added.toLocaleString("zh-CN")} 条${job.added ? "" : "（之前导入过）"}`)),
         job.first ? h("div", { class: "kv" }, h("span", {}, "覆盖日期"), h("span", {}, `${job.first} 至 ${job.last}`)) : null,
-        h("a", { class: "btn ghost block", href: "#data", onclick: () => { cache.metrics = null; closeSheet(); render(); } }, "去看数据")));
+        h("a", { class: "btn ghost block", href: "#me/data", onclick: () => { cache.metrics = null; closeSheet(); render(); } }, "去看数据")));
     } else {
       status.replaceChildren(h("div", { class: "error" }, job.error || "导入没有成功"));
     }
@@ -1762,7 +1781,15 @@ function indicatorSheet(r) {
 
 // ---- 我的 ---------------------------------------------------------------------------------
 const SEX = { male: "男", female: "女" };
-async function me(view) {
+const ME_TABS = [["data", "数据"], ["tier", "夯"], ["profile", "档案"]];
+async function me(view, sub) {
+  const tab = ME_TABS.some(([k]) => k === sub) ? sub : "data";
+  view.append(h("nav", { class: "seg", "aria-label": "我的" }, ME_TABS.map(([k, name]) =>
+    h("a", { href: `#me/${k}`, class: k === tab ? "on" : "", "aria-current": k === tab ? "page" : null }, name))));
+  await { data, tier: tierTab, profile: profileTab }[tab](view);
+}
+
+async function profileTab(view) {
   const data = await profile();
   const email = tokenEmail();
   view.append(h("div", { class: "card" }, h("div", { class: "profile-head" },
@@ -2248,7 +2275,8 @@ async function historySheet() {
     if (chat.busy) return;
     closeSheet();
     try { await loadSession(x.session_id); } catch (err) { chat.messages = []; chat.session = x.session_id; }
-    drawThread();
+    chat.loaded = true;
+    if (chat.els) drawThread(); else location.hash = "#chat";
   })));
 }
 function sessionTime(ts) {
@@ -2290,9 +2318,9 @@ const PAGES = {
   moves: { title: "动作", render: moves, skeleton: [46, 40, 520] },
   chat: { title: "教练", full: true, render: chatPage },
   food: { title: "饮食", render: food, skeleton: [180, 220, 150] },
-  data: { title: "数据", render: data, skeleton: [320, 180, 180] },
-  me: { title: "我的", render: me, skeleton: [80, 240] },
+  me: { title: "我的", render: me, skeleton: [44, 320, 180] },
 };
+const WITH_COACH = new Set(["moves", "food", "me"]); // 右下角悬浮"教练"按钮（§59 需求 3）
 let renderSeq = 0;
 
 async function render() {
@@ -2302,31 +2330,32 @@ async function render() {
   const signedIn = Boolean(store.get());
   document.body.classList.remove("chatting");
   if (!signedIn) {
-    $("bar").hidden = true; $("tabs").hidden = true; chat.els = null;
+    $("bar").hidden = true; $("tabs").hidden = true; $("fab").hidden = true; chat.els = null;
     view.replaceChildren(); loginView(view); return;
   }
-  const name = (location.hash.slice(1) || "home").split("/")[0];
+  const [name, sub] = (location.hash.slice(1) || "home").split("/");
+  if (name === "data") { location.replace("#me/data"); return; } // 原来的数据页并进了"我的"
   const page = PAGES[name] ? name : "home";
   const cfg = PAGES[page];
   document.title = `${cfg.title} · AI 健身管家`;
   for (const a of document.querySelectorAll(".tabs a")) a.classList.toggle("on", a.dataset.tab === page);
   $("tabs").hidden = Boolean(cfg.full);
   $("bar").hidden = Boolean(cfg.full);
+  $("fab").hidden = !WITH_COACH.has(page);
   if (cfg.full) {
     document.body.classList.add("chatting");
     view.replaceChildren(); cfg.render(view); return;
   }
   chat.els = null;
-  chat.back = page;
+  chat.back = sub ? `${page}/${sub}` : page;
   $("title").textContent = cfg.title;
   $("kicker").textContent = cfg.kicker ? cfg.kicker() : "";
-  $("avatar").textContent = (tokenEmail()[0] || "我").toUpperCase();
   view.replaceChildren(...skeleton(...(cfg.skeleton || [200])));
   window.scrollTo(0, 0);
   const box = document.createDocumentFragment();
   const holder = h("div");
   try {
-    await cfg.render(holder);
+    await cfg.render(holder, sub);
     if (seq !== renderSeq) return;
     box.append(...holder.childNodes);
     view.replaceChildren(box);

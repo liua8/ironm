@@ -56,7 +56,7 @@ svg.i.sm { width: 16px; height: 16px; } svg.i.xs { width: 14px; height: 14px; }
   border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .tabs-inner {
-  max-width: var(--max); margin: 0 auto; height: var(--tabs-h); display: grid; grid-template-columns: repeat(5, 1fr);
+  max-width: var(--max); margin: 0 auto; height: var(--tabs-h); display: grid; grid-template-columns: repeat(4, 1fr);
   padding: 0 max(8px, env(safe-area-inset-right, 0px)) 0 max(8px, env(safe-area-inset-left, 0px));
 }
 .tabs a {
@@ -66,9 +66,6 @@ svg.i.sm { width: 16px; height: 16px; } svg.i.xs { width: 14px; height: 14px; }
 .tabs a.on { color: var(--ink); font-weight: 650; }
 .tabs a.on .ti { color: var(--accent); }
 .tabs .ti { display: grid; place-items: center; height: 24px; }
-.coach-tab .ti { width: 40px; height: 30px; border-radius: 999px; background: var(--ink); color: var(--bg); }
-.tabs a.coach-tab.on .ti { background: var(--accent); color: var(--accent-ink); }
-.coach-tab .ti svg { width: 19px; height: 19px; }
 
 /* ---- 通用 ---- */
 .section { display: flex; flex-direction: column; gap: 10px; }
@@ -760,9 +757,6 @@ body {
 .tabs a { color: var(--muted); }
 .tabs a.on { color: var(--accent); font-weight: 650; }
 .tabs a.on .ti { color: var(--accent); }
-.coach-tab .ti { background: linear-gradient(120deg, var(--fire), var(--fire-2)); color: var(--accent-ink); border-radius: 10px;
-  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
-.tabs a.coach-tab.on .ti { background: var(--ink); color: var(--surface); }
 
 /* 表单、弹层、对话 */
 input, select, textarea { background: var(--surface); border-color: rgb(255 255 255 / 13%); border-radius: var(--radius-sm); color: var(--ink); }
@@ -1003,3 +997,32 @@ i.lv-high { background: var(--fire-2); }
 .msg-time { display: block; font-size: 11px; line-height: 1.4; opacity: .7; font-variant-numeric: tabular-nums; }
 .msg-user .msg-time { margin-top: 4px; text-align: right; }
 .msg-coach .msg-time { color: var(--muted); opacity: 1; }
+
+/* ==== 底部四个标签；首页问教练、其他页悬浮教练按钮、"我的"分三段（spec [2026-10-23] §59） ==== */
+.ask-wrap { display: flex; flex-direction: column; gap: 6px; }
+.ask-box {
+  display: flex; flex-direction: row; align-items: center; gap: 10px; padding: 6px 6px 6px 14px; border-radius: 16px;
+  background: var(--surface); border: 1px solid var(--line-hi); box-shadow: 0 0 0 4px var(--accent-soft), var(--shadow);
+}
+.ask-box .ask-icon { color: var(--accent); display: grid; place-items: center; }
+.ask-box input { flex: 1; width: auto; min-width: 0; border: 0; box-shadow: none; background: transparent; color: var(--ink); font: inherit; font-size: 15.5px; padding: 10px 0; outline: none; }
+.ask-box input::placeholder { color: var(--muted); }
+.ask-box input:focus { box-shadow: none; }
+.ask-box:focus-within { border-color: var(--accent); }
+.ask-box .send { width: 40px; height: 40px; border-radius: 12px; border: 0; display: grid; place-items: center; cursor: pointer; flex: none; }
+.ask-past { align-self: flex-end; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; background: none; border: 0; cursor: pointer; padding: 2px 4px; }
+.seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px; background: var(--sunken); border: 1px solid var(--line); }
+.seg a { text-align: center; padding: 8px 0; border-radius: 9px; text-decoration: none; color: var(--muted); font-weight: 600; font-size: 14.5px; }
+.seg a.on { background: var(--surface); color: var(--accent); box-shadow: inset 0 0 0 1px var(--line-hi); }
+.fab {
+  position: fixed; z-index: 15; right: max(16px, calc((100vw - var(--max)) / 2 + 16px), env(safe-area-inset-right, 0px));
+  bottom: calc(var(--tabs-h) + env(safe-area-inset-bottom, 0px) + 14px);
+  display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px 10px 12px; border-radius: 999px; text-decoration: none;
+  background: linear-gradient(120deg, var(--fire), var(--fire-2)); color: var(--accent-ink); font-weight: 700; font-size: 14.5px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%), 0 0 0 1px rgb(57 255 136 / 30%);
+}
+.fab[hidden] { display: none; }
+.fab .ti { display: grid; place-items: center; }
+.fab .ti svg.i { width: 20px; height: 20px; }
+body.locked .fab { display: none; }
+body:has(.fab:not([hidden])) .app { padding-bottom: calc(var(--tabs-h) + 84px + env(safe-area-inset-bottom, 0px)); }
