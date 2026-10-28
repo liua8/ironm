@@ -1675,7 +1675,7 @@ function fileSheet(f) {
   const ask = () => del.replaceChildren(h("button", { class: "btn danger", type: "button", onclick: askDelete }, "删除这份文件"));
   const askDelete = () => del.replaceChildren(
     h("button", { class: "btn ghost", type: "button", onclick: ask }, "取消"),
-    h("button", { class: "btn", style: "background:var(--warn);color:#fff", type: "button", onclick: async () => {
+    h("button", { class: "btn", style: "background:var(--heat);color:var(--accent-ink)", type: "button", onclick: async () => {
       try {
         await apiData("/api/v1/data/delete-files", { method: "POST", body: JSON.stringify({ message_id: f.created_source_id || f.id, file_keys: [f.file_key] }) });
         cache.files = null; cache.metrics = null; closeSheet(); render();
