@@ -50,6 +50,7 @@ def level(sets: float) -> Level:
 class Muscle:
     code: str  # 编码表里的细分肌肉
     sets_7d: float = 0
+    main_7d: int = 0  # 近 7 天作为主要肌肉练的组数：人体图只按它亮（§70）
     last: date | None = None
     history: list[str] = field(default_factory=list)  # 最近几次：日期、动作、组数
 
@@ -66,6 +67,7 @@ class Muscle:
             "group": body.name(n.parent or ""),
             "part": next(a.name for a in body.table().ancestors(self.code) if a.level == "part"),
             "sets_7d": int(sets) if sets == int(sets) else sets,
+            "main_7d": self.main_7d,
             "level": lv,
             "level_name": LEVEL_NAMES[lv],
             "last": self.last.isoformat() if self.last else None,
@@ -112,6 +114,7 @@ def muscle_map(
                     )
                     if recent:
                         item.sets_7d += weight * sets
+                        item.main_7d += sets if weight == 1.0 else 0
         for m, what in per_muscle.items():
             item = muscles[m]
             if item.last is None:

@@ -268,6 +268,9 @@ def test_muscles_endpoint() -> None:
     got = c.get("/iron/api/muscles").json()
     chest = _muscle(got, "胸大肌中下部")
     assert chest["sets_7d"] == 3 and chest["state"] == "today" and "腘绳肌" in got["untrained"]
+    # 人体图只按主要练到的亮（§70）：俯卧撑主练胸大肌中下部和三头，三角肌前束是辅助（有组数但不亮）
+    front = _muscle(got, "三角肌前束")
+    assert chest["main_7d"] == 3 and front["sets_7d"] == 1.5 and front["main_7d"] == 0
     fine = c.post("/iron/api/muscles/feel", json={"muscle": "muscle.pec_major_lower", "feel": "fine"}).json()
     assert fine["recovering"] == ["肱三头肌"]  # 本人说胸不酸了：以本人说的为准，只改胸大肌
     assert (

@@ -1242,7 +1242,6 @@ function metricGroup(title, present) {
 // 图没加载出来时退回按部位分组的列表
 let flatShapes = null;
 const loadFlat = () => (flatShapes ||= fetch("/iron/musclemap-v1.json").then((r) => { if (!r.ok) throw new Error("图没加载出来"); return r.json(); }));
-const LEVELS = ["none", "low", "mid", "high"];
 const NOT_MUSCLE = new Set(["head", "hair", "hands", "feet", "ankles", "knees"]);
 
 function flatBody(mm, pick, sex) {
@@ -1253,9 +1252,23 @@ function flatBody(mm, pick, sex) {
   const choose = (ms) => {
     if (ms.length === 1) return pick(ms[0]);
     openSheet("是哪一块？", h("div", { class: "muscle-rows" }, ms.map((m) => pressable(h("div", { class: "muscle-row" },
-      h("span", { class: "mr-name" }, m.name, RECOVER_WORD[m.state] ? h("em", {}, RECOVER_WORD[m.state]) : null),
-      h("span", { class: "mr-bar" }, h("i", { class: `lv-${m.level}`, style: `width:${Math.min(100, (m.sets_7d / 12) * 100)}%` })),
+      h("span", { class: "mr-name" }, m.name, m.state === "sore" ? h("em", {}, "还酸") : null),
+      h("span", { class: "mr-bar" }, h("i", { class: "mm-on", style: `width:${Math.min(100, (m.sets_7d / 12) * 100)}%` })),
       h("span", { class: "mr-sets" }, `${m.sets_7d} 组`)), () => { closeSheet(); pick(m); }))));
+  };
+  // 点一下选中（描轮廓、图下出名字），再点同一块或点"查看"才打开（§70）
+  const bar = h("div", { class: "mm-pick", hidden: true });
+  let chosen = null;
+  const select = (key, ms) => {
+    if (chosen === key) { choose(ms); return; }
+    chosen = key;
+    for (const el of wrap.querySelectorAll(".mm.sel")) el.classList.remove("sel");
+    for (const el of wrap.querySelectorAll(`.mm[data-key="${key}"]`)) el.classList.add("sel");
+    wrap.classList.add("picking");
+    const sets = ms.reduce((n, m) => Math.max(n, m.sets_7d), 0);
+    bar.replaceChildren(h("span", {}, h("b", {}, ms.map((m) => m.name).join(" / ")), h("small", {}, sets ? `近 7 天 ${sets} 组` : "近 7 天没练")),
+      h("button", { class: "link", type: "button", onclick: () => choose(ms) }, "查看", icon("chevron", "xs")));
+    bar.hidden = false;
   };
   const figure = (fig, side) => {
     const [x, y, w, hgt] = fig.viewBox;
@@ -1264,14 +1277,17 @@ function flatBody(mm, pick, sex) {
       const ms = byRegion[`${side}:${part.slug}`] || [];
       const g = s("g", {});
       if (ms.length) {
-        const lv = LEVELS[Math.max(...ms.map((m) => LEVELS.indexOf(m.level)))];
-        const label = ms.map((m) => `${m.name}：近 7 天 ${m.sets_7d} 组，${recoverText(m)}`).join("；");
-        g.setAttribute("class", `mm lv-${lv}${ms.some((m) => m.state !== "ready") ? " pulse" : ""}`);
+        const tone = ms.some((m) => m.state === "sore") ? "sore" : ms.some((m) => m.main_7d > 0) ? "on" : "off";  // 只有主要练到的才亮
+        const label = ms.map((m) => `${m.name}：近 7 天 ${m.sets_7d} 组${m.state === "sore" ? "，你说还酸" : ""}`).join("；");
+        const key = ms.map((m) => m.code).join("+");
+        g.setAttribute("class", `mm ${tone}`);
+        g.dataset.key = key;
         g.setAttribute("tabindex", "0");
         g.setAttribute("role", "button");
         g.setAttribute("aria-label", label);
         const tip = s("title", {}); tip.textContent = label; g.append(tip);
-        g.addEventListener("click", () => choose(ms));
+        g.addEventListener("click", () => select(key, ms));
+        g.addEventListener("focus", () => { if (chosen !== key) select(key, ms); });
         g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(ms); } });
       } else {
         g.setAttribute("class", part.slug === "hair" ? "mm-hair" : NOT_MUSCLE.has(part.slug) ? "mm-base" : "mm-base mm-other");
@@ -1283,7 +1299,7 @@ function flatBody(mm, pick, sex) {
   };
   loadFlat().then((data) => {
     const fig = data.figures[sex === "female" ? "female" : "male"];
-    wrap.replaceChildren(figure(fig.front, "front"), figure(fig.back, "back"));
+    wrap.replaceChildren(figure(fig.front, "front"), figure(fig.back, "back"), bar);
   }).catch(() => wrap.replaceChildren(h("p", { class: "muted" }, "人体图没加载出来，按部位列出："), partList(mm, pick)));
   return wrap;
 }
@@ -1298,8 +1314,8 @@ function partList(mm, pick) {
   return h("div", { class: "part-list" }, parts.map((p) => h("div", { class: "part-group" },
     h("h3", {}, p.name),
     p.items.map((m) => pressable(h("div", { class: "muscle-row" },
-      h("span", { class: "mr-name" }, m.name, RECOVER_WORD[m.state] ? h("em", {}, RECOVER_WORD[m.state]) : null),
-      h("span", { class: "mr-bar" }, h("i", { class: `lv-${m.level}`, style: `width:${Math.min(100, (m.sets_7d / 12) * 100)}%` })),
+      h("span", { class: "mr-name" }, m.name, m.state === "sore" ? h("em", {}, "还酸") : null),
+      h("span", { class: "mr-bar" }, h("i", { class: "mm-on", style: `width:${Math.min(100, (m.sets_7d / 12) * 100)}%` })),
       h("span", { class: "mr-sets" }, `${m.sets_7d} 组`)), () => pick(m))))));
 }
 
@@ -1404,14 +1420,6 @@ function tierAdd(b, draw) {
   return wrap;
 }
 
-// 每块肌肉的恢复状态（spec [2026-10-23] §30）
-const RECOVER_WORD = { today: "今天刚练", recovering: "恢复中", sore: "还酸" };
-function recoverText(m) {
-  if (m.state === "sore") return "你说还酸：先别练它，等不酸了再练";
-  if (m.state === "ready") return "可以练";
-  return `${m.state === "today" ? "今天刚练" : "恢复中"}，${md(m.ready_on)}可以再练`;
-}
-
 function bodyMap(mm, brief, sex) {
   const tell = async (m, feel, btns) => {
     for (const b of btns) b.disabled = true;
@@ -1433,31 +1441,27 @@ function bodyMap(mm, brief, sex) {
     const aka = [m.formal && `正式名：${m.formal}`, m.says?.length && `也叫：${m.says.join("、")}`].filter(Boolean).join("　");
     openSheet(m.name,
       aka ? h("p", { class: "caption" }, aka) : null,
-      h("div", { class: "sheet-big" }, h("span", { class: "v" }, String(m.sets_7d), h("small", {}, "组 · 近 7 天")), chip(m.level_name)),
-      h("div", { class: `recover-box ${m.state}` },
-        h("b", {}, recoverText(m)),
-        m.recover_why.length && m.state !== "ready" ? h("p", { class: "muted" }, `为什么：${m.recover_why.join("；")}`) : null,
-        h("div", { class: "btn-row" }, m.state === "sore" ? fine : m.state === "ready" ? sore : [sore, fine])),
+      h("div", { class: "sheet-big" }, h("span", { class: "v" }, String(m.sets_7d), h("small", {}, "组 · 近 7 天"))),
+      h("div", { class: `recover-box ${m.state === "sore" ? "sore" : "ready"}` },
+        h("b", {}, m.state === "sore" ? "你说还酸：先别练它，等不酸了再练" : "一般隔 1–3 天再练同一块肌肉，以你的感受为准"),
+        h("div", { class: "btn-row" }, m.state === "sore" ? fine : sore)),
       m.sore_too_long ? h("div", { class: "notice-line" }, icon("alert", "xs"), "说酸已经超过一周，可能不只是练后酸痛，问问康复恢复师。") : null,
       h("div", { class: "kv" }, h("span", {}, "最近一次"), h("span", {}, m.last ? md(m.last) : "最近 28 天没练")),
       m.history.length ? h("div", {}, h("h3", {}, "最近练过"), h("ul", { class: "tips" }, m.history.map((x) => h("li", {}, x)))) : null,
-      h("p", { class: "caption" }, "组数：主要练到的每组记 1 组，辅助练到的按半组；增肌通常每块肌肉每周 10 组以上效果更好。恢复按肌肉、动作、组数和用力程度估算，你说的感受优先。"),
+      h("p", { class: "caption" }, "组数：主要练到的每组记 1 组，辅助练到的按半组；增肌通常每块肌肉每周 10 组以上效果更好。"),
       h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(m.sore_too_long ? `我的${m.name}酸了一周多还没好，怎么回事？` : m.level === "none" ? `我的${m.name}一周没练了，怎么补上？` : `我的${m.name}这周练了 ${m.sets_7d} 组，够吗？`) }, icon("coach", "sm"), "问问教练"));
   };
   const top = [...mm.muscles].filter((m) => m.sets_7d > 0).sort((a, b) => b.sets_7d - a.sets_7d);
   const untrained = mm.untrained || [];
-  const resting = mm.muscles.filter((m) => m.state !== "ready");
   const rd = brief?.today?.readiness;
   return h("div", { class: "card body-card" },
     flatBody(mm, pick, sex),
-    h("div", { class: "legend" }, ["none", "low", "mid", "high"].map((lv) => h("span", {}, h("i", { class: `lv-${lv}` }), { none: "没练", low: "1–4 组", mid: "5–9 组", high: "10 组以上" }[lv])), h("span", {}, h("i", { class: "glow" }), "闪烁：恢复中或还酸")),
+    h("div", { class: "legend" }, h("span", {}, h("i", { class: "mm-on" }), "练过（近 7 天）"), h("span", {}, h("i", { class: "mm-off" }), "没练"), h("span", {}, h("i", { class: "mm-sore" }), "你说还酸")),
     rd && (rd.level === "poor" || rd.level === "fair") && rd.reasons?.length ? h("div", { class: "notice-line" }, icon("alert", "xs"), `${rd.reasons[0]}：今天整体恢复偏慢，可以降低强度。`) : null,
-    resting.length ? h("div", { class: "rest-list" }, resting.map((m) => pressable(h("span", { class: `rest-chip ${m.state}` },
-      h("b", {}, m.name), h("small", {}, m.state === "sore" ? "还酸" : `${md(m.ready_on)}可练`)), () => pick(m)))) : null,
     mm.sessions === 0 ? h("p", { class: "muted" }, "最近还没有训练记录：在首页打卡，或在对话里说“今天练了……”就会记下来。") : h("div", { class: "muscle-rows" },
       top.slice(0, 6).map((m) => pressable(h("div", { class: "muscle-row" },
-        h("span", { class: "mr-name" }, m.name, RECOVER_WORD[m.state] ? h("em", {}, RECOVER_WORD[m.state]) : null),
-        h("span", { class: "mr-bar" }, h("i", { class: `lv-${m.level}`, style: `width:${Math.min(100, (m.sets_7d / 12) * 100)}%` })),
+        h("span", { class: "mr-name" }, m.name, m.state === "sore" ? h("em", {}, "还酸") : null),
+        h("span", { class: "mr-bar" }, h("i", { class: "mm-on", style: `width:${Math.min(100, (m.sets_7d / 12) * 100)}%` })),
         h("span", { class: "mr-sets" }, `${m.sets_7d} 组`)), () => pick(m)))),
     untrained.length && mm.sessions ? h("div", { class: "notice-line" }, icon("info", "xs"), `近 7 天没练：${untrained.join("、")}`) : null,
     untrained.length && mm.sessions ? h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`我最近${untrained.join("、")}没怎么练，下次训练怎么补上？`) }, icon("coach", "sm"), "让教练帮我补上") : null,
