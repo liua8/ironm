@@ -1,0 +1,89 @@
+# 重放清单（spec [2026-10-23] §62 需求 1 及 10-29 修改）：负责人反馈过的会话，按清单在本机服务上用重放账号逐条跑真实模型。
+#
+# 每条开始前清空重放账号的 iron-m 数据，再按 setup 准备状态；turns 依次说的话和期望：
+#   must      每组几种说法任一出现即可，每组都要满足（只看回答正文）
+#   must_not  都不能出现
+#   card      plan / log / none：这一轮出不出预览卡片、是哪种；不写就不检查
+#   illness   这一轮之后重放账号有几条生病记录；不写就不检查
+# 只用规则判断，不打分。
+
+profile: {height_cm: 175, birth: "1995-06-01", sex: male, goal: fat_loss, activity: moderate}
+
+cases:
+  - id: checked-in-today
+    from: §52 打卡后问今天、"这算加练吗"
+    setup: {checkin: {session: 骑车有氧, minutes: 30, rpe: 7}}
+    turns:
+      - say: 我今天计划怎么样
+        must: [[已经练完, 已打卡, 打卡了, 练完了, 已经完成, 完成了]]
+        must_not: [今天再骑, 今天骑 30, 今天练 30]
+        card: none
+      - say: 这算加练吗
+        must: [[不算]]
+        card: none
+
+  - id: new-plan-confirm
+    from: §55 要新计划、"按这个排"
+    turns:
+      - say: 我想要更好的减重，给我一份计划吗
+        must: [[目标], [器械], [时间], [伤病], [按这个排]]
+        card: none
+      - say: 按这个排
+        card: plan
+
+  - id: preview-not-ok
+    from: §56 预览后"不太行"
+    turns:
+      - say: 给我一份训练计划
+        card: none
+      - say: 按这个排
+        card: plan
+      - say: 不太行
+        must: [[哪里, 哪一, 哪些, 哪个]]
+        must_not: [打卡]
+        card: none
+
+  - id: equipment-then-not-good
+    from: 负责人 10-27 那段会话：要计划 → 问器械 → 说健身房和器械 → "都不好"
+    turns:
+      - say: 帮我排一个训练计划
+        must: [[器械]]
+        card: none
+      - say: 我在健身房练，有杠铃、哑铃、龙门架和史密斯机
+        card: plan
+      - say: 都不好
+        must: [[哪里, 哪一, 哪些, 哪个, 哪儿]]
+        must_not: [这次没能]
+        card: none
+
+  - id: sick-same-day
+    from: §46 生病（换成同一天）、§50 问病情不算又病了、"不疼啊"算好了
+    turns:
+      - say: 肚子疼，今天能练吗
+        must: [[休息, 先别练, 不练, 别练]]
+        card: none
+        illness: 1
+      - say: 我肚子疼不疼
+        card: none
+        illness: 1
+      - say: 今天肚子不疼啊
+        must: [[好了, 不疼了, 恢复, 好转]]
+        card: none
+        illness: 1
+      - say: 那今天练什么
+        must_not: [肚子还疼, 还没好, 还在疼]  # "肚子疼刚好、病后第一次按七成"是对的（§46）
+        card: none
+
+  - id: i-am-sick
+    from: §68 "我病了"这一轮要记下来
+    turns:
+      - say: 我病了
+        must: [[休息, 别练, 不练]]  # 这一轮要记下来、今天不练（§68）；追问症状 spec 没要求
+        card: none
+      - say: 发烧了，38 度
+        must: [[休息, 不练, 先别, 别练]]
+        card: none
+        illness: 1
+      - say: 今天能练吗
+        must: [[不练, 休息, 先别, 别练, 不要练]]
+        card: none

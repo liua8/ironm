@@ -226,6 +226,11 @@ CONFIRM_NOTE = {
 }
 # 本会话里这些回答给全文、不压成要点（列给他确认的条件、给出过的预览，spec [2026-10-23] §68）
 KEEP_WHOLE = (HEAD, *CONFIRM_NOTE.values())
+# 上一轮刚给了计划预览：这句先当成对预览的回应（"都不好"曾被当成对更早那张确认条件清单的回答，10-29 重放）
+PREVIEWED_NOTE = (
+    "上一轮你刚给了计划预览（要点见上面的现在的情况）：他这句先当成对这份预览的回应。"
+    "说不行、不好、不喜欢时，复述预览要点，问是哪里不行（动作、天数、时长、强度），不要回到排计划前的确认条件。"
+)
 _FOOD = re.compile(r"热量|卡路里|千卡|吃|这顿|这餐|一餐|蛋白|营养|食物|饭|菜")
 # 明显在问训练的说法：先用规则看要不要拦下或追问，不必等调度（"练完吃什么"不算）
 _TRAIN_ASK = re.compile(
@@ -1333,6 +1338,7 @@ class IronMAgent:
         # 上下文：待确认的预览、今天的训练、排新计划要用的五项条件（旧答案带来源和日期）
         coach_lines = [x for x in history if not x.startswith(USER)]
         confirmed_now = bool(coach_lines) and HEAD in coach_lines[-1]
+        previewed_now = bool(coach_lines) and CONFIRM_NOTE["plan"] in coach_lines[-1]
         confirmed = any(HEAD in x for x in coach_lines)
         target = await self._target(user_id, snapshot)
         terms = conditions(
@@ -1352,6 +1358,7 @@ class IronMAgent:
             "排新计划要用的条件（旧答案带来源和日期）：\n" + "\n".join(terms),
             CONFIRMED_NOTE + (f"他的目标：{aim}。计划说明第一句写这份计划为了这个目标怎么排，目标的数和日期照写。" if aim else "")
             if confirmed_now else "",
+            PREVIEWED_NOTE if previewed_now else "",
             f"他这句话说这些天没空：{busy}。挪训练不要挪到这些天。" if busy else "",
             files.note_for_experts(), checked_note,
             f"回答开头系统已经说了：{refused} 不要再复述，直接说能帮他做的部分。" if refused else "",

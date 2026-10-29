@@ -240,3 +240,23 @@ def test_plan_after_confirming_is_written_by_the_fallback_when_missing(monkeypat
     a._history = asked
     blocks, seen = run(a, "按这个排")
     assert seen["action_forced"] == "confirmed" and seen["preview_retry"] and cards(blocks)
+
+
+def test_reply_right_after_a_plan_preview_is_read_as_about_the_preview(monkeypatch: Any) -> None:
+    a, s = single(lambda *_: jsonr({"answer": "是预览里哪里不行：动作、天数还是时长？"}), monkeypatch,
+                  seeded=True)  # fmt: skip
+
+    async def previewed(*_: str) -> list[str]:
+        return ["用户：帮我排一个训练计划", f"教练（全文）：{HEAD}①目标……③器械……",
+                "用户：我在健身房练", "教练（全文）：每周 3 练……\n\n下面是计划预览，点「确认」才会保存，保存后也能撤销。"]  # fmt: skip
+
+    a._history = previewed
+    run(a, "都不好")
+    assert "他这句先当成对这份预览的回应" in s.user
+    a._history = lambda *_: _empty()
+    run(a, "都不好")
+    assert "他这句先当成对这份预览的回应" not in s.user  # 上一轮没给预览时不加
+
+
+async def _empty() -> list[str]:
+    return []
