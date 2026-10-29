@@ -10,12 +10,13 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Literal
 
 from ironm_agent import body
+from ironm_agent.protools import fatigue
 from ironm_agent.protools.movement import find
 from ironm_agent.protools.recovery import Feel, Recovery, recovery
 from ironm_agent.training import Plan, WorkoutLog
@@ -54,7 +55,7 @@ class Muscle:
     last: date | None = None
     history: list[str] = field(default_factory=list)  # 最近几次：日期、动作、组数
 
-    def json(self, today: date, rec: Recovery) -> dict[str, object]:
+    def json(self, today: date, rec: Recovery, pct: int = 100) -> dict[str, object]:
         sets = round(self.sets_7d * 2) / 2
         lv = level(sets)
         n = body.table().node(self.code)
@@ -68,6 +69,8 @@ class Muscle:
             "part": next(a.name for a in body.table().ancestors(self.code) if a.level == "part"),
             "sets_7d": int(sets) if sets == int(sets) else sets,
             "main_7d": self.main_7d,
+            "recovery": pct,  # 恢复度 0–100（§70 修改）
+            "tier": fatigue.tier(pct),
             "level": lv,
             "level_name": LEVEL_NAMES[lv],
             "last": self.last.isoformat() if self.last else None,
@@ -92,6 +95,8 @@ def muscle_map(
     today: date,
     plan: Plan | None = None,
     feels: dict[str, tuple[Feel, date]] | None = None,
+    now: datetime | None = None,
+    rates: Mapping[str, float] | None = None,
 ) -> dict[str, object]:
     """logs 要包含今天往前约 32 天的训练（恢复要看"4 周内练过没有"）。"""
     muscles = {m: Muscle(m) for m in MUSCLES}
@@ -121,7 +126,9 @@ def muscle_map(
                 item.last = log.day
             item.history.append(f"{log.day.month}月{log.day.day}日：" + "、".join(what))
     rec = recovery(logs, today, plan, _done_items, feels)
-    out = [muscles[m].json(today, rec[m]) for m in MUSCLES]
+    pct = fatigue.recovery(logs, now or datetime.combine(today, datetime.now().time()), plan,
+                           _done_items, MUSCLES, rates)  # fmt: skip
+    out = [muscles[m].json(today, rec[m], pct[m]) for m in MUSCLES]
     trainable = _trainable()
     return {
         "today": today.isoformat(),

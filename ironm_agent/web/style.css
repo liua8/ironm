@@ -550,17 +550,18 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .flat-svg .mm path { transition: opacity .15s; }
 .flat-svg .mm:hover path, .flat-svg .mm:focus-visible path { opacity: .72; }
 /* 人体图改粗（spec [2026-10-23] §70）：练过亮、没练灰、说还酸红；选中描轮廓 */
-.flat-svg .mm.off path { fill: #3a443e; }
-.flat-svg .mm.on path { fill: var(--accent); }
+/* 恢复度三档亮度（§70 修改）：越累越亮，恢复到 95% 以上灰色可训练 */
+.flat-svg .mm.t-high path, i.t-high { fill: var(--accent); background: var(--accent); }
+.flat-svg .mm.t-mid path, i.t-mid { fill: #22b562; background: #22b562; }
+.flat-svg .mm.t-low path, i.t-low { fill: #176a3e; background: #176a3e; }
+.flat-svg .mm.t-ready path, i.t-ready { fill: #3a443e; background: #3a443e; }
 .flat-svg .mm.sore path { fill: var(--heat); }
 .flat-svg .mm.sel path { stroke: var(--ink); stroke-width: 3; vector-effect: non-scaling-stroke; paint-order: stroke; }
 .flat-body.picking .mm:not(.sel) path, .flat-body.picking .mm-base path { opacity: .38; }  /* 选中后其余变暗，轮廓范围一眼看出 */
-.flat-svg .mm.off.sel path { fill: #56635b; }
+.flat-svg .mm.t-ready.sel path { fill: #56635b; }
 .mm-pick { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--sunken); border: 1px solid var(--line-hi); }
 .mm-pick > span { display: flex; flex-direction: column; min-width: 0; }
 .mm-pick small { color: var(--muted); font-size: 12.5px; }
-.legend i.mm-on, i.mm-on { background: var(--accent); }
-.legend i.mm-off { background: #3a443e; }
 .legend i.mm-sore { background: var(--heat); }
 .recover-box.sore { background: var(--heat-soft); }
 .recover-box.sore b { color: var(--heat); }

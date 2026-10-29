@@ -1,6 +1,7 @@
 """本人说的肌肉感受（spec [2026-10-23] §30）：某块肌肉"还酸""已经不酸了"，恢复判断以本人说的为准。
 
 每块肌肉只用最近说的一次。数据库版的内容用 mirobody 的加密函数加密；日志不写内容。
+另存每块肌肉在他身上恢复快慢的倍数（§70 修改：按他说的校准），只有肌肉编码和一个数，不含原话。
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ from ironm_agent.protools.recovery import Feel
 class FeelStore(Protocol):
     async def add(self, user_id: str, muscle: str, feel: Feel, day: date) -> None: ...
     async def latest(self, user_id: str) -> dict[str, tuple[Feel, date]]: ...
+    async def rates(self, user_id: str) -> dict[str, float]: ...
+    async def set_rate(self, user_id: str, muscle: str, rate: float) -> None: ...
 
 
 def _coded(said: list[tuple[str, Feel, date]]) -> dict[str, tuple[Feel, date]]:
@@ -32,12 +35,19 @@ class FeelBook:
 
     def __init__(self) -> None:
         self.rows: dict[str, list[tuple[str, Feel, date]]] = {}
+        self.rate: dict[str, dict[str, float]] = {}
 
     async def add(self, user_id: str, muscle: str, feel: Feel, day: date) -> None:
         self.rows.setdefault(user_id, []).append((muscle, feel, day))
 
     async def latest(self, user_id: str) -> dict[str, tuple[Feel, date]]:
         return _coded(self.rows.get(user_id, []))
+
+    async def rates(self, user_id: str) -> dict[str, float]:
+        return dict(self.rate.get(user_id, {}))
+
+    async def set_rate(self, user_id: str, muscle: str, rate: float) -> None:
+        self.rate.setdefault(user_id, {})[muscle] = rate
 
 
 DDL = """
@@ -47,6 +57,13 @@ CREATE TABLE IF NOT EXISTS ironm_muscle_feel (
     content    text NOT NULL,
     day        date NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS ironm_recovery_rate (
+    user_id    text NOT NULL,
+    muscle     text NOT NULL,
+    rate       double precision NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, muscle)
 )
 """
 
@@ -61,7 +78,9 @@ class PgFeel:
         from mirobody.utils.db import execute_query
 
         if not self._ready:
-            await execute_query(DDL, {}, log_sql=False)
+            for stmt in DDL.split(";"):
+                if stmt.strip():
+                    await execute_query(stmt, {}, log_sql=False)
             self._ready = True
         rows = await execute_query(sql, params, log_sql=False)
         return rows if isinstance(rows, list) else []
@@ -85,6 +104,19 @@ class PgFeel:
             if feel in ("sore", "fine"):
                 said.append((muscle, feel, r["day"]))  # type: ignore[arg-type]
         return _coded(said)
+
+    async def rates(self, user_id: str) -> dict[str, float]:
+        rows = await self._q(
+            "SELECT muscle, rate FROM ironm_recovery_rate WHERE user_id = :uid", {"uid": user_id}
+        )
+        return {str(r["muscle"]): float(r["rate"]) for r in rows}
+
+    async def set_rate(self, user_id: str, muscle: str, rate: float) -> None:
+        await self._q(
+            "INSERT INTO ironm_recovery_rate (user_id, muscle, rate) VALUES (:uid, :m, :r)"
+            " ON CONFLICT (user_id, muscle) DO UPDATE SET rate = EXCLUDED.rate, updated_at = now()",
+            {"uid": user_id, "m": muscle, "r": rate},
+        )
 
 
 _default: FeelStore | None = None

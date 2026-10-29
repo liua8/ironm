@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -268,8 +268,9 @@ async def get_muscles(
     today = date.today()
     plan = await store.plan(user_id)
     # 恢复要看"4 周内练过没有"：多读一段
-    logs = [x.log for x in await store.workouts(user_id, today - timedelta(days=35))]
-    return muscle_map(logs, today, plan.plan if plan else None, await feel.latest(user_id))
+    logs = [x.log for x in await store.workouts(user_id, today - timedelta(days=45))]
+    return muscle_map(logs, today, plan.plan if plan else None, await feel.latest(user_id),
+                      now=datetime.now(), rates=await feel.rates(user_id))  # fmt: skip
 
 
 class FeelIn(BaseModel):
@@ -287,10 +288,17 @@ async def post_muscle_feel(
     feel: Any = FEEL,
 ) -> dict[str, Any]:
     """本人说某块肌肉还酸 / 已经不酸了（spec [2026-10-23] §30）：恢复判断以本人说的为准。"""
+    from ironm_agent.protools.fatigue import calibrate
     from ironm_agent.protools.muscle_map import MUSCLES
 
     if body.muscle not in MUSCLES:
         raise HTTPException(422, "没有这块肌肉")
+    # 他说的和算的恢复度对不上时，调这块肌肉在他身上的恢复快慢（§70 修改）
+    now = await get_muscles(user_id, store, feel)
+    pct = next(int(m["recovery"]) for m in now["muscles"] if m["code"] == body.muscle)
+    rate = (await feel.rates(user_id)).get(body.muscle, 1.0)
+    if (new := calibrate(rate, pct, body.feel)) is not None:
+        await feel.set_rate(user_id, body.muscle, new)
     await feel.add(user_id, body.muscle, body.feel, date.today())
     return await get_muscles(user_id, store, feel)
 

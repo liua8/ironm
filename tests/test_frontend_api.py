@@ -271,7 +271,13 @@ def test_muscles_endpoint() -> None:
     # 人体图只按主要练到的亮（§70）：俯卧撑主练胸大肌中下部和三头，三角肌前束是辅助（有组数但不亮）
     front = _muscle(got, "三角肌前束")
     assert chest["main_7d"] == 3 and front["sets_7d"] == 1.5 and front["main_7d"] == 0
+    assert chest["recovery"] < 60 and chest["tier"] == "mid"  # 今天刚练 3 组、4 周没练过（§70 修改）
     fine = c.post("/iron/api/muscles/feel", json={"muscle": "muscle.pec_major_lower", "feel": "fine"}).json()
+    # 算出还累他却说不酸了：这块肌肉在他身上恢复得快（存下的倍数小于 1）
+    from ironm_agent import web_more
+
+    feels = c.app.dependency_overrides[web_more.feel_store]()  # type: ignore[attr-defined]
+    assert asyncio.run(feels.rates("42"))["muscle.pec_major_lower"] < 1
     assert fine["recovering"] == ["肱三头肌"]  # 本人说胸不酸了：以本人说的为准，只改胸大肌
     assert (
         c.post("/iron/api/muscles/feel", json={"muscle": "胸", "feel": "fine"}).status_code == 422
