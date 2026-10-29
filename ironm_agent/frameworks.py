@@ -144,3 +144,11 @@ def flags_of(risks: Collection[str], injured: bool, readiness: str = "") -> froz
     if readiness == "poor":
         out.add("poor")
     return frozenset(out)
+
+
+def domain_rules(role: Role, flags: Collection[str] = ()) -> str:
+    """单 Agent 用（spec [2026-10-23] §67 需求 2）：这个领域的思考顺序、判断规则、示例和工具，
+    去掉"专业身份、负责与不负责、转给谁"（单 Agent 什么都答，不转给别人）。"""
+    text = framework(role, flags)
+    at = text.find("【你的专业思考顺序")
+    return text[at:] if at >= 0 else text

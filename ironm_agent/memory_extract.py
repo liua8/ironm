@@ -14,7 +14,7 @@ import re
 import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Literal, cast
 
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
@@ -58,7 +58,11 @@ _PROMPT = """你负责替健身教练团队记住"这个用户本人"的情况�
 6. 明显是临时的变化（"这两周出差""下周旅游""最近加班"）记成 event，不要 update 或 resolve 原来的器械、时间和目标；长期的变化（"我换健身房了""现在每天只有半小时"）才 update 原来那条。
 7. 没有要记的，输出空列表。
 
-只输出 JSON：{"ops": [{"op": "add|update|resolve", "target": "已有记忆的编号（add 不写）", "category": "...", "content": "...", "quote": "...", "inferred": false}]}"""
+8. event 写 until（到哪天为止，YYYY-MM-DD，含这天），按今天的日期算："这周"写这周日，"这两天"写明天，"这几天"写 3 天后，"下周"写下周日，说了具体日子照写；实在看不出写 7 天后。
+
+只输出 JSON：{"ops": [{"op": "add|update|resolve", "target": "已有记忆的编号（add 不写）", "category": "...", "content": "...", "quote": "...", "inferred": false, "until": "event 才写"}]}"""
+
+UNTIL_DAYS = 60  # 近况最多记多少天
 
 # 明显是临时的说法（spec [2026-10-23] §55 需求 7）：记成近期事件，不改长期的器械、时间和目标
 # 改原来那条时：带这些词的都算临时；新增一条时只认更明确的（"这周买了壶铃"不是临时的）
@@ -112,6 +116,7 @@ class Op:
     quote: str
     target: Item | None = None
     inferred: bool = False
+    until: date | None = None  # 近况到哪天为止
 
 
 @dataclass
@@ -146,6 +151,8 @@ def messages_for(
         parts.append("用户前面说过、还没整理成记忆的话（也可以从这里摘 quote）：\n"
                      + "\n".join(f"用户：{x}" for x in held))  # fmt: skip
     parts.append(f"这一轮：\n用户：{user_text}\n教练：{answer[:ANSWER_CHARS] or '（无）'}")
+    today = date.today()
+    parts.append(f"今天是 {today.isoformat()}（周{'一二三四五六日'[today.weekday()]}）。")
     return [
         {"role": "system", "content": _PROMPT},
         {"role": "user", "content": "\n\n".join(parts)},
@@ -153,7 +160,12 @@ def messages_for(
 
 
 def _problem(
-    raw: Mapping[str, Any], items: Mapping[str, Item], user_text: str, answer: str, held: str = ""
+    raw: Mapping[str, Any],
+    items: Mapping[str, Item],
+    user_text: str,
+    answer: str,
+    held: str = "",
+    today: date | None = None,
 ) -> tuple[Op | None, str]:
     kind = raw.get("op")
     if kind not in ("add", "update", "resolve"):
@@ -181,13 +193,34 @@ def _problem(
     if not digits(content) <= allowed:
         return None, "内容里有原话里没有的数字"
     inferred = raw.get("inferred") is True and category != "advice"
+    if category == "injury" and not inferred and _unsaid(content, quote):
+        inferred = True  # 左右、诊断词原话里没有：是推测的，先放着等他确认
     if category in _LONG_TERM and (
         _TEMPORARY.search(quote) if target is not None else _SURELY_TEMPORARY.search(quote)
     ):
         kind, category, target = "add", "event", None  # 临时的变化不覆盖长期记忆
     op = Op(cast(Literal["add", "update", "resolve"], kind), cast(Category, category), content,
-            quote, target, inferred)  # fmt: skip
+            quote, target, inferred, until_of(raw.get("until"), today) or (target.until if target else None) if category == "event" else None)  # fmt: skip
     return op, ""
+
+
+def until_of(raw: Any, today: date | None = None) -> date | None:
+    """近况的到期日：今天到 UNTIL_DAYS 天以内的日期才认，别的当作没写。"""
+    try:
+        day = date.fromisoformat(str(raw or "").strip()[:10])
+    except ValueError:
+        return None
+    today = today or date.today()
+    return day if today <= day <= today + timedelta(days=UNTIL_DAYS) else None
+
+
+_DIAGNOSIS = re.compile(r"半月板|韧带|撕裂|损伤|骨折|劳损|突出|错位|积液|炎")
+
+
+def _unsaid(content: str, quote: str) -> bool:
+    """伤病内容里的左右和诊断词有没有不在原话里的。"""
+    words = [s for s in ("左", "右") if s in content] + _DIAGNOSIS.findall(content)
+    return any(w not in quote for w in words)
 
 
 def validate(
@@ -196,6 +229,7 @@ def validate(
     user_text: str,
     answer: str,
     held: Sequence[str] = (),
+    today: date | None = None,
 ) -> tuple[list[Op], list[str]]:
     """核对模型给出的操作，返回通过的操作与被拒的原因。"""
     ops_raw = raw.get("ops") if raw else None
@@ -208,7 +242,7 @@ def validate(
         if not isinstance(one, Mapping):
             rejected.append("操作不是对象")
             continue
-        op, problem = _problem(one, items, user_text, answer, "\n".join(held))
+        op, problem = _problem(one, items, user_text, answer, "\n".join(held), today)
         if op is None:
             rejected.append(problem)
             continue
@@ -244,7 +278,7 @@ def changes_of(ops: Sequence[Op], at: datetime | None = None) -> list[Change]:
         if op.target is not None:
             out.append(Change("status", id=op.target.id, status="superseded"))
         item = Item(new_id(), op.category, op.content, op.quote, origin, status, at, at,
-                    op.target.id if op.target else None)  # fmt: skip
+                    op.target.id if op.target else None, op.until)  # fmt: skip
         out.append(Change("insert", item=item))
     return out
 

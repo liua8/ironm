@@ -15,7 +15,7 @@ from datetime import date, datetime
 from typing import Literal
 
 from ironm_agent.memory_store import Item
-from ironm_agent.memory_view import Recall
+from ironm_agent.memory_view import Recall, until_text
 from ironm_agent.metrics import ACTIVITY, GOALS, Metric, Point, Profile, Readings
 from ironm_agent.safety.subject import subject_of
 
@@ -435,7 +435,7 @@ def build(
     limits = tuple(
         f"{x.content}"
         + (
-            f"（{_local(x.created).month} 月 {_local(x.created).day} 日说的）"
+            f"（{_local(x.created).month} 月 {_local(x.created).day} 日说的{until_text(x)}）"
             if x.category == "event"
             else ""
         )

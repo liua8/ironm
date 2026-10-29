@@ -172,3 +172,43 @@ def choose(
     ]
     style = [x for x in skills() if x.style and x.role == role and x.score(text, triggers) > 0]
     return chosen + style, "route"
+
+
+# ---- 单 Agent（spec [2026-10-23] §67 需求 2）：不按角色分，按这句话和情况跨领域选 ---------------------
+
+MAX_ANY = 3
+
+
+def by_id(skill_id: str) -> Skill | None:
+    return next((x for x in skills() if x.id == skill_id), None)
+
+
+def pick_any(
+    text: str,
+    triggers: Collection[str] = (),
+    similar: Similar | None = None,
+    drop: Collection[str] = (),
+    k: int = MAX_ANY,
+) -> list[Skill]:
+    """单 Agent 这一轮先装的规程：所有领域里得分最高的 1–k 份（这一轮情况要求的排前面）；都对不上时
+    按语义选最像的一份；讲法规程对得上就一起装，不占名额。drop 同 choose。"""
+    content = [x for x in skills() if not x.style and not set(x.on) & set(drop)]
+    required = [x for x in content if any(t in RULE_TRIGGERS and t in triggers for t in x.on)]
+    scored = sorted(
+        ((x.score(text, triggers), i, x) for i, x in enumerate(content)),
+        key=lambda t: (-t[0], t[1]),
+    )
+    chosen = list(dict.fromkeys([*required, *(x for s, _, x in scored if s > 0)]))[:k]
+    if not chosen and similar is not None and content:
+        sims = similar(text, [x.brief() for x in content])
+        if sims:
+            best = max(range(len(sims)), key=lambda i: sims[i])
+            if sims[best] > 0:
+                chosen = [content[best]]
+    style = [x for x in skills() if x.style and x.score(text, triggers) > 0]
+    return chosen + style
+
+
+def catalog_any() -> str:
+    """单 Agent 看的全部规程目录：编号、名字、什么时候用（讲法类不列）。"""
+    return "\n".join(f"- {x.id} {x.name}：{x.use}" for x in skills() if not x.style)

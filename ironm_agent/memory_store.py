@@ -11,7 +11,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Literal, Protocol, cast
 
 _log = logging.getLogger("ironm_agent.memory_store")
@@ -62,6 +62,7 @@ class Item:
     created: datetime
     updated: datetime
     supersedes: str | None = None  # 取代了哪一条
+    until: date | None = None  # 近况到哪天为止（含这天；spec [2026-10-23] §68），没写的按 14 天
 
 
 @dataclass(frozen=True)
@@ -164,6 +165,7 @@ CREATE TABLE IF NOT EXISTS ironm_memory (
 )
 """,
     "CREATE INDEX IF NOT EXISTS ironm_memory_user ON ironm_memory (user_id, status)",
+    "ALTER TABLE ironm_memory ADD COLUMN IF NOT EXISTS until date",
     """
 CREATE TABLE IF NOT EXISTS ironm_memory_state (
     user_id    text PRIMARY KEY,
@@ -176,7 +178,7 @@ CREATE TABLE IF NOT EXISTS ironm_memory_state (
 # content、evidence 是加密后的文字；加密失败时 encrypt_content 返回 NULL，NOT NULL 约束让这一条写不进去
 _SELECT = (
     "SELECT id, category, decrypt_content(content) AS content, decrypt_content(evidence) AS evidence,"
-    " origin, status, supersedes, created_at, updated_at FROM ironm_memory"
+    " origin, status, supersedes, until, created_at, updated_at FROM ironm_memory"
 )
 
 
@@ -191,6 +193,7 @@ def _row(r: dict[str, Any]) -> Item:
         created=r["created_at"],
         updated=r["updated_at"],
         supersedes=r.get("supersedes"),
+        until=r.get("until"),
     )
 
 
@@ -221,12 +224,12 @@ class PgMemory:
                 x = c.item
                 await self._q(
                     "INSERT INTO ironm_memory (id, user_id, category, content, evidence, origin,"
-                    " status, supersedes, created_at, updated_at) VALUES (:id, :uid, :category,"
+                    " status, supersedes, until, created_at, updated_at) VALUES (:id, :uid, :category,"
                     " encrypt_content(:content), encrypt_content(:evidence), :origin, :status,"
-                    " :supersedes, :created, :updated)",
+                    " :supersedes, :until, :created, :updated)",
                     {"id": x.id, "uid": user_id, "category": x.category, "content": x.content,
                      "evidence": x.evidence, "origin": x.origin, "status": x.status,
-                     "supersedes": x.supersedes, "created": x.created, "updated": x.updated},
+                     "supersedes": x.supersedes, "until": x.until, "created": x.created, "updated": x.updated},
                 )  # fmt: skip
             elif c.kind == "status":
                 await self._q(

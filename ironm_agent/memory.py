@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 _log = logging.getLogger("ironm_agent.memory")
@@ -37,8 +38,11 @@ def _whole(answer: str) -> str:
     return text if len(text) <= LAST_CHARS else text[:LAST_CHARS] + "…"
 
 
-def thread_lines(rows: list[dict[str, Any]], current: str, turns: int = TURNS) -> list[str]:
-    """从对话记录里排出最近几轮：用户的原话，加上最近 ANSWERS 条回答的要点，上一条回答给全文。"""
+def thread_lines(
+    rows: list[dict[str, Any]], current: str, turns: int = TURNS, keep: Sequence[str] = ()
+) -> list[str]:
+    """从对话记录里排出最近几轮：用户的原话，加上最近 ANSWERS 条回答的要点，上一条回答给全文。
+    含 keep 里任一标志的回答（列给他确认的条件、预览说明）给全文，也不受 ANSWERS 条的限制（§68）。"""
     lines: list[tuple[str, str]] = []
     for row in rows:
         content = row.get("content")
@@ -54,16 +58,22 @@ def thread_lines(rows: list[dict[str, Any]], current: str, turns: int = TURNS) -
     if not users:
         return []
     kept = lines[users[-turns] if len(users) >= turns else users[0] :]
-    coach = [i for i, (who, _) in enumerate(kept) if who == "coach"][-ANSWERS:]
+    coach = [i for i, (who, _) in enumerate(kept) if who == "coach"]
+    key = {i for i in coach if any(m in kept[i][1] for m in keep)}
+    shown = set(coach[-ANSWERS:]) | key
     last = coach[-1] if coach else -1
     return [
-        USER + text if who == "user" else COACH + (_whole(text) if i == last else _gist(text))
+        USER + text
+        if who == "user"
+        else COACH + (_whole(text) if i == last or i in key else _gist(text))
         for i, (who, text) in enumerate(kept)
-        if who == "user" or i in coach
+        if who == "user" or i in shown
     ]
 
 
-async def recent(session_id: str, current: str, turns: int = TURNS) -> list[str]:
+async def recent(
+    session_id: str, current: str, turns: int = TURNS, keep: Sequence[str] = ()
+) -> list[str]:
     """本会话最近几轮（用户原话、最近几条回答的要点、上一条回答全文）；读不到时返回空列表。"""
     owner, session = split_thread(session_id)
     if not owner or not session:
@@ -75,7 +85,7 @@ async def recent(session_id: str, current: str, turns: int = TURNS) -> list[str]
     except Exception as e:  # 读不到历史不影响作答
         _log.warning("history unavailable: error_type=%s", type(e).__name__)
         return []
-    return thread_lines(rows, current, turns)
+    return thread_lines(rows, current, turns, keep)
 
 
 async def earlier(session_id: str) -> str:

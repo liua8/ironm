@@ -85,6 +85,7 @@ def agent(
         illness=IllnessBook(),
         day=DayBook(),
         goals=goals if goals is not None else GoalBook(),
+        mode="multi",  # 原有测试测的是多 Agent 链路；单 Agent 见 test_single_agent
     )
 
 
@@ -250,11 +251,11 @@ def test_asking_for_someone_else_is_not_supported(monkeypatch: Any) -> None:
 
 
 def test_single_mode_answers_in_one_pass_without_routing_or_composing(monkeypatch: Any) -> None:
-    """单 Agent 对照组：不调度、不整合，一位全能教练直接写回答，照常核对并附“依据与来源”。"""
+    """单 Agent（spec [2026-10-23] §67）：不调度、不整合，一个 Agent 调工具直接写回答，照常核对并附“依据与来源”。"""
     from tests.fakes import FakeLLM
 
     def script(stage: Stage, messages: Sequence[Mapping[str, Any]], has_tools: bool) -> Reply:
-        assert stage == "expert" and "全能教练" in system_of(messages)
+        assert stage == "expert" and "AI 健身管家" in system_of(messages)
         if not tool_results(messages):
             return call(HEALTH, indicators=["restingHeartRates"], view="stats")
         return jsonr(
@@ -275,7 +276,7 @@ def test_single_mode_answers_in_one_pass_without_routing_or_composing(monkeypatc
     monkeypatch.setattr(FakeLLM, "chat", spy)
     blocks = collect(a, "我最近的静息心率怎么样")
     assert set(stages) == {"expert"}
-    assert [b["name"] for b in blocks if b["type"] == "tool_call"] == ["全能教练", "依据与来源"]
+    assert [b["name"] for b in blocks if b["type"] == "tool_call"] == ["管家", "依据与来源"]
     assert "平均 58 次/分" in text_of(blocks) and "<statement>" not in text_of(blocks)
 
 

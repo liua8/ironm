@@ -57,6 +57,10 @@ class Opinion(ContractModel):
     ops: list[dict[str, Any]] | None = None  # 改计划时只写要改的地方（§45），由代码套到当前计划上
     basis: tuple[str, ...] = ()  # 意见里引用到的编号：K 开头为依据库条目，r 开头为健康数据行
     general: bool = False  # 没有资料依据，只给不带具体数字的一般建议
+    action: str = (
+        ""  # 单 Agent 说明要做的事（如 new_plan：要排新计划、先确认条件，spec [2026-10-23] §67）
+    )
+    memory: list[dict[str, Any]] | None = None  # 单 Agent 这一轮要记的（§68），由代码核对后写入
 
     def body(self) -> str:
         if self.answer:
@@ -308,6 +312,10 @@ def _parse(
             data[k] = raw[k]
     if isinstance(raw.get("ops"), list):
         data["ops"] = [x for x in raw["ops"] if isinstance(x, dict)]
+    if isinstance(raw.get("action"), str):
+        data["action"] = raw["action"].strip()[:20]
+    if isinstance(raw.get("memory"), list):
+        data["memory"] = [x for x in raw["memory"] if isinstance(x, dict)]
     if isinstance(data.get("plan"), dict) and isinstance(raw.get("changes"), str):
         data["plan"] = {**data["plan"], "changes": raw["changes"]}  # 改了什么，跟着计划走
     data["speak"] = True  # 被请到就要回答，模型说"不发言"也不算
@@ -439,6 +447,7 @@ async def _loop(
     trace = trace if trace is not None else {}
     fixes = 0
     rounds = 0
+    memo: list[dict[str, Any]] | None = None  # 第一次写的记忆：改写时模型常常漏掉，沿用
     # 改计划只写操作：动作合不合适由代码校验，不用再查（§45，一次改计划最多调用 2 次模型）
     tools = None if task == "edit" else (toolbox.schemas() or None)
     while True:
@@ -475,6 +484,8 @@ async def _loop(
             opinion = opinion.model_copy(
                 update={f: merge_echoes(getattr(opinion, f)) for f in _FIELDS + _SOLO_FIELDS}
             )
+            memo = opinion.memory if opinion.memory is not None else memo
+            opinion = opinion.model_copy(update={"memory": memo})
         problems = (
             ["输出不是规定格式的 JSON"]
             if opinion is None

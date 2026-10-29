@@ -41,7 +41,11 @@ def expired(item: Item, at: datetime | None = None) -> bool:
     at = at or now()
     if item.origin == "data":  # 训练记录得出的偏好：每次还被数据支持时会刷新 updated
         return at - item.updated > timedelta(days=DATA_DAYS)
-    return item.category == "event" and at - item.created > timedelta(days=EVENT_DAYS)
+    if item.category != "event":
+        return False
+    if item.until is not None:  # 写了到哪天为止的近况，过了那天不再用（spec [2026-10-23] §68）
+        return at.astimezone().date() > item.until
+    return at - item.created > timedelta(days=EVENT_DAYS)
 
 
 def _trim(facts: list[Item]) -> list[Item]:
@@ -64,11 +68,15 @@ def _day(item: Item) -> str:
     return f"{item.created.month}月{item.created.day}日"
 
 
+def until_text(item: Item) -> str:
+    return f"，到{item.until.month}月{item.until.day}日" if item.until is not None else ""
+
+
 def _line(item: Item) -> str:
     label = CATEGORIES[item.category]
     if item.status == "resolved":
         label += "（已解决）"
-    when = f"（{_day(item)}说的）" if item.category == "event" else ""
+    when = f"（{_day(item)}说的{until_text(item)}）" if item.category == "event" else ""
     return f"- {label}：{item.content}{when}"
 
 

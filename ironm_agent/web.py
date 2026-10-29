@@ -212,6 +212,7 @@ def item_json(x: Item) -> dict[str, Any]:
         "origin_label": ORIGINS[x.origin],
         "status": x.status,
         "expired": expired(x),
+        "until": x.until.isoformat() if x.until else None,
         "created": x.created.isoformat(),
         "updated": x.updated.isoformat(),
     }

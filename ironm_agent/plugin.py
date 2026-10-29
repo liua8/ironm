@@ -16,15 +16,27 @@ import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
-from functools import cache
+from functools import cache, partial
 from typing import Any, Literal
 
+from ironm_agent.agent import EXTRA_TOOLS, action_of, respond
+from ironm_agent.agent import NEW_PLAN as ASK_NEW_PLAN
 from ironm_agent.attachments import Attachments
 from ironm_agent.attachments import read as read_attachments
 from ironm_agent.casefile import CaseFile, Snapshot
 from ironm_agent.casefile import build as build_case
 from ironm_agent.checks import plain
-from ironm_agent.clarify import PLAN_REQUEST, Decision, asked, decide, wants_new
+from ironm_agent.clarify import (
+    CONFIRMED_NOTE,
+    HEAD,
+    PLAN_REQUEST,
+    Decision,
+    asked,
+    conditions,
+    confirm_ask,
+    decide,
+    wants_new,
+)
 from ironm_agent.coach import direct
 from ironm_agent.compose import Composed, compose, revise
 from ironm_agent.constraints import Context, Violation, annotate, annotate_plan
@@ -63,7 +75,15 @@ from ironm_agent.indicators import named_indicators, record_kinds
 from ironm_agent.kb import KnowledgeBase, default_kb
 from ironm_agent.llm import ModelsConfig, TurnLLM, load_models
 from ironm_agent.memory import USER, earlier, last_sources, recent, split_thread, user_lines
-from ironm_agent.memory_extract import extract, hold, take_held, worth_extracting
+from ironm_agent.memory_extract import (
+    changes_of,
+    extract,
+    handles,
+    hold,
+    take_held,
+    validate,
+    worth_extracting,
+)
 from ironm_agent.memory_prefs import due as prefs_due
 from ironm_agent.memory_prefs import refresh as refresh_prefs
 from ironm_agent.memory_store import MemoryStore, default_store
@@ -104,7 +124,7 @@ from ironm_agent.render import (
     started,
     text_block,
 )
-from ironm_agent.roles import Role, spec_of
+from ironm_agent.roles import COACH_NAME, GENERAL, Role, spec_of
 from ironm_agent.router import MAX_HELPERS, Route, concerns_of, keyword_route
 from ironm_agent.routing import Decision as RouteDecision
 from ironm_agent.routing import default_router
@@ -117,7 +137,7 @@ from ironm_agent.safety.replies import (
     load_replies,
     refusal_sections,
 )
-from ironm_agent.skills import choose
+from ironm_agent.skills import choose, pick_any
 from ironm_agent.tools import Evidence, Toolbox
 from ironm_agent.training import (
     Plan,
@@ -153,6 +173,15 @@ NO_TEXT = "没有收到文字问题。"
 NO_ANSWER = "这次没能调用模型，暂时回答不了，请稍后再试。"
 # 不做关爱圈（项目负责人决定）：提问人和数据的主人不是同一个人时，不读写对方的数据和记忆
 HELP_ASK = "IronM 只回答你自己的问题，暂不支持替别人提问或查看别人的数据。"
+
+
+# 单 Agent（single，默认）或多 Agent（multi），重启后生效（spec [2026-10-23] §62、§67）
+MODE_ENV = "IRONM_AGENT_MODE"
+
+
+def agent_mode(environ: Mapping[str, str]) -> Literal["multi", "single"]:
+    """配置里选的架构；没配或配错时用单 Agent（spec [2026-10-23] §67 需求 6），配 multi 切回多 Agent。"""
+    return "multi" if environ.get(MODE_ENV, "").strip().lower() == "multi" else "single"
 
 
 @cache
@@ -195,6 +224,8 @@ CONFIRM_NOTE = {
     "plan": "下面是计划预览，点「确认」才会保存，保存后也能撤销。",
     "log": "下面是这次训练的记录预览，点「确认」才会记下。",
 }
+# 本会话里这些回答给全文、不压成要点（列给他确认的条件、给出过的预览，spec [2026-10-23] §68）
+KEEP_WHOLE = (HEAD, *CONFIRM_NOTE.values())
 _FOOD = re.compile(r"热量|卡路里|千卡|吃|这顿|这餐|一餐|蛋白|营养|食物|饭|菜")
 # 明显在问训练的说法：先用规则看要不要拦下或追问，不必等调度（"练完吃什么"不算）
 _TRAIN_ASK = re.compile(
@@ -341,7 +372,7 @@ class IronMAgent:
         earlier: Callable[[str], Awaitable[str]] | None = None,
         sources: Callable[[str, str], Awaitable[str | None]] | None = None,
         remember: bool = True,
-        mode: Literal["multi", "single"] = "multi",
+        mode: Literal["multi", "single"] | None = None,
         observe: Callable[[dict[str, Any]], None] | None = None,
         weather: Callable[[str], Awaitable[Weather | None]] | None = None,
         pain: PainStore | None = None,
@@ -374,7 +405,7 @@ class IronMAgent:
         self._earlier = earlier
         self._sources = sources
         self._remember_on = remember
-        self._mode = mode
+        self._mode = mode or agent_mode(environ if environ is not None else os.environ)
         self._observe = observe
         self._locks: dict[str, asyncio.Lock] = {}  # 同一个人的记忆提取一次只跑一个
         self._tasks: set[asyncio.Task[None]] = set()  # 后台提取记忆的任务
@@ -641,6 +672,37 @@ class IronMAgent:
         }
         _log.info("ironm memory %s", json.dumps(stats))
 
+    async def _remember_now(
+        self,
+        user_id: str,
+        text: str,
+        answer: str,
+        ops: list[dict[str, Any]],
+        known: Mapping[str, Any],
+        run: dict[str, Any],
+        today: date,
+    ) -> bool:
+        """单 Agent 在回答里写的记忆：按提取的规则核对后当场写入（spec [2026-10-23] §68）。
+        返回是否给出过记忆（写了就不再后台提取）；运行记录只记条数，不记内容。"""
+        checked, rejected = validate({"ops": ops}, known, text, answer, today=today)
+        run["memory_now"] = len(checked)
+        if rejected:
+            run["memory_now_rejected"] = len(rejected)
+        if not checked:
+            return False
+        store = self._memory_store()
+        try:
+            async with self._locks.setdefault(user_id, asyncio.Lock()):
+                if await store.paused(user_id):
+                    return True
+                changes = changes_of(checked)
+                await store.apply(user_id, changes)
+            await self._illness_from_memory(user_id, changes)
+        except Exception as e:  # 记不下来不影响回答，后台提取兜底
+            _log.warning("memory write failed: error_type=%s", type(e).__name__)
+            return False
+        return True
+
     async def _illness_from_memory(self, user_id: str, changes: Sequence[Any]) -> None:
         """词表认不出、后台提取记忆的模型记成身体不适的，也记成一次生病；模型记下"已经好了"的，
         结束正在进行的那次（spec [2026-10-23] §46）。"""
@@ -733,7 +795,7 @@ class IronMAgent:
         prompt_name: str = "",
         **kwargs: Any,
     ) -> AsyncGenerator[dict[str, Any]]:
-        run: dict[str, Any] = {"turn": uuid.uuid4().hex[:12], "path": "error"}
+        run: dict[str, Any] = {"turn": uuid.uuid4().hex[:12], "path": "error", "agent": self._mode}
         start = time.perf_counter()
         llm = TurnLLM(self._models, self._environ)
         said: dict[str, Any] = {}  # 这一轮的回答（交给后台提取记忆，不进日志）
@@ -749,7 +811,10 @@ class IronMAgent:
             async for block in self._turn(user_id, session_id, text, llm, run, said, file_list):
                 yield block
             if "answer" in said and self._remember_on:
-                if worth_extracting(text, run.get("task")):  # 按需提取（spec [2026-10-23] §17）
+                if said.get("remembered"):  # 单 Agent 这一轮已经当场记了（§68）
+                    run["memory_extract"] = "agent"
+                elif self._mode == "single" or worth_extracting(text, run.get("task")):
+                    # 单 Agent 下不先用关键词判断，后台兜底提取一次（§68）；多 Agent 照旧按需提取（§17）
                     held = take_held(session_id)
                     self._later(
                         user_id,
@@ -777,7 +842,16 @@ class IronMAgent:
             run["model_failures"] = sum(1 for c in llm.calls if not c.ok)
             run["budget_hit"] = len(llm.calls) >= self._models.turn_budget
             # 耗时放在前面：mirobody 会截断过长的日志行；各环节明细（_ 开头）只进轨迹，不进日志
-            first = ("turn", "path", "ms", "memory", "memory_ms", "model_calls", "model_failures")
+            first = (
+                "turn",
+                "path",
+                "agent",
+                "ms",
+                "memory",
+                "memory_ms",
+                "model_calls",
+                "model_failures",
+            )
             ordered = {k: run[k] for k in first if k in run} | run
             line = {k: v for k, v in ordered.items() if not k.startswith("_")}
             _log.info("ironm turn %s", json.dumps(line, ensure_ascii=False))
@@ -854,7 +928,9 @@ class IronMAgent:
         await self._sync(user_id, run)  # 先等上一轮的档案和记忆写完再读（spec [2026-10-23] §51）
         read = time.perf_counter()
         history, recall, ill, day = await asyncio.gather(
-            (self._history or recent)(session_id, text),
+            (self._history or partial(recent, keep=KEEP_WHOLE if self._mode == "single" else ()))(
+                session_id, text
+            ),  # 确认条件、卡片说明完整保留只在单 Agent 下（§68），多 Agent 照旧
             self._recall(user_id),
             self._track_illness(user_id, text, run),
             self._note_day(user_id, text, run),
@@ -923,6 +999,11 @@ class IronMAgent:
         files: Attachments,
         wx: asyncio.Task[Weather | None] | None = None,
     ) -> AsyncGenerator[dict[str, Any]]:
+        if self._mode == "single":  # 单 Agent（spec [2026-10-23] §67）
+            async for block in self._single_turn(user_id, session_id, text, history, recall, llm,
+                                                 run, said, prefix, snap, train, basics, files, wx):  # fmt: skip
+                yield block
+            return
         # 可能要追问、或者要被数据里的风险拦下的问题（问训练、排计划、回答追问）：先读完数据，用规则判断，
         # 需要追问或拦下时直接给固定的话，不调用模型（spec [2026-10-23] §5、§6）
         prep: Prepared | None = None
@@ -933,7 +1014,7 @@ class IronMAgent:
             if stop:
                 yield text_block(stop)
                 return
-        if self._mode != "single" and task_of(text) == "plan" and not files.images:
+        if task_of(text) == "plan" and not files.images:
             # 简单的改计划句式（挪天、删、整体减量）由规则解析、代码改，不调用模型（spec [2026-10-23] §45）
             if prep is None:
                 prep = await self._prepare(user_id, recall, text, history, snap, train, wx, run)
@@ -969,23 +1050,18 @@ class IronMAgent:
                 for block in cards:
                     yield block
                 return
-        if self._mode == "single":  # 单 Agent 对照组：一位全能教练一次作答，不调度、不整合
-            r = Route(intent="pro", concerns=concerns_of(text), primary=Role.GENERAL, by="rule")
-        else:
-            d = await default_router().route(text, llm, history, recall.persona())
-            r = as_route(d)
-            run["route"] = d.log()  # 三路各自的得分与加权结果（不含原话）
-            if files.images and (r.intent != "pro" or r.primary is None):
-                r = keyword_route(text + "（附了图片）")  # 附了图片就当专业问题，按问题请人
-            if (
-                files.images and _FOOD.search(text) and Role.NUTRITION not in r.experts()
-            ):  # 饭菜照片
-                r = r.model_copy(update={"intent": "pro", "primary": Role.NUTRITION,
-                                         "helpers": r.experts()[:MAX_HELPERS]})  # fmt: skip
-            if r.intent == "pro" and r.primary is None:  # 三路都没打出分：按关键词兜底
-                r = keyword_route(text)
-            yield started("coach", "管家", "理解问题、安排专业角色")
-            yield finished("coach", route_summary(r))
+        d = await default_router().route(text, llm, history, recall.persona())
+        r = as_route(d)
+        run["route"] = d.log()  # 三路各自的得分与加权结果（不含原话）
+        if files.images and (r.intent != "pro" or r.primary is None):
+            r = keyword_route(text + "（附了图片）")  # 附了图片就当专业问题，按问题请人
+        if files.images and _FOOD.search(text) and Role.NUTRITION not in r.experts():  # 饭菜照片
+            r = r.model_copy(update={"intent": "pro", "primary": Role.NUTRITION,
+                                     "helpers": r.experts()[:MAX_HELPERS]})  # fmt: skip
+        if r.intent == "pro" and r.primary is None:  # 三路都没打出分：按关键词兜底
+            r = keyword_route(text)
+        yield started("coach", "管家", "理解问题、安排专业角色")
+        yield finished("coach", route_summary(r))
         run.update(intent=r.intent, route_by=r.by, concerns=list(r.concerns))
         if r.intent != "pro" or r.primary is None:
             run["path"] = "direct"
@@ -1213,6 +1289,188 @@ class IronMAgent:
         tail = (
             2 if blocks[-1].get("tool_call_id") == SOURCES_ID else 0
         )  # 预览卡片放在“依据与来源”前面
+        for block in [*blocks[: len(blocks) - tail], *cards, *blocks[len(blocks) - tail :]]:
+            yield block
+
+    async def _single_turn(
+        self,
+        user_id: str,
+        session_id: str,
+        text: str,
+        history: list[str],
+        recall: Recall,
+        llm: TurnLLM,
+        run: dict[str, Any],
+        said: dict[str, Any],
+        prefix: str,
+        snap: asyncio.Task[Snapshot],
+        train: asyncio.Task[tuple[Plan | None, list[WorkoutLog], date | None]],
+        basics: asyncio.Task[Personal],
+        files: Attachments,
+        wx: asyncio.Task[Weather | None] | None = None,
+    ) -> AsyncGenerator[dict[str, Any]]:
+        """单 Agent 一轮（spec [2026-10-23] §67）：不路由、不整合；Skill 跨领域按需装、工具按需调；
+        改计划、排新计划、记训练由它在回答里给出，系统执行。安全前置和数据风险拦下照旧用规则。"""
+        prep = await self._prepare(user_id, recall, text, history, snap, train, wx, run)
+        snapshot, plan, case = prep.snapshot, prep.plan, prep.case
+        _, logs, _ = await train
+        run.update(intent="pro", route_by="single", roles=[Role.GENERAL.value],
+                   readiness=case.readiness.level, risks=[x.key for x in case.risks])  # fmt: skip
+        run["snapshot_failed"] = snapshot.failed
+        run["_missing"] = missing_readings(snapshot.readings)
+        if snapshot.failed:
+            yield notice("这次没读到你的健康数据，下面的回答没有用到它。")
+        training_ask = asks_training(text)
+        blocked = next((x for x in case.risks if x.block), None)
+        if blocked is not None and (
+            training_ask or PLAN_REQUEST.search(text) or asked(history) is not None
+        ):  # §5：这一轮不给训练安排（规则，不调用模型），和多 Agent 认的一样
+            run["path"] = "risk"
+            said["answer"] = ""
+            yield text_block("\n\n".join(x for x in (prefix, blocked.note, RISK_BLOCK) if x))
+            return
+
+        # 上下文：待确认的预览、今天的训练、排新计划要用的五项条件（旧答案带来源和日期）
+        coach_lines = [x for x in history if not x.startswith(USER)]
+        confirmed_now = bool(coach_lines) and HEAD in coach_lines[-1]
+        confirmed = any(HEAD in x for x in coach_lines)
+        target = await self._target(user_id, snapshot)
+        terms = conditions(
+            recall, snapshot.profile, target=target,
+            plan_line=schedule_line(plan) if plan is not None else "", today=snapshot.today,
+            checked_today=any(x.day == snapshot.today and x.done for x in logs),
+        )  # fmt: skip
+        follow = await self._context_for_follow(user_id, snap, train, run)
+        aim = target or (GOALS[snapshot.profile.goal] if snapshot.profile.goal else "")
+        refused = run.get("_refused") or ""
+        busy = "、".join(weekday_name(d) for d in sorted(blocked_days(text)))
+        checked, checked_note = await self._check_named(
+            user_id, session_id, text, [Role.GENERAL], run
+        )
+        note = "\n".join(x for x in (
+            "现在的情况：\n" + "\n".join(follow) if follow else "",
+            "排新计划要用的条件（旧答案带来源和日期）：\n" + "\n".join(terms),
+            CONFIRMED_NOTE + (f"他的目标：{aim}。计划说明第一句写这份计划为了这个目标怎么排，目标的数和日期照写。" if aim else "")
+            if confirmed_now else "",
+            f"他这句话说这些天没空：{busy}。挪训练不要挪到这些天。" if busy else "",
+            files.note_for_experts(), checked_note,
+            f"回答开头系统已经说了：{refused} 不要再复述，直接说能帮他做的部分。" if refused else "",
+        ) if x)  # fmt: skip
+
+        # Skill：跨领域先装 1–3 份（这一轮的情况要求的排前面），不够时由它自己再装
+        records = record_kinds(text)
+        asks_data = bool(records) and not _HURT.search(text)
+        job_hint = task_of(text)
+        triggers = {name for name, on in (
+            ("poor", (case.readiness.level in ("poor", "fair") or case.readiness.sick) and not asks_data),
+            ("injury", bool(case.injuries) and not asks_data),
+            ("plan", job_hint == "plan" or confirmed_now), ("log", job_hint == "log"),
+            ("image", bool(files.images)), ("move", bool(named_in(text))),
+            *((k, True) for k in records),
+        ) if on}  # fmt: skip
+        # 都对不上时不按语义硬装（"你好"会装上"今天状态判断"），由 Agent 看目录自己装（§67）
+        loaded = pick_any(text, triggers, drop={"injury", "poor"} if asks_data else ())
+        run["skills"] = {Role.GENERAL.value: [x.id for x in loaded]}
+        tools_ctx = self._tool_context(user_id, snapshot, case, recall)
+        toolbox = Toolbox(
+            GENERAL, kb=self._kb, health=self._health_source(), user_id=user_id,
+            session_id=session_id, calcs=case.calcs, context=tools_ctx,
+            meds=self._meds_source(), medical=self._medical_source(), extra=EXTRA_TOOLS,
+        )  # fmt: skip
+        if checked is not None:
+            toolbox.evidence.absorb(checked)
+        personal = await basics
+        run["basics"] = len(personal.lines)
+        known = handles(recall.items)
+        using = "、".join(x.name for x in loaded)
+        yield started(
+            "agent",
+            COACH_NAME,
+            "理解问题、查资料和数据、作答" + (f"（规程：{using}）" if using else ""),
+        )
+        c = await respond(
+            text, history, concerns_of(text), toolbox, llm, personal, recall, case=case, skills=loaded,
+            note=note, has_plan=plan is not None, confirmed=confirmed, just_asked=confirmed_now,
+            today=snapshot.today,
+            images=[x.part() for x in files.images], known=known,
+        )  # fmt: skip
+        yield finished("agent", consultation_summary(c), ok=c.status != "failed")
+        if c.opinion.memory and self._remember_on:  # 这一轮要记的：核对后当场写入（§68）
+            said["remembered"] = await self._remember_now(
+                user_id, text, c.opinion.answer, c.opinion.memory, known, run, snapshot.today
+            )
+        loaded_more = [x.get("tool") for x in c.evidence.calls if x.get("tool") == "load_skill"]
+        run["_experts"] = [{"role": Role.GENERAL.value, "status": c.status, **c.trace,
+                            "calls": c.evidence.calls}]  # fmt: skip
+        run["statuses"] = [c.status]
+        run["queries"] = c.evidence.queries
+        run["pro_tools"] = c.evidence.pro_queries
+        run["tools"] = [str(x.get("tool")) for x in c.evidence.calls]
+        if loaded_more:
+            run["skills_loaded"] = len(loaded_more)
+        if c.evidence.health_failed:
+            yield notice("这次没读到你的健康数据，下面的回答没有用到它。")
+        if not c.opinion.speak:
+            run["path"] = "no_answer"
+            said["answer"] = ""
+            yield text_block("\n\n".join(x for x in (prefix, NO_ANSWER) if x))
+            return
+
+        action = action_of(c.opinion, has_plan=plan is not None)
+        if (action == "plan" and plan is not None and c.opinion.action != ASK_NEW_PLAN
+                and not wants_new(text, has_plan=True)):  # fmt: skip
+            action = "edit"  # 已有计划、没要重排：完整写出的改动（换分化等）照常出预览
+        run["action"] = action
+        if blocked is not None and action in ("edit", "plan", ASK_NEW_PLAN):
+            # 数据风险拦下训练安排（§5）：不出计划，也不用它的原文（原文可能说"已经改好了"）
+            run.update(action_dropped="risk", path="risk")
+            said["answer"] = ""
+            yield text_block("\n\n".join(x for x in (prefix, blocked.note, RISK_BLOCK) if x))
+            return
+        if action == "none" and confirmed_now:
+            action = "plan"  # 刚确认完条件却没写出计划：按要新计划补写（和多 Agent 一样兜底）
+            run["action_forced"] = "confirmed"
+        if action == ASK_NEW_PLAN or (action == "plan" and not confirmed):
+            # 要新计划、本会话还没确认条件：系统列出五项请他确认（§55），不出预览
+            ask = confirm_ask(terms)
+            run.update(path="clarify", missing=["confirm"])
+            said["answer"] = ask
+            yield text_block("\n\n".join(x for x in (prefix, ask) if x))
+            return
+        job = "plan" if action in ("edit", "plan") else "log" if action == "log" else None
+        run["task"] = job
+        training = training_ask or job is not None
+        seen = await (self._earlier or earlier)(session_id)
+        notes = [x.note for x in case.risks if x.note not in seen]
+        prefix = "\n\n".join(x for x in (prefix, files.note_for_user()) if x)
+        run["_tail"] = "\n\n".join(notes) if training else ""
+        ask_ill = await self._illness_followup(user_id, run)
+        if ask_ill:
+            run["_tail"] = "\n\n".join(x for x in (run["_tail"], ask_ill) if x)
+
+        ctx = Context.of(case)
+
+        def rules(answer: str) -> list[Violation]:
+            return check_constraints(answer, ctx)
+
+        def mark(answer: str) -> str:
+            return annotate(answer, ctx)
+
+        composed = await revise(c, text, llm, constraints=rules, memory=recall, annotate=mark)
+        run.update(constraints=list(composed.violations), constraint_fixed=composed.fixed)
+        run["_compose"] = {"checks": list(composed.checks), "repaired": composed.repaired,
+                           "degraded": composed.degraded}  # fmt: skip
+        cards = await self._preview(user_id, job, c, text, plan, ctx, snapshot.today, run, llm, case,
+                                    tools_ctx, merge=bool(history))  # fmt: skip
+        if cards:
+            extra_note = "\n\n".join(
+                x for x in (run.pop("_plan_extra", ""), CONFIRM_NOTE[job or "plan"]) if x
+            )
+            composed = replace(composed, text=composed.text.rstrip() + "\n\n" + extra_note)
+        elif run.get("_plan_note"):
+            composed = replace(composed, text=run["_plan_note"])
+        blocks = self._answer(composed, prefix, run, said)
+        tail = 2 if blocks[-1].get("tool_call_id") == SOURCES_ID else 0
         for block in [*blocks[: len(blocks) - tail], *cards, *blocks[len(blocks) - tail :]]:
             yield block
 

@@ -32,6 +32,7 @@ MEDS_ROLES = frozenset({"recovery", "general"})
 MEDICAL_ROLES = frozenset({"recovery", "nutrition", "general"})
 
 type MedicalSearch = Callable[[str, str], Awaitable[str]]
+type ExtraTool = Callable[["Toolbox", Mapping[str, Any]], Awaitable[str]]
 
 
 def _meds_schema() -> dict[str, Any]:
@@ -241,8 +242,11 @@ class Toolbox:
         context: pro.ToolContext | None = None,
         meds: Any | None = None,
         medical: MedicalSearch | None = None,
+        extra: Mapping[str, tuple[dict[str, Any], ExtraTool]] | None = None,
     ) -> None:
         self.spec = spec
+        # 单 Agent 另加的工具（再装一份 Skill、查 App 用法，spec [2026-10-23] §67）：名字 → (说明, 执行)
+        self.extra: dict[str, tuple[dict[str, Any], ExtraTool]] = dict(extra or {})
         role = spec.role.value
         self.meds = meds if role in MEDS_ROLES else None  # mirobody 的用药记录工具
         self.medical = medical if role in MEDICAL_ROLES else None  # mirobody 的医学知识
@@ -276,6 +280,7 @@ class Toolbox:
             out.append(MEDICAL_SCHEMA)
         if self.context is not None:
             out += [t.schema() for t in pro.tools_for(self.spec.role.value)]
+        out += [schema for schema, _ in self.extra.values()]
         return out
 
     def _exercises(self, query: str) -> str:
@@ -335,6 +340,8 @@ class Toolbox:
             self.evidence.calls.append({"tool": call.name, "result": self._outcome, "ms": ms})
 
     async def _dispatch(self, call: ToolCall) -> str:
+        if call.name in self.extra:
+            return await self.extra[call.name][1](self, call.arguments)
         if call.name == KNOWLEDGE and self.spec.kb_domains:
             return self._knowledge(str(call.arguments.get("query", "")))
         if call.name == EXERCISES and self.library:
