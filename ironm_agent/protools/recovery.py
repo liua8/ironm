@@ -157,11 +157,11 @@ def recovery(
             kind, said = feel
             if kind == "sore":
                 r.feel = "sore"
-                r.why = [*r.why, f"{said.month}月{said.day}日说还酸"]
+                r.why = [*r.why, f"{said.month}月{said.day}日自述酸痛"]
                 r.sore_too_long = (today - said).days >= SORE_TOO_LONG_DAYS
             elif r.ready_on is not None and r.ready_on > today:
                 r.feel = "fine"
                 r.ready_on = today
-                r.why = [*r.why, f"{said.month}月{said.day}日说已经不酸了"]
+                r.why = [*r.why, f"{said.month}月{said.day}日自述酸痛已缓解"]
         out[muscle] = r
     return out

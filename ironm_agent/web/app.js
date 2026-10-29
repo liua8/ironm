@@ -1252,7 +1252,7 @@ function flatBody(mm, pick, sex) {
   const choose = (ms) => {
     if (ms.length === 1) return pick(ms[0]);
     openSheet("是哪一块？", h("div", { class: "muscle-rows" }, ms.map((m) => pressable(h("div", { class: "muscle-row" },
-      h("span", { class: "mr-name" }, m.name, m.state === "sore" ? h("em", {}, "还酸") : null),
+      h("span", { class: "mr-name" }, m.name, m.state === "sore" ? h("em", {}, "酸痛") : null),
       h("span", { class: "mr-bar" }, h("i", { class: `t-${m.tier}`, style: `width:${m.recovery}%` })),
       h("span", { class: "mr-sets" }, m.tier === "ready" ? "可训练" : `${m.recovery}%`)), () => { closeSheet(); pick(m); }))));
   };
@@ -1265,7 +1265,7 @@ function flatBody(mm, pick, sex) {
     for (const el of wrap.querySelectorAll(".mm.sel")) el.classList.remove("sel");
     for (const el of wrap.querySelectorAll(`.mm[data-key="${key}"]`)) el.classList.add("sel");
     wrap.classList.add("picking");
-    const said = ms.map((m) => (m.state === "sore" ? "你说还酸" : m.tier === "ready" ? "可训练" : `恢复 ${m.recovery}%`)).join(" / ");
+    const said = ms.map((m) => (m.state === "sore" ? "自述酸痛" : m.tier === "ready" ? "可训练" : `恢复 ${m.recovery}%`)).join(" / ");
     bar.replaceChildren(h("span", {}, h("b", {}, ms.map((m) => m.name).join(" / ")), h("small", {}, said)),
       h("button", { class: "link", type: "button", onclick: () => choose(ms) }, "查看", icon("chevron", "xs")));
     bar.hidden = false;
@@ -1279,7 +1279,7 @@ function flatBody(mm, pick, sex) {
       if (ms.length) {
         const low = ms.reduce((a, m) => (m.recovery < a.recovery ? m : a));  // 共用一块图的按恢复得少的那块
         const tone = ms.some((m) => m.state === "sore") ? "sore" : `t-${low.tier}`;
-        const said = (m) => (m.state === "sore" ? "你说还酸" : m.tier === "ready" ? "可训练" : `恢复 ${m.recovery}%`);
+        const said = (m) => (m.state === "sore" ? "自述酸痛" : m.tier === "ready" ? "可训练" : `恢复 ${m.recovery}%`);
         const label = ms.map((m) => `${m.name}：${said(m)}`).join("；");
         const key = ms.map((m) => m.code).join("+");
         g.setAttribute("class", `mm ${tone}`);
@@ -1316,7 +1316,7 @@ function partList(mm, pick) {
   return h("div", { class: "part-list" }, parts.map((p) => h("div", { class: "part-group" },
     h("h3", {}, p.name),
     p.items.map((m) => pressable(h("div", { class: "muscle-row" },
-      h("span", { class: "mr-name" }, m.name, m.state === "sore" ? h("em", {}, "还酸") : null),
+      h("span", { class: "mr-name" }, m.name, m.state === "sore" ? h("em", {}, "酸痛") : null),
       h("span", { class: "mr-bar" }, h("i", { class: `t-${m.tier}`, style: `width:${m.recovery}%` })),
       h("span", { class: "mr-sets" }, m.tier === "ready" ? "可训练" : `${m.recovery}%`)), () => pick(m))))));
 }
@@ -1435,8 +1435,8 @@ function bodyMap(mm, brief, sex) {
   };
   const pick = (m) => {
     if (!m) return;
-    const sore = h("button", { class: "btn ghost small", type: "button" }, "还酸");
-    const fine = h("button", { class: "btn ghost small", type: "button" }, "已经不酸了");
+    const sore = h("button", { class: "btn ghost small", type: "button" }, "仍有酸痛");
+    const fine = h("button", { class: "btn ghost small", type: "button" }, "酸痛已缓解");
     const btns = [sore, fine];
     sore.addEventListener("click", () => tell(m, "sore", btns));
     fine.addEventListener("click", () => tell(m, "fine", btns));
@@ -1445,11 +1445,11 @@ function bodyMap(mm, brief, sex) {
       aka ? h("p", { class: "caption" }, aka) : null,
       h("div", { class: "sheet-big" }, m.tier === "ready" ? h("span", { class: "v" }, "可训练") : h("span", { class: "v" }, `${m.recovery}%`, h("small", {}, "恢复度"))),
       h("div", { class: `recover-box ${m.state === "sore" ? "sore" : "ready"}` },
-        h("b", {}, m.state === "sore" ? "你说还酸：先别练它，等不酸了再练" : m.tier === "ready" ? "已经恢复，可以练" : `恢复 ${m.recovery}%`),
+        h("b", {}, m.state === "sore" ? "自述酸痛：建议酸痛缓解后再训练这块肌肉" : m.tier === "ready" ? "已恢复，可训练" : `恢复 ${m.recovery}%`),
         h("p", { class: "muted" }, "恢复度是估算，你的感受优先。"),
         h("div", { class: "btn-row" }, m.state === "sore" ? fine : sore)),
       h("div", { class: "kv" }, h("span", {}, "近 7 天"), h("span", {}, `${m.sets_7d} 组`)),
-      m.sore_too_long ? h("div", { class: "notice-line" }, icon("alert", "xs"), "说酸已经超过一周，可能不只是练后酸痛，问问康复恢复师。") : null,
+      m.sore_too_long ? h("div", { class: "notice-line" }, icon("alert", "xs"), "酸痛已超过一周，可能不是训练后的延迟性肌肉酸痛，建议咨询康复恢复师。") : null,
       h("div", { class: "kv" }, h("span", {}, "最近一次"), h("span", {}, m.last ? md(m.last) : "最近 28 天没练")),
       m.history.length ? h("div", {}, h("h3", {}, "最近练过"), h("ul", { class: "tips" }, m.history.map((x) => h("li", {}, x)))) : null,
       h("p", { class: "caption" }, "组数：主要练到的每组记 1 组，辅助练到的按半组；增肌通常每块肌肉每周 10 组以上效果更好。"),
@@ -1460,11 +1460,11 @@ function bodyMap(mm, brief, sex) {
   const rd = brief?.today?.readiness;
   return h("div", { class: "card body-card" },
     flatBody(mm, pick, sex),
-    h("div", { class: "legend" }, h("span", {}, h("i", { class: "t-high" }), "恢复 40% 以下"), h("span", {}, h("i", { class: "t-mid" }), "40–70%"), h("span", {}, h("i", { class: "t-low" }), "70–95%"), h("span", {}, h("i", { class: "t-ready" }), "可训练"), h("span", {}, h("i", { class: "mm-sore" }), "你说还酸")),
+    h("div", { class: "legend" }, h("span", {}, h("i", { class: "t-high" }), "恢复 40% 以下"), h("span", {}, h("i", { class: "t-mid" }), "40–70%"), h("span", {}, h("i", { class: "t-low" }), "70–95%"), h("span", {}, h("i", { class: "t-ready" }), "可训练"), h("span", {}, h("i", { class: "mm-sore" }), "自述酸痛")),
     rd && (rd.level === "poor" || rd.level === "fair") && rd.reasons?.length ? h("div", { class: "notice-line" }, icon("alert", "xs"), `${rd.reasons[0]}：今天整体恢复偏慢，可以降低强度。`) : null,
     mm.sessions === 0 ? h("p", { class: "muted" }, "最近还没有训练记录：在首页打卡，或在对话里说“今天练了……”就会记下来。") : h("div", { class: "muscle-rows" },
       top.length ? top.slice(0, 6).map((m) => pressable(h("div", { class: "muscle-row" },
-        h("span", { class: "mr-name" }, m.name, m.state === "sore" ? h("em", {}, "还酸") : null),
+        h("span", { class: "mr-name" }, m.name, m.state === "sore" ? h("em", {}, "酸痛") : null),
         h("span", { class: "mr-bar" }, h("i", { class: `t-${m.tier}`, style: `width:${m.recovery}%` })),
         h("span", { class: "mr-sets" }, m.tier === "ready" ? "可训练" : `${m.recovery}%`)), () => pick(m)))
         : h("p", { class: "muted" }, "全部肌肉都已恢复，可训练。")),
