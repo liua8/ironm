@@ -466,7 +466,8 @@ def test_targets_reach_case_file_and_api(monkeypatch: pytest.MonkeyPatch) -> Non
     body = {"session": "下肢", "items": [{"exercise": "杠铃深蹲", "sets": 3, "done_sets": sets}]}
     for _ in range(2):  # 打卡时填每组的重量和次数
         w = c.post("/iron/api/workouts", json=body).json()["workout"]
-        assert w["items"][0]["done_sets"][0] == {"reps": 9, "weight_kg": 60} and "60×9" in w["line"]
+        one = w["items"][0]["done_sets"][0]
+        assert (one["reps"], one["weight_kg"]) == (9, 60) and "60×9" in w["line"]
     r = c.get("/iron/api/training").json()
     assert "杠铃深蹲" in r["targets"]  # 两次都在今天：同样按两次算
     assert (

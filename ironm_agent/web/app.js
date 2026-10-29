@@ -53,6 +53,11 @@ const ICONS = {
   search: [["circle", { cx: "11", cy: "11", r: "8" }], P("m21 21-4.3-4.3")],
   close: [P("M18 6 6 18"), P("m6 6 12 12")],
   check: [P("M20 6 9 17l-5-5")],
+  timer: [["circle", { cx: "12", cy: "13", r: "8" }], P("M12 9v4l2 2"), P("M10 2h4")],
+  arrowUp: [P("m18 15-6-6-6 6")],
+  arrowDown: [P("m6 9 6 6 6-6")],
+  bell: [P("M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"), P("M10.3 21a1.94 1.94 0 0 0 3.4 0")],
+  mute: [P("M6 8a6 6 0 0 1 9.3-5"), P("M18 8c0 7 3 9 3 9H9"), P("M10.3 21a1.94 1.94 0 0 0 3.4 0"), P("m2 2 20 20")],
   x: [P("M18 6 6 18"), P("m6 6 12 12")],
   info: [["circle", { cx: "12", cy: "12", r: "10" }], P("M12 16v-4"), P("M12 8h.01")],
   alert: [P("m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"), P("M12 9v4"), P("M12 17h.01")],
@@ -258,11 +263,13 @@ async function home(view) {
     api("/iron/api/calendar").catch(() => null),
     api("/iron/api/week").catch(() => null),
     api("/iron/api/meals").catch(() => null),
+    checkLive(),
   ]);
   planSessions = training?.plan?.sessions || []; planTargets = training?.targets || {};
   view.append(
     brief?.hero?.cheer ? h("p", { class: "home-cheer" }, brief.hero.cheer) : null,
     askBox(),
+    liveNow ? liveEntry({}) : null,
     alertsBox(brief),
     taskCard(brief, training, week, meals),
     reportCard(brief, cal),
@@ -629,7 +636,8 @@ function sessionSheet(x, isToday, t) {
       const tg = planTargets[it.exercise];
       return h("li", {}, itemLine(it), tg ? h("div", { class: `next-target ${tg.action}` }, `下次：${tg.text}`, h("span", { class: "muted" }, `（${tg.why}）`)) : null);
     })),
-    isToday && !t?.done ? h("button", { class: "btn block", type: "button", onclick: () => doneSheet(x.name) }, icon("check", "sm"), "完成打卡") : null,
+    isToday && !t?.done ? h("button", { class: "btn block", type: "button", onclick: () => startLive({ today_plan: true }) }, icon("timer", "sm"), liveNow ? "继续训练" : "开始训练（边练边记）") : null,
+    isToday && !t?.done ? h("button", { class: "btn ghost block", type: "button", onclick: () => doneSheet(x.name) }, icon("check", "sm"), "练完了，直接打卡") : null,
     h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`${x.name}这次训练怎么练？每个动作要注意什么？`) }, icon("coach", "sm"), "问教练怎么练"));
 }
 const weekdayName = (d) => `周${WEEK[d - 1]}`;
@@ -763,7 +771,8 @@ function pills(options, current, onPick) {
 }
 
 async function moves(view) {
-  const [lib, vids, me] = await Promise.all([exercises(), api("/iron/api/videos").catch(() => ({ videos: [] })), whoami()]);
+  const [lib, vids, me] = await Promise.all([exercises(), api("/iron/api/videos").catch(() => ({ videos: [] })), whoami(), checkLive()]);
+  view.append(liveEntry({}));
   const has = new Set(vids.videos);
   const count = h("div", { class: "muted", style: "padding:0 2px" });
   const grid = h("div", { class: "move-groups" });
@@ -835,8 +844,9 @@ function exerciseSheet(x, note, has, admin, redraw) {
     h("div", {}, h("h3", {}, "常见错误"), list(x.mistakes, "bad", "x")),
     h("div", {}, h("h3", {}, "替代动作"), h("div", { class: "swap" }, h("div", {}, h("b", {}, "更容易"), x.easier), h("div", {}, h("b", {}, "更难"), x.harder))),
     h("div", { class: "callout" }, icon("alert", "sm"), h("div", {}, h("strong", {}, "什么情况先别做："), x.avoid)),
+    h("button", { class: "btn block", type: "button", onclick: () => startLive({ exercises: [x.name] }) }, icon("timer", "sm"), liveNow ? "继续训练" : "开始训练"),
     h("div", { class: "btn-row" },
-      h("button", { class: "btn", type: "button", onclick: () => askCoach(`${x.name}我没看懂，请用大白话、打个比方再给我讲讲怎么做，最容易做错的地方是什么`) }, icon("coach", "sm"), "没看懂？讲简单点"),
+      h("button", { class: "btn ghost", type: "button", onclick: () => askCoach(`${x.name}我没看懂，请用大白话、打个比方再给我讲讲怎么做，最容易做错的地方是什么`) }, icon("coach", "sm"), "没看懂？讲简单点"),
       h("button", { class: "btn ghost", type: "button", onclick: () => askCoach(`${x.name}有什么替代动作？按我的器械和身体情况选`) }, "换个动作")),
     h("p", { class: "caption" }, note),
     admin ? videoAdmin(x, has, redraw) : null);
@@ -2429,11 +2439,218 @@ function loginView(view) {
     form));
 }
 
+// ---- 训练记录器（spec [2026-10-23] §71）：选动作开始训练，一组一组记重量、次数、用时 ------------------------
+let liveNow = null;  // 进行中的训练（有就显示"继续训练"）
+let liveTick = null;
+let liveBack = "home";
+const liveSound = { on: true };
+async function checkLive() {
+  try { liveNow = (await api("/iron/api/live")).live; } catch { liveNow = null; }
+  return liveNow;
+}
+async function startLive(body) {
+  try { await api("/iron/api/live/start", { method: "POST", body: JSON.stringify(body) }); }
+  catch (err) { alert(err.message); return; }
+  liveBack = location.hash.slice(1) || "home";
+  closeSheet(); location.hash = "#live";
+}
+function liveEntry(body) {
+  if (liveNow) {
+    const mins = Math.max(0, Math.round((Date.now() - new Date(liveNow.started).getTime()) / 60000));
+    return pressable(h("div", { class: "card live-entry on" }, icon("timer"),
+      h("div", { class: "row-main" }, h("span", { class: "row-title" }, "训练进行中"), h("span", { class: "row-sub" }, `已开始 ${mins} 分钟，点这里继续记`)),
+      h("span", { class: "row-end" }, "继续", icon("chevron", "sm"))), () => startLive(body));
+  }
+  return h("button", { class: "btn block live-start", type: "button", onclick: () => startLive(body) }, icon("timer", "sm"), "开始训练");
+}
+const pad2 = (n) => String(n).padStart(2, "0");
+function clock(sec) {
+  const s = Math.max(0, Math.round(sec)), hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60);
+  return hh ? `${hh}:${pad2(mm)}:${pad2(s % 60)}` : `${mm}:${pad2(s % 60)}`;
+}
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 0.3); setTimeout(() => ctx.close(), 500);
+  } catch { /* 没有声音也不影响 */ }
+}
+
+async function livePage(view) {
+  let data;
+  try { data = await api("/iron/api/live"); } catch (err) { view.replaceChildren(failed(err, render)); return; }
+  const back = h("a", { class: "icon-btn", href: `#${liveBack}`, "aria-label": "返回（训练不会结束）" }, icon("back", "sm"));
+  if (!data.live) {
+    view.replaceChildren(h("div", { class: "live" },
+      h("div", { class: "chat-bar" }, back, h("div", { class: "who" }, h("b", {}, "训练"))),
+      h("div", { class: "card live-none" },
+        h("p", {}, data.expired ? `上次训练 6 小时没动，已自动结束，保存了完成的组：${data.expired.line}` : "现在没有进行中的训练。"),
+        h("button", { class: "btn block", type: "button", onclick: () => startLive({}) }, icon("timer", "sm"), "开始训练"))));
+    return;
+  }
+  const L = data.live;
+  const skew = Date.now() - new Date(data.now).getTime();  // 手机和服务器的时钟差
+  const t0 = new Date(L.started).getTime() + skew;
+  let timing = null;  // 正在计时的一组 {i, j, from}
+  let rest = null;    // 组间休息 {i, end}
+  let saveT = null;
+  const total = h("b", { class: "live-total" }, "0:00");
+  const status = h("span", { class: "live-status" });
+  const list = h("div", { class: "live-list" });
+  const restBar = h("div", { class: "live-rest", hidden: true });
+  const sound = h("button", { class: "icon-btn", type: "button", "aria-label": "提示音", onclick: () => { liveSound.on = !liveSound.on; sound.replaceChildren(icon(liveSound.on ? "bell" : "mute", "sm")); } }, icon(liveSound.on ? "bell" : "mute", "sm"));
+
+  const save = (now = false) => {
+    clearTimeout(saveT);
+    const go = async () => {
+      try { await api("/iron/api/live", { method: "PUT", body: JSON.stringify({ id: L.id, items: L.items }) }); status.textContent = ""; }
+      catch (err) { status.textContent = err.message; if (err.message.includes("刷新")) render(); }
+    };
+    if (now) return go();
+    saveT = setTimeout(go, 500);
+  };
+  const num = (v) => (v === "" || v == null ? null : Number(v));
+  const field = (s, key, attrs) => {
+    const el = h("input", { type: "number", class: "live-in", value: s[key] ?? "", ...attrs });
+    el.addEventListener("input", () => { s[key] = num(el.value); save(); });
+    return el;
+  };
+  const markDone = (i, j) => {
+    const it = L.items[i], s = it.sets[j];
+    if (s.done) { s.done = false; s.at = null; save(true); draw(); return; }
+    if (timing && timing.i === i && timing.j === j) { s.seconds = Math.max(1, Math.round((Date.now() - timing.from) / 1000)); timing = null; }
+    s.done = true; s.at = new Date().toISOString();
+    rest = { i, end: Date.now() + it.rest * 1000 };
+    save(true); draw(); tick();
+  };
+  const toggleTiming = (i, j) => {
+    timing = timing && timing.i === i && timing.j === j ? null : { i, j, from: Date.now() };
+    draw();
+  };
+  const move = (i, d) => { const k = i + d; if (k < 0 || k >= L.items.length) return; [L.items[i], L.items[k]] = [L.items[k], L.items[i]]; rest = null; timing = null; save(true); draw(); };
+  const dropItem = (i) => { L.items.splice(i, 1); rest = null; timing = null; save(true); draw(); };
+  const addSet = (i) => {
+    const it = L.items[i], last = it.sets[it.sets.length - 1] || {};
+    if (it.sets.length >= 20) return;
+    it.sets.push({ weight_kg: last.weight_kg ?? null, reps: it.timed ? null : last.reps ?? null, seconds: it.timed ? last.seconds ?? null : null, done: false, at: null });
+    save(true); draw();
+  };
+  const dropSet = (i, j) => { L.items[i].sets.splice(j, 1); timing = null; save(true); draw(); };
+
+  const row = (it, i, s, j) => {
+    const live = timing && timing.i === i && timing.j === j;
+    const tbtn = h("button", { class: `live-time${live ? " running" : ""}${s.seconds ? " has" : ""}`, type: "button", "aria-label": live ? "停止计时" : "这一组计时（可不计）", onclick: () => toggleTiming(i, j), disabled: s.done },
+      icon("timer", "xs"), h("span", { "data-run": live ? "1" : "" }, live ? clock((Date.now() - timing.from) / 1000) : s.seconds ? `${s.seconds}″` : "计时"));
+    const inputs = it.timed
+      ? [field(s, "seconds", { inputmode: "numeric", min: "1", max: "3600", placeholder: "秒", "aria-label": `第 ${j + 1} 组秒数` }), h("span", { class: "unit" }, "秒")]
+      : [field(s, "weight_kg", { inputmode: "decimal", min: "0", max: "500", step: "0.5", placeholder: "公斤", "aria-label": `第 ${j + 1} 组重量` }), h("span", { class: "unit" }, "×"),
+        field(s, "reps", { inputmode: "numeric", min: "0", max: "100", placeholder: "次", "aria-label": `第 ${j + 1} 组次数` })];
+    return h("div", { class: `set-row${s.done ? " done" : ""}` },
+      h("span", { class: "set-n" }, String(j + 1)), ...inputs, it.timed ? null : tbtn,
+      h("button", { class: "live-done", type: "button", "aria-pressed": String(s.done), "aria-label": s.done ? "取消完成" : "完成这一组", onclick: () => markDone(i, j) }, icon("check", "sm")),
+      !s.done && it.sets.length > 1 ? h("button", { class: "live-x", type: "button", "aria-label": "删掉这一组", onclick: () => dropSet(i, j) }, icon("x", "xs")) : h("span", { class: "live-x" }));
+  };
+  const card = (it, i) => h("section", { class: "card live-card" },
+    h("div", { class: "live-head" },
+      h("div", { class: "row-main" }, h("b", {}, it.exercise), it.target ? h("span", { class: "row-sub" }, it.target) : null),
+      h("button", { class: "icon-btn", type: "button", "aria-label": "上移", onclick: () => move(i, -1), disabled: i === 0 }, icon("arrowUp", "xs")),
+      h("button", { class: "icon-btn", type: "button", "aria-label": "下移", onclick: () => move(i, 1), disabled: i === L.items.length - 1 }, icon("arrowDown", "xs")),
+      h("button", { class: "icon-btn", type: "button", "aria-label": "删掉这个动作", onclick: () => dropItem(i) }, icon("x", "xs"))),
+    it.timed ? h("p", { class: "caption" }, "计时动作：填秒数，或点计时") : null,
+    it.timed ? h("div", { class: "live-timed" }, h("button", { class: `btn small${timing && timing.i === i ? "" : " ghost"}`, type: "button", onclick: () => { const j = it.sets.findIndex((s) => !s.done); if (j >= 0) (timing && timing.i === i ? markDone(i, timing.j) : toggleTiming(i, j)); } }, icon("timer", "sm"), timing && timing.i === i ? "停，记下这组" : "开始计时")) : null,
+    h("div", { class: "set-list" }, it.sets.map((s, j) => row(it, i, s, j))),
+    h("button", { class: "link", type: "button", onclick: () => addSet(i) }, icon("plus", "xs"), "加一组"));
+  const draw = () => {
+    list.replaceChildren(...(L.items.length ? L.items.map(card) : [h("div", { class: "card live-none" }, h("p", { class: "muted" }, "还没有动作，点下面的「加动作」。"))]));
+  };
+  const tick = () => {
+    total.textContent = clock((Date.now() - t0) / 1000);
+    const run = list.querySelector('[data-run="1"]');
+    if (run && timing) run.textContent = clock((Date.now() - timing.from) / 1000);
+    if (rest) {
+      const left = (rest.end - Date.now()) / 1000;
+      if (left <= 0) {
+        rest = null; restBar.hidden = true;
+        if (liveSound.on) beep();
+        navigator.vibrate?.([200, 100, 200]);
+        return;
+      }
+      const it = L.items[rest.i];
+      const adj = (d) => { it.rest = Math.min(600, Math.max(15, it.rest + d)); rest.end += d * 1000; save(); tick(); };
+      restBar.hidden = false;
+      restBar.replaceChildren(h("div", {}, h("span", { class: "muted" }, "组间休息"), h("b", {}, clock(left))),
+        h("div", { class: "live-rest-btns" },
+          h("button", { class: "btn ghost small", type: "button", onclick: () => adj(-15) }, "−15 秒"),
+          h("button", { class: "btn ghost small", type: "button", onclick: () => adj(15) }, "+15 秒"),
+          h("button", { class: "btn small", type: "button", onclick: () => { rest = null; restBar.hidden = true; } }, "跳过")));
+    }
+  };
+  const addMove = async () => {
+    const lib = await exercises();
+    const q = h("input", { type: "search", placeholder: "搜动作，比如卧推", "aria-label": "搜动作" });
+    const box = h("div", { class: "rows" });
+    const show = () => {
+      const k = q.value.trim();
+      box.replaceChildren(...lib.exercises.filter((x) => !k || `${x.name}${x.part}${x.muscles}`.includes(k)).slice(0, 30).map((x) => pressable(h("div", { class: "row-item" },
+        h("div", { class: "row-main" }, h("span", { class: "row-title" }, x.name), h("span", { class: "row-sub" }, `${x.part} · ${x.equipment.slice(0, 2).join("、")}`))), async () => {
+        await save(true);
+        try { const r = await api("/iron/api/live/items", { method: "POST", body: JSON.stringify({ exercise: x.name }) }); L.items = r.live.items; closeSheet(); draw(); }
+        catch (err) { alert(err.message); }
+      })));
+    };
+    q.addEventListener("input", show); show();
+    openSheet("加动作", q, box);
+  };
+  const finish = () => {
+    const doneSets = L.items.flatMap((it) => it.sets.filter((s) => s.done).map((s) => [it, s]));
+    const vol = doneSets.reduce((n, [it, s]) => n + (it.timed ? 0 : (s.weight_kg || 0) * (s.reps || 0)), 0);
+    let rpe = null;
+    const chips = h("div", { class: "rpe-pick" });
+    const drawChips = () => chips.replaceChildren(...Array.from({ length: 10 }, (_, k) => h("button", { type: "button", class: rpe === k + 1 ? "on" : "", "aria-pressed": String(rpe === k + 1), onclick: () => { rpe = rpe === k + 1 ? null : k + 1; drawChips(); } }, String(k + 1))));
+    drawChips();
+    const msg = h("p", { class: "error" });
+    const sure = h("div", { class: "btn-row", hidden: true },
+      h("span", { class: "muted" }, "放弃后这次不留记录，确定吗？"),
+      h("button", { class: "btn danger small", type: "button", onclick: async () => { await api("/iron/api/live", { method: "DELETE" }); liveNow = null; closeSheet(); location.hash = `#${liveBack}`; } }, "确定放弃"));
+    const body = h("div", { class: "sheet-stack" },
+      h("div", { class: "live-sum" },
+        ...[["总时长", clock((Date.now() - t0) / 1000)], ["动作", `${new Set(doneSets.map(([it]) => it.exercise)).size} 个`], ["组数", `${doneSets.length} 组`], ["总训练量", `${Math.round(vol)} 公斤`]]
+          .map(([k, v]) => h("div", {}, h("span", { class: "muted" }, k), h("b", {}, v)))),
+      h("div", {}, h("h3", {}, "这次感受（1 很轻松 … 10 到极限，可不选）"), chips),
+      msg,
+      h("button", { class: "btn block", type: "button", disabled: !doneSets.length, onclick: async () => {
+        await save(true);
+        try {
+          const r = await api("/iron/api/live/finish", { method: "POST", body: JSON.stringify({ rpe }) });
+          liveNow = null; cache.metrics = null;
+          const line = r.workout?.line || "";
+          body.replaceChildren(h("div", { class: "empty" }, icon("check"), "已保存这次训练"), h("p", {}, line),
+            h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`我刚练完：${line}，总时长 ${r.summary.minutes} 分钟${rpe ? `，感受 ${rpe} 分` : ""}。这次练得怎么样？下次要怎么调？`) }, icon("coach", "sm"), "问问教练"),
+            h("a", { class: "btn block", href: "#home", onclick: closeSheet }, "回首页"));
+        } catch (err) { msg.textContent = err.message; }
+      } }, doneSets.length ? "保存这次训练" : "还没有完成的组"),
+      h("button", { class: "link danger-link", type: "button", onclick: () => { sure.hidden = false; } }, "放弃本次"), sure);
+    openSheet("结束训练", body);
+  };
+
+  view.replaceChildren(h("div", { class: "live" },
+    h("div", { class: "chat-bar live-bar" }, back,
+      h("div", { class: "who" }, h("span", {}, L.session ? `训练中 · ${L.session}` : "训练中"), total),
+      sound, h("button", { class: "btn small", type: "button", onclick: finish }, "结束")),
+    status, list,
+    h("button", { class: "btn ghost block", type: "button", onclick: addMove }, icon("plus", "sm"), "加动作"),
+    restBar));
+  draw(); tick();
+  liveTick = setInterval(tick, 500);
+}
+
 // ---- 路由 ---------------------------------------------------------------------------------
 const PAGES = {
   home: { title: "今天", kicker: todayLabel, render: home, skeleton: [200, 300, 320] },
   moves: { title: "动作", render: moves, skeleton: [46, 40, 520] },
   chat: { title: "教练", full: true, render: chatPage },
+  live: { title: "训练中", full: true, render: livePage },
   food: { title: "饮食", render: food, skeleton: [180, 220, 150] },
   tier: { title: "夯拉榜", render: tierPage, skeleton: [44, 40, 520] },
   me: { title: "个人中心", render: me, skeleton: [120, 200, 320] },
@@ -2443,6 +2660,7 @@ let renderSeq = 0;
 
 async function render() {
   closeSheet();
+  if (liveTick) { clearInterval(liveTick); liveTick = null; }  // 离开训练页：停掉计时（训练本身存在服务端，回来接着计）
   const seq = ++renderSeq;
   const view = $("view");
   const signedIn = Boolean(store.get());

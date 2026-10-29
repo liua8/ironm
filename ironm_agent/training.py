@@ -118,6 +118,8 @@ class SetDone(_Model):
 
     reps: int = Field(ge=0, le=100)
     weight_kg: float | None = Field(default=None, ge=0, le=500)
+    seconds: int | None = Field(default=None, ge=1, le=3600)  # 这组用时（计时了才有，§71）
+    at: datetime | None = None  # 这组完成的时间（训练记录器记的，§71）
 
 
 _EACH = re.compile(r"\d+")
@@ -159,9 +161,10 @@ class LogItem(_Model):
     def line(self) -> str:
         if self.done_sets:
             sets = "、".join(
-                (f"{x.weight_kg:g}×{x.reps}" if x.weight_kg is not None else f"{x.reps} 次")
+                (f"{x.seconds} 秒" if not x.reps and x.seconds else
+                 f"{x.weight_kg:g}×{x.reps}" if x.weight_kg is not None else f"{x.reps} 次")
                 for x in self.done_sets
-            )
+            )  # fmt: skip
             return f"{self.exercise} {sets}"
         parts = [self.exercise]
         if self.sets:

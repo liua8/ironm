@@ -417,22 +417,25 @@ async def add_workout(
     illness: Any = ILLNESS,
 ) -> dict[str, Any]:
     row = await store.log(user_id, WorkoutLog(day=date.today(), **body.model_dump()))
-    if row.log.done:  # 生病期间打卡练了：当作已经好了（spec [2026-10-23] §46）
-        await illness_trained(illness, user_id, row.log.day)
-    if parts := pain_parts(
-        body.note
-    ):  # 打卡备注里说疼：触发型调整用（spec [2026-10-23] §18 需求 5）
+    await after_workout(user_id, row.log, store, memory, pain, illness)
+    return {"workout": {"id": row.id, **row.log.model_dump(mode="json"), "line": row.log.line()}}
+
+
+async def after_workout(
+    user_id: str, log: WorkoutLog, store: TrainingStore, memory: MemoryStore, pain: Any, illness: Any
+) -> None:
+    """记下一次训练之后（打卡、训练记录器结束，§71）：生病期间练了算好了、备注说疼、偏好、管家重新评估。"""
+    if log.done:  # 生病期间打卡练了：当作已经好了（spec [2026-10-23] §46）
+        await illness_trained(illness, user_id, log.day)
+    if parts := pain_parts(log.note):  # 打卡备注里说疼：触发型调整用（spec [2026-10-23] §18 需求 5）
         try:
             if not await memory.paused(user_id):
                 for part in parts:
                     await pain.add(user_id, part, date.today())
         except Exception as e:
             _log.warning("pain record failed: error_type=%s", type(e).__name__)
-    refresh_later(
-        user_id, memory, store
-    )  # 打卡后在后台更新训练记录得出的偏好（spec [2026-10-23] §17）
+    refresh_later(user_id, memory, store)  # 后台更新训练记录得出的偏好（spec [2026-10-23] §17）
     coach_later(user_id, "打卡")  # 管家重新评估当前方案（spec [2026-10-23] §23）
-    return {"workout": {"id": row.id, **row.log.model_dump(mode="json"), "line": row.log.line()}}
 
 
 @router.delete("/iron/api/workouts/{workout_id}")
@@ -567,3 +570,8 @@ router.include_router(_more)
 from ironm_agent.web_tier import router as _tier  # noqa: E402
 
 router.include_router(_tier)
+
+# 训练记录器（spec [2026-10-23] §71）
+from ironm_agent.web_live import router as _live  # noqa: E402
+
+router.include_router(_live)

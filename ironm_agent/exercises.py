@@ -44,6 +44,7 @@ class Exercise(ContractModel):
     easier: str
     harder: str
     avoid: str = Field(min_length=1)
+    timed: bool = False  # 计时类动作（平板支撑等）：训练记录器记秒数不记次数（§71）
 
 
 class Library(ContractModel):

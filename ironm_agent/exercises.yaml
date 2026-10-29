@@ -425,6 +425,7 @@ exercises:
 
   - id: plank
     name: 平板支撑
+    timed: true
     part: 核心
     muscles: 腹横肌、腹直肌
     equipment: [自重]
@@ -458,6 +459,7 @@ exercises:
 
   - id: side-plank
     name: 侧平板支撑
+    timed: true
     part: 核心
     muscles: 腹斜肌、臀中肌
     equipment: [自重]
