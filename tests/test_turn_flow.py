@@ -276,7 +276,9 @@ def test_how_to_question_teaches_with_feel_cues(monkeypatch: Any) -> None:
         agent(t, monkeypatch=monkeypatch, snapshot=snapshot_of()), "卧推的时候肩胛骨要怎么收紧"
     )
     assert "动作教学" in tasks_of(blocks)["管家"] and "move-coach" in seen["skills"]["general"]
-    assert "【动作教学】" in t.system and "夹住一支笔" in t.system
+    assert (
+        "【动作教学】（决策卡）" in t.system and "取「怎么讲」一节的对照" in t.system
+    )  # 对照表按节取（§99）
     assert "体感提示：" in t.input
     # 换动作也是同一份
     _, seen = run(agent(Coach(), monkeypatch=monkeypatch, snapshot=snapshot_of()),

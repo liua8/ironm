@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -973,12 +974,9 @@ async def get_today(
     illness: Any = ILLNESS,
     day: Any = DAY,
 ) -> dict[str, Any]:
-    """按今天的状态、天气、可用时间和生病情况，用规则改出今天的版本；原计划不变。
-    首页点了"有点累""只有 N 分钟"写进今日状态；没点时用今天在对话里说过的（spec [2026-10-23] §54）。"""
-    from ironm_agent.casefile import readiness
-    from ironm_agent.illness import EASE, today_mode
-    from ironm_agent.today import build
-    from ironm_agent.triggers import gap_scale
+    """今天的版本：和管家消息里的"今天"同一个算法（§97：生病、管家复盘、今天说过的累和可用时间、
+    天气、中断后降量、状态差）；原计划不变。首页点了"有点累""只有 N 分钟"先写进今日状态（§54）。"""
+    from ironm_agent.coach_state import Inputs, today_version
 
     if minutes is not None and not 10 <= minutes <= 180:
         raise HTTPException(422, "可用时间要在 10 到 180 分钟之间")
@@ -986,50 +984,32 @@ async def get_today(
     today = date.today()
     if stored is None:
         return {"status": "no_plan"}
-    session = stored.plan.session_on(today)
-    if session is None:
+    if stored.plan.session_on(today) is None:
         return {"status": "rest"}
-    said, said_tired = await _day_said(day, user_id, today, tired=tired, minutes=minutes)
-    if minutes is None and said is not None:
-        minutes = said.minutes()
+    said, _ = await _day_said(day, user_id, today, tired=tired, minutes=minutes)
     snap = await _web().snapshot_for(user_id)
-    state = readiness(snap.readings, "", today)
-    logs = [x.log for x in await training.workouts(user_id, today - timedelta(days=60))]
-    gap = gap_scale(logs, today)
-    sick = today_mode(
-        await _episodes(illness, user_id, today),
-        today,
-        trained_since=[x.day for x in logs if x.done],
-    )
-    if sick is not None and sick[0] == "rest":  # 生病还没好：今天休息（spec [2026-10-23] §46）
-        return {"status": "sick", "original": session.model_dump(mode="json"),
-                "message": f"今天先休息：{sick[1]}"}  # fmt: skip
-    if sick is not None and sick[0] == "ease":
-        gap = (min(EASE, gap[0]) if gap else EASE, sick[1])
-    light = sick is not None and sick[0] == "light"
     wx = await weather.for_user(user_id)
-    advice = weather.assess(wx) if wx else None
-    poor = state.level == "poor"
-    why = "你说今天有点累" if tired else said_tired or "；".join(state.reasons)
-    version = build(
-        session,
-        tired=tired or bool(said_tired) or poor or light,
-        tired_why=(sick[1] if light and sick else why),
-        indoor=advice is not None and advice.level in ("indoor", "avoid"),
-        indoor_why=advice.reasons[0] if advice and advice.reasons else "",
-        minutes=minutes,
-        scale=gap[0] if gap else None,
-        scale_why=gap[1] if gap else "",
-    )
-    return {
-        "status": "ok",
-        "original": session.model_dump(mode="json"),
-        "today": version.session.model_dump(mode="json"),
-        "changed": version.changed,
-        "changes": list(version.changes),
-        "reasons": list(version.reasons),
-        "readiness": state.name,
-    }
+    inp = Inputs(snapshot=snap, plan=stored.plan, since=stored.since,
+                 logs=[x.log for x in await training.workouts(user_id, today - timedelta(days=60))],
+                 illness=await _episodes(illness, user_id, today), day=said,
+                 advice=weather.assess(wx) if wx else None, review=await review_today(user_id))  # fmt: skip
+    v = today_version(inp, today, tired=tired, minutes=minutes)
+    if v.status in ("sick", "review_rest"):  # 生病还没好、管家复盘定了今天休息
+        return {"status": "sick" if v.status == "sick" else "rest_today", "original": v.original,
+                "message": v.title}  # fmt: skip
+    return {"status": "ok", "original": v.original, "today": v.today, "changed": v.changed,
+            "changes": list(v.changes), "reasons": list(v.reasons), "readiness": v.readiness}  # fmt: skip
+
+
+async def review_today(user_id: str) -> Any:
+    """管家今天的复盘（§85），首页、训练中都按它；读不到当作没有（测试里换掉）。"""
+    try:
+        state = await asyncio.wait_for(coach_deps().store.get(user_id), 3)
+    except Exception as e:
+        _log.info("coach review unavailable: error_type=%s", type(e).__name__)
+        return None
+    review = state.review if state is not None else None
+    return review if review is not None and review.day == date.today() else None
 
 
 async def _day_said(
@@ -1155,6 +1135,7 @@ def coach_deps() -> Any:
         weather=weather.for_user,
         illness=illness_store(),
         day=day_store(),
+        memory=_web().memory_store(),
     )
 
 

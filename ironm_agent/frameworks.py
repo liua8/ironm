@@ -40,6 +40,20 @@ def framework_refs(role: Role, flags: Collection[str] = ()) -> tuple[str, ...]:
     return tuple(dict.fromkeys(_REF.findall(framework(role, flags))))
 
 
+# 这类人的规则由代码每轮带上（特殊人群硬拦说明、档案风险提示），不再写在基础规程里（§101）；
+# 原来基础规程带进来的资料照样记为可以引用的依据，回答里引用能通过核对
+FLAG_REFS: dict[str, tuple[str, ...]] = {
+    "pregnancy": ("K24", "K110"),
+    "bp": ("K41",),
+    "diabetes": ("K42",),
+    "cardiac": ("K14",),
+}
+
+
+def flag_refs(flags: Collection[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(r for f in flags for r in FLAG_REFS.get(f, ())))
+
+
 def flags_of(risks: Collection[str], injured: bool, readiness: str = "") -> frozenset[str]:
     """档案里的风险和伤病 → 要加进提示词的少见情况。"""
     keys = set(risks)

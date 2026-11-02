@@ -137,10 +137,18 @@ def check_plan(
     available_days: int | None = None,
     available_minutes: int | None = None,
     max_changed_days: int | None = None,
+    special: Collection[str] = (),
 ) -> Result:
-    """max_changed_days：按复盘调整时每次最多改几天（spec [2026-10-23] §18）。"""
+    """max_changed_days：按复盘调整时每次最多改几天（spec [2026-10-23] §18）。
+    special：这个人的特殊情况（未成年、孕期、心脏病、高血压、60 岁以上，§95），按硬规则查。"""
+    from ironm_agent.special import plan_problems
+
     problems: list[str] = []  # 必须改的
     hints: list[str] = []  # 建议看一看的
+    if special:
+        extra, notes = plan_problems(plan, special)
+        problems += extra
+        hints += notes
     sets, days, unknown = _volume(plan)
     findings: list[Finding] = []
 

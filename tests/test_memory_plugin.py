@@ -91,7 +91,10 @@ def test_memory_is_extracted_after_the_answer(monkeypatch: Any) -> None:
     assert "最重 20 公斤" in text_of(blocks)
     assert f"用户：{QUESTION}" in s.seen["memory"] and "教练：用你最重" in s.seen["memory"]
     items = asyncio.run(book.items("42"))
-    assert [(x.category, x.content, x.origin) for x in items] == [("event", "今天在家练腿", "said")]
+    d = items[0].created.astimezone().date()  # "今天"存成日期（§103）
+    assert [(x.category, x.content, x.origin) for x in items] == [
+        ("event", f"{d.month}月{d.day}日在家练腿", "said")
+    ]
 
 
 def test_paused_memory_extracts_nothing_but_still_answers_with_it(monkeypatch: Any) -> None:

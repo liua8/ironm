@@ -71,10 +71,10 @@ def test_catalog_lists_the_first_batch_and_loading_brings_the_body() -> None:
     body_marker = "## ① 安全筛查"
     assert body_marker not in text  # 目录里只有名字和什么时候用
     x = next(s for s in skills() if s.id == "intake-assess")
-    shown = x.text(frozenset())
-    assert (
-        shown.startswith("【初次评估】") and body_marker in shown and "query_medications" in shown
-    )
+    shown = x.text(frozenset())  # 装载时只放决策卡和分节目录（§99）
+    assert shown.startswith("【初次评估】（决策卡）") and body_marker not in shown
+    assert "① 安全筛查" in shown and "query_medications" in shown
+    assert body_marker in x.text(full=True)
 
 
 def test_intake_flow_is_in_order_with_tools_and_stops_on_red_flags() -> None:
@@ -100,7 +100,7 @@ def test_new_user_routed_elsewhere_still_gets_intake(monkeypatch: Any) -> None:
     _, seen = run(a, "我想减肥")
     got = ids(seen)
     assert got.index("intake-assess") < got.index("goal-set")  # 情况要求的排前面
-    assert "## ① 安全筛查" in s.system and "【目标设定】" in s.system
+    assert "【初次评估】（决策卡）" in s.system and "【目标设定】（决策卡）" in s.system
 
 
 def test_old_user_is_not_pushed_into_intake(monkeypatch: Any) -> None:
@@ -131,13 +131,13 @@ def test_training_level_is_a_memory_category_in_the_profile() -> None:
 # ---- 第 3–5 批（§81）----
 
 ALL = {"intake-assess", "goal-set", "plan-build", "cardio-fitness", "move-coach",
-       "log-review", "readiness-adjust", "progress-plateau", "comeback", "pain-injury", "sick-days",
-       "special-groups", "recovery-sleep", "diet-plan", "supplements-meds", "data-read"}  # fmt: skip
+       "log-review", "readiness-adjust", "progress-plateau", "comeback", "pain-injury",
+       "special-groups", "diet-plan", "supplements-meds", "data-read"}  # fmt: skip  # §101：生病期间并进今天练不练，恢复与睡眠并进恢复基础
 OLD = {"plan-readiness", "plan-deload", "plan-return", "move-teach", "move-swap", "move-warmup",
        "train-cardio", "train-habit", "food-targets", "food-muscle", "food-fatloss", "food-timing",
        "food-supplement", "food-takeout", "food-photo", "food-habit", "rest-readiness", "rest-sleep",
        "rest-soreness", "rest-sick", "rest-overtraining", "rest-return", "rest-pain", "rest-redflag",
-       "data-trend", "data-labs", "data-missing"}  # fmt: skip
+       "data-trend", "data-labs", "data-missing", "sick-days", "recovery-sleep"}  # fmt: skip
 
 
 def test_all_eighteen_folder_skills_and_only_cores_left_in_yaml() -> None:
@@ -159,13 +159,13 @@ def test_situations_always_bring_their_skill() -> None:
 
 def test_safety_floors_from_the_old_skills_are_kept() -> None:
     body = {x.id: x.body for x in folder()}
-    assert "发烧时不运动" in body["sick-days"]
+    assert "发烧时不运动" in body["readiness-adjust"]
     assert all(w in body["pain-injury"] for w in ("断裂声", "不能活动或承重", "麻木", "不诊断"))
     assert "不给健康意见" in body["data-read"] and "不建议改药" in body["data-read"]
     assert "孕期、哺乳期、有慢病或在用药的人，吃补剂前先问医生或药师" in body["supplements-meds"]
     assert "不建议改药停药" in body["supplements-meds"]
     assert "立即停止并就医" in body["special-groups"]
-    assert "不推荐安眠药" in body["recovery-sleep"]
+    assert "不推荐安眠药" in next(x for x in skills() if x.id == "rest-core").text()
     assert "状态差时不安排大重量" in body["readiness-adjust"]
 
 

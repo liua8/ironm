@@ -139,37 +139,54 @@ class Inputs:
     illness: list[Any] = field(default_factory=list)  # illness.Episode：最近的生病记录（§46）
     day: Any = None  # day_state.DayState：今日状态（§54）
     review: Review | None = None  # 今天的管家复盘（§85），模型决定的今天怎么练
+    memory: list[Any] = field(default_factory=list)  # 记忆条目（§95 认特殊情况）
 
 
-def _today_item(inp: Inputs, today: date) -> Item:
+@dataclass(frozen=True)
+class TodayVersion:
+    """今天怎么练（§97：首页"今天的版本"、管家消息、对话档案都用这一份）。"""
+
+    status: Literal["no_plan", "rest", "sick", "review_rest", "ok"]
+    title: str
+    why: str = ""
+    basis: str = ""
+    original: dict[str, Any] | None = None
+    today: dict[str, Any] | None = None
+    changed: bool = False
+    changes: tuple[str, ...] = ()
+    reasons: tuple[str, ...] = ()
+    readiness: str = ""
+
+
+def today_version(
+    inp: Inputs, today: date, *, tired: bool = False, minutes: int | None = None
+) -> TodayVersion:
+    """按生病、管家复盘、今天说过的累和可用时间、天气、中断后降量、状态差，改出今天的版本；原计划不变。
+    tired、minutes：首页这一下刚点的（存今日状态失败时也照用）。"""
+    from ironm_agent.illness import EASE, today_mode
     from ironm_agent.today import build
     from ironm_agent.triggers import gap_scale
 
     name = weekday_name(today.isoweekday())
     if inp.plan is None:
-        return Item(
-            key="today", kind="today", title="还没有训练计划", why="可以让训练教练按你的目标排一份"
-        )
+        return TodayVersion("no_plan", "还没有训练计划", why="可以让训练教练按你的目标排一份")
     session = inp.plan.session_on(today)
     if session is None:
-        return Item(key="today", kind="today", title=f"今天（{name}）按计划休息",
-                    why="恢复也是训练的一部分", value={"rest": True})  # fmt: skip
-    from ironm_agent.illness import EASE, today_mode
-
+        return TodayVersion("rest", f"今天（{name}）按计划休息", why="恢复也是训练的一部分")
     state = readiness(inp.snapshot.readings, "", today)
+    original = session.model_dump(mode="json")
     gap = gap_scale(inp.logs, today)
     adv = inp.advice
     sick = today_mode(inp.illness, today, trained_since=[x.day for x in inp.logs if x.done])
     if sick is not None and sick[0] == "rest":  # 生病还没好：今天休息（§46）
-        return Item(key="today", kind="today", title=f"今天先休息：{sick[1]}",
-                    why="病好了再练，第一次按平时的七成", basis="生病时练不练〔K23〕",
-                    action="auto", value={"rest": True, "sick": True})  # fmt: skip
+        return TodayVersion("sick", f"今天先休息：{sick[1]}", why="病好了再练，第一次按平时的七成",
+                            basis="生病时练不练〔K23〕", original=original, readiness=state.name)  # fmt: skip
     if sick is not None and sick[0] == "ease":
         gap = (min(EASE, gap[0]) if gap else EASE, sick[1])
     told = inp.review.today() if inp.review is not None else None  # 管家复盘：模型决定的今天（§85）
     if told is not None and told.value.get("rest"):
-        return Item(key="today", kind="today", title=f"今天休息：{told.why}", why=told.why,
-                    basis=told.basis, action="auto", value={"rest": True, "review": True})  # fmt: skip
+        return TodayVersion("review_rest", f"今天休息：{told.why}", why=told.why, basis=told.basis,
+                            original=original, readiness=state.name)  # fmt: skip
     if told is not None and told.value.get("ratio"):
         ratio = float(told.value["ratio"])
         gap = (min(ratio, gap[0]) if gap else ratio, told.why)
@@ -181,26 +198,26 @@ def _today_item(inp: Inputs, today: date) -> Item:
     poor = state.level == "poor" and not reviewed
     version = build(
         session,
-        tired=poor or light or said is not None,
+        tired=poor or light or said is not None or tired,
         tired_why="；".join(
             x
             for x in (
                 (sick[1] if light and sick else ""),
-                said.text() if said else "",
+                said.text() if said else ("你说今天有点累" if tired else ""),
                 *(state.reasons if poor else ()),
             )
             if x
         ),
         indoor=adv is not None and adv.level in ("indoor", "avoid"),
         indoor_why=adv.reasons[0] if adv is not None and adv.reasons else "",
-        minutes=inp.day.minutes() if inp.day is not None else None,
+        minutes=minutes or (inp.day.minutes() if inp.day is not None else None),
         scale=gap[0] if gap else None,
         scale_why=gap[1] if gap else "",
     )
     if not version.changed:
-        return Item(key="today", kind="today", title=f"今天练{session.name}，按原计划",
-                    why=f"今天的状态{state.name}，天气不影响训练",
-                    value={"today": session.model_dump(mode="json")})  # fmt: skip
+        return TodayVersion("ok", f"今天练{session.name}，按原计划",
+                            why=f"今天的状态{state.name}，天气不影响训练", original=original,
+                            today=original, readiness=state.name)  # fmt: skip
     basis = []
     if poor:
         basis.append("睡眠〔K07〕、和自己的基线比〔K18〕")
@@ -210,16 +227,30 @@ def _today_item(inp: Inputs, today: date) -> Item:
         basis.append(told.basis)
     elif gap:
         basis.append("中断后降量（经验）")
-    return Item(
-        key="today",
-        kind="today",
-        title=f"今天练{session.name}：" + "；".join(version.changes),
-        why="；".join(version.reasons),
-        basis="；".join(basis),
-        action="auto",
-        value={"original": session.model_dump(mode="json"),
-               "today": version.session.model_dump(mode="json")},
+    return TodayVersion(
+        "ok", f"今天练{session.name}：" + "；".join(version.changes), why="；".join(version.reasons),
+        basis="；".join(basis), original=original, today=version.session.model_dump(mode="json"),
+        changed=True, changes=tuple(version.changes), reasons=tuple(version.reasons),
+        readiness=state.name,
     )  # fmt: skip
+
+
+def _today_item(inp: Inputs, today: date) -> Item:
+    v = today_version(inp, today)
+    if v.status == "no_plan":
+        return Item(key="today", kind="today", title=v.title, why=v.why)
+    if v.status == "rest":
+        return Item(key="today", kind="today", title=v.title, why=v.why, value={"rest": True})
+    if v.status == "sick":
+        return Item(key="today", kind="today", title=v.title, why=v.why, basis=v.basis,
+                    action="auto", value={"rest": True, "sick": True})  # fmt: skip
+    if v.status == "review_rest":
+        return Item(key="today", kind="today", title=v.title, why=v.why, basis=v.basis,
+                    action="auto", value={"rest": True, "review": True})  # fmt: skip
+    if not v.changed:
+        return Item(key="today", kind="today", title=v.title, why=v.why, value={"today": v.today})
+    return Item(key="today", kind="today", title=v.title, why=v.why, basis=v.basis, action="auto",
+                value={"original": v.original, "today": v.today})  # fmt: skip
 
 
 def _weather_items(inp: Inputs, today: date) -> list[Item]:
@@ -565,6 +596,7 @@ class Deps:
     weather: Callable[[str], Awaitable[Any]] | None = None
     illness: Any = None  # illness.IllnessStore（§46）
     day: Any = None  # day_state.DayStore（§54）
+    memory: Any = None  # memory_store.MemoryStore：认孕期、心脏病这类特殊情况（§95）
 
 
 async def _gather(user_id: str, deps: Deps, today: date) -> Inputs:
@@ -578,6 +610,8 @@ async def _gather(user_id: str, deps: Deps, today: date) -> Inputs:
             _log.warning("coach input unavailable: part=%s error_type=%s", what, type(e).__name__)
             return None
 
+    if deps.memory is not None:
+        inp.memory = await safely("memory", deps.memory.items(user_id)) or []
     stored = await safely("plan", deps.training.plan(user_id))
     if stored is not None:
         inp.plan, inp.since = stored.plan, stored.since

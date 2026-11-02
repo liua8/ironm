@@ -246,8 +246,10 @@ async def adjust(
     plan: Plan | None = None,
     logs: Sequence[WorkoutLog] = (),
     rests: dict[str, int] | None = None,
+    special: frozenset[str] = frozenset(),
 ) -> Adjusted:
-    """他说了一句：急症按急症回答；否则让模型决定怎么改，代码按安全底线套上。"""
+    """他说了一句：急症按急症回答；否则让模型决定怎么改，代码按安全底线套上。
+    special：未成年、孕期、心脏病、高血压时不加重，和说疼一样（§95）。"""
     from ironm_agent.render import sections_text
     from ironm_agent.safety.emergency import assess
     from ironm_agent.safety.replies import four_section
@@ -261,7 +263,9 @@ async def adjust(
         spoken = await say(llm, URGENT, "\n".join(f"{x.title}：{x.text}" for x in sections), said,
                            urgent_needs(hit.level, hit.categories))  # fmt: skip
         return Adjusted(live, spoken or sections_text(sections), end=True, urgent=True)
-    hurt = bool(_HURT.search(said))
+    from ironm_agent.special import no_heavier
+
+    hurt = bool(_HURT.search(said)) or no_heavier(special)
     try:
         reply = await asyncio.wait_for(
             llm.chat(

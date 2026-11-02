@@ -145,7 +145,7 @@ async def run(
     if staging:
         extra += [f"阶段：{x}" for x in _stage(inp, hist, today)]
     fs, refs = facts(inp, today, extra)
-    blocked = any(r.block for r in risks(inp.snapshot.readings, (), today))
+    blocked = any(r.block for r in risks(inp.snapshot.readings, inp.memory, today))
     user = "\n".join(
         ["事实：", *(f"[{k}] {v}" for k, v in fs.items()), "", "可以引用的资料：", *_kb_lines(refs)]
     )
@@ -306,7 +306,16 @@ async def _plan(
         got = apply(inp.plan, ops)
     except Conflict:
         return None
-    if not got.done or check_plan(got.plan, current=inp.plan).problems:
+    from ironm_agent.special import flags, is_special
+
+    special = flags(
+        inp.snapshot.profile, risks(inp.snapshot.readings, inp.memory, date.today()), date.today()
+    )
+    # 特殊人群的硬规则（§95）：原计划本来就有的不挡（否则连减量都改不了），只挡这次改出来的
+    had = {p for p in check_plan(inp.plan, special=special).problems if is_special(p)}
+    left = [p for p in check_plan(got.plan, current=inp.plan, special=special).problems
+            if not (is_special(p) and p in had)]  # fmt: skip
+    if not got.done or left:
         return None  # 套不上，或改完有必须改的问题：不执行
     content = plan_content(
         got.plan, why or "管家复盘", ops=[o.model_dump(mode="json") for o in got.done]

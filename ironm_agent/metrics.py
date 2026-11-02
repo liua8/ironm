@@ -93,6 +93,26 @@ def _window(points: Sequence[Point], days: int, end: date) -> list[Point]:
     return [(d, v) for d, v in points if 0 <= (end - d).days < days]
 
 
+def _md(d: date) -> str:
+    return f"{d.month}月{d.day}日"
+
+
+def week_text(n: int, avg: str, unit: str, *, nights: bool = False) -> str:
+    """最近 7 天的平均怎么说：记录不满 7 天时写明有几天，不说成 7 天平均（§102）。"""
+    if n >= 7:
+        return f"最近 7 天平均 {avg} {unit}"
+    return f"最近 7 天有 {n} {'晚' if nights else '天'}记录，平均 {avg} {unit}"
+
+
+def stale(key: str, name: str, unit: str, points: Sequence[Point]) -> Metric:
+    """最近 7 天没有记录：不给数值、不下结论，只说最近一次是哪天（§102：旧数据不当成现在的）。"""
+    last = max(d for d, _ in points)
+    return Metric(
+        key, name, None, unit, f"最近 7 天没有{name}记录（最近一次是 {_md(last)}），看不出现在怎么样",
+        missing=(f"最近 7 天的{name}记录",), series=tuple(sorted(points))[-60:], brief="没有新数据",
+    )  # fmt: skip
+
+
 def _span(points: Sequence[Point]) -> str:
     if not points:
         return ""
@@ -135,21 +155,25 @@ def bmi(weight: Point | None, height_cm: float | None) -> Metric:
     )
 
 
-def weight_now(points: Sequence[Point]) -> Metric:
+def weight_now(points: Sequence[Point], today: date) -> Metric:
+    """最近一次体重（带日期，计算基础代谢、蛋白质照旧用它）；最近 7 天从今天往前数（§102）。"""
     if not points:
         return missing("weight", "体重", "公斤", "体重记录")
-    end = max(d for d, _ in points)
     last = max(points)
-    week = _window(points, 7, end)
-    avg = statistics.fmean(v for _, v in week)
+    week = _window(points, 7, today)
+    avg = (
+        "，" + week_text(len(week), _fmt(statistics.fmean(v for _, v in week)), "公斤")
+        if week
+        else "；最近 7 天没有称重"
+    )
     return Metric(
         "weight",
         "体重",
         round(last[1], 1),
         "公斤",
-        f"最近一次 {_fmt(last[1])} 公斤，最近 7 天平均 {_fmt(avg)} 公斤",
-        how="最近 7 天（以最后一条记录为准）每天的体重取平均",
-        data=_span(week),
+        f"最近一次 {_fmt(last[1])} 公斤（{_md(last[0])}）{avg}",
+        how="最近 7 天（从今天往前数）每天的体重取平均",
+        data=_span(week or [last]),
         series=tuple(sorted(points))[-60:],
     )
 
@@ -163,7 +187,7 @@ TREND_MIN_POINTS = 6
 TREND_MIN_SPAN = 14
 
 
-def weight_trend(points: Sequence[Point]) -> Metric:
+def weight_trend(points: Sequence[Point], today: date) -> Metric:
     """每周体重变化：对每天的体重做直线回归，斜率 × 7，给出 95% 可信范围。
 
     先看最近 4 周；称重不够频繁（如一周一次）时依次放宽到 8 周、12 周，并写明用的是多长时间。
@@ -171,7 +195,7 @@ def weight_trend(points: Sequence[Point]) -> Metric:
     key, name, unit = "weight_trend", "体重每周变化", "公斤/周"
     if not points:
         return missing(key, name, unit, "体重记录")
-    end = max(d for d, _ in points)
+    end = today  # 从今天往前数（§102）
     pts: list[Point] = []
     span = 0
     for weeks in TREND_WEEKS:
@@ -377,20 +401,25 @@ def against_baseline(
     higher_is_worse: bool,
     ref: str,
     source: str,
+    today: date,
 ) -> Metric:
-    """最近 7 天平均与本人基线（之前最多 60 天）比较；基线不足 14 天只给平均，不下结论。"""
+    """最近 7 天平均与本人基线（之前最多 60 天）比较；基线不足 14 天只给平均，不下结论。
+    都从今天往前数；最近 7 天没有记录的不给数值、不比较（§102）。"""
     if not points:
         return missing(key, name, unit, f"{name}记录")
-    end = max(d for d, _ in points)
+    end = today
     week = _window(points, 7, end)
+    if not week:
+        return stale(key, name, unit, points)
     base = [(d, v) for d, v in _window(points, BASELINE_DAYS + 7, end) if (end - d).days >= 7]
     avg = statistics.fmean(v for _, v in week)
+    now = week_text(len(week), _fmt(avg), unit)
     series = tuple(sorted(points))[-60:]
     if len(base) < BASELINE_MIN:
         return Metric(
             key, name, round(avg, 1), unit,
-            f"最近 7 天平均 {_fmt(avg)} {unit}；本人基线的数据还不够（需要 {BASELINE_MIN} 天，现在 {len(base)} 天），暂不比较",
-            how="最近 7 天（以最后一条记录为准）取平均", data=_span(week), source=source, ref=ref, series=series,
+            f"{now}；本人基线的数据还不够（需要 {BASELINE_MIN} 天，现在 {len(base)} 天），暂不比较",
+            how="最近 7 天（从今天往前数）取平均", data=_span(week), source=source, ref=ref, series=series,
             brief="基线积累中",
         )  # fmt: skip
     mean = statistics.fmean(v for _, v in base)
@@ -413,7 +442,7 @@ def against_baseline(
         name,
         round(avg, 1),
         unit,
-        f"最近 7 天平均 {_fmt(avg)} {unit}，基线 {_fmt(mean)} {unit}（±{_fmt(sd)}），{word}",
+        f"{now}，基线 {_fmt(mean)} {unit}（±{_fmt(sd)}），{word}",
         how=f"最近 7 天平均减去之前 {len(base)} 天的平均，差 {diff:+.1f} {unit}；超过一个标准差算明显",
         data=f"最近 7 天：{_span(week)}；基线：{_span(base)}",
         source=source,
@@ -424,51 +453,53 @@ def against_baseline(
     )
 
 
-def resting_hr(points: Sequence[Point]) -> Metric:
+def resting_hr(points: Sequence[Point], today: date) -> Metric:
     return against_baseline(
-        "resting_hr", "静息心率", "次/分", points, higher_is_worse=True, ref="K18",
+        "resting_hr", "静息心率", "次/分", points, higher_is_worse=True, ref="K18", today=today,
         source="和自己的基线比、看一周平均（Plews 等，2013）；成年人一般 60–100 次/分，常训练的人可以更低（美国心脏协会）",
     )  # fmt: skip
 
 
-def hrv(points: Sequence[Point], algorithm: str) -> Metric:
+def hrv(points: Sequence[Point], algorithm: str, today: date) -> Metric:
     return against_baseline(
-        f"hrv_{algorithm.lower()}", f"心率变异性（{algorithm}）", "毫秒", points, higher_is_worse=False, ref="K19",
+        f"hrv_{algorithm.lower()}", f"心率变异性（{algorithm}）", "毫秒", points, higher_is_worse=False, ref="K19", today=today,
         source="和自己的基线比；SDNN（苹果手表）与 RMSSD（其他设备）是不同指标，不放在一起比较",
     )  # fmt: skip
 
 
-def sleep(points: Sequence[Point]) -> Metric:
+def sleep(points: Sequence[Point], today: date) -> Metric:
     key, name, unit = "sleep", "睡眠时长", "小时"
     if not points:
         return missing(key, name, unit, "睡眠记录（连接手表或上传苹果健康数据）")
-    end = max(d for d, _ in points)
-    week = _window(points, 7, end)
+    week = _window(points, 7, today)  # 从今天往前数（§102）
+    if not week:
+        return stale(key, name, unit, points)
     avg = statistics.fmean(v for _, v in week)
     short = sum(1 for _, v in week if v < 7)
     tone: Tone = "good" if avg >= 7 else "attention"
     return Metric(
         key, name, round(avg, 1), unit,
-        f"最近 7 天平均 {_fmt(avg)} 小时，其中 {short} 天不足 7 小时",
-        how="最近 7 天（以最后一条记录为准）每晚的睡眠时长取平均", data=_span(week),
+        f"{week_text(len(week), _fmt(avg), '小时', nights=True)}，其中 {short} 晚不足 7 小时",
+        how="最近 7 天（从今天往前数）每晚的睡眠时长取平均", data=_span(week),
         source="成年人每晚应规律地睡 7 小时及以上（美国睡眠医学会与睡眠研究会共识，2015）", ref="K07",
         tone=tone, series=tuple(sorted(points))[-60:], brief="充足" if avg >= 7 else "偏少",
     )  # fmt: skip
 
 
-def steps(points: Sequence[Point], age: int | None) -> Metric:
+def steps(points: Sequence[Point], age: int | None, today: date) -> Metric:
     key, name, unit = "steps", "步数", "步/天"
     if not points:
         return missing(key, name, unit, "步数记录")
-    end = max(d for d, _ in points)
-    week = _window(points, 7, end)
+    week = _window(points, 7, today)  # 从今天往前数（§102）
+    if not week:
+        return stale(key, name, unit, points)
     avg = statistics.fmean(v for _, v in week)
     lo, hi = (6000, 8000) if age is not None and age >= 60 else (8000, 10000)
     tone: Tone = "good" if avg >= lo else "attention"
     return Metric(
         key, name, round(avg), unit,
-        f"最近 7 天平均 {round(avg)} 步；参考：{lo}–{hi} 步/天以后收益趋于平稳",
-        how="最近 7 天（以最后一条记录为准）每天的步数取平均", data=_span(week),
+        f"{week_text(len(week), str(round(avg)), '步')}；参考：{lo}–{hi} 步/天以后收益趋于平稳",
+        how="最近 7 天（从今天往前数）每天的步数取平均", data=_span(week),
         source=f"每天步数与全因死亡风险的荟萃分析（Lancet Public Health，2022）：{'60 岁及以上' if lo == 6000 else '60 岁以下'}约 {lo}–{hi} 步趋于平稳",
         ref="K21", tone=tone, series=tuple(sorted(points))[-60:], brief="达标" if avg >= lo else "偏少",
     )  # fmt: skip
@@ -487,7 +518,7 @@ def blood_pressure(sys_pt: Point | None, dia_pt: Point | None) -> Metric:
         label, tone, brief = "正常（< 120/80）", "good", "正常"
     return Metric(
         key, name, s, unit,
-        f"最近一次 {round(s)}/{round(d)} mmHg，{label}。只作参考，不作诊断，确诊需要医生在不同日子多次测量",
+        f"最近一次 {round(s)}/{round(d)} mmHg（{_md(sys_pt[0])}），{label}。只作参考，不作诊断，确诊需要医生在不同日子多次测量",
         how="取最近一次收缩压和舒张压，按分级标准对照",
         data=f"收缩压 {round(s)}（{sys_pt[0].isoformat()}）；舒张压 {round(d)}（{dia_pt[0].isoformat()}）",
         source="中国高血压防治指南（2018 年修订版）的血压分级", tone=tone,  # type: ignore[arg-type]
@@ -616,24 +647,24 @@ def compute_all(
     base = bmr(latest_w, profile, today)
     total = tdee(base, profile)
     out = [
-        weight_now(r.weight),
-        weight_trend(r.weight),
+        weight_now(r.weight, today),
+        weight_trend(r.weight, today),
         bmi(latest_w, profile.height_cm),
         base,
         total,
         calorie_target(total, base, profile, adjust),
         protein_target(latest_w, profile),
-        resting_hr(r.resting_hr),
-        sleep(r.sleep_hours),
-        steps(r.steps, profile.age(today)),
+        resting_hr(r.resting_hr, today),
+        sleep(r.sleep_hours, today),
+        steps(r.steps, profile.age(today), today),
         blood_pressure(
             max(r.systolic) if r.systolic else None, max(r.diastolic) if r.diastolic else None
         ),
     ]
     if r.hrv_sdnn:
-        out.append(hrv(r.hrv_sdnn, "SDNN"))
+        out.append(hrv(r.hrv_sdnn, "SDNN", today))
     if r.hrv_rmssd:
-        out.append(hrv(r.hrv_rmssd, "RMSSD"))
+        out.append(hrv(r.hrv_rmssd, "RMSSD", today))
     if not r.hrv_sdnn and not r.hrv_rmssd:
         out.append(
             missing("hrv", "心率变异性", "毫秒", "心率变异性记录（连接手表或上传苹果健康数据）")

@@ -23,6 +23,7 @@ from ironm_agent.metrics import (
     hrv,
     resting_hr,
     steps,
+    week_text,
     weight_trend,
 )
 from ironm_agent.training import WorkoutLog
@@ -115,7 +116,7 @@ def compare(readings: Readings, profile: Profile, today: date) -> list[Reading]:
     """有数据的指标，各自和他自己比、和标准比。"""
     out: list[Reading] = []
     age = profile.age(today)
-    rhr = resting_hr(readings.resting_hr)
+    rhr = resting_hr(readings.resting_hr, today)
     if rhr.ok and rhr.value is not None:
         v = rhr.value
         std = (
@@ -128,7 +129,7 @@ def compare(readings: Readings, profile: Profile, today: date) -> list[Reading]:
         out.append(Reading("resting_hr", "静息心率", rhr.text, std, ("K18", "K20"),
                            "attention" if v > 100 or rhr.tone == "attention" else "good"))  # fmt: skip
     for algo, pts in (("SDNN", readings.hrv_sdnn), ("RMSSD", readings.hrv_rmssd)):
-        m = hrv(pts, algo)
+        m = hrv(pts, algo, today)
         if m.ok:
             out.append(Reading(m.key, m.name, m.text,
                                "心率变异性没有公认的人群标准，个人差异很大，只和你自己比",
@@ -136,7 +137,7 @@ def compare(readings: Readings, profile: Profile, today: date) -> list[Reading]:
     week, before = _week_and_before(readings.sleep_hours, today)
     if week:
         avg, prev = statistics.fmean(week), _avg(before)
-        mine = f"最近 7 天平均 {_f(avg)} 小时" + (
+        mine = week_text(len(week), _f(avg), "小时", nights=True) + (
             f"，前三周平均 {_f(prev)} 小时" if prev is not None else "，还没有前几周的记录可比"
         )
         std = (
@@ -149,10 +150,10 @@ def compare(readings: Readings, profile: Profile, today: date) -> list[Reading]:
     week, before = _week_and_before(readings.steps, today)
     if week:
         avg, prev = statistics.fmean(week), _avg(before)
-        mine = f"最近 7 天平均 {round(avg)} 步" + (
+        mine = week_text(len(week), str(round(avg)), "步") + (
             f"，前三周平均 {round(prev)} 步" if prev is not None else ""
         )
-        m = steps(readings.steps, age)
+        m = steps(readings.steps, age, today)
         lo = 6000 if age is not None and age >= 60 else 8000
         std = (
             f"{'达到' if avg >= lo else '低于'}{'60 岁以上' if lo == 6000 else '成年人'}"
@@ -171,7 +172,7 @@ def compare(readings: Readings, profile: Profile, today: date) -> list[Reading]:
         )
         out.append(Reading("blood_pressure", "血压", mine, bp.text, ("K41",), bp.tone))
     if readings.weight:
-        trend = weight_trend(readings.weight)
+        trend = weight_trend(readings.weight, today)
         latest = max(readings.weight)
         b = bmi(latest, profile.height_cm or readings.height_cm)
         mine = trend.text if trend.ok else "称重还不够，暂不判断每周变化"
@@ -211,8 +212,8 @@ def situations(
 ) -> list[Situation]:
     """认出的情况。illness：正在生病的说法（"昨天说感冒"）；events：近期事件（出差等）。"""
     out: list[Situation] = []
-    rhr, sdnn, rmssd = (resting_hr(readings.resting_hr), hrv(readings.hrv_sdnn, "SDNN"),
-                        hrv(readings.hrv_rmssd, "RMSSD"))  # fmt: skip
+    rhr, sdnn, rmssd = (resting_hr(readings.resting_hr, today), hrv(readings.hrv_sdnn, "SDNN", today),
+                        hrv(readings.hrv_rmssd, "RMSSD", today))  # fmt: skip
     high = _flag(rhr, ("明显偏高",))
     low = _flag(sdnn, ("明显偏低",)) or _flag(rmssd, ("明显偏低",))
     nights, _ = _week_and_before(readings.sleep_hours, today)
@@ -230,7 +231,8 @@ def situations(
 
     reasons: list[str] = []
     if short and slept is not None:
-        reasons.append(f"最近 7 天平均只睡 {_f(slept)} 小时，不到 {_f(SLEEP_ENOUGH)} 小时")
+        few = "" if len(nights) >= WEEK else f"有 {len(nights)} 晚记录，"
+        reasons.append(f"最近 7 天{few}平均只睡 {_f(slept)} 小时，不到 {_f(SLEEP_ENOUGH)} 小时")
     if load_up:
         reasons.append(f"这周练了 {this_week} 次，前三周平均每周 {_f(per_week)} 次")
     reasons += list(illness) + [f"近期：{e}" for e in events]
@@ -249,7 +251,7 @@ def situations(
         ))  # fmt: skip
     if short and slept is not None:
         out.append(Situation(
-            "sleep", "睡得少", f"最近 7 天平均 {_f(slept)} 小时，成年人建议每晚 {_f(SLEEP_ENOUGH)} 小时以上", refs=("K07", "K34", "K113"),
+            "sleep", "睡得少", f"{week_text(len(nights), _f(slept), '小时', nights=True)}，成年人建议每晚 {_f(SLEEP_ENOUGH)} 小时以上", refs=("K07", "K34", "K113"),
             data=f"最近 7 天的睡眠记录 {len(nights)} 晚",
         ))  # fmt: skip
     week, before = _week_and_before(readings.steps, today)
@@ -266,7 +268,7 @@ def situations(
             "activity", "活动量掉了", f"最近 7 天平均 {round(now)} 步，前三周平均 {round(prev)} 步", why,
             refs=("K21", "K64"), data=f"最近 4 周的步数记录 {len(week) + len(before)} 天",
         ))  # fmt: skip
-    trend = weight_trend(readings.weight)
+    trend = weight_trend(readings.weight, today)
     if trend.ok and trend.value is not None and readings.weight:
         weight = max(readings.weight)[1]
         pct = trend.value / weight * 100

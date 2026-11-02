@@ -83,14 +83,14 @@ def test_plan_changed_mid_week_counts_each_day_by_the_plan_used_that_day() -> No
 def test_goal_progress_percent_and_celebrate_once(monkeypatch: pytest.MonkeyPatch) -> None:
     w = weights(-0.5)  # 从 80 掉到约 78.07
     g = Goal(75, TODAY + timedelta(days=60), TODAY - timedelta(days=27), start=80)
-    p = progress(g, w, weight_trend(w), TODAY)
+    p = progress(g, w, weight_trend(w, TODAY), TODAY)
     assert p["changed"] == round(w[0][1] - 80, 1) and p["percent"] == round(
         (w[0][1] - 80) / -5 * 100
     )
     assert not p["celebrate"]
-    won = progress(replace(g, value=78), w, weight_trend(w), TODAY)
+    won = progress(replace(g, value=78), w, weight_trend(w, TODAY), TODAY)
     assert won["status"] == "reached" and won["percent"] == 100 and won["celebrate"]
-    seen = progress(replace(g, value=78, celebrated=TODAY), w, weight_trend(w), TODAY)
+    seen = progress(replace(g, value=78, celebrated=TODAY), w, weight_trend(w, TODAY), TODAY)
     assert not seen["celebrate"]
     assert Goal.of(replace(g, celebrated=TODAY).json()).celebrated == TODAY  # 存得下
 

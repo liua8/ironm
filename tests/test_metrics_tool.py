@@ -11,7 +11,7 @@ from ironm_agent.roles import SPECS, Role
 from ironm_agent.tools import METRICS, Toolbox
 
 BMI = m.bmi((date(2026, 9, 14), 69.2), 175)
-MISSING = m.sleep(())
+MISSING = m.sleep((), date(2026, 10, 22))
 
 
 async def source() -> list[m.Metric]:

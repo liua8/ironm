@@ -25,6 +25,7 @@ from ironm_agent.memory_store import (
     Item,
     Origin,
     Status,
+    absolute,
     new_id,
     now,
 )
@@ -57,12 +58,12 @@ _PROMPT = """你负责替健身教练团队记住"这个用户本人"的情况�
 3. quote 是从用户这一轮的话里一字不差摘出的一段，能支撑这条记忆；advice 的 quote 从教练这一轮的回答里一字不差地摘。
 4. 和已有记忆是同一件事的新情况，用 update，target 写那条记忆的编号，content 写合并后的完整新说法（如原来"家里有一对哑铃"，现在说"最重的是 15 公斤"，更新成"家里有一对哑铃，最重 15 公斤"；目标、可练时间、伤病情况变了也用 update）。已经好了、不再适用的，用 resolve，target 写编号，content 写现在的情况。新的、不同的事用 add（新买的器械是另一件器械，用 add，原来的保留）。
 5. inferred 只在内容是你根据他的话推测出来、他并没有直接说的时候写 true。能不推测就不推测。
-6. 明显是临时的变化（"这两周出差""下周旅游""最近加班"）记成 event，不要 update 或 resolve 原来的器械、时间和目标；长期的变化（"我换健身房了""现在每天只有半小时"）才 update 原来那条。
+6. 每条写 lasting：long（以后一直要照顾到：习惯、伤病、器械、目标、水平）或 short（只关于某一天、这几天：这顿吃了什么、今天练了什么、今天累、这周出差）；short 的系统记成 event。一顿饭吃了什么、一次训练练了什么不记（饮食记录、训练记录里有）。明显是临时的变化（"这两周出差""下周旅游""最近加班"）记成 event，不要 update 或 resolve 原来的器械、时间和目标；长期的变化（"我换健身房了""现在每天只有半小时"）才 update 原来那条。
 7. 没有要记的，输出空列表。
 
 8. event 写 until（到哪天为止，YYYY-MM-DD，含这天），按今天的日期算："这周"写这周日，"这两天"写明天，"这几天"写 3 天后，"下周"写下周日，说了具体日子照写；实在看不出写 7 天后。
 
-只输出 JSON：{"ops": [{"op": "add|update|resolve", "target": "已有记忆的编号（add 不写）", "category": "...", "content": "...", "quote": "...", "inferred": false, "until": "event 才写"}]}"""
+只输出 JSON：{"ops": [{"op": "add|update|resolve", "target": "已有记忆的编号（add 不写）", "category": "...", "content": "...", "quote": "...", "inferred": false, "lasting": "long|short", "until": "event 才写"}]}"""
 
 UNTIL_DAYS = 60  # 近况最多记多少天
 
@@ -73,6 +74,10 @@ _TEMPORARY = re.compile(
 )
 _SURELY_TEMPORARY = re.compile(r"这两周|这一两周|这几天|出差|旅游|旅行|度假|回老家|临时|暂时")
 _LONG_TERM: frozenset[str] = frozenset({"equipment", "schedule", "goal"})
+# 长期类别（用户画像）：模型标了 lasting=short 的不进这些，记成近期事件（§103）
+_PROFILE: frozenset[str] = frozenset(
+    {"goal", "level", "injury", "equipment", "schedule", "diet", "preference", "style"}
+)
 
 _STATUS_NAMES = {"active": "有效", "pending": "待确认", "resolved": "已解决"}
 _PUNCT = re.compile(r"[\s\W_]+", re.U)
@@ -199,13 +204,17 @@ def _problem(
     inferred = raw.get("inferred") is True and category not in ("advice", "followup")
     if category == "injury" and not inferred and _unsaid(content, quote):
         inferred = True  # 左右、诊断词原话里没有：是推测的，先放着等他确认
-    if category in _LONG_TERM and (
-        _TEMPORARY.search(quote) if target is not None else _SURELY_TEMPORARY.search(quote)
+    short = raw.get("lasting") == "short" and category in _PROFILE  # 模型判断只关于某一天、这几天
+    if short or (
+        category in _LONG_TERM
+        and (_TEMPORARY.search(quote) if target is not None else _SURELY_TEMPORARY.search(quote))
     ):
         kind, category, target = "add", "event", None  # 临时的变化不覆盖长期记忆
     until = None
     if category in ("event", "followup"):
         until = until_of(raw.get("until"), today) or (target.until if target else None)
+        if until is None and short:  # 只关于这一天：到说的那天为止
+            until = today or date.today()
         if until is None and category == "followup":  # 待跟进没写哪天：一周后（§73）
             until = (today or date.today()) + timedelta(days=7)
     if kind == "add" and category == "event" and target is None:
@@ -213,6 +222,7 @@ def _problem(
         if same is not None:  # 同一件事又说了一遍：改原来那条，不新增（§73 需求 3）
             kind, target = "update", same
             until = until or same.until
+    content = absolute(content, today or date.today())  # "今天"写成日期（§103），数字核对在这之前
     op = Op(cast(Literal["add", "update", "resolve"], kind), cast(Category, category), content,
             quote, target, inferred, until)  # fmt: skip
     return op, ""
@@ -223,6 +233,10 @@ _EVENT_KINDS = tuple(re.compile(p) for p in (
     r"出差|酒店|外地|回老家", r"旅游|旅行|度假", r"感冒|发烧|咳嗽|生病|病了|拉肚子|嗓子",
     r"加班|很忙|太忙|没空|没时间", r"失眠|没睡好|睡不好|熬夜", r"经期|月经|生理期",
 ))  # fmt: skip
+
+
+def _same_kind(a: str, b: str) -> bool:
+    return any(k.search(a) and k.search(b) for k in _EVENT_KINDS)
 
 
 def same_event(content: str, items: Iterable[Item], today: date) -> Item | None:
@@ -295,6 +309,15 @@ def validate(
             c == op.category and norm(t) == norm(op.content) for c, t in seen
         ):
             continue  # 已经记着了，不重复
+        if (
+            op.op == "add"
+            and op.category == "event"
+            and any(
+                o.op == "add" and o.category == "event" and _same_kind(o.content, op.content)
+                for o in ops
+            )
+        ):
+            continue  # 同一轮里同一类近期事件只记一条（§103：同一次发烧记了两条）
         if op.category == "advice" and sum(o.category == "advice" for o in ops) >= MAX_ADVICE:
             rejected.append("给过的建议超过每轮上限")
             continue

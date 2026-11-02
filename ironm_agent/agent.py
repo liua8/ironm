@@ -24,7 +24,7 @@ from ironm_agent.experts import (
     _user_message,
     experience_share,
 )
-from ironm_agent.frameworks import FRAMEWORKS, flags_of, framework_refs
+from ironm_agent.frameworks import FRAMEWORKS, flag_refs, flags_of, framework_refs
 from ironm_agent.llm import LLM, ModelUnavailable
 from ironm_agent.memory_store import CATEGORIES, Item
 from ironm_agent.memory_view import Recall, until_text
@@ -42,11 +42,20 @@ LOAD_SKILL_SCHEMA: dict[str, Any] = {
     "type": "function",
     "function": {
         "name": LOAD_SKILL,
-        "description": "再装一份规程（做事步骤、判断规则、禁忌）。已经装上的不用再装；id 从系统提示里的规程目录里选。",
+        "description": (
+            "再装一份规程（决策卡：管哪几个决定、判断要点、怎么说），或者取已装规程的某一节细节。"
+            "id 从系统提示里的规程目录里选；要细节时带 section（决策卡后面列的分节编号或名字，写「全部」取整份）。"
+        ),
         "parameters": {
             "type": "object",
             "additionalProperties": False,
-            "properties": {"id": {"type": "string", "description": "规程编号，如 plan-build"}},
+            "properties": {
+                "id": {"type": "string", "description": "规程编号，如 plan-build"},
+                "section": {
+                    "type": "string",
+                    "description": "要看的那一节：编号（如 5）或名字（如 选初步方案）；不写给决策卡",
+                },
+            },
             "required": ["id"],
         },
     },
@@ -66,6 +75,16 @@ async def _load_skill(box: Toolbox, args: Mapping[str, Any]) -> str:
     if skill is None:
         return "没有这个规程编号，请从目录里选。"
     box.adopt(e for r in skill.refs_for(box.flags) if (e := box.kb.get(r)) is not None)
+    which = str(args.get("section") or "").strip()
+    if which:  # 取一节细节（§99）
+        part = skill.section(which)
+        return part if part is not None else f"没有这一节。{skill.name}的分节：{skill.index()}"
+    held = getattr(
+        box, "actions_held", ""
+    )  # 计划和记录的写法这一轮没放进系统提示（§96）：装训练类规程时补上
+    if held and skill.role == Role.TRAINER:
+        box.actions_held = ""
+        return skill.text(box.flags) + "\n\n计划和训练记录（只在需要时写）：\n" + held
     return skill.text(box.flags)
 
 
@@ -79,10 +98,12 @@ _PROMPT = """你是健身 App 里的「AI 健身管家」：一位持证体能�
 
 {framework}
 
+先后（冲突时按这个来）：安全规则（急症、就医、不诊断不开药）> 回答格式（先答问的、篇幅、最后那几段怎么写）> 规程；规程里"输出"一段只是这类回答的结构参考。
+
 先看上下文再答：
 1. 先判断这句话和前面的关系：新问题、对上一条回答的追问或质疑、补充条件、对计划预览的意见，还是闲聊。接着上一轮的，就接着上一轮答。被质疑时先核对你上一条回答和预览里实际说过什么：说错或漏了就认错并改正；没说错就用你说过的内容回答，不要顺着认错。
 2. 只答问的：第一句就是答案，原因放后面，没问到的不说，等他追问再展开。他提了要求（"给我安排个轻松的"），第一句先接住：能做就直接给，不能做再说为什么。他只说自己的状况（"今天有点不舒服""好累"）、没问怎么办时，关心一句、问怎么了，不主动给做法和安排。提起记忆和今天的状态像教练当面说话：用问候或一句话带过（"前两天说感冒了，好点了吗"），不报日期，不转述系统的判断（"现在还没好"），他没问的计划安排（今天本来是休息日、病后第一次按几成）不说。打招呼、闲聊一两句自然回应，不主动报今天的计划、打卡和数据。超出健身、饮食、恢复、身体数据的问题，说明帮不上、能帮什么。不诊断、不开药。
-3. 关于这个人的事实（状态、伤病、计划、记录、数据）只照档案、数据、记忆和对话说，不推测、不编造；给具体的量（组次、克数、分钟），数字用工具结果、档案或资料里的，不自己估。
+3. 关于这个人的事实（状态、伤病、计划、记录、数据）只照档案、数据、记忆和对话说，不推测、不编造；数据不是最近 7 天的，说清是哪天的，不当成现在的状态；给具体的量（组次、克数、分钟），数字用工具结果、档案或资料里的，不自己估。
 4. 需要信息就调用工具（{tools}），一轮可以调几次，拿到要的就作答。问 App 怎么用时调用 app_help。装上的规程不够时调用 load_skill 再装一份（目录在最后）。
 
 出处（系统会逐句核对）：用到资料的句子句末写〔K03〕，用到档案或计算结果写〔C2〕，凭经验写〔经验〕；用到他的健康数据写成 <statement>这句话<cite>[r3]</cite></statement>。带数字的句子都要有出处，数字照资料、计算或数据写。
@@ -90,15 +111,10 @@ _PROMPT = """你是健身 App 里的「AI 健身管家」：一位持证体能�
 计划和训练记录（只在需要时写；只是问问、抱怨、闲聊、解释时不写，计划不动）：
 {actions}
 
-记忆（只在需要时写；系统核对后当场记下，下一轮就能用）：
-- 他这句话说了关于他本人、以后回答要照顾到的情况（伤病和身体状况、器械和场地、可练时间、饮食、喜好、目标、回答风格、近期发生的事），在 JSON 里加上 "memory" 列表。只是提问、闲聊、别人的事、假设、否定的说法（"没有伤"）不记；档案和记忆里已经有的不重复记。
-- 每条：{{"op": "add|update|resolve", "target": "已有记忆的编号（add 不写）", "category": "injury|equipment|schedule|diet|preference|goal|level|style|event|followup", "content": "一句话，不超过 40 字，照原话保留部位、左右、重量、时间", "quote": "从他这句话里一字不差摘的一段", "inferred": false, "until": "event 要写到哪天为止、followup 要写哪天到期（YYYY-MM-DD，含这天）"}}
-- inferred：内容是你根据他的话推测的、他没有直接说（比如从"膝盖响"推测是半月板的问题）写 true，系统会先放着等他确认；能不推测就不推测
-- until 按今天的日期算："这周"写这周日，"这两天"写明天，"这几天"写 3 天后，"下周"写下周日，说了具体日子照写；实在看不出写 7 天后。例：今天 2026-10-28（周三），他说"这周出差" → {{"op": "add", "category": "event", "content": "这周出差", "quote": "这周出差", "until": "2026-11-01"}}
-- 已有记忆的新情况用 update（content 写合并后的完整说法），好了、不再适用用 resolve；临时的变化（这周出差、这几天感冒）记成 event，不改长期的器械、时间和目标。
-- 长期的情况（画像）变了，用编号 update 那一行，不另加一条；同一件近况（同一次出差、同一次感冒）有了新进展，update 原来那条（"感冒好了"用 resolve）。
-- 你答应要回访的事、他要你提醒的事（"下周问问膝盖""两周后复测"），记成 followup，until 写到期日。
-- "该问的、到期的跟进"里你这一轮提了、或者他答了，用编号 resolve；他确认了画像里带？的推测，用 update 写同样的内容。
+记忆（他这句话说了关于他本人、以后要照顾到的情况才写；提问、闲聊、别人的事、假设、否定的说法不记，已有的不重复记）：
+- 在 JSON 里加 "memory" 列表，每条 {{"op": "add|update|resolve", "target": "已有记忆的编号（add 不写）", "category": "injury|equipment|schedule|diet|preference|goal|level|style|event|followup", "content": "一句话，不超过 40 字，保留部位、左右、重量、时间", "quote": "他这句话里一字不差的一段", "inferred": "是你推测的写 true（先放着等他确认），能不推测就不推测", "lasting": "long（以后一直要照顾到）或 short（只关于某一天、这几天）", "until": "event、followup 的截止日 YYYY-MM-DD"}}
+- short 的（今天累、这周出差、这几天感冒）系统记成近期的事："这周"写到这周日、"这两天"写明天、看不出写 7 天后。一顿饭、一次训练不记（饮食、训练记录里有）。长期的情况变了用编号 update 那一条，好了、不再适用用 resolve。
+- 答应回访、他要你提醒的记 followup；"该问的、到期的跟进"里你提了或他答了，用编号 resolve。
 
 {slots}
 打招呼、道谢、闲聊时只写 answer（一两句自然回应），其余几段留空，不报今天的计划、打卡和数据。{skills}
@@ -118,7 +134,7 @@ _TEMPORARY = (
 )
 _JUST_ASKED = (
     "- 上一轮你列了排新计划要用的条件请他确认。他这句话是确认（如「按这个排」「可以」「你定」）或改了其中几项："
-    '这一轮就按确认的条件写完整的 "plan"（计划写进 "plan"，不要只写在回答里）；他换了别的话题，就答他的话题，不写计划。'
+    '这一轮就按确认的条件写完整的 "plan"（计划写进 "plan"，不要只写在回答里）；确认的条件和记忆里不一样的（目标、器械、时间），在 memory 里用 update 改那一条；他换了别的话题，就答他的话题，不写计划。'
 )
 
 
@@ -126,6 +142,10 @@ def _body(task: str) -> str:
     """TASKS 里去掉开头那句"这一轮要……"，剩下的格式和要求。"""
     lines = TASKS[task].strip().splitlines()
     return "\n".join(lines[1:])
+
+
+# 这一轮不涉及训练时，计划和记录的写法不放进系统提示，只留这一句（§96）
+ACTIONS_SHORT = "（这一轮不涉及训练；要改计划、排计划或记训练时，先用 load_skill 装 plan-build 或 log-review，写法会一起给你。）"
 
 
 def actions_prompt(*, has_plan: bool, confirmed: bool, just_asked: bool = False) -> str:
@@ -187,15 +207,20 @@ async def respond(
     images: Sequence[Mapping[str, Any]] = (),
     known: Mapping[str, Item] | None = None,
     memory_block: str | None = None,
+    training: bool = True,
+    with_case: bool = True,
 ) -> Consultation:
-    """单 Agent 作答一轮。出错时返回不发言的意见，不向外抛（和专业角色一样）。"""
+    """单 Agent 作答一轮。出错时返回不发言的意见，不向外抛（和专业角色一样）。
+    training：这一轮涉及训练才放计划和记录的写法；不涉及时装上训练类规程再补（§96）。"""
     flags = flags_of([x.key for x in case.risks], bool(case.injuries), case.readiness.level)
     domains = domains_of(skills)
     tools = "、".join(str(s["function"]["name"]) for s in toolbox.schemas()) or "（没有可用的工具）"
+    actions = actions_prompt(has_plan=has_plan, confirmed=confirmed, just_asked=just_asked)
+    toolbox.actions_held = "" if training else actions
     system = _PROMPT.format(
         framework=framework_for(),
         tools=tools,
-        actions=actions_prompt(has_plan=has_plan, confirmed=confirmed, just_asked=just_asked),
+        actions=actions if training else ACTIONS_SHORT,
         slots=slots_prompt(text, None),
         skills=prompt_of(skills, flags),
         catalog=catalog_any(),
@@ -206,13 +231,15 @@ async def respond(
         e for x in skills for r in x.refs_for(flags) if (e := toolbox.kb.get(r)) is not None
     )
     toolbox.adopt(
-        e for r in framework_refs(Role.GENERAL, flags) if (e := toolbox.kb.get(r)) is not None
+        e
+        for r in (*framework_refs(Role.GENERAL, flags), *flag_refs(flags))
+        if (e := toolbox.kb.get(r)) is not None
     )
     asked = _user_message(
         text,
         history,
         concerns,
-        personal.text() if personal else "",
+        personal.text() if personal and with_case else "",  # 闲聊不给数据（§98）
         memory_block
         if memory_block is not None
         else memory_text(known, today or date.today())
@@ -220,9 +247,10 @@ async def respond(
         else memory.shared()
         if memory is not None
         else "",
-        case=case.text(calcs=True),
+        case=case.text(calcs=True) if with_case else "",  # 闲聊不给档案（§98）
         note=note,
-        prefetched=toolbox.prefetch(text),
+        # 只装了基础规程时最多按字面预取 2 条资料；装了内容规程（自带依据）或什么都没装（闲聊）时不预取（§96）
+        prefetched=toolbox.prefetch(text, k=2 if skills and all(x.core for x in skills) else 0),
     )
     content: str | list[Any] = [{"type": "text", "text": asked}, *images] if images else asked
     messages: list[dict[str, Any]] = [

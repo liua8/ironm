@@ -20,9 +20,9 @@ from datetime import date, timedelta
 from typing import Any
 
 from ironm_agent.memory_extract import norm
-from ironm_agent.memory_store import CATEGORIES, Category, Change, Item, new_id, now
+from ironm_agent.memory_store import CATEGORIES, Category, Change, Item, absolute, new_id, now
 from ironm_agent.protools.movement import JOINT_NAMES
-from ironm_agent.training import Plan, WorkoutLog, weekday_name
+from ironm_agent.training import Plan, WorkoutLog
 
 PROFILE: tuple[str, ...] = (
     "goal",
@@ -64,6 +64,11 @@ def _md(d: date) -> str:
     return f"{d.month}月{d.day}日"
 
 
+def said(x: Item) -> str:
+    """交给模型的内容：存的"今天、昨天"按说的那天换成日期（§103，旧记忆不用改数据）。"""
+    return absolute(x.content, _day(x))
+
+
 def event_end(x: Item) -> date:
     """近况到哪天为止：写了就照写，没写按说的那天起 7 天。"""
     return x.until or _day(x) + timedelta(days=EVENT_DAYS)  # 和 memory_view.expired 一致
@@ -79,7 +84,7 @@ class Layers:
     asks: list[str] = field(default_factory=list)
 
     def text(self, today: date, summaries: Sequence[str] = ()) -> str:
-        head = f"今天是 {today.isoformat()}（{weekday_name(today.isoweekday())}）。"
+        """日期在档案里已经写了，这里不再重复（§96）。"""
         parts = [
             "用户画像（长期的情况；编号｜类别：内容（更新日期，来源）；带？的是推测，不当事实用，合适时问一句确认）：\n"
             + ("\n".join(self.profile) or "（还没有）"),
@@ -95,12 +100,10 @@ class Layers:
             parts.append(
                 "之前的会话（摘要，只用来接上话，不当成这次的问题）：\n" + "\n".join(summaries)
             )
-        return head + "\n\n" + "\n\n".join(parts)
+        return "\n\n".join(parts)
 
 
-def layers(
-    items: Sequence[Item], today: date, focus: Collection[str] | None = None
-) -> Layers:
+def layers(items: Sequence[Item], today: date, focus: Collection[str] | None = None) -> Layers:
     """把这个人的记忆分成画像、情景、该问的。被取代的不带；推测的只在画像里带"？"。
 
     focus 是这一轮的决定（train / plan / eat / recover / data）。None 表示没给决定，画像全带（旧行为）；
@@ -117,9 +120,11 @@ def layers(
         return h
 
     live = [x for x in items if x.status != "superseded"]
-    cats = set(PROFILE) if focus is None else set(ALWAYS) | {
-        c for f in focus for c in DECISION.get(f, ())
-    }
+    cats = (
+        set(PROFILE)
+        if focus is None
+        else set(ALWAYS) | {c for f in focus for c in DECISION.get(f, ())}
+    )
     for x in sorted((x for x in live if x.category in cats),
                     key=lambda x: (PROFILE.index(x.category), x.updated)):  # fmt: skip
         if x.status == "resolved" and x.category != "injury":
@@ -127,26 +132,26 @@ def layers(
         mark = "？" if x.status == "pending" else ""
         state = "（已好）" if x.status == "resolved" else ""
         src = "推测的" if x.status == "pending" else "你说的" if x.origin != "data" else "训练记录"
-        out.profile.append(f"{handle(x)}｜{CATEGORIES[x.category]}{state}：{x.content}{mark}"
+        out.profile.append(f"{handle(x)}｜{CATEGORIES[x.category]}{state}：{said(x)}{mark}"
                            f"（{_md(x.updated.astimezone().date())}，{src}）")  # fmt: skip
 
     for x in sorted((x for x in live if x.category == "event" and x.status == "active"), key=_day):
         end = event_end(x)
         if end >= today:
             until = f"，到{_md(end)}" if x.until else ""
-            out.episodes.append(f"{handle(x)}｜{x.content}（{_md(_day(x))}说的{until}）")
+            out.episodes.append(f"{handle(x)}｜{said(x)}（{_md(_day(x))}说的{until}）")
         elif (today - end).days <= ASK_GRACE:
             out.asks.append(
-                f"{handle(x)}｜「{x.content}」说到{_md(end)}为止，没听他说结束：可以问一句是不是结束了"
+                f"{handle(x)}｜「{said(x)}」说到{_md(end)}为止，没听他说结束：可以问一句是不是结束了"
             )
     advice = [x for x in live if x.category == "advice" and x.status == "active"]
     for x in sorted(advice, key=_day)[-ADVICE_KEEP:]:
-        out.episodes.append(f"{handle(x)}｜给过的建议：{x.content}（{_md(_day(x))}）")
+        out.episodes.append(f"{handle(x)}｜给过的建议：{said(x)}（{_md(_day(x))}）")
 
     due = [x for x in live if x.category == "followup" and x.status == "active" and x.until
            and x.until <= today and (today - x.until).days <= DUE_KEEP]  # fmt: skip
     for x in sorted(due, key=lambda x: x.until or today):
-        out.asks.append(f"{handle(x)}｜{x.content}（{_md(x.until or today)}到期）")
+        out.asks.append(f"{handle(x)}｜{said(x)}（{_md(x.until or today)}到期）")
     out.asks = out.asks[:ASK_MAX]
     return out
 
@@ -254,7 +259,7 @@ def search(
         "resolved": "（已结束）",
         "superseded": "（已被更新）",
     }
-    return "\n".join(f"{_md(_day(x))}｜{CATEGORIES[x.category]}：{x.content}{until(x)}{state.get(x.status, '')}"
+    return "\n".join(f"{_md(_day(x))}｜{CATEGORIES[x.category]}：{said(x)}{until(x)}{state.get(x.status, '')}"
                      for x in hits[:limit])  # fmt: skip
 
 

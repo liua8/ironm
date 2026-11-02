@@ -12,12 +12,13 @@ from ironm_agent.roles import EXPERTS, SPECS, Role
 from ironm_agent.skills import pick_any, prompt_of, skills
 from ironm_agent.tools import EXERCISES, Toolbox
 
-# §88 起讲内容的规程是 16 份文件夹规程（热身拉伸、坚持删掉，动作教学和体感讲解合成一份）
+# §88 起讲内容的规程是 16 份文件夹规程（热身拉伸、坚持删掉，动作教学和体感讲解合成一份）；
+# §101 起 14 份：按状态调整和生病期间合成今天练不练，恢复与睡眠并进恢复基础
 FIRST_BATCH = {
     Role.TRAINER: {"初次评估", "目标设定", "排训练计划", "有氧与体能", "动作教学",
-                   "记训练与单次复盘", "按状态调整", "进展与平台期", "中断后回归"},
+                   "记训练与单次复盘", "今天练不练", "进展与平台期", "中断后回归"},
     Role.NUTRITION: {"饮食方案", "补剂与用药"},
-    Role.RECOVERY: {"伤痛处理", "生病期间", "特殊人群", "恢复与睡眠"},
+    Role.RECOVERY: {"伤痛处理", "特殊人群"},
 }  # fmt: skip
 SHARED = {"数据与化验解读"}
 
@@ -27,7 +28,7 @@ def test_first_batch_is_there_and_every_number_has_a_source() -> None:
     for role, names in FIRST_BATCH.items():
         mine = [x for x in skills() if x.role == role]
         assert {x.name for x in mine} >= names
-        assert sum(x.default for x in mine) == 1, role
+        assert sum(x.default for x in mine) <= 1, role  # default 运行时已不用（§101）
     assert {x.name for x in skills() if x.shared} == SHARED
     assert len({x.name for x in skills()}) == len(skills())  # 名字不重复
     for x in skills():
@@ -55,7 +56,7 @@ def test_the_right_skills_are_loaded() -> None:
 
     assert "排训练计划" in names("增肌一周练几次比较好")
     assert "伤痛处理" in names("膝盖疼还能练腿吗")
-    assert names("今天练什么", frozenset({"poor"}))[1] == "按状态调整"  # 训练基础排最前
+    assert names("今天练什么", frozenset({"poor"}))[1] == "今天练不练"  # 训练基础排最前
     assert "饮食方案" in names("这顿多少热量", frozenset({"image"}))
     assert "有氧与体能" in names("跑步一周跑几次")
     assert "中断后回归" in names("停了一个月，好久没练了")
@@ -144,9 +145,9 @@ def test_every_skill_says_when_to_use_and_not() -> None:
         assert x.use, x.id
         assert all(n in names for n in re.findall(r"「([^」]+)」", x.not_for)), x.id
     text = catalog()
-    sleep = next(x for x in skills() if x.id == "recovery-sleep")
+    today = next(x for x in skills() if x.id == "readiness-adjust")
     assert (
-        sleep.use in text
-        and f"{sleep.use}；不用于：" in text
-        and "「数据与化验解读」" in sleep.not_for
+        today.use in text
+        and f"{today.use}；不用于：" in text
+        and "「伤痛处理」" in today.not_for
     )

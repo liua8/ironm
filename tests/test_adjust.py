@@ -624,28 +624,28 @@ def weights(per_week: float, start: float = 80.0, days: int = 28) -> tuple[tuple
 def test_goal_progress_predicts_date() -> None:
     w = weights(-0.5)  # 每周掉 0.5 公斤，现在 78.07
     g = Goal(75, TODAY + timedelta(days=60), TODAY - timedelta(days=27), start=80)
-    p = progress(g, w, weight_trend(w), TODAY)
+    p = progress(g, w, weight_trend(w, TODAY), TODAY)
     assert p["start"] == 80 and p["current"] == w[0][1] and p["target"] == 75
     pred = date.fromisoformat(p["predicted"])
     assert abs((pred - TODAY).days - round((w[0][1] - 75) / 0.5 * 7)) <= 1
     assert p["status"] == "on_track" and "预计" in p["message"]
-    late = progress(replace(g, by=TODAY + timedelta(days=14)), w, weight_trend(w), TODAY)
+    late = progress(replace(g, by=TODAY + timedelta(days=14)), w, weight_trend(w, TODAY), TODAY)
     assert late["status"] == "behind" and "晚约" in late["message"] and "1%" in late["pace"]
-    early = progress(replace(g, by=TODAY + timedelta(days=200)), w, weight_trend(w), TODAY)
+    early = progress(replace(g, by=TODAY + timedelta(days=200)), w, weight_trend(w, TODAY), TODAY)
     assert early["status"] == "ahead" and "由你决定" in early["message"]
-    wrong = progress(g, weights(0.5), weight_trend(weights(0.5)), TODAY)
+    wrong = progress(g, weights(0.5), weight_trend(weights(0.5), TODAY), TODAY)
     assert wrong["status"] == "wrong_way" and wrong["predicted"] is None
-    done = progress(replace(g, value=79), w, weight_trend(w), TODAY)
+    done = progress(replace(g, value=79), w, weight_trend(w, TODAY), TODAY)
     assert done["status"] == "reached"
 
 
 def test_goal_progress_says_what_is_missing() -> None:
     few = weights(-0.5, days=5)
     g = Goal(75, TODAY + timedelta(days=60), TODAY - timedelta(days=4))
-    p = progress(g, few, weight_trend(few), TODAY)
+    p = progress(g, few, weight_trend(few, TODAY), TODAY)
     assert p["predicted"] is None and "不够两周" in p["missing"] and "还缺" in p["missing"]
     assert p["start"] == few[-1][1]  # 设目标时没有起点：用设目标之后的第一次
-    none = progress(g, (), weight_trend(()), TODAY)
+    none = progress(g, (), weight_trend((), TODAY), TODAY)
     assert none["current"] is None and "称一次体重" in none["missing"]
 
 

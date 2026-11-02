@@ -449,6 +449,7 @@ def plan_templates(
     injured: Collection[str] = (),
     weekdays: Sequence[int] = (),
     name: str = "",
+    special: Collection[str] = (),
 ) -> Result:
     people = people_of(age)
     said: list[str] = []
@@ -499,7 +500,7 @@ def plan_templates(
             changes.insert(0, "这是一般人的标准方案：一般成年人没点名时默认用这一份")
         checked = check_plan(plan, goal=goal, novice=level in (None, "none", "lt6m"),
                              injured=injured, equipment=equipment, available_days=days,
-                             available_minutes=minutes)  # fmt: skip
+                             available_minutes=minutes, special=special)  # fmt: skip
         verdict = next((f.text for f in checked.findings if f.name == "计划检查"), "")
         findings.append(
             Finding(

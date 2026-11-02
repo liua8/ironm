@@ -26,6 +26,8 @@ CATALOG: tuple[Tool, ...] = (
     # ---- iron-m ----
     Tool("健身知识库", "iron-m", "search_knowledge", EXPERTS, "search_fitness_knowledge",
          note="对话里每个角色只查自己领域的资料"),
+    Tool("时间线", "iron-m", "timeline", frozenset({"general"}), personal=True,
+         note="生病、伤病和近期的事、说疼、训练、管家的调整按日期排在一起，只读（§97）"),
     Tool("联网搜索（白名单）", "iron-m", "search_web", frozenset({"general"}),
          note="知识库查不到时由管家决定联网查权威机构（§91）；配了 TAVILY_API_KEY 才有，结果标未审"),
     Tool("动作库", "iron-m", "search_exercises", frozenset({"trainer", "recovery", "general"}),

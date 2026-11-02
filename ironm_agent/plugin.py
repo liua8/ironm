@@ -138,6 +138,9 @@ from ironm_agent.session_summary import SHOW, Summary, SummaryStore, default_sum
 from ironm_agent.session_summary import due as summary_due
 from ironm_agent.skill_route import route as route_skills
 from ironm_agent.skills import pick_any, pick_routed
+from ironm_agent.special import flags as special_flags
+from ironm_agent.special import is_special
+from ironm_agent.special import rules_text as special_rules
 from ironm_agent.spoken import HELP, REFUSAL_NEEDS, RISK_NEEDS, URGENT, missing, say, urgent_needs
 from ironm_agent.tools import Evidence, Toolbox
 from ironm_agent.training import (
@@ -339,6 +342,7 @@ class IronMAgent:
         self._pain = pain  # 说疼的部位和日期（触发型调整用，默认用数据库里 iron-m 自己的表）
         self._illness = illness  # 生病记录（spec [2026-10-23] §46，默认用数据库里 iron-m 自己的表）
         self._coach_store: Any = None  # 管家的方案（§84 读"不用这样调"；None 用线上的，测试里换掉）
+        self._coach_cache: dict[str, tuple[date, Any]] = {}  # 同一轮只读一次管家方案（§97）
         self._web_search: Any = None  # 联网搜索（§91）；None 时按环境变量里的密钥配，测试里换成假的
         self._web_log: Any = None  # 联网查询的待审清单；None 用数据库里的
         self._goals = goals  # 目标体重和日期（排新计划前追问时带上，spec [2026-10-23] §55）
@@ -431,6 +435,7 @@ class IronMAgent:
             age=snapshot.profile.age(snapshot.today),
             profile=snapshot.profile,
             found=found,  # 这一轮已经认出的情况（§84），和档案里的指标解读一致
+            special=special_flags(snapshot.profile, case.risks, snapshot.today),  # §95
         )
 
     async def _read_weather(self, user_id: str) -> Weather | None:
@@ -590,6 +595,19 @@ class IronMAgent:
             )  # 首页今天的版本跟着变
         return state
 
+    async def _coach_state(self, user_id: str) -> Any:
+        """管家的当前方案（读不到当作没有）；同一轮读一次，每轮开始时清掉。"""
+        cached = self._coach_cache.get(user_id)
+        if cached is not None and cached[0] == date.today():
+            return cached[1]
+        try:
+            state = await (self._coach_store or default_coach_store()).get(user_id)
+        except Exception as e:
+            _log.info("coach state unavailable: error_type=%s", type(e).__name__)
+            state = None
+        self._coach_cache[user_id] = (date.today(), state)
+        return state
+
     async def _today_lines(
         self,
         user_id: str,
@@ -598,7 +616,8 @@ class IronMAgent:
         state: DayState | None,
         ill: list[Episode],
     ) -> list[str]:
-        """共享档案第一段"今天"：计划、打卡（带时间）、今天说过的状态、生病、最近说疼的部位。"""
+        """共享档案第一段"今天"：计划、打卡（带时间）、今天说过的状态、生病、最近说疼的部位，
+        以及"今天的版本"（和首页、管家消息同一份，§97）。"""
         session = plan.session_on(today) if plan is not None else None
         checkins: list[Any] = []
         pains: list[tuple[str, date]] = []
@@ -613,8 +632,16 @@ class IronMAgent:
         from ironm_agent.protools.movement import JOINT_NAMES
 
         named = [(JOINT_NAMES.get(p, p), d) for p, d in pains]
-        return day_lines(state, today=today, plan_name=session.name if session else None,
-                         checkins=checkins, illness=illness_line(ill, today), pains=named)  # fmt: skip
+        out = day_lines(state, today=today, plan_name=session.name if session else None,
+                        checkins=checkins, illness=illness_line(ill, today), pains=named)  # fmt: skip
+        coach = await self._coach_state(user_id)
+        item = coach.item("today") if coach is not None and coach.day == today else None
+        if item is not None:
+            out.append(
+                f"今天的版本（和首页、管家消息一致）：{item.title}"
+                + (f"（{item.why}）" if item.why else "")
+            )
+        return out
 
     async def _track_illness(self, user_id: str, text: str, run: dict[str, Any]) -> list[Episode]:
         """这句话里说生病了、或在回答"好了没"：更新生病记录（规则，不调用模型；spec [2026-10-23] §46）。
@@ -799,6 +826,21 @@ class IronMAgent:
             _log.warning("medical knowledge unavailable: error_type=%s", type(e).__name__)
             return None
 
+    def _timeline_tool(self, user_id: str, raw: Sequence[Any], today: date) -> dict[str, Any]:
+        """时间线（§97）：生病、伤病和近期的事、说疼、训练、管家的调整按日期排在一起，只读。"""
+        from ironm_agent import timeline
+
+        async def workouts(start: date) -> list[WorkoutLog]:
+            return [x.log for x in await self._training_store().workouts(user_id, start)]
+
+        async def changes() -> list[Any]:
+            return list(await (self._coach_store or default_coach_store()).history(user_id, 200))
+
+        run = timeline.tool(today, illness=lambda s: self._illness_store().since(user_id, s),
+                            memory=raw, pains=lambda s: self._pain_store().since(user_id, s),
+                            workouts=workouts, changes=changes)  # fmt: skip
+        return {timeline.SCHEMA["function"]["name"]: (timeline.SCHEMA, run)}
+
     def _web_tools(self, today: date) -> dict[str, Any]:
         """联网搜索（§91）：配了密钥才给管家；查询词和网址记进待审清单。"""
         from ironm_agent.web_search import SCHEMA, configured, default_log, web_tool
@@ -925,6 +967,7 @@ class IronMAgent:
     ) -> AsyncGenerator[dict[str, Any]]:
         # 1. 安全前置：判定只用规则。急症与红旗交给模型说，代码查必须说到的几点（停下、120 或就医、
         #    不给训练安排），没说到或模型失败时退回四段式固定回答（spec [2026-10-23] §86）；不读数据、不调工具
+        self._coach_cache.pop(user_id, None)  # 管家方案每轮重新读一次（§97）
         assessment = assess(text)
         refusals = default_refusals().detect(text)
         replies = _replies()
@@ -1089,6 +1132,7 @@ class IronMAgent:
             PREVIEWED_NOTE if previewed_now else "",
             f"他这句话说这些天没空：{busy}。挪训练不要挪到这些天。" if busy else "",
             files.note_for_experts(), checked_note,
+            special_rules(special_flags(snapshot.profile, case.risks, snapshot.today)),
             f"他问的里面有你不能做的（诊断、开药改药、治疗方案、替他叫急救）。开头用一句自己的话说明这部分不能做、"
             f"该找谁，意思是：{refused} 再说能帮他做的部分。" if refused else "",
             run.get("_provenance", ""),
@@ -1121,11 +1165,17 @@ class IronMAgent:
         if routed is not None:
             if routed.fit == "outside":  # 和健身无关的事（写周报）：新用户也不拉去评估
                 triggers.discard("new")
-            loaded = pick_routed(routed.skills, routed.domains, text, triggers, drop)
+            # 模型判断是打招呼、道谢、闲聊：不装规程（情况要求的也不装），也不给档案（§98）；
+            # 附了图片、新用户例外（照片要估算，新用户要开始初次评估）
+            chatting = routed.fit == "chat" and not triggers & {"image", "new"}
+            loaded = (
+                [] if chatting else pick_routed(routed.skills, routed.domains, text, triggers, drop)
+            )
             run.update(skills_by="route", skill_intent=routed.intent, skill_fit=routed.fit)
             if routed.dropped:
                 run["skills_dropped"] = routed.dropped
         else:  # 退回按关键词（都对不上时不按语义硬装，由 Agent 看目录自己装，§67）
+            chatting = False
             loaded = pick_any(text, triggers, drop=drop)
             run["skills_by"] = "rule"
         run["skills"] = {Role.GENERAL.value: [x.id for x in loaded]}
@@ -1153,7 +1203,7 @@ class IronMAgent:
             session_id=session_id, calcs=case.calcs, context=tools_ctx,
             meds=self._meds_source(), medical=self._medical_source(),
             extra={**EXTRA_TOOLS, RECALL: (RECALL_SCHEMA, recall_tool(raw, snapshot.today)),
-                   **self._web_tools(snapshot.today)},
+                   **self._web_tools(snapshot.today), **self._timeline_tool(user_id, raw, snapshot.today)},
         )  # fmt: skip
         if checked is not None:
             toolbox.evidence.absorb(checked)
@@ -1166,10 +1216,18 @@ class IronMAgent:
             COACH_NAME,
             "理解问题、查资料和数据、作答" + (f"（规程：{using}）" if using else ""),
         )
+        # 这一轮涉及训练才把计划和记录的写法放进系统提示（§96）
+        on_training = (any(x.role == Role.TRAINER and x.id != "move-coach" for x in loaded)  # 只问动作不用
+                       or job_hint is not None
+                       or confirmed_now or previewed_now or training_ask
+                       or bool(PLAN_REQUEST.search(text)))  # fmt: skip
+        run["actions_prompt"] = on_training
+        run["chat_light"] = chatting  # §98：闲聊只给记忆和历史
         c = await respond(
             text, history, concerns_of(text), toolbox, llm, personal, recall, case=case, skills=loaded,
-            note=note, has_plan=plan is not None, confirmed=confirmed, just_asked=confirmed_now,
-            today=snapshot.today,
+            note="" if chatting else note, with_case=not chatting,
+            has_plan=plan is not None, confirmed=confirmed, just_asked=confirmed_now,
+            today=snapshot.today, training=on_training,
             images=[x.part() for x in files.images], known=known, memory_block=memory_block,
         )  # fmt: skip
         yield finished("agent", consultation_summary(c), ok=c.status != "failed")
@@ -1392,6 +1450,16 @@ class IronMAgent:
                     new, raw = await self._check_plan(
                         new, raw, text, lead, current, tools, ctx, llm, case, run
                     )
+                    # 特殊人群的硬规则（§95）：改一次还没改掉，不出预览，说明哪条不适合
+                    left = [
+                        x for x in check_plan(new, special=tools.special).problems if is_special(x)
+                    ]
+                    if left:
+                        run.update(preview="blocked_special", special=sorted(tools.special))
+                        run["_plan_note"] = ("这份计划有不适合你现在情况的地方，我先不给你出预览：\n"
+                                             + "\n".join(f"- {plain(x)}" for x in left)
+                                             + "\n可以换个说法让我重排，或者先问问医生能练到什么强度。")  # fmt: skip
+                        return []
                 changes = str((raw or {}).get("changes") or "")[:120]
                 store = self._training_store()
                 draft = await store.add_draft(user_id, "plan", plan_content(new, changes))
@@ -1462,7 +1530,7 @@ class IronMAgent:
 
         def review(p: Plan) -> tuple[str, ...]:
             return check_plan(p, current=current, goal=tools.goal, injured=tools.injured,
-                              equipment=tools.equipment).problems  # fmt: skip
+                              equipment=tools.equipment, special=tools.special).problems  # fmt: skip
 
         # 只看这次改动新带来的问题（原计划本来就有的不算）；有就不出预览（§48）
         had = {_no_day(x) for x in review(base)}
@@ -1522,6 +1590,7 @@ class IronMAgent:
                 injured=tools.injured,
                 equipment=tools.equipment,
                 max_changed_days=limit,
+                special=tools.special,
             ).problems
 
         problems = review(plan)
@@ -1569,12 +1638,7 @@ class IronMAgent:
         found = situations(snapshot.readings, snapshot.profile, today, logs=logs, illness=sick,
                            events=events)  # fmt: skip
         lines = [(f"看到的：{s.line()}", s.detail()) for s in found]
-        try:
-            store = self._coach_store or default_coach_store()
-            state = await store.get(user_id)
-        except Exception as e:
-            _log.info("coach state unavailable: error_type=%s", type(e).__name__)
-            state = None
+        state = await self._coach_state(user_id)
         review = state.review if state is not None else None
         if review is not None and review.day == today:
             lines += [(f"管家今天已经调整：{d.title}（原因：{d.why}）", f"{d.title}。原因：{d.why}。依据：{d.basis}")

@@ -334,6 +334,6 @@ def test_vague_unwell_reaches_the_model_as_a_light_day_without_dates(monkeypatch
 def test_sick_skill_takes_the_request_first_when_unwell_is_vague() -> None:
     from ironm_agent.skills import skills
 
-    body = next(x for x in skills() if x.id == "sick-days").body
+    body = next(x for x in skills() if x.id == "readiness-adjust").body  # 生病期间并进今天练不练（§101）
     assert '只说"有点不舒服、难受"、没说哪里' in body and "再问一句哪里不舒服" in body
     assert "没问怎么办：关心一句，问哪里不舒服，不主动给做法和安排" in body

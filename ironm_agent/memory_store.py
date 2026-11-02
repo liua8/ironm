@@ -8,10 +8,11 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal, Protocol, cast
 
 _log = logging.getLogger("ironm_agent.memory_store")
@@ -54,6 +55,31 @@ ORIGINS: dict[Origin, str] = {
     "data": "训练记录",
     "system": "系统",
 }
+
+
+# 只说一天的相对说法（§103）：记忆里写成日期，过几天再读不会当成那天
+_RELATIVE = re.compile(
+    r"今天早上|今天晚上|今天|今日|今早|今晨|今晚|昨天晚上|昨天|昨日|昨晚|前天|明天|明早|明晚|后天"
+)
+_SHIFT = {"今": 0, "昨": -1, "前": -2, "明": 1, "后": 2}
+
+
+def absolute(text: str, day: date) -> str:
+    """把"今天、昨晚、明天……"换成具体日期（day 是说这句话的那天）。"""
+
+    def one(m: re.Match[str]) -> str:
+        w = m.group(0)
+        d = day + timedelta(days=_SHIFT[w[0]])
+        part = (
+            "早上"
+            if w[-1] in "早晨" or w.endswith("早上")
+            else "晚上"
+            if w[-1] in "晚" or w.endswith("晚上")
+            else ""
+        )
+        return f"{d.month}月{d.day}日{part}"
+
+    return _RELATIVE.sub(one, text)
 
 
 def now() -> datetime:

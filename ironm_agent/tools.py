@@ -247,6 +247,7 @@ class Toolbox:
         self.spec = spec
         # 单 Agent 另加的工具（再装一份 Skill、查 App 用法，spec [2026-10-23] §67）：名字 → (说明, 执行)
         self.extra: dict[str, tuple[dict[str, Any], ExtraTool]] = dict(extra or {})
+        self.actions_held = ""  # 这一轮没放进系统提示的计划和记录写法，装训练类规程时补上（§96）
         self.flags: frozenset[str] = (
             frozenset()
         )  # 这个人的少见情况：再装基础规程时带上对应的规则（§74）
@@ -306,7 +307,9 @@ class Toolbox:
     def prefetch(self, query: str, k: int = 3) -> str:
         """作答前先按问题从本领域依据库取出最相关的几条（spec [2026-10-23] §7），不算一次查询；
         能查动作库的角色，问题里点到名字的动作也一起取出来。"""
-        found = self.kb.search(query, self.spec.kb_domains, k=k) if self.spec.kb_domains else []
+        found = (
+            self.kb.search(query, self.spec.kb_domains, k=k) if self.spec.kb_domains and k else []
+        )
         if self.library:
             from ironm_agent.exercises import named_in
 

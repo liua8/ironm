@@ -277,29 +277,32 @@ class AdjustIn(BaseModel):
 
 async def _situation(
     user_id: str, memory: MemoryStore, illness: Any
-) -> tuple[str, list[str], list[str], str]:
-    """今天的身体状态、记着的伤病、在生病没有、管家今天的调整；读不到的当作没有。"""
-    from ironm_agent.casefile import readiness
+) -> tuple[str, list[str], list[str], str, frozenset[str]]:
+    """今天的身体状态、记着的伤病、在生病没有、管家今天的调整、特殊情况（§95）；读不到的当作没有。"""
+    from ironm_agent.casefile import readiness, risks
     from ironm_agent.illness import active
+    from ironm_agent.special import flags
     from ironm_agent.web_more import _episodes, _web
 
     today = date.today()
     state = ""
     try:
+        items = await memory.items(user_id)
+    except Exception:
+        items = []
+    injuries = [x.content for x in items if x.category == "injury" and x.status == "active"]
+    special: frozenset[str] = frozenset()
+    try:
         snap = await _web().snapshot_for(user_id)
         state = readiness(snap.readings, "", today).line()
+        special = flags(snap.profile, risks(snap.readings, items, today), today)
     except Exception as e:
         _log.info("live adjust snapshot unavailable: error_type=%s", type(e).__name__)
-    try:
-        injuries = [x.content for x in await memory.items(user_id)
-                    if x.category == "injury" and x.status == "active"]  # fmt: skip
-    except Exception:
-        injuries = []
     try:
         sick = [e.what() for e in active(await _episodes(illness, user_id, today), today)]
     except Exception:
         sick = []
-    return state, injuries, sick, await coach_today(user_id)
+    return state, injuries, sick, await coach_today(user_id), special
 
 
 async def coach_today(user_id: str) -> str:
@@ -343,11 +346,15 @@ async def adjust_live(
     if target is not None and target >= len(live.items):
         raise HTTPException(422, "没有这个动作")
     plan, logs = await _context(user_id, store)
-    state, injuries, sick, coach = await _situation(user_id, memory, illness)
+    state, injuries, sick, coach, special = await _situation(user_id, memory, illness)
+    from ironm_agent.special import rules_text
+
     facts = context_lines(live, target, body.said, state=state, injuries=injuries, illness=sick,
                           coach=coach, logs=logs)  # fmt: skip
+    if rule := rules_text(special):
+        facts += "\n" + rule
     got = await adjust(spoken.default_llm(), live, body.said, target, facts, plan=plan, logs=logs,
-                       rests=await lives.rests(user_id))  # fmt: skip
+                       rests=await lives.rests(user_id), special=special)  # fmt: skip
     if got.kinds:
         live = got.live.model_copy(update={"updated": now})
         await lives.save(user_id, live)

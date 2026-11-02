@@ -68,34 +68,34 @@ def test_protein_range_by_goal() -> None:
 
 def test_weight_trend_slope_and_confidence() -> None:
     falling = days([70 - 0.03 * i for i in range(28)])  # 每天 −0.03 → 每周 −0.21
-    t = m.weight_trend(falling)
+    t = m.weight_trend(falling, END)
     assert t.value == -0.21 and "在下降" in t.text
     flat = days([70, 70.4, 69.8, 70.2, 69.9, 70.1, 70.0, 70.3, 69.7, 70.1] + [70.0] * 6)  # 跨 15 天
-    assert "不明显" in m.weight_trend(flat).text
+    assert "不明显" in m.weight_trend(flat, END).text
 
 
 def test_weight_trend_needs_enough_points_and_span() -> None:
     few = days([70, 69.9, 69.8])
-    assert m.weight_trend(few).value is None and "至少 6 次" in m.weight_trend(few).missing[0]
+    assert m.weight_trend(few, END).value is None and "至少 6 次" in m.weight_trend(few, END).missing[0]
 
 
 def test_weekly_weighing_widens_the_window() -> None:
     # 一周称一次：4 周只有 4 次，放宽到 8 周（8 次）
     weekly = tuple((END - timedelta(days=7 * i), 70.0 - 0.1 * (7 - i)) for i in range(8))
-    t = m.weight_trend(weekly)
+    t = m.weight_trend(weekly, END)
     assert t.value is not None and "最近 8 周" in t.text
 
 
 def test_resting_hr_against_own_baseline() -> None:
     steady = days([58.0] * 50 + [57, 59] * 5)
-    assert "正常波动范围内" in m.resting_hr(steady).text
+    assert "正常波动范围内" in m.resting_hr(steady, END).text
     rising = days([56, 57, 58, 57, 56, 58, 57] * 7 + [66] * 7)
-    r = m.resting_hr(rising)
+    r = m.resting_hr(rising, END)
     assert r.tone == "attention" and "明显高于" in r.text
 
 
 def test_baseline_too_short_gives_average_without_judgement() -> None:
-    r = m.resting_hr(days([58.0] * 10))
+    r = m.resting_hr(days([58.0] * 10), END)
     assert r.value == 58.0 and "暂不比较" in r.text and r.tone == "neutral"
 
 
@@ -108,13 +108,13 @@ def test_hrv_algorithms_stay_separate() -> None:
 
 
 def test_steps_reference_depends_on_age() -> None:
-    assert "8000–10000" in m.steps(days([9000.0] * 7), 34).text
-    assert "6000–8000" in m.steps(days([7000.0] * 7), 65).text
+    assert "8000–10000" in m.steps(days([9000.0] * 7), 34, END).text
+    assert "6000–8000" in m.steps(days([7000.0] * 7), 65, END).text
 
 
 def test_sleep_and_blood_pressure() -> None:
-    s = m.sleep(days([6.5, 7.2, 6.8, 7.5, 6.0, 7.0, 6.9]))
-    assert s.value == 6.8 and "4 天不足 7 小时" in s.text and s.tone == "attention"
+    s = m.sleep(days([6.5, 7.2, 6.8, 7.5, 6.0, 7.0, 6.9]), END)
+    assert s.value == 6.8 and "4 晚不足 7 小时" in s.text and s.tone == "attention"
     bp = m.blood_pressure((END, 128.0), (END, 82.0))
     assert "正常高值" in bp.text and "不作诊断" in bp.text
     assert "≥ 140/90" in m.blood_pressure((END, 142.0), (END, 85.0)).text
@@ -143,16 +143,16 @@ def test_cards_get_a_short_conclusion_and_display_value() -> None:
     assert (bp.brief, bp.display) == ("正常", "112/71")
     assert m.blood_pressure((END, 145), (END, 85)).brief == "偏高"
     flat = days([69.2, 69.4, 69.1, 69.3, 69.2, 69.0, 69.3] * 3)
-    assert m.weight_trend(flat).brief == "基本持平"
+    assert m.weight_trend(flat, END).brief == "基本持平"
     falling = days([71 - 0.07 * i for i in range(28)])
-    assert m.weight_trend(falling).brief == "在下降"
+    assert m.weight_trend(falling, END).brief == "在下降"
     protein = m.protein_target((END, 69.2), m.Profile(goal="fat_loss"))
     assert (protein.display, protein.brief) == ("111–138", "减脂")
     assert (
-        m.steps(days([9000] * 7), 31).brief == "达标" and m.sleep(days([6.0] * 7)).brief == "偏少"
+        m.steps(days([9000] * 7), 31, END).brief == "达标" and m.sleep(days([6.0] * 7), END).brief == "偏少"
     )
-    calm = m.resting_hr(days([56.0, 57.0] * 35))
+    calm = m.resting_hr(days([56.0, 57.0] * 35), END)
     assert calm.brief == "正常波动"
-    tired = m.resting_hr(days([56.0, 57.0] * 30 + [63.0] * 7))
+    tired = m.resting_hr(days([56.0, 57.0] * 30 + [63.0] * 7), END)
     assert (tired.brief, tired.tone) == ("明显偏高", "attention")
-    assert m.resting_hr(days([56.0] * 10)).brief == "基线积累中"
+    assert m.resting_hr(days([56.0] * 10), END).brief == "基线积累中"

@@ -50,6 +50,7 @@ class ToolContext:
     found: tuple[Any, ...] | None = (
         None  # 这一轮认出的情况（§84，对话里已经算好；None 时工具自己算）
     )
+    special: frozenset[str] = frozenset()  # 特殊人群（§95）：计划检查按硬规则查
     _cache: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -68,6 +69,7 @@ class ToolContext:
         age: int | None = None,
         profile: Any = None,
         found: Sequence[Any] | None = None,
+        special: Iterable[str] = (),
     ) -> ToolContext:
         return cls(
             today,
@@ -82,6 +84,7 @@ class ToolContext:
             age,
             profile,
             tuple(found) if found is not None else None,
+            frozenset(special),
         )
 
     async def stored_plan(self) -> StoredPlan | None:
@@ -165,6 +168,7 @@ async def _check(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
         equipment=ctx.equipment,
         available_days=_int(args, "available_days"),
         available_minutes=_int(args, "available_minutes"),
+        special=ctx.special,
     )
 
 
@@ -189,6 +193,7 @@ async def _templates(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
         injured=ctx.injured,
         weekdays=weekdays,
         name=str(args.get("name") or "").strip(),
+        special=ctx.special,
     )
 
 

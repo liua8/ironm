@@ -11,7 +11,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
-from ironm_agent.memory_store import CATEGORIES, Category, Item, now
+from ironm_agent.memory_store import CATEGORIES, Category, Item, absolute, now
 
 EVENT_DAYS = (
     7  # 没写到哪天为止的近期事件，多少天后不再用于回答（spec [2026-10-23] §73，原来 14 天）
@@ -72,7 +72,7 @@ def _line(item: Item) -> str:
     if item.status == "resolved":
         label += "（已解决）"
     when = f"（{_day(item)}说的{until_text(item)}）" if item.category == "event" else ""
-    return f"- {label}：{item.content}{when}"
+    return f"- {label}：{absolute(item.content, item.created.astimezone().date())}{when}"  # §103
 
 
 @dataclass(frozen=True)

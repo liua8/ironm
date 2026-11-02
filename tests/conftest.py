@@ -44,3 +44,15 @@ def no_real_model_for_spoken(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
     monkeypatch.setattr(spoken, "default_llm", lambda: Down())
     yield
+
+
+@pytest.fixture(autouse=True)
+def no_coach_review_in_web(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """首页"今天的版本"读管家今天的复盘（spec [2026-10-23] §97）：测试里默认没有，不连数据库；要测的自己换掉。"""
+    from ironm_agent import web_more
+
+    async def none(_: str) -> None:
+        return None
+
+    monkeypatch.setattr(web_more, "review_today", none)
+    yield

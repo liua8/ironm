@@ -55,7 +55,7 @@ def test_injury_rules_show_only_when_injured(monkeypatch: Any) -> None:
 
 def test_agent_can_load_a_core_skill_and_cite_it(monkeypatch: Any) -> None:
     def answer(system: str, user: str, results: list[str]) -> Reply:
-        assert "rest-core 恢复基础" in system  # 目录里有基础规程
+        assert "rest-core（恢复基础）" in system  # 目录里有基础规程
         if not results:
             return call(LOAD_SKILL, id="rest-core")
         assert "【恢复基础】" in results[0] and "思考顺序：分类" in results[0]
