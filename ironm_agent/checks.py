@@ -19,12 +19,12 @@ from ironm_agent.kb import Entry
 from ironm_agent.numbers import traced, written_numbers
 
 EXPERIENCE = "〔经验〕"
-KB_REF = re.compile(r"〔(K\d{2,3})〕")
+KB_REF = re.compile(r"〔(K\d{2,4})〕")
 CALC_REF = re.compile(r"〔(C\d{1,2})〕")
-ANY_REF = re.compile(r"〔(?:K\d{2,3}|C\d{1,2}|经验)〕")
+ANY_REF = re.compile(r"〔(?:K\d{2,4}|C\d{1,2}|经验)〕")
 _STATEMENT = re.compile(r"<statement>.*?</statement>", re.S)
 # 句子的结尾：句号、问号、叹号、分号、换行；紧跟在结尾后面的出处标记仍属于前一句
-_SENTENCE = re.compile(r"[^。！？；\n]*(?:[。！？；\n]|$)(?:[ \t]*〔(?:K\d{2,3}|C\d{1,2}|经验)〕)*")
+_SENTENCE = re.compile(r"[^。！？；\n]*(?:[。！？；\n]|$)(?:[ \t]*〔(?:K\d{2,4}|C\d{1,2}|经验)〕)*")
 _END = re.compile(r"([。！？；]?)(\s*)$")
 
 
@@ -274,8 +274,12 @@ def merge_echoes(text: str) -> str:
     return _ECHO.sub(fix, text)
 
 
+# 其他内部编号（记忆条目〔m20〕、数据行〔r3〕等）也不给用户看
+_ANY_MARK = re.compile(r"〔[^〔〕\n]{1,12}〕")
+
+
 def plain(text: str) -> str:
-    """给用户看的正文：去掉出处标记和数据引用的标签，只留话本身。"""
-    out = _STATEMENT_TAG.sub("", _CITE.sub("", ANY_REF.sub("", text)))
+    """给用户看的正文：去掉出处标记、内部编号和数据引用的标签，只留话本身。"""
+    out = _STATEMENT_TAG.sub("", _CITE.sub("", _ANY_MARK.sub("", ANY_REF.sub("", text))))
     out = _SPACE_BEFORE_PUNCT.sub(r"\1", out).replace("（）", "").replace("()", "")
     return _LOOSE_PUNCT.sub(lambda m: m.group(1) or m.group(2) or m.group(3), out).strip()

@@ -347,6 +347,7 @@ class CaseFile:
     today: date | None = None
     weather: str = ""  # 现在的天气与对训练的影响（spec [2026-10-23] §13；取不到时为空）
     day: tuple[str, ...] = ()  # 今日状态（spec [2026-10-23] §54）：打卡、口头说的状态、生病、说疼
+    insights: tuple[tuple[str, str], ...] = ()  # 指标解读（§84）：(编号, 一句话)，依据在 calcs 里
 
     def text(self, *, calcs: bool = True) -> str:
         lines = [
@@ -368,6 +369,11 @@ class CaseFile:
         lines.append(
             f"- {self.readiness.line()}{ref}（只在安排今天的训练或问恢复时用；状态好时不用特意说）"
         )
+        if self.insights:  # 读懂指标趋势（§84）：两种比较之外，认出的情况、可能的原因和已经做的调整
+            lines.append(
+                "- 指标解读（代码算的事实，和管家今天已经做的调整；问到数据、状态、为什么这样调时用，只说可能有关、不说成因果）："
+            )
+            lines += [f"  [{cid}] {line}" for cid, line in self.insights]
         if self.risks:
             lines.append(
                 "- 风险（系统已经在回答开头提醒过，你不用再提，但建议必须符合它）："
@@ -411,7 +417,9 @@ def build(
     illness: tuple[Level, str] | None = None,
     day: Sequence[str] = (),
     earlier: Sequence[tuple[Level, str]] = (),
+    insights: Sequence[tuple[str, str]] = (),
 ) -> CaseFile:
+    """insights：指标解读（§84），每条是 (给角色看的一句话, 追问依据时讲的详细说法)。"""
     p, today = snapshot.profile, snapshot.today
     metrics = list(snapshot.metrics)
     calcs: dict[str, str] = {}
@@ -448,6 +456,11 @@ def build(
     if plan:
         plan_id = f"C{len(metrics) + 2}"
         calcs[plan_id] = "计划与训练记录：" + "；".join(plan)
+    found: list[tuple[str, str]] = []
+    for i, (line, detail) in enumerate(insights):
+        cid = f"C{len(metrics) + 3 + i}"
+        calcs[cid] = f"指标解读：{detail}"
+        found.append((cid, line))
     return CaseFile(
         basics=basics,
         limits=limits,
@@ -463,6 +476,7 @@ def build(
         plan_id=plan_id,
         today=today,
         day=tuple(day),
+        insights=tuple(found),
     )
 
 

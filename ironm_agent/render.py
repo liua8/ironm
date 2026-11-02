@@ -93,8 +93,20 @@ def sources_text(composed: Composed) -> str:
 # ---- 预览卡片（spec [2026-10-23] §9）：一对"工具调用 / 结果"，id 以 card- 开头，网页显示成可以确认的卡片 ----
 
 
+def _no_refs(v: Any) -> Any:
+    """卡片上的文字不带出处标记（模型写的"改了什么"等）。"""
+    if isinstance(v, str):
+        return plain(v)
+    if isinstance(v, list):
+        return [_no_refs(x) for x in v]
+    if isinstance(v, dict):
+        return {k: _no_refs(x) for k, x in v.items()}
+    return v
+
+
 def _card(draft: Draft, title: str, body: dict[str, Any]) -> list[dict[str, Any]]:
     cid = f"card-{draft.id}"
+    body = _no_refs(body)
     content = {
         "kind": draft.kind,
         "draft": draft.id,

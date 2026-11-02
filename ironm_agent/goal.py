@@ -36,6 +36,7 @@ class Goal:
     set_day: date
     start: float | None = None
     retest_day: date | None = None
+    celebrated: date | None = None  # 达到目标后第一次看到、放过彩带的那天（§93）
 
     def json(self) -> dict[str, Any]:
         return {
@@ -45,6 +46,7 @@ class Goal:
             "set_day": self.set_day.isoformat(),
             "start": self.start,
             "retest_day": (self.retest_day or self.set_day).isoformat(),
+            "celebrated": self.celebrated.isoformat() if self.celebrated else None,
         }
 
     @staticmethod
@@ -55,6 +57,7 @@ class Goal:
             date.fromisoformat(d["set_day"]),
             float(d["start"]) if d.get("start") is not None else None,
             date.fromisoformat(d["retest_day"]) if d.get("retest_day") else None,
+            date.fromisoformat(d["celebrated"]) if d.get("celebrated") else None,
         )
 
 
@@ -92,7 +95,15 @@ def progress(
         "missing": "",
         "pace": "",
         "retest": retest(goal, today),
+        "percent": None,  # 从起点到目标完成了百分之几（§93）
+        "changed": None,  # 从起点到现在变了多少公斤（负数是减了）
+        "celebrate": False,  # 达到目标、还没庆祝过
     }
+    if current is not None and start is not None:
+        out["changed"] = round(current - start, 1)
+        span = goal.value - start
+        if span:
+            out["percent"] = max(0, min(100, round((current - start) / span * 100)))
     if current is None:
         out["missing"] = "还没有体重记录：称一次体重后才能算进度。"
         return out
@@ -101,6 +112,8 @@ def progress(
     if abs(need) <= CLOSE or not toward:
         out["status"] = "reached"
         out["message"] = f"已经达到目标体重 {_g(goal.value)} 公斤：可以设一个新目标，或者转为保持。"
+        out["percent"] = 100 if out["percent"] is not None else None
+        out["celebrate"] = goal.celebrated is None
         return out
     days_left = (goal.by - today).days
     if days_left > 0:

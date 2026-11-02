@@ -62,5 +62,6 @@ def test_no_light_theme_leftovers() -> None:
     whites = [
         ln.split("{")[0].strip() for ln in CSS.splitlines() if re.search(r"#fff\b|#ffffff", ln)
     ]
-    assert whites == [".move-cover .play", ".move-cover .move-img", ".move-frames img", ".tier-item img"]
+    assert whites == [".move-cover .play", ".move-cover .move-img", ".move-frames img", ".tier-item img",
+                      "img.rk-pic, .rk-hero-pic"]  # 排行榜配图底（§80，透明底的图）  # fmt: skip
     assert 'content="#0a0c0b"' in (WEB / "index.html").read_text()

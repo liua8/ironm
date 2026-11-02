@@ -1,8 +1,7 @@
 """跑问答考题（spec [2026-10-23] §1）：每道题交给 iron-m 的 Agent 作答，规则判分，再请模型评委打分。
 
 用真实模型（config/models.yaml，密钥从 .env 读）；健康数据、档案、记忆、计划都用考题里虚构的人，不连数据库：
-    .venv/bin/python evals/qa/run.py                   # 正式版（多 Agent），全部考题，带评委
-    .venv/bin/python evals/qa/run.py --mode single     # 单 Agent 对照组
+    .venv/bin/python evals/qa/run.py                   # 全部考题，带评委（多 Agent 已删，§87）
     .venv/bin/python evals/qa/run.py S01 K05 M02 -v    # 只跑几道，打印回答
     .venv/bin/python evals/qa/run.py --no-judge        # 只做规则判分
 
@@ -210,7 +209,6 @@ async def run_case(
         earlier=earlier,
         sources=sources,
         remember=False,
-        mode=mode,  # type: ignore[arg-type]
         observe=seen.update,
         weather=no_weather,
         traces=TraceBook(),  # 运行框架的轨迹留在内存里，考试不写数据库
@@ -388,7 +386,7 @@ def markdown(label: str, mode: str, summary: Mapping[str, Any], results: Sequenc
 async def main() -> int:
     parser = argparse.ArgumentParser(description="跑问答考题")
     parser.add_argument("ids", nargs="*", help="只跑这几道（按编号）")
-    parser.add_argument("--mode", choices=["multi", "single"], default="multi")
+    parser.add_argument("--mode", choices=["single"], default="single")  # 多 Agent 已删（§87）
     parser.add_argument("--no-judge", action="store_true")
     parser.add_argument("--jobs", type=int, default=4, help="同时跑几道")
     parser.add_argument("--label", default="run", help="报告文件名里的标签")

@@ -6,7 +6,7 @@ import asyncio
 from datetime import date, timedelta
 
 from ironm_agent.exercises import library
-from ironm_agent.frameworks import FRAMEWORKS, framework
+from ironm_agent.frameworks import framework
 from ironm_agent.metrics import Readings
 from ironm_agent.protools.movement import equipment_of, find, moves, substitutes
 from ironm_agent.protools.nutrition import nutrition
@@ -293,16 +293,23 @@ def test_tools_only_for_listed_roles() -> None:
     assert {t.name for t in tools_for("trainer")} == {
         "estimate_strength",
         "check_plan",
+        "plan_templates",
         "training_patterns",
         "find_substitutes",
         "trend_analysis",
+        "explain_trends",
     }
-    assert {t.name for t in tools_for("nutrition")} == {"nutrition_calc", "trend_analysis"}
+    assert {t.name for t in tools_for("nutrition")} == {
+        "nutrition_calc",
+        "trend_analysis",
+        "explain_trends",
+    }
     assert {t.name for t in tools_for("recovery")} == {
         "training_patterns",
         "find_substitutes",
         "pain_check",
         "trend_analysis",
+        "explain_trends",
     }
     assert not allowed("nutrition", "check_plan") and allowed("trainer", "check_plan")
     assert not allowed("trainer", "pain_check")  # 疼痛由康复恢复师判断
@@ -360,12 +367,15 @@ def test_registry_runs_with_context() -> None:
 # ---- 思考框架 ---------------------------------------------------------------------------------
 
 
-def test_each_role_has_its_own_framework() -> None:
-    for role in EXPERTS:
-        assert framework(role), role
-    assert "训练计划" in FRAMEWORKS[Role.TRAINER] and "check_plan" in FRAMEWORKS[Role.TRAINER]
-    assert all("trend_analysis" in FRAMEWORKS[r] for r in EXPERTS)  # 数据归各自领域解读
-    assert "pain_check" in FRAMEWORKS[Role.RECOVERY]
+def test_each_domain_core_names_its_tools() -> None:
+    """§87 起只有管家一个提示词；各领域的工具写在基础规程里，随规程装上。"""
+    from ironm_agent.skills import core_of
+
+    tools = {r: core.tools for r in EXPERTS if (core := core_of(r)) is not None}
+    assert "check_plan" in tools[Role.TRAINER] and "pain_check" in tools[Role.RECOVERY]
+    assert all(
+        x in framework(Role.GENERAL) for x in ("check_plan", "nutrition_calc", "trend_analysis")
+    )
 
 
 def test_check_plan_flags_unlimited_squat_for_knee() -> None:

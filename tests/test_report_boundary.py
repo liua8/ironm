@@ -2,10 +2,9 @@
 
 import pytest
 
-from ironm_agent.frameworks import framework
 from ironm_agent.roles import Role
 from ironm_agent.safety.refusals import detect
-from ironm_agent.skills import skills
+from ironm_agent.skills import core_of, skills
 
 
 @pytest.mark.parametrize(
@@ -31,8 +30,10 @@ def test_refusal_wording_and_role_rules() -> None:
 
     said = _replies().refusals["diagnosis"]
     assert said.startswith("我不能判断你是不是得了某种病") and "解读" not in said and "医生" in said
-    lab = next(x for x in skills() if x.name == "化验指标怎么看")
-    for text in (framework(Role.RECOVERY), "\n".join(lab.rules)):
+    lab = next(x for x in skills() if x.name == "数据与化验解读")
+    core = core_of(Role.RECOVERY)
+    assert core is not None
+    for text in ("\n".join(core.rules), lab.body):
         assert "不给健康意见" in text and "问医生" in text
 
 
@@ -47,16 +48,17 @@ def test_general_words_count_as_asking_about_records() -> None:
 
 
 def test_routed_pain_skills_are_dropped_on_data_questions() -> None:
-    """问自己的数据时，路由挑的伤痛、减量规程不装（记忆里的伤病照样写在共享档案里）。"""
-    from ironm_agent.skills import choose
+    """问自己的数据时，选规程的模型挑的伤痛、减量规程不装（记忆里的伤病照样写在共享档案里）。"""
+    from ironm_agent.skills import by_id, pick_routed
 
-    got, _ = choose(Role.RECOVERY, "帮我解读我的一些健康指标", {"lab", "metric"},
-                    routed=["rest-pain", "rest-return"], drop={"injury", "poor"})  # fmt: skip
-    ids = [x.id for x in got if not x.style]
-    assert ids[:2] == ["data-trend", "data-labs"] or set(ids[:2]) == {"data-trend", "data-labs"}
-    assert "rest-pain" not in ids and "rest-return" not in ids
-    kept, _ = choose(Role.RECOVERY, "膝盖疼还能练吗", {"injury"}, routed=["rest-pain"])
-    assert "rest-pain" in [x.id for x in kept]
+    pain = [x for i in ("pain-injury", "comeback") if (x := by_id(i)) is not None]
+    got = pick_routed(pain, (), "帮我解读我的一些健康指标", {"lab", "metric"},
+                      drop={"injury", "poor"})  # fmt: skip
+    ids = [x.id for x in got if not x.style and not x.core]
+    assert ids[0] == "data-read"
+    assert "pain-injury" not in ids
+    kept = pick_routed(pain[:1], (), "膝盖疼还能练吗", {"injury"})
+    assert "pain-injury" in [x.id for x in kept]
 
 
 @pytest.mark.parametrize(

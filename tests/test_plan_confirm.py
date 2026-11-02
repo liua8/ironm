@@ -9,7 +9,7 @@ from ironm_agent.goal import Goal, GoalBook
 from ironm_agent.metrics import Profile
 from tests.test_plan_ops import Editor, _seeded
 from tests.test_plugin import agent, text_of
-from tests.test_turn_flow import Team, book, run, snapshot_of
+from tests.test_turn_flow import Coach, book, run, snapshot_of
 
 
 def _with_goal(a: Any) -> Any:
@@ -23,15 +23,20 @@ def _card(blocks: list[dict[str, Any]]) -> bool:
     return any(str(b.get("id", "")).startswith("card-") for b in blocks)
 
 
+ASK = {"answer": "好，先确认一下条件。", "action": "new_plan"}  # 只说要排新计划，没列出五项
+
+
 def test_asking_for_a_plan_with_a_plan_confirms_first(monkeypatch: Any) -> None:
-    """需求 1–3：已有计划、记忆里有时间和器械，说"给我一份计划"：先确认五项，不出预览、不调用模型。"""
-    t = Team("trainer")
+    """需求 1–3：已有计划、记忆里有时间和器械，说"给我一份计划"：先确认五项，不出预览；
+    管家没把条件列好时退回系统列的五项（§86）。"""
+    t = Coach(**ASK)
     a, _ = _seeded(t, monkeypatch)
     a._memory = book(("equipment", "家里一对可调哑铃"), ("schedule", "工作日晚上最多 45 分钟"))
     _with_goal(a)
     blocks, seen = run(a, "我想要更好的减重，给我一份计划吗")
     text = text_of(blocks)
-    assert seen["path"] == "clarify" and t.stages == [] and not _card(blocks)
+    assert seen["path"] == "clarify" and seen["clarify_by"] == "fixed" and not _card(blocks)
+    assert t.stages.count("expert") == 1  # 只问不排：不补写计划
     assert HEAD in text and CONFIRM in text
     for item in ("①目标", "②场景", "③器械", "④时间", "⑤伤病"):
         assert item in text
@@ -40,42 +45,35 @@ def test_asking_for_a_plan_with_a_plan_confirms_first(monkeypatch: Any) -> None:
 
 
 def test_confirmed_conditions_build_a_new_plan_with_the_goal(monkeypatch: Any) -> None:
-    """回"按这个排"：请训练教练排新计划（不走改动套用），说明里带上目标的数和日期。"""
-    t = Team("trainer")
-    seen_by_trainer: list[str] = []
-    record = t.__call__
-
-    def spy(stage: Any, messages: Any, tools: bool) -> Any:
-        if stage == "expert":
-            seen_by_trainer.append(str(messages[1]["content"]))
-        return record(stage, messages, tools)
-
-    a, _ = _seeded(spy, monkeypatch)
+    """回"按这个排"：排新计划（不走改动套用），交给管家的要求里带上目标的数和日期。"""
+    t = Coach(**ASK)
+    a, _ = _seeded(t, monkeypatch)
     _with_goal(a)
     first, _ = run(a, "我要重新定计划")
+    assert HEAD in text_of(first)
 
     async def asked(*_: str) -> list[str]:
         return ["用户：我要重新定计划", "教练（要点）：" + text_of(first)[:120]]
 
     a._history = asked
+    t.extra = {}
     _, seen = run(a, "按这个排")
-    assert seen["path"] == "answer" and seen["roles"][0] == "trainer"
-    assert "plan_ops" not in seen
-    said = seen_by_trainer[0]
+    assert seen["path"] == "answer" and seen["task"] == "plan" and "plan_ops" not in seen
+    said = t.seen[1]  # 这一轮作答时收到的（之后补写计划那次另算）
     assert CONFIRMED_NOTE[:20] in said and "65 公斤" in said and "目标的数和日期照写" in said
 
 
 def test_one_spot_edit_is_not_confirmed(monkeypatch: Any) -> None:
     """ "周三挪到周四"：不确认，照旧按改动套用。"""
-    t = Team("trainer")
+    t = Editor([{"kind": "move", "day": 3, "to_day": 4, "why": "你要求的"}])
     a, _ = _seeded(t, monkeypatch)
     blocks, seen = run(a, "把周三挪到周四")
-    assert seen["plan_ops"]["by"] == "rule" and HEAD not in text_of(blocks)
+    assert seen["plan_ops"]["by"] == "model" and HEAD not in text_of(blocks) and _card(blocks)
 
 
 def test_no_goal_table_falls_back_to_the_profile(monkeypatch: Any) -> None:
     """没有目标表：写档案里的目标类别。"""
-    a = agent(Team("trainer"), monkeypatch=monkeypatch,
+    a = agent(Coach(**ASK), monkeypatch=monkeypatch,
               snapshot=snapshot_of(profile=Profile(goal="fat_loss")))  # fmt: skip
     blocks, _ = run(a, "给我一份训练计划")
     assert "档案里写的是" in text_of(blocks) and HEAD in text_of(blocks)

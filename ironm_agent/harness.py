@@ -115,12 +115,6 @@ def problem_kinds(problems: Iterable[str]) -> list[str]:
     return out
 
 
-def mentioned_roles(text: str, invited: Iterable[str]) -> list[str]:
-    """回答里提到、但这一轮没请到的专业角色（漏请的线索）。"""
-    got = set(invited)
-    return [k for k, name in ROLE_NAMES.items() if k not in got and name in text]
-
-
 def missing_readings(readings: Any) -> list[str]:
     """重要指标里哪些没有数据（这个人的数据缺口）。"""
     out = []

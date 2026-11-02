@@ -17,10 +17,20 @@ from typing import Any, Literal, Protocol, cast
 _log = logging.getLogger("ironm_agent.memory_store")
 
 type Category = Literal[
-    "injury", "equipment", "schedule", "diet", "preference", "goal", "style", "event", "advice"
+    "injury",
+    "equipment",
+    "schedule",
+    "diet",
+    "preference",
+    "goal",
+    "style",
+    "event",
+    "advice",
+    "followup",
+    "level",
 ]
 type Status = Literal["active", "pending", "resolved", "superseded"]
-type Origin = Literal["said", "inferred", "advice", "edited", "data"]
+type Origin = Literal["said", "inferred", "advice", "edited", "data", "system"]
 
 CATEGORIES: dict[Category, str] = {
     "injury": "伤病与身体状况",
@@ -32,6 +42,8 @@ CATEGORIES: dict[Category, str] = {
     "style": "回答风格",
     "event": "近期事件",
     "advice": "给过的关键建议",
+    "followup": "待跟进",
+    "level": "训练水平",
 }
 STATUSES: tuple[Status, ...] = ("active", "pending", "resolved", "superseded")
 ORIGINS: dict[Origin, str] = {
@@ -40,6 +52,7 @@ ORIGINS: dict[Origin, str] = {
     "advice": "给过的建议",
     "edited": "你改过的",
     "data": "训练记录",
+    "system": "系统",
 }
 
 

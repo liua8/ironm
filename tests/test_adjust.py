@@ -510,7 +510,9 @@ def test_pain_parts_and_pain_trigger() -> None:
     )
     old = [("joint.knee", TODAY - timedelta(days=20)), ("joint.knee", TODAY - timedelta(days=1))]
     assert trig.pain_triggers(old, THREE, TODAY) == []  # 超过 14 天的不算
-    [w] = trig.pain_triggers([("joint.wrist", TODAY), ("joint.wrist", TODAY - timedelta(days=3))], None, TODAY)
+    [w] = trig.pain_triggers(
+        [("joint.wrist", TODAY), ("joint.wrist", TODAY - timedelta(days=3))], None, TODAY
+    )
     assert w.action == "info"  # 没有计划：只提醒
 
 
@@ -592,9 +594,9 @@ def test_trigger_endpoints_and_pain_records(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_chat_pain_is_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
-    from tests.test_turn_flow import Team, agent
+    from tests.test_turn_flow import Coach, agent
 
-    a = agent(Team("recovery"), monkeypatch=monkeypatch, memory=MemoryBook())
+    a = agent(Coach(), monkeypatch=monkeypatch, memory=MemoryBook())
     a._pain = book = trig.PainBook()
 
     async def go() -> None:

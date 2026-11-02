@@ -10,28 +10,21 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
 from pydantic import ValidationError
 
-from ironm_agent.answer_format import assemble, is_slots, slots_prompt
-from ironm_agent.casefile import CaseFile
+from ironm_agent.answer_format import assemble, is_slots
 from ironm_agent.checks import EXPERIENCE, check_text, cited_ids, merge_echoes, repair, sentences
 from ironm_agent.common import ContractModel
-from ironm_agent.frameworks import flags_of, framework, framework_refs
 from ironm_agent.harness import problem_kinds
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
-from ironm_agent.memory_view import Recall
-from ironm_agent.personal import Personal
 from ironm_agent.plan_ops import parse_ops
-from ironm_agent.protools import registry as pro
 from ironm_agent.roles import Role, RoleSpec
-from ironm_agent.skills import Skill, prompt_of
-from ironm_agent.tools import METRIC_ROLES, Evidence, Toolbox
+from ironm_agent.tools import Evidence, Toolbox
 from ironm_agent.training import parse_log, parse_plan
 
 _log = logging.getLogger("ironm_agent.experts")
@@ -92,31 +85,6 @@ _PROMPT = """你是健身 App 里的「{name}」，负责：{duty}。
 
 出处（系统会逐句核对）：用到资料的句子句末写〔K03〕，用到档案或计算结果写〔C2〕，凭经验写〔经验〕；用到他的健康数据写成 <statement>这句话<cite>[r3]</cite></statement>。带数字的句子都要有出处，数字照资料、计算或数据写；按他的体重换算时资料编号和数据编号都写上。
 {tail}"""
-
-_OPINION_TAIL = """用中文，口语化，专业、精炼：每个字段不超过 80 字，只写最关键的一两点，不铺垫、不罗列所有可能。
-
-最后只输出 JSON：
-{"conclusion": "一两句结论", "for_you": "结合这个人的情况（没有可留空）", "how": "具体怎么做", "caution": "注意事项（与这件事相关的风险、什么情况要停止或就医；没有可留空）", "uncertain": "不确定的地方（可留空）"}"""
-
-# 只请到一位时（或单 Agent 对照组），由它直接写给用户的回答，不再整合（spec [2026-10-23] §7）
-_SOLO_TAIL = """你是这次唯一作答的角色，写的就是给用户的回答（spec [2026-10-23] §38）；写计划时细节写进计划，文字只挑最关键的。用"你"，口语、干脆、专业，像私教当面说。
-
-"""
-
-
-def _tool_hint(toolbox: Toolbox) -> str:
-    hints = []
-    if toolbox.spec.kb_domains:
-        hints.append("search_knowledge 查本领域的依据库")
-    if toolbox.health is not None:
-        hints.append("query_health_indicators 查这个人的健康数据")
-    if toolbox.metrics is not None:
-        hints.append("compute_metrics 计算这个人的指标（BMI、热量与蛋白质目标、体重趋势等）")
-    if toolbox.context is not None:
-        names = [t.name for t in pro.tools_for(toolbox.spec.role.value)]
-        if names:
-            hints.append("专业工具 " + "、".join(names) + "（结果带 C 编号，用法见上面的思考顺序）")
-    return "；".join(hints) or "（没有可用的工具）"
 
 
 # 这一轮要写计划或整理训练记录时（spec [2026-10-23] §9），交给训练教练的额外要求；写在 JSON 里，由系统做成预览卡片
@@ -188,11 +156,6 @@ async def write_task(
     if task == "plan" and isinstance(raw.get("changes"), str):
         found = {**found, "changes": raw["changes"]}
     return found
-
-
-_ALONE = "你和其他专业角色同时回答同一个问题，看不到彼此的意见，最后由管家整合。"
-_RELAYED = "你在前面同事给出结论之后作答：你的建议要和他们的结论一致（冲突时以安全和恢复为准），不用重复他们说过的。"
-_SOLO = "这一轮只请了你一位，你写的就是给用户的回答。"
 
 
 def _user_message(
@@ -328,101 +291,6 @@ def _parse(
         return Opinion.model_validate({"role": role, **data}, strict=False)
     except ValidationError:
         return None
-
-
-async def consult(
-    spec: RoleSpec,
-    text: str,
-    history: Sequence[str],
-    concerns: Sequence[str],
-    toolbox: Toolbox,
-    llm: LLM,
-    personal: Personal | None = None,
-    memory: Recall | None = None,
-    *,
-    solo: bool = False,
-    case: CaseFile | None = None,
-    relay: str = "",
-    note: str = "",
-    task: str | None = None,
-    today: date | None = None,
-    skills: Sequence[Skill] = (),
-    images: Sequence[Mapping[str, Any]] = (),
-) -> Consultation:
-    """请一个专业 Agent 作答。出错时返回不发言的意见，不向外抛。
-
-    memory：这个人的长期记忆；有共享档案（case）时，伤病、器械等限制已经在档案里，这里只给喜好、
-    回答风格和给过的建议，没有档案时给这个角色该看的那几类。记忆里用户自己说过的数字（如哑铃 20 公斤）
-    和这次问题里的数字一样，作答时可以直接用。
-    solo：这一轮只请到它一位，由它直接写给用户的回答（不再整合）。
-    relay：前一层同事的结论（分层接力）；note：系统交代的话（如按默认值排）。
-    task：这一轮要写计划（plan）或整理训练记录（log），只交给训练教练；写出的计划或记录由系统校验后做成预览。
-    images：用户这一轮附的图片（给模型看的图片段），只交给主责角色。
-    """
-    team = _SOLO if solo else (_RELAYED if relay else _ALONE)
-    # 档案里有的少见情况（孕期、血压、伤病……）才把对应规则放进提示词（spec [2026-10-23] §40）
-    flags = (
-        flags_of([x.key for x in case.risks], bool(case.injuries), case.readiness.level)
-        if case is not None
-        else frozenset()
-    )
-    system = _PROMPT.format(
-        name=spec.name,
-        duty=spec.duty,
-        team=team,
-        framework=framework(spec.role, flags),
-        tools=_tool_hint(toolbox),
-        tail=(_SOLO_TAIL + slots_prompt(text, task) if solo else _OPINION_TAIL)
-        + TASKS.get(task or "", "")
-        + prompt_of(skills),
-    )
-    toolbox.adopt(e for x in skills for r in x.refs if (e := toolbox.kb.get(r)) is not None)
-    # 提示词里的判断规则引用到的资料，回答照抄时也要能通过核对（spec [2026-10-23] §15）
-    toolbox.adopt(
-        e for r in framework_refs(spec.role, flags) if (e := toolbox.kb.get(r)) is not None
-    )
-    if memory is None:
-        remembered = ""
-    else:
-        remembered = memory.shared() if case is not None else memory.for_role(spec.role)
-    calcs = spec.role.value in METRIC_ROLES
-    asked = _user_message(
-        text,
-        history,
-        concerns,
-        personal.text() if personal else "",
-        remembered,
-        case=case.text(calcs=calcs) if case is not None else "",
-        relay=relay,
-        note=note,
-        prefetched=toolbox.prefetch(text),
-    )
-    content: str | list[Any] = [{"type": "text", "text": asked}, *images] if images else asked
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": content},
-    ]
-    said = "\n".join(x for x in (text, memory.numbers_text() if memory else "") if x)
-    if personal is not None:
-        toolbox.evidence.support.update(personal.support)
-        toolbox.evidence.rows.update(personal.rows)
-    trace: dict[str, Any] = {"rounds": 0, "checks": [], "fixed": False, "repaired": False,
-                             "exhausted": False, "forced": False}  # fmt: skip
-    start = time.perf_counter()
-    try:
-        fields = _SOLO_FIELDS if solo else _FIELDS
-        opinion = await _loop(
-            spec, messages, toolbox, llm, said, fields, task, today, trace, question=text
-        )
-    except ModelUnavailable as e:
-        _log.warning("expert unavailable: role=%s reason=%s", spec.role.value, e)
-        silent = Opinion(role=spec.role, speak=False, reason="这次没能调用模型")
-        trace["ms"] = int((time.perf_counter() - start) * 1000)
-        return Consultation(silent, toolbox.evidence, "failed", trace)
-    trace["ms"] = int((time.perf_counter() - start) * 1000)
-    trace["experience"] = experience_share(opinion.body()) if opinion.speak else 0.0
-    status = "spoke" if opinion.speak else "silent"
-    return Consultation(opinion, toolbox.evidence, status, trace)
 
 
 def experience_share(text: str) -> float:

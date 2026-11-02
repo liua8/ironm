@@ -39,7 +39,9 @@ class Node(ContractModel):
     fedb: str = ""
     uberon: str = Field(default="", pattern=r"^(UBERON:\d{7})?$")
     says: tuple[str, ...] = ()
-    flat: tuple[str, ...] = ()  # 平面人体图上对应的分区："front:upper-chest"（只有细分肌肉写，可以共用）
+    flat: tuple[
+        str, ...
+    ] = ()  # 平面人体图上对应的分区："front:upper-chest"（只有细分肌肉写，可以共用）
 
 
 class CodeFile(ContractModel):

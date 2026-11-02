@@ -1,6 +1,6 @@
 # iron-m
 
-以 [mirobody](https://github.com/thetahealth/mirobody)（Apache-2.0）为数据底座的多 Agent 健身教练。mirobody 负责健康数据的接入、存储、查询、对话与网页；它自带的单个 Agent 将由 iron-m 的多 Agent 系统替换（通过 mirobody 官方的 `mirobody.agents` 插件接口，不修改 mirobody 源码）。
+以 [mirobody](https://github.com/thetahealth/mirobody)（Apache-2.0）为数据底座的健身教练 Agent。mirobody 负责健康数据的接入、存储、查询、对话与网页；它自带的 Agent 由 iron-m 的单 Agent（Skill + 工具）替换，通过 mirobody 官方的 `mirobody.agents` 插件接口接入。
 
 mirobody 作为 git 子模块固定在 `vendor/mirobody`（1.5.8，提交 `7775b50`），其 LICENSE、NOTICE 与版权声明原样保留。
 

@@ -7,7 +7,7 @@ C 编号写进这一轮的计算结果，用到的动作库条目记为可以引
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Iterable, Mapping, MutableMapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
@@ -20,8 +20,10 @@ from ironm_agent.protools.nutrition import ITEMS, Item, nutrition
 from ironm_agent.protools.pain import SIGNS, pain_check
 from ironm_agent.protools.patterns import WINDOWS, training_patterns
 from ironm_agent.protools.plan_check import check_plan
-from ironm_agent.protools.result import Result
+from ironm_agent.protools.result import Finding, Result
 from ironm_agent.protools.strength import load_for, one_rep_max
+from ironm_agent.protools.templates import GOALS, LEVELS, PLACES, plan_templates
+from ironm_agent.protools.templates import catalog as plan_catalog
 from ironm_agent.protools.trends import INDICATORS, MAX_DAYS, MIN_DAYS, series, trend
 from ironm_agent.training import StoredPlan, WorkoutLog, parse_plan
 
@@ -43,6 +45,11 @@ class ToolContext:
     equipment: frozenset[Equipment] | None = None  # None 表示不知道
     plan: Loader[StoredPlan | None] | None = None
     workouts: Callable[[date], Awaitable[list[WorkoutLog]]] | None = None
+    age: int | None = None  # 选初步方案时分人群（§77）
+    profile: Any = None  # metrics.Profile：和标准比时用身高、性别、目标（§84）
+    found: tuple[Any, ...] | None = (
+        None  # 这一轮认出的情况（§84，对话里已经算好；None 时工具自己算）
+    )
     _cache: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -58,6 +65,9 @@ class ToolContext:
         equipment_said: Iterable[str],
         plan: Loader[StoredPlan | None] | None = None,
         workouts: Callable[[date], Awaitable[list[WorkoutLog]]] | None = None,
+        age: int | None = None,
+        profile: Any = None,
+        found: Sequence[Any] | None = None,
     ) -> ToolContext:
         return cls(
             today,
@@ -69,6 +79,9 @@ class ToolContext:
             equipment_of(equipment_said),
             plan,
             workouts,
+            age,
+            profile,
+            tuple(found) if found is not None else None,
         )
 
     async def stored_plan(self) -> StoredPlan | None:
@@ -155,6 +168,88 @@ async def _check(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
     )
 
 
+async def _templates(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
+    days = _int(args, "days_per_week")
+    name = str(args.get("name") or "").strip()
+    if days is None and not name:  # 问"有多少计划、有哪些"：列出方案库（§83）
+        return plan_catalog()
+    if days is None or not 1 <= days <= 7:
+        return Result.note("要写每周能练几天（days_per_week，1–7）。")
+    level, goal, place = (str(args.get(k) or "") for k in ("level", "goal", "place"))
+    goal = goal or str(ctx.goal or "")
+    weekdays = [d for d in args.get("weekdays") or [] if isinstance(d, int) and 1 <= d <= 7]
+    return plan_templates(
+        level=level if level in LEVELS else None,  # type: ignore[arg-type]
+        goal=goal if goal in GOALS else None,  # type: ignore[arg-type]
+        days=days,
+        minutes=_int(args, "minutes"),
+        place=place if place in PLACES else None,  # type: ignore[arg-type]
+        age=_int(args, "age") or ctx.age,
+        equipment=ctx.equipment,
+        injured=ctx.injured,
+        weekdays=weekdays,
+        name=str(args.get("name") or "").strip(),
+    )
+
+
+def _sources(refs: Iterable[str]) -> str:
+    """资料编号 → "名称（机构 年份）"，追问依据时讲得出来。"""
+    from ironm_agent.kb import default_kb
+
+    kb = default_kb()
+    names = [
+        f"{e.title}（{e.publisher.split('（')[0]} {e.year}）" for r in refs if (e := kb.get(r))
+    ]
+    return "；".join(names)
+
+
+def _standard(ctx: ToolContext, indicator: str) -> str:
+    """趋势工具带上和标准比的一句（§84）。"""
+    from ironm_agent.insights import compare
+
+    if ctx.readings is None or ctx.profile is None:
+        return ""
+    key = {"sleep_hours": "sleep", "systolic": "blood_pressure", "diastolic": "blood_pressure"}.get(
+        indicator, indicator
+    )
+    got = next((r for r in compare(ctx.readings, ctx.profile, ctx.today) if r.key == key), None)
+    return f"和标准比：{got.standard}（{_sources(got.refs)}）" if got is not None else ""
+
+
+async def _explain(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
+    """综合解读（§84）：各指标和自己比、和标准比；认出的情况、同期可能有关的原因、调整；每条带出处。"""
+    from ironm_agent.insights import compare, situations
+
+    if ctx.readings is None or ctx.profile is None:
+        return Result.note("这次读不到健康数据，不能解读，也不能推测为正常。")
+    found = ctx.found
+    if found is None:
+        logs = await ctx.workouts(ctx.today - timedelta(days=28)) if ctx.workouts else []
+        found = tuple(situations(ctx.readings, ctx.profile, ctx.today, logs=logs))
+    readings = compare(ctx.readings, ctx.profile, ctx.today)
+    if not readings and not found:
+        return Result.note(
+            "还没有心率、睡眠、步数、体重、血压的记录，不能解读；可以连上手表或每天记一次体重。"
+        )
+    findings = [
+        Finding(f"{r.name}（两种比较）", r.line(),
+                "和自己比：最近 7 天和之前几周（或本人基线）的平均；和标准比：按年龄、性别的成年人标准",
+                "他的健康数据", _sources(r.refs))
+        for r in readings
+    ]  # fmt: skip
+    findings += [
+        Finding(f"认出的情况：{s.title}", s.line(),
+                "代码按规则对照同期的心率、睡眠、步数、体重和训练记录；只说同时发生、可能有关",
+                s.data, _sources(s.refs))
+        for s in found if s.kind != "thin"
+    ]  # fmt: skip
+    notes = [s.line() for s in found if s.kind == "thin"]
+    notes.append(
+        "回答时：先说结论（两种比较），再说可能的原因；他问怎么办时说已经自动做了什么调整、还能怎么做。"
+    )
+    return Result(tuple(findings), tuple(notes))
+
+
 async def _patterns(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
     if ctx.workouts is None:
         return Result.note("这次读不到训练记录。")
@@ -210,7 +305,9 @@ async def _trend(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
     if ctx.readings is None:
         return Result.note("这次没读到健康数据。")
     days = _int(args, "days") or 28
-    return trend(series(ctx.readings, indicator), ctx.today, indicator=indicator, days=days)
+    got = trend(series(ctx.readings, indicator), ctx.today, indicator=indicator, days=days)
+    std = _standard(ctx, indicator)
+    return Result(got.findings, (*got.notes, std) if std else got.notes, got.entries, got.problems)
 
 
 # ---- 清单 -----------------------------------------------------------------------------------
@@ -295,6 +392,39 @@ TOOLS: dict[str, ProTool] = {
             _check,
         ),
         ProTool(
+            "plan_templates",
+            frozenset({"trainer", "general"}),
+            "选初步方案：按训练水平、目标、每周天数、每次时长、场地、年龄，从方案库挑出最合适的 1–2 个方案，"
+            "按他有的器械和伤病换成具体动作、排好周几，给出能直接改的计划草稿和为什么这样排、怎么进阶。"
+            "排新计划时先调它，再照这个人改；他的器械、伤病、年龄系统已经知道，他这几轮说的新条件填进参数。"
+            "他点名要某个博主或某套计划时，把他说的名字填进 name。"
+            "问有多少训练计划、有哪些计划时，什么都不填，返回方案库的全部方案。",
+            _obj(
+                {
+                    "level": {
+                        "type": "string",
+                        "enum": list(LEVELS),
+                        "description": "none 零基础、lt6m 不到 6 个月、6m-2y 6 个月到 2 年、2y+ 2 年以上",
+                    },
+                    "goal": {"type": "string", "enum": list(GOALS)},
+                    "days_per_week": {"type": "integer", "minimum": 1, "maximum": 7},
+                    "minutes": {"type": "integer", "description": "每次能练几分钟（他说过才填）"},
+                    "place": {"type": "string", "enum": list(PLACES)},
+                    "age": {"type": "integer", "description": "年龄（档案里没有、他说过才填）"},
+                    "weekdays": {
+                        "type": "array",
+                        "items": {"type": "integer", "minimum": 1, "maximum": 7},
+                        "description": "他能练的周几，1 是周一（他说过才填）",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "他点名要的博主或计划名（如“谭成义”），没点名不填",
+                    },
+                },
+            ),
+            _templates,
+        ),
+        ProTool(
             "training_patterns",
             frozenset({"trainer", "recovery", "general"}),
             "汇总这个人最近 14、28 或 56 天的训练：次数、每周平均、常在周几、每次时长、感受、按计划的完成率、"
@@ -352,6 +482,15 @@ TOOLS: dict[str, ProTool] = {
                 }
             ),
             _pain,
+        ),
+        ProTool(
+            "explain_trends",
+            frozenset({"trainer", "nutrition", "recovery", "general"}),
+            "综合解读他的指标：每项和他自己比、和标准比（静息心率、心率变异性、睡眠、步数、血压、体重），"
+            "认出的情况（恢复不够、睡得少、活动量掉了、减得太快等）、同期可能有关的原因、已经自动做的调整，每条带出处。"
+            '问"我最近怎么样、这些数说明什么、为什么这样调"时用。',
+            _obj({}),
+            _explain,
         ),
         ProTool(
             "trend_analysis",

@@ -8,11 +8,9 @@ from ironm_agent.plan_ops import (
     apply,
     fit_time,
     impact,
-    only_this_time,
     parse_ops,
     review_ops,
     rows,
-    rule_ops,
 )
 from ironm_agent.training import Plan
 
@@ -41,28 +39,6 @@ def plan() -> Plan:
             ],
         }
     )  # fmt: skip
-
-
-def test_simple_sentences_become_operations_without_a_model() -> None:
-    p = plan()
-    ops = rule_ops("把周三挪到周四", p)
-    assert ops is not None and ops[0].kind == "move" and (ops[0].day, ops[0].to_day) == (3, 4)
-    assert [o.kind for o in rule_ops("周五删掉", p) or []] == ["remove"]
-    light = rule_ops("这周整体轻一点", p)
-    assert light is not None and light[0].kind == "reduce" and light[0].ratio == 0.7
-    assert rule_ops("这周轻很多", p)[0].ratio == 0.5  # type: ignore[index]
-    item = rule_ops("周一的提踵删掉", p)
-    assert item is not None and item[0].exercise == "提踵"
-    two = rule_ops("把周三挪到周四，周五删掉", p)
-    assert two is not None and {o.kind for o in two} == {"move", "remove"}
-    assert rule_ops("把周三改成练背", p) is None  # 说不清的交给训练教练
-    assert rule_ops("把深蹲换成腿举，再把周三挪到周四", p) is None
-
-
-def test_only_this_time_does_not_change_the_plan() -> None:
-    assert only_this_time("今天轻一点")
-    assert not only_this_time("以后每次都轻一点")
-    assert not only_this_time("这周整体轻一点")
 
 
 def test_move_onto_a_training_day_swaps_the_two() -> None:
@@ -175,8 +151,7 @@ from typing import Any  # noqa: E402
 
 from ironm_agent.llm import Reply, Stage  # noqa: E402
 from ironm_agent.training import TrainingBook  # noqa: E402
-from tests.test_plugin import text_of  # noqa: E402
-from tests.test_turn_flow import Team, agent, jsonr, run, snapshot_of, system_of  # noqa: E402
+from tests.test_turn_flow import Coach, agent, jsonr, run, snapshot_of, system_of  # noqa: E402
 
 
 def _seeded(team: Any, monkeypatch: Any) -> tuple[Any, TrainingBook]:
@@ -194,18 +169,6 @@ def _card_draft(blocks: list[dict[str, Any]], store: TrainingBook) -> Any:
     return asyncio.run(store.draft("42", cid.removeprefix("card-")))
 
 
-def test_simple_edit_in_chat_needs_no_model(monkeypatch: Any) -> None:
-    t = Team("trainer")
-    a, store = _seeded(t, monkeypatch)
-    blocks, seen = run(a, "把周三挪到周四")
-    assert t.stages == [] and seen["path"] == "answer" and seen["plan_ops"]["by"] == "rule"
-    d = _card_draft(blocks, store)
-    assert (
-        d.content["ops"][0]["kind"] == "move" and "周三「上肢推」挪到周四" in d.content["changes"]
-    )
-    assert "点「确认」才会保存" in text_of(blocks)
-
-
 def test_plan_edit_sentences_are_recognised() -> None:
     from ironm_agent.training import task_of
 
@@ -213,18 +176,25 @@ def test_plan_edit_sentences_are_recognised() -> None:
         assert task_of(ask) == "plan", ask
 
 
-def test_only_this_time_is_not_a_plan_change(monkeypatch: Any) -> None:
-    a, _ = _seeded(Team("trainer"), monkeypatch)
-    blocks, seen = run(a, "今天轻一点")
-    assert seen.get("plan_ops") is None and not any(
-        str(b.get("id", "")).startswith("card-") for b in blocks
-    )
-
-
 def test_second_edit_in_the_same_chat_builds_on_the_first(monkeypatch: Any) -> None:
     import asyncio
 
-    a, store = _seeded(Team("trainer"), monkeypatch)
+    by_question = {
+        "把周三挪到周四": [{"kind": "move", "day": 3, "to_day": 4, "why": "你要求的"}],
+        "周五删掉": [{"kind": "remove", "day": 5, "why": "你要求的"}],
+    }
+
+    class Asked(Coach):
+        def __call__(
+            self, stage: Stage, messages: Sequence[Mapping[str, Any]], tools: bool
+        ) -> Reply:
+            if stage == "expert":
+                asked = str(messages[1]["content"]).split("\n")[0]  # 用户的问题：……
+                ops = next(v for k, v in by_question.items() if k in asked)
+                return jsonr({"answer": "按你说的改了〔经验〕。", "ops": ops})
+            return super().__call__(stage, messages, tools)
+
+    a, store = _seeded(Asked(), monkeypatch)
     first, _ = run(a, "把周三挪到周四")
     d1 = _card_draft(first, store)
 
@@ -242,11 +212,11 @@ def test_second_edit_in_the_same_chat_builds_on_the_first(monkeypatch: Any) -> N
     assert asyncio.run(store.draft("42", d1.id)).state == "cancelled"  # type: ignore[union-attr]
 
 
-class Editor(Team):
-    """训练教练只写操作（§45）。"""
+class Editor(Coach):
+    """管家只写操作（§45），系统套用。"""
 
     def __init__(self, ops: list[dict[str, Any]]) -> None:
-        super().__init__("trainer")
+        super().__init__()
         self.ops = ops
 
     def __call__(self, stage: Stage, messages: Sequence[Mapping[str, Any]], tools: bool) -> Reply:
@@ -270,19 +240,6 @@ def test_trainer_writes_operations_and_code_applies_them(monkeypatch: Any) -> No
     assert d.content["plan"]["sessions"][0] == plan().sessions[0].model_dump()  # 没提到的天不动
 
 
-def test_conflicting_operations_ask_the_user(monkeypatch: Any) -> None:
-    t = Editor(
-        [
-            {"kind": "remove", "day": 5},
-            {"kind": "edit", "day": 5, "exercise": "哑铃弯举", "sets": 4},
-        ]
-    )
-    a, _ = _seeded(t, monkeypatch)
-    blocks, seen = run(a, "周五不练了，再把周五的弯举加到 4 组")
-    assert seen["plan_ops"]["conflict"] and "请分开说" in text_of(blocks)
-    assert not any(str(b.get("id", "")).startswith("card-") for b in blocks)
-
-
 def test_confirmed_operations_go_into_the_coach_history() -> None:
     import asyncio
 
@@ -302,12 +259,3 @@ def test_confirmed_operations_go_into_the_coach_history() -> None:
     assert not asyncio.run(
         record_plan(coach, "42", {"kind": "plan", "changes": "整份新排"})
     )  # 不是按操作改的不记
-
-
-def test_removing_a_day_and_editing_it_in_one_sentence_asks_without_a_model(
-    monkeypatch: Any,
-) -> None:
-    t = Team("trainer")
-    a, _ = _seeded(t, monkeypatch)
-    blocks, seen = run(a, "周五不练了，再把周五的弯举加到 4 组")
-    assert t.stages == [] and seen["plan_ops"]["conflict"] and "请分开说" in text_of(blocks)

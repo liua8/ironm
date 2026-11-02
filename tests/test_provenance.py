@@ -3,7 +3,7 @@
 import pytest
 
 from ironm_agent.checks import plain
-from ironm_agent.provenance import explain, is_provenance
+from ironm_agent.provenance import is_provenance
 
 
 @pytest.mark.parametrize(
@@ -28,11 +28,6 @@ def test_ordinary_questions_are_not_provenance(text: str) -> None:
     assert not is_provenance(text)
 
 
-def test_explain_picks_the_lines_with_the_asked_number() -> None:
-    sources = "计算：\n- 热量目标：2764 千卡\n- 蛋白质：111–138 克\n\n资料：\n- 指南"
-    assert explain("2764 怎么算的", sources) == "2764 是这样来的：\n- 热量目标：2764 千卡"
-    assert explain("依据是什么", "").startswith("上一条回答没有用到资料")
-    assert explain("依据是什么", None).startswith("还没有可以追溯的回答")
 
 
 def test_plain_text_drops_markers_but_keeps_words() -> None:

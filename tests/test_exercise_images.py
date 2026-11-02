@@ -60,7 +60,7 @@ def test_image_endpoint_stays_inside_data_dir(images: Path) -> None:
 
 def test_library_second_batch() -> None:
     lib = library().exercises
-    assert len(lib) == 96 and "拉伸放松" in PARTS and "泡沫轴" in EQUIPMENT
+    assert len(lib) == 101 and "拉伸放松" in PARTS and "泡沫轴" in EQUIPMENT
     assert lib[0].id == "bodyweight-squat"  # 原有动作的顺序（依据编号 K901 起）不变
     stretch = [m for m in moves() if m.tag.pattern == "stretch"]
     assert len(stretch) == 8 and all(m.exercise.part == "拉伸放松" for m in stretch)

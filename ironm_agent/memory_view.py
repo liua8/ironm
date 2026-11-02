@@ -12,27 +12,22 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
 from ironm_agent.memory_store import CATEGORIES, Category, Item, now
-from ironm_agent.roles import Role
 
-EVENT_DAYS = 14  # 近期事件多少天后不再用于回答
+EVENT_DAYS = (
+    7  # 没写到哪天为止的近期事件，多少天后不再用于回答（spec [2026-10-23] §73，原来 14 天）
+)
 ADVICE_KEEP = 5  # 给过的建议只带最近几条
 DATA_DAYS = 56  # 训练记录得出的偏好多少天没再被数据支持就不用
 MAX_FACTS = 60  # 超过这么多条有效记忆时按类别和优先级读取
 CATEGORY_CAP: dict[str, int] = {
     "injury": 15, "goal": 5, "style": 5, "equipment": 10, "schedule": 8, "diet": 10,
-    "preference": 12, "event": 5,
+    "preference": 12, "event": 5, "level": 2,
 }  # fmt: skip
 KEEP_ORDER: tuple[Category, ...] = (
-    "injury", "goal", "style", "equipment", "schedule", "diet", "preference", "event",
+    "injury", "goal", "level", "style", "equipment", "schedule", "diet", "preference", "event",
 )  # fmt: skip
 RESOLVED_KEEP = 5  # 记忆多时，已解决的最多留几条
 
-ROLE_CATEGORIES: dict[Role, tuple[Category, ...]] = {
-    Role.TRAINER: ("injury", "equipment", "schedule", "goal", "event"),
-    Role.NUTRITION: ("diet", "goal"),
-    Role.RECOVERY: ("injury", "event", "schedule"),
-    Role.GENERAL: ("injury", "equipment", "schedule", "diet", "goal", "event"),
-}
 EVERYONE: tuple[Category, ...] = ("preference", "style")
 ORDER = tuple(CATEGORIES)
 
@@ -89,7 +84,8 @@ class Recall:
 
     @classmethod
     def of(cls, items: Sequence[Item], at: datetime | None = None) -> Recall:
-        usable = [x for x in items if x.status in ("active", "resolved") and not expired(x, at)]
+        usable = [x for x in items if x.status in ("active", "resolved") and not expired(x, at)
+                  and x.category != "followup"]  # 待跟进只在单 Agent 的四层记忆里用（§73）  # fmt: skip
         advice = [x for x in usable if x.category == "advice"][-ADVICE_KEEP:]
         facts = [x for x in usable if x.category != "advice"]
         kept = _trim(facts)
@@ -106,19 +102,6 @@ class Recall:
     def _advice(self) -> list[Item]:
         return [x for x in self.items if x.category == "advice"]
 
-    def for_role(self, role: Role) -> str:
-        """给一位专业 Agent 的记忆（L2）：它这一领域的类别，加上所有人都读的喜好、回答风格和给过的建议。"""
-        facts = self._facts((*ROLE_CATEGORIES.get(role, ()), *EVERYONE))
-        advice = self._advice()
-        parts = []
-        if facts:
-            parts.append("这个人以前说过的情况（作答时要照顾到；和这次问题无关的不要提）：\n"
-                         + "\n".join(_line(x) for x in facts))  # fmt: skip
-        if advice:
-            parts.append("之前给他的建议（保持一致；需要改变时说明原因，不必重复）：\n"
-                         + "\n".join(f"- {x.content}（{_day(x)}）" for x in advice))  # fmt: skip
-        return "\n\n".join(parts)
-
     def shared(self) -> str:
         """共享档案以外、所有角色都读的记忆：喜好、回答风格、给过的建议（伤病、器械、时间等限制已经写进共享档案）。"""
         facts = self._facts(EVERYONE)
@@ -131,18 +114,6 @@ class Recall:
             parts.append("之前给他的建议（保持一致；需要改变时说明原因，不必重复）：\n"
                          + "\n".join(f"- {x.content}（{_day(x)}）" for x in advice))  # fmt: skip
         return "\n\n".join(parts)
-
-    def categories_for(self, role: Role) -> list[Category]:
-        """这位专业 Agent 拿到了哪几类记忆（写日志用，只有类别，不含内容）。"""
-        shown = (*ROLE_CATEGORIES.get(role, ()), *EVERYONE, "advice")
-        return [c for c in ORDER if c in shown and any(x.category == c for x in self.items)]
-
-    def persona(self) -> str:
-        """画像（L3）：全部有效记忆按类别排成清单，路由（模型这一路）和管家直接回答时用。"""
-        facts = self._facts(ORDER)
-        if not facts:
-            return ""
-        return "这个人以前说过的情况：\n" + "\n".join(_line(x) for x in facts)
 
     def style(self) -> str:
         """管家整合时要照顾的回答风格与喜好。"""

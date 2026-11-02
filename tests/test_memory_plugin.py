@@ -1,15 +1,14 @@
-"""整轮里的记忆：作答前读进来分给各角色，回答发出后在后台提取；暂停、失败都不影响回答。"""
+"""整轮里的记忆：作答前读进来交给管家，回答发出后在后台提取；暂停、失败都不影响回答。"""
 
 import asyncio
 import json
-import logging
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
 from ironm_agent.llm import ModelUnavailable, Reply, Stage
 from ironm_agent.memory_store import Change, Item, MemoryBook
-from tests.fakes import jsonr, route_reply, system_of
+from tests.fakes import jsonr, system_of
 from tests.test_plugin import agent, collect, text_of
 
 T0 = datetime(2026, 10, 20, tzinfo=UTC)
@@ -25,6 +24,8 @@ ANSWER = "用你最重 20 公斤的哑铃做高脚杯深蹲，深度控制在膝
 
 
 class Script:
+    """单 Agent 的假模型：作答环节记在 "agent" 下，提取记忆在 "memory" 下；选规程给不出合格结果。"""
+
     def __init__(self, ops: list[dict[str, Any]] | None = None, memory_down: bool = False) -> None:
         self.ops = ops or []
         self.memory_down = memory_down
@@ -34,22 +35,18 @@ class Script:
     def __call__(self, stage: Stage, messages: Sequence[Mapping[str, Any]], tools: bool) -> Reply:
         system = system_of(messages)
         user = str(messages[1]["content"]) if len(messages) > 1 else ""
-        key = (
-            stage if stage != "expert" else ("trainer" if "「训练教练」" in system else "nutrition")
-        )
+        key = "agent" if stage == "expert" else stage
         self.calls[key] = self.calls.get(key, 0) + 1
         self.seen[key] = system + "\n" + user
         if stage == "route":
-            return route_reply("pro", "trainer", ["nutrition"])
-        if key == "trainer":
-            return jsonr({"conclusion": ANSWER})
-        if key == "nutrition":
-            return jsonr({"conclusion": "练后吃点无乳糖的蛋白质〔经验〕"})
+            return Reply("不是 JSON")
+        if key == "agent":
+            return jsonr({"answer": ANSWER})
         if stage == "memory":
             if self.memory_down:
                 raise ModelUnavailable("timeout")
             return jsonr({"ops": self.ops})
-        return Reply(ANSWER + "练后吃点无乳糖的蛋白质〔经验〕。")
+        return Reply(ANSWER)
 
 
 def with_memory(items: list[Item]) -> MemoryBook:
@@ -58,16 +55,11 @@ def with_memory(items: list[Item]) -> MemoryBook:
     return book
 
 
-def test_every_expert_sees_the_same_limits_in_the_shared_case_file(
-    monkeypatch: Any, caplog: Any
-) -> None:
-    """共享档案（spec [2026-10-23] §2）：伤病、器械、饮食等限制，被请到的角色都看得到。"""
-    caplog.set_level(logging.INFO, logger="ironm_agent.run")
+def test_limits_in_memory_reach_the_agent_but_are_not_shown(monkeypatch: Any) -> None:
+    """共享档案（spec [2026-10-23] §2）：伤病、器械、饮食等限制，作答时都看得到；前端不列出记忆。"""
     s = Script()
     blocks = collect(agent(s, monkeypatch=monkeypatch, memory=with_memory(KNOWN)), QUESTION)
-    assert "左膝有旧伤" in s.seen["route"]  # 主教练调度时看画像
-    for role in ("trainer", "nutrition"):
-        assert all(x in s.seen[role] for x in ("左膝有旧伤", "最重 20 公斤", "乳糖不耐受"))
+    assert all(x in s.seen["agent"] for x in ("左膝有旧伤", "最重 20 公斤", "乳糖不耐受"))
     # 记忆不在前端显示：对话过程里既不列出记忆条目，也没有用了哪几类记忆的提示（回答本身照常用上记忆）
     shown = json.dumps(blocks, ensure_ascii=False)
     for hidden in (
@@ -79,24 +71,16 @@ def test_every_expert_sees_the_same_limits_in_the_shared_case_file(
     ):
         assert hidden not in shown
     assert not any(x.content in shown for x in KNOWN)
-    # 各角色拿到哪几类只写进日志，只有类别、没有内容
-    logged = [
-        r.getMessage() for r in caplog.records if r.getMessage().startswith("ironm memory use")
-    ]
-    assert len(logged) == 1
-    used = json.loads(logged[0].removeprefix("ironm memory use "))["categories"]
-    assert used == ["diet", "equipment", "injury"]
-    assert "左膝" not in logged[0] and "乳糖" not in logged[0]
 
 
 def test_numbers_the_user_said_before_can_be_used_without_a_source(monkeypatch: Any) -> None:
     s = Script()
     blocks = collect(agent(s, monkeypatch=monkeypatch, memory=with_memory(KNOWN)), QUESTION)
     assert "最重 20 公斤的哑铃" in text_of(blocks)
-    assert s.calls["trainer"] == 1  # 一次通过核对，不用改
+    assert s.calls["agent"] == 1  # 一次通过核对，不用改
     s2 = Script()
     collect(agent(s2, monkeypatch=monkeypatch, memory=MemoryBook()), QUESTION)
-    assert s2.calls["trainer"] == 2  # 没有这条记忆时，20 公斤对不上出处，要改一次
+    assert s2.calls["agent"] == 2  # 没有这条记忆时，20 公斤对不上出处，要改一次
 
 
 def test_memory_is_extracted_after_the_answer(monkeypatch: Any) -> None:
@@ -115,7 +99,7 @@ def test_paused_memory_extracts_nothing_but_still_answers_with_it(monkeypatch: A
     asyncio.run(book.set_paused("42", True))
     s = Script([{"op": "add", "category": "event", "content": "在家练腿", "quote": "在家练腿"}])
     collect(agent(s, monkeypatch=monkeypatch, memory=book), QUESTION)
-    assert "memory" not in s.calls and "哑铃" in s.seen["trainer"]
+    assert "memory" not in s.calls and "哑铃" in s.seen["agent"]
     assert len(asyncio.run(book.items("42"))) == len(KNOWN)
 
 
@@ -140,4 +124,5 @@ def test_emergency_turns_do_not_extract(monkeypatch: Any) -> None:
     s = Script([{"op": "add", "category": "injury", "content": "胸口痛", "quote": "胸口"}])
     book = MemoryBook()
     collect(agent(s, monkeypatch=monkeypatch, memory=book), "跑步的时候胸口突然很痛，现在还在疼")
-    assert s.calls == {} and asyncio.run(book.items("42")) == []
+    # 急症只调一次模型说话（§86），不提取记忆
+    assert s.calls == {"agent": 1} and asyncio.run(book.items("42")) == []

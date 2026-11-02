@@ -88,9 +88,9 @@ def test_turn_leaves_a_trace_without_content(
     [turn] = traces_in_memory.turns
     assert turn.user_id == "42" and turn.session == "42:s1"
     t = turn.trace
-    assert t["path"] and t["roles"] == ["recovery"]
+    assert t["path"] and t["roles"] == ["general"] and t["agent"] == "single"
     [expert] = t["experts"]
-    assert expert["role"] == "recovery" and expert["status"] == "spoke" and expert["rounds"] >= 2
+    assert expert["role"] == "general" and expert["status"] == "spoke" and expert["rounds"] >= 2
     assert (
         expert["calls"][0]["tool"] == "query_health_indicators"
         and expert["calls"][0]["result"] == "ok"

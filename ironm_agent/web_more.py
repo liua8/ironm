@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
+from ironm_agent import spoken as spoken_mod
 from ironm_agent import weather
 from ironm_agent.exercises import library
 from ironm_agent.llm import TurnLLM, load_models
@@ -930,7 +931,8 @@ class CheckIn(BaseModel):
 async def illness_check(
     episode_id: str, body: CheckIn, user_id: str = Depends(_verify()), illness: Any = ILLNESS
 ) -> dict[str, Any]:
-    """首页"好些了吗"的按钮：好了 / 好一些 / 还不舒服。只用规则，不调用模型。"""
+    """首页"好些了吗"的按钮：好了 / 好一些 / 还不舒服。状态由规则更新；回给他的话由模型说，
+    没说到今天怎么安排（休息、轻松版、七成、看医生）或模型失败时用规则的那句（spec [2026-10-23] §86）。"""
     from ironm_agent.casefile import readiness
     from ironm_agent.illness import answer
 
@@ -948,6 +950,13 @@ async def illness_check(
             _log.warning("check snapshot unavailable: error_type=%s", type(e).__name__)
     ep, message = answer(ep, body.answer, today, hr_poor=hr_poor)
     await illness.save(user_id, ep)
+    reply = {"resolved": "好了", "better": "好一些了", "unwell": "还不舒服"}[body.answer]
+    needs = [w for w in ("休息", "轻松", "七成", "医生") if w in message]
+    spoken = await spoken_mod.say(
+        spoken_mod.default_llm(), spoken_mod.ILLNESS, f"系统定好的：{message}",
+        f"{ep.what()}，今天{reply}", needs,
+    )  # fmt: skip
+    message = spoken or message
     coach_later(user_id, "身体状况")
     return {"message": message, "status": ep.status}
 
@@ -1079,6 +1088,17 @@ async def get_goal(user_id: str = Depends(_verify()), goals: Any = GOAL) -> dict
     return await _goal_state(user_id, goals)
 
 
+@router.post("/iron/api/goal/celebrated")
+async def goal_celebrated(user_id: str = Depends(_verify()), goals: Any = GOAL) -> dict[str, Any]:
+    """达到目标的庆祝看过了（§93）：记下来，之后再打开不再放彩带。"""
+    from dataclasses import replace
+
+    g = await goals.get(user_id)
+    if g is not None and g.celebrated is None:
+        await goals.set(user_id, replace(g, celebrated=date.today()))
+    return await _goal_state(user_id, goals)
+
+
 @router.put("/iron/api/goal")
 async def put_goal(
     body: GoalIn, user_id: str = Depends(_verify()), goals: Any = GOAL
@@ -1203,7 +1223,7 @@ class CoachSeen(BaseModel):
 
 class CoachDecision(BaseModel):
     key: str = Field(min_length=1, max_length=80)
-    decision: Literal["accept", "later"]
+    decision: Literal["accept", "later", "undo"]  # undo：自动调整"不用这样调"（§84）
 
 
 @router.get("/iron/api/coach/inbox")
@@ -1217,6 +1237,9 @@ async def coach_inbox(user_id: str = Depends(_verify())) -> dict[str, Any]:
     except Exception as e:
         _log.error("coach inbox failed: error_type=%s", type(e).__name__)
         raise HTTPException(503, "管家的方案暂时算不出来，请稍后再试") from e
+    from ironm_agent.review import daily_later
+
+    daily_later(user_id, deps)  # 每天第一次打开对话：后台跑一次管家复盘（§85，今天做过就不再跑）
     news = unseen(state, await deps.store.history(user_id, 60))
     return {
         "version": state.version,
@@ -1238,7 +1261,15 @@ async def coach_decide(body: CoachDecision, user_id: str = Depends(_verify())) -
     """用户在对话里确认或暂不一条调整；确认后的执行（调热量、生成计划预览）由页面接着调对应接口。"""
     from ironm_agent.coach_state import decide
 
-    item = await decide(coach_deps().store, user_id, body.key, body.decision)
+    deps = coach_deps()
+    if body.decision == "undo":  # 管家复盘的调整"不用这样调"（§85）：计划、热量、今天都恢复原来的
+        from ironm_agent.review import undo
+
+        done = await undo(user_id, deps, body.key)
+        if done is None:
+            raise HTTPException(404, "这条调整已经不需要处理了")
+        return {"key": body.key, "decision": "undo", "item": done.model_dump(mode="json")}
+    item = await decide(deps.store, user_id, body.key, body.decision)
     if item is None:
         raise HTTPException(404, "这条调整已经不需要处理了")
     return {"key": body.key, "decision": body.decision, "item": item.model_dump(mode="json")}

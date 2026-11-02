@@ -1,21 +1,10 @@
-"""测试共用：作答链路的路由只用模型这一路（假模型给分），不载入本机中文小模型，结果固定。
-
-三路打分本身（关键字、语义向量、加权、阈值）在 test_routing.py 里单独测。
-"""
+"""测试共用：管家评估、轨迹、网页里交给模型说的话，默认都不连数据库和真实模型。"""
 
 from collections.abc import Iterator
 
 import pytest
 
 from ironm_agent import plugin
-from ironm_agent.routing import Router
-
-
-@pytest.fixture(autouse=True)
-def model_only_router(monkeypatch: pytest.MonkeyPatch) -> Iterator[Router]:
-    router = Router(keyword=None, vector=None)
-    monkeypatch.setattr(plugin, "default_router", lambda: router)
-    yield router
 
 
 @pytest.fixture(autouse=True)
@@ -42,3 +31,16 @@ def traces_in_memory(monkeypatch: pytest.MonkeyPatch) -> Iterator[object]:
     book = harness.TraceBook()
     monkeypatch.setattr(harness, "_default", book)
     yield book
+
+
+@pytest.fixture(autouse=True)
+def no_real_model_for_spoken(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """网页接口里交给模型说的话（spec [2026-10-23] §86）：测试里默认模型不可用，退回规则的那句；要测的自己换掉。"""
+    from ironm_agent import spoken
+
+    class Down:
+        async def chat(self, *_: object, **__: object) -> object:
+            raise RuntimeError("测试里不连真实模型")
+
+    monkeypatch.setattr(spoken, "default_llm", lambda: Down())
+    yield

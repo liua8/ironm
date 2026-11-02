@@ -12,7 +12,7 @@ import json
 import logging
 import re
 import unicodedata
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any, Literal, cast
@@ -47,6 +47,8 @@ _PROMPT = """你负责替健身教练团队记住"这个用户本人"的情况�
 - goal 目标：增肌、减脂、力量、耐力等，目标数字和期限，现在的情况（如现在多重）
 - style 回答风格：希望回答是什么样（简短、不讲原理、多举例等）
 - event 近期事件：最近几天发生、会影响这几天训练的事（练后酸痛、感冒、出差、没睡好等）
+- level 训练水平：零基础 / 练了不到 6 个月 / 6 个月到 2 年 / 2 年以上（持续规律地练），加上做过的主要动作和用过的重量（如"练了一年，深蹲 60 公斤"）；变了用 update
+- followup 待跟进：教练这一轮答应过的回访或用户要的提醒（如"下周问问膝盖""两周后复测体重"），until 写到期日；quote 从这一轮的对话里摘
 - advice 给过的关键建议：教练这一轮针对这个人的情况做出的最关键的那个决定（如把全蹲换成箱式深蹲、练 4 周再看）。每轮最多 1 条；一般的训练原则（组数次数、休息多久、加重规则、热身放松、疼到几分就停、建议就医）不记，只是讲解知识时也不记
 
 规则：
@@ -184,7 +186,9 @@ def _problem(
     if len(content) > MAX_CONTENT:
         return None, "内容太长"
     quote = str(raw.get("quote") or "").strip()
-    source = answer if category == "advice" else f"{user_text}\n{held}"
+    source = (answer if category == "advice"
+              else f"{user_text}\n{held}\n{answer}" if category == "followup"  # 答应的事可能是教练说的
+              else f"{user_text}\n{held}")  # fmt: skip
     if len(norm(quote)) < 2 or norm(quote) not in norm(source):
         return None, "原话片段在原文里找不到"
     allowed = digits(quote, chinese=True) | (
@@ -192,16 +196,50 @@ def _problem(
     )
     if not digits(content) <= allowed:
         return None, "内容里有原话里没有的数字"
-    inferred = raw.get("inferred") is True and category != "advice"
+    inferred = raw.get("inferred") is True and category not in ("advice", "followup")
     if category == "injury" and not inferred and _unsaid(content, quote):
         inferred = True  # 左右、诊断词原话里没有：是推测的，先放着等他确认
     if category in _LONG_TERM and (
         _TEMPORARY.search(quote) if target is not None else _SURELY_TEMPORARY.search(quote)
     ):
         kind, category, target = "add", "event", None  # 临时的变化不覆盖长期记忆
+    until = None
+    if category in ("event", "followup"):
+        until = until_of(raw.get("until"), today) or (target.until if target else None)
+        if until is None and category == "followup":  # 待跟进没写哪天：一周后（§73）
+            until = (today or date.today()) + timedelta(days=7)
+    if kind == "add" and category == "event" and target is None:
+        same = same_event(content, items.values(), today or date.today())
+        if same is not None:  # 同一件事又说了一遍：改原来那条，不新增（§73 需求 3）
+            kind, target = "update", same
+            until = until or same.until
     op = Op(cast(Literal["add", "update", "resolve"], kind), cast(Category, category), content,
-            quote, target, inferred, until_of(raw.get("until"), today) or (target.until if target else None) if category == "event" else None)  # fmt: skip
+            quote, target, inferred, until)  # fmt: skip
     return op, ""
+
+
+# 近期事件的种类：同一种、还在有效期里的，算同一件事（§73：出差说 3 遍只有一条）
+_EVENT_KINDS = tuple(re.compile(p) for p in (
+    r"出差|酒店|外地|回老家", r"旅游|旅行|度假", r"感冒|发烧|咳嗽|生病|病了|拉肚子|嗓子",
+    r"加班|很忙|太忙|没空|没时间", r"失眠|没睡好|睡不好|熬夜", r"经期|月经|生理期",
+))  # fmt: skip
+
+
+def same_event(content: str, items: Iterable[Item], today: date) -> Item | None:
+    """已有的、还在有效期里的同一种近期事件（出差、生病、忙……）；没有就是 None。"""
+    kinds = [k for k in _EVENT_KINDS if k.search(content)]
+    if not kinds:
+        return None
+    for x in items:
+        if x.category != "event" or x.status != "active":
+            continue
+        if x.until is not None and x.until < today:
+            continue
+        if x.until is None and (today - x.created.astimezone().date()).days > 7:
+            continue
+        if any(k.search(x.content) for k in kinds):
+            return x
+    return None
 
 
 def until_of(raw: Any, today: date | None = None) -> date | None:
@@ -309,57 +347,8 @@ async def extract(
 
 # ---- 按需提取（spec [2026-10-23] §17）：先用规则判断这一轮可能含个人信息，才调用模型 ----------------
 
-# 中文常常省略"我"（"工作日只能晚上 8 点以后练"），所以不要求出现"我"：提到这些内容、又不是纯粹的知识提问，就提取
-_CUES = re.compile(
-    r"伤|疼|痛|(?<!肌)酸|麻|肿|扭|骨折|手术|膝|腰|肩|颈|脖子|踝|腕|髋|心脏|心律|血压|血糖|糖尿病|哮喘|怀孕|孕|产后"
-    r"|哑铃|杠铃|壶铃|弹力带|拉力带|器械|健身房|在家|家里|单杠|跑步机|单车|椭圆机|公斤|斤|kg|千克"
-    r"|点|分钟|小时|周末|工作日|早上|晚上|中午|下班|上班|每天|每周|周[一二三四五六日天]"
-    r"|素食|吃素|过敏|不耐受|忌口|不吃|不喝|补剂|肌酸|蛋白粉|鱼油|咖啡"
-    r"|喜欢|讨厌|不想|不爱|受不了|无聊|目标|想增|想减|增肌|减脂|减肥|减到|瘦到|练到|体重|身高|岁"
-    r"|出差|旅游|感冒|发烧|生病|没睡|熬夜|失眠|月经|经期|习惯|医生|诊断|好多了|好了"
-)
-# 说的是自己、而且是眼下或过去的情况
-_PERSONAL = re.compile(
-    r"我|俺|自己|咱|家里|家人|今天|昨天|前天|最近|这周|这个月|这两|现在|以前|之前|一直|刚|已经|更正|改成"
-)
 # 身体不适和近期状况：问句里也多半是在说自己（"感冒了还能去健身吗"）
 _HURT = re.compile(r"疼|痛|伤|肿|麻|扭|不舒服|(?<!肌)酸|感冒|发烧|生病|没睡|熬夜|失眠|月经|经期")
 _QUESTION = re.compile(
     r"吗|呢|？|\?|怎么|如何|什么|多少|几[次组个天]|要不要|能不能|可不可以|是不是|该不该|哪"
 )
-# 没说"我"也是在讲自己的情况
-_STRONG = re.compile(r"旧伤|受过伤|做过.{0,4}手术|骨折过|过敏|不耐受|吃素|素食|怀孕|孕期|产后")
-# 对回答方式的要求
-_STYLE = re.compile(
-    r"(回答|说话|讲|回复|解释).{0,6}(简短|短点|短一点|详细|别太长|少点|多举例|直接|通俗)"
-    r"|别(给我)?列|说重点|简单点|太长了|啰嗦|别讲原理"
-)
-HELD_MAX = 4  # 一个会话最多留几句没提取的话
-_HELD: dict[str, list[str]] = {}
-_HELD_SESSIONS = 500
-
-
-def worth_extracting(text: str, task: str | None = None) -> bool:
-    """这一轮有没有可能含要记的个人信息；排计划、记训练时可能有"给过的建议"，也提取。"""
-    if task in ("plan", "log"):
-        return True
-    if _STYLE.search(text) or _STRONG.search(text) or _HURT.search(text):
-        return True
-    if not _CUES.search(text):
-        return False
-    return bool(_PERSONAL.search(text)) or not _QUESTION.search(text)
-
-
-def hold(session_id: str, text: str) -> None:
-    """判断为不用提取的话先留着，下次提取时一起交给模型（防止误判漏记）。"""
-    if not session_id:
-        return
-    lines = _HELD.pop(session_id, [])
-    lines = [*lines, text][-HELD_MAX:]
-    _HELD[session_id] = lines
-    while len(_HELD) > _HELD_SESSIONS:  # 只留最近活跃的会话
-        _HELD.pop(next(iter(_HELD)))
-
-
-def take_held(session_id: str) -> list[str]:
-    return _HELD.pop(session_id, []) if session_id else []

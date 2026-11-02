@@ -151,7 +151,7 @@ def test_temporary_conditions_are_listed_apart_with_dates() -> None:
     d = decide("帮我做个训练计划", [], recall, GOAL)
     assert "③器械：家里只有一对 20 公斤哑铃" in d.ask  # 长期的照旧
     assert (
-        "这两周的临时条件（到期就不再用）：这两周出差只有酒店健身房（10月22日起，到11月5日）"
+        "这两周的临时条件（到期就不再用）：这两周出差只有酒店健身房（10月22日起，到10月29日）"
         in d.ask
     )
 

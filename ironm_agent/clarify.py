@@ -25,6 +25,12 @@ PLAN_REQUEST = re.compile(
 )
 # 要的是一份整的计划（不是今天练什么）
 _WHOLE = re.compile(r"计划|课表|一周|每周")
+# 问的是有多少、有哪些计划（§83），不是要一份：没说"给我排、帮我做、要一份"时不当成要新计划
+ASK_ABOUT_PLANS = re.compile(
+    r"(?:多少|几个|几份|几套|哪些|什么样的|有什么|都有|还有别的|别的|其他)[^，。？！?!]{0,6}(?:训练)?(?:计划|方案|课表)"
+    r"|(?:计划|方案|课表)[^，。？！?!]{0,4}(?:有多少|有几个|有几份|有哪些|都有什么|多不多)"
+)
+_ASK_FOR_ONE = re.compile(r"给我|帮我|替我|排|做一份|来一份|要一份|制定|定制|设计|换")
 # 说的不是训练计划
 _NOT_TRAINING = re.compile(r"饮食|食谱|吃|餐|营养|减脂餐|热量|睡眠|作息")
 # 要一份新的（§55 需求 3）
@@ -106,6 +112,8 @@ def wants_new(text: str, *, has_plan: bool) -> bool:
     或者只说要计划、没点到具体的天、动作、组次、时长。"""
     if not PLAN_REQUEST.search(text) or not _WHOLE.search(text):
         return False
+    if ASK_ABOUT_PLANS.search(text) and not _ASK_FOR_ONE.search(text):
+        return False  # "你们有多少训练计划"：问的是方案库（§83）
     if _NOT_TRAINING.search(text) and not re.search(r"训练|练|健身", text):
         return False
     if _WHICH_DAY.search(text) and not REPLAN.search(text) and not re.search(r"计划|课表", text):

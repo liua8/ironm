@@ -26,7 +26,9 @@ from ironm_agent.training import Plan, WorkoutLog, weekday_name
 
 _log = logging.getLogger("ironm_agent.coach_state")
 
-type Kind = Literal["today", "weather", "target", "kcal", "goal", "retest", "alert", "proposal"]
+type Kind = Literal[
+    "today", "weather", "target", "kcal", "goal", "retest", "alert", "proposal", "review"
+]  # review：管家复盘里模型决定的调整（§85）
 type Action = Literal["auto", "confirm", "info"]  # 自动生效 / 要用户确认 / 只提醒
 type ChangeKind = Literal[
     "added", "changed", "removed", "accepted", "declined"
@@ -61,9 +63,43 @@ class State(BaseModel):
     items: list[Item]
     seen: int = 0  # 用户在对话里看过的最新版本
     choices: dict[str, Choice] = Field(default_factory=dict)  # 每条待确认调整的选择
+    review: Review | None = None  # 今天的管家复盘（§85）
+    stage_day: date | None = None  # 上次 4 周阶段小结是哪天（§89）
+    stage_text: str = ""  # 那次的小结（对话里追问时讲）
 
     def item(self, key: str) -> Item | None:
         return next((x for x in self.items if x.key == key), None)
+
+
+class Done(BaseModel):
+    """管家复盘里一条已经生效的调整（§85）：模型决定的，代码校验后执行。"""
+
+    key: str  # review:today / review:plan / review:kcal / review:note / review:ask
+    type: Literal["today", "plan", "kcal", "note", "ask"]
+    title: str  # 给人看的一句话：改了什么
+    why: str = ""  # 模型写的原因
+    basis: str = ""  # 用到的事实和资料（追问依据时讲）
+    expect: str = ""  # 能检查的预期（给人看的）
+    check: dict[str, Any] = Field(default_factory=dict)  # 能核对的预期（expect.Check，§89）
+    due: date | None = None  # 哪天核对
+    value: dict[str, Any] = Field(
+        default_factory=dict
+    )  # today: ratio / rest；plan: draft；kcal: before、after
+    undone: bool = False  # 他说了"不用这样调"
+
+
+class Review(BaseModel):
+    """一天一次的管家复盘（§85）。"""
+
+    day: date
+    summary: str = ""  # 模型写的一句话：今天看到的最重要的情况
+    done: list[Done] = Field(default_factory=list)
+    failed: bool = False  # 模型没调用成功：不调整
+    checked: list[str] = Field(default_factory=list)  # 今天核对完的以前的调整（§89）
+    stage: str = ""  # 今天写的 4 周阶段小结（§89）
+
+    def today(self) -> Done | None:
+        return next((d for d in self.done if d.type == "today" and not d.undone), None)
 
 
 class Change(BaseModel):
@@ -79,7 +115,11 @@ class Change(BaseModel):
     why: str = ""
     basis: str = ""
     status: Action = "info"
-    outcome: str = ""  # 调整后的效果（第 2 步补上）
+    outcome: str = ""  # 调整后的效果：到期核对时写（§89）
+    expect: str = ""  # 管家复盘写的预期（给人看的）
+    check: dict[str, Any] = Field(default_factory=dict)  # 能核对的预期（expect.Check）
+    due: date | None = None  # 哪天核对
+    result: Literal["", "met", "missed", "unknown"] = ""  # 核对结果
 
 
 # ---- 输入与规则 -------------------------------------------------------------------------------
@@ -98,6 +138,7 @@ class Inputs:
     forecast: tuple[Any, ...] = ()  # weather.Day：今天起 7 天的预报（spec [2026-10-23] §34）
     illness: list[Any] = field(default_factory=list)  # illness.Episode：最近的生病记录（§46）
     day: Any = None  # day_state.DayState：今日状态（§54）
+    review: Review | None = None  # 今天的管家复盘（§85），模型决定的今天怎么练
 
 
 def _today_item(inp: Inputs, today: date) -> Item:
@@ -125,17 +166,28 @@ def _today_item(inp: Inputs, today: date) -> Item:
                     action="auto", value={"rest": True, "sick": True})  # fmt: skip
     if sick is not None and sick[0] == "ease":
         gap = (min(EASE, gap[0]) if gap else EASE, sick[1])
+    told = inp.review.today() if inp.review is not None else None  # 管家复盘：模型决定的今天（§85）
+    if told is not None and told.value.get("rest"):
+        return Item(key="today", kind="today", title=f"今天休息：{told.why}", why=told.why,
+                    basis=told.basis, action="auto", value={"rest": True, "review": True})  # fmt: skip
+    if told is not None and told.value.get("ratio"):
+        ratio = float(told.value["ratio"])
+        gap = (min(ratio, gap[0]) if gap else ratio, told.why)
     light = sick is not None and sick[0] == "light"
     said = inp.day.tired() if inp.day is not None else None  # 今天说过累或没睡好（§54）
+    # 今天复盘过（§85）：身体数据怎么影响今天由模型决定，不再按"状态差就减半"的规则套；
+    # 他今天亲口说累、生病的规则（安全底线）照旧
+    reviewed = inp.review is not None and not inp.review.failed
+    poor = state.level == "poor" and not reviewed
     version = build(
         session,
-        tired=state.level == "poor" or light or said is not None,
+        tired=poor or light or said is not None,
         tired_why="；".join(
             x
             for x in (
                 (sick[1] if light and sick else ""),
                 said.text() if said else "",
-                *state.reasons,
+                *(state.reasons if poor else ()),
             )
             if x
         ),
@@ -150,11 +202,13 @@ def _today_item(inp: Inputs, today: date) -> Item:
                     why=f"今天的状态{state.name}，天气不影响训练",
                     value={"today": session.model_dump(mode="json")})  # fmt: skip
     basis = []
-    if state.level == "poor":
+    if poor:
         basis.append("睡眠〔K07〕、和自己的基线比〔K18〕")
     if adv is not None and adv.level in ("indoor", "avoid"):
         basis.append("空气质量 HJ 633、高温预警分级")
-    if gap:
+    if gap and told is not None and gap[1] == told.why:
+        basis.append(told.basis)
+    elif gap:
         basis.append("中断后降量（经验）")
     return Item(
         key="today",
@@ -302,9 +356,27 @@ def _sick(inp: Inputs, today: date) -> frozenset[date]:
     return sick_days(inp.illness, today)
 
 
+def _review_items(inp: Inputs) -> list[Item]:
+    """管家复盘里已经生效的调整（§85），给页面和管家消息看；撤销了的不再列出。"""
+    if inp.review is None:
+        return []
+    out = [Item(key=d.key, kind="review", title=d.title, why=d.why, basis=d.basis,
+                action="info" if d.type in ("note", "ask") else "auto",
+                value={"type": d.type, "expect": d.expect, **d.value})
+           for d in inp.review.done if not d.undone]  # fmt: skip
+    # 今天核对完的以前的调整、4 周阶段小结（§89）：只告诉他
+    out += [Item(key=f"review:checked:{i}", kind="review", title="上次的调整效果怎么样", why=x,
+                 value={"type": "checked"}) for i, x in enumerate(inp.review.checked)]  # fmt: skip
+    if inp.review.stage:
+        out.append(Item(key="review:stage", kind="review", title="这 4 周的阶段小结",
+                        why=inp.review.stage, value={"type": "stage"}))  # fmt: skip
+    return out
+
+
 def compute(inp: Inputs, today: date) -> list[Item]:
-    """按规则算出当前方案（顺序：今天、提醒、待确认、饮食、目标、下次目标）。"""
+    """算出当前方案（顺序：今天、提醒、管家复盘的调整、待确认、饮食、目标、下次目标）。"""
     items = [
+        *_review_items(inp),
         _today_item(inp, today),
         *_weather_items(inp, today),
         *_alert_items(inp, today),
@@ -317,11 +389,12 @@ def compute(inp: Inputs, today: date) -> list[Item]:
         "today": 0,
         "weather": 1,
         "alert": 2,
-        "proposal": 3,
-        "kcal": 4,
-        "goal": 5,
-        "retest": 6,
-        "target": 7,
+        "review": 3,
+        "proposal": 4,
+        "kcal": 5,
+        "goal": 6,
+        "retest": 7,
+        "target": 8,
     }
     return sorted(items, key=lambda x: order[x.kind])
 
@@ -360,6 +433,7 @@ class CoachStore(Protocol):
     async def save(self, user_id: str, state: State, changes: Sequence[Change]) -> None: ...
     async def history(self, user_id: str, limit: int = 30) -> list[Change]: ...
     async def log(self, user_id: str, changes: Sequence[Change]) -> None: ...
+    async def update(self, user_id: str, change: Change) -> None: ...
 
 
 class CoachBook:
@@ -381,6 +455,11 @@ class CoachBook:
 
     async def log(self, user_id: str, changes: Sequence[Change]) -> None:
         self.changes.setdefault(user_id, []).extend(changes)
+
+    async def update(self, user_id: str, change: Change) -> None:
+        self.changes[user_id] = [
+            change if c.id == change.id else c for c in self.changes.get(user_id, [])
+        ]
 
 
 DDL = (
@@ -450,6 +529,14 @@ class PgCoach:
             {"uid": user_id, "n": limit},
         )
         return [Change.model_validate_json(r["content"]) for r in rows]
+
+    async def update(self, user_id: str, change: Change) -> None:
+        """改一条调整经历（到期核对后写上效果，§89）。"""
+        await self._q(
+            "UPDATE ironm_coach_change SET content = encrypt_content(:c)"
+            " WHERE id = :id AND user_id = :uid",
+            {"id": change.id, "uid": user_id, "c": change.model_dump_json()},
+        )
 
 
 _default: CoachStore | None = None
@@ -528,13 +615,21 @@ async def evaluate(
     if not force and old is not None and old.day == today:
         return old, []
     inp = await _gather(user_id, deps, today)
+    review = (
+        old.review
+        if old is not None and old.review is not None and old.review.day == today
+        else None
+    )
+    inp.review = review
     items = compute(inp, today)
     version = (old.version + 1) if old else 1
     changes = diff(old, items, today, version)
     if old is not None and old.day == today and not changes:
         return old, []
     state = State(version=version, day=today, at=datetime.now(UTC), reason=reason, items=items,
-                  seen=old.seen if old else 0, choices=old.choices if old else {})  # fmt: skip
+                  seen=old.seen if old else 0, choices=old.choices if old else {},
+                  review=review, stage_day=old.stage_day if old else None,
+                  stage_text=old.stage_text if old else "")  # fmt: skip
     await deps.store.save(user_id, state, changes)
     _log.info("coach evaluated %s", json.dumps({"version": version, "items": len(items),
                                                 "changes": len(changes)}))  # fmt: skip
@@ -639,7 +734,9 @@ async def decide(
     today = today or date.today()
     state = await store.get(user_id)
     item = state.item(key) if state is not None else None
-    if state is None or item is None or item.action != "confirm":
+    if state is None or item is None:
+        return None
+    if item.action != "confirm":
         return None
     choices = {**state.choices, key: Choice(decision=decision, title=item.title, day=today)}
     record = Change(id=uuid.uuid4().hex[:16], at=datetime.now(UTC), day=today, version=state.version,

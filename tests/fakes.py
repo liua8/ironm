@@ -41,24 +41,6 @@ def jsonr(data: Mapping[str, Any]) -> Reply:
     return Reply(json.dumps(data, ensure_ascii=False))
 
 
-def route_reply(
-    intent: str = "pro",
-    primary: str | None = None,
-    helpers: Sequence[str] = (),
-    skills: Mapping[str, Sequence[str]] | None = None,
-) -> Reply:
-    """路由模型这一路的回答（spec [2026-10-23] §16、§21）：主责 1.0、辅助 0.9，其余 0；skills 是给角色选的规程。"""
-    scores = {r: 0.0 for r in ("trainer", "nutrition", "recovery")}
-    if primary:
-        scores[primary] = 1.0
-    for h in helpers:
-        scores[h] = 0.9
-    out: dict[str, Any] = {"intent": intent, "scores": scores}
-    if skills is not None:
-        out["skills"] = {k: list(v) for k, v in skills.items()}
-    return jsonr(out)
-
-
 def call(name: str, **args: Any) -> Reply:
     return Reply("", (ToolCall(f"c-{name}", name, dict(args)),))
 

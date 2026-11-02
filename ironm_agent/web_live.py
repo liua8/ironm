@@ -93,6 +93,7 @@ async def _finish(
     await lives.clear(user_id)
     if log is None:
         return None
+    plan, before = await _context(user_id, store)
     row = await store.log(user_id, log)
     await after_workout(user_id, row.log, store, memory, pain, illness)
     _log.info(
@@ -100,7 +101,33 @@ async def _finish(
         len(log.items),
         sum(len(x.done_sets) for x in log.items),
     )
-    return {"id": row.id, **row.log.model_dump(mode="json"), "line": row.log.line()}
+    return {"id": row.id, **row.log.model_dump(mode="json"), "line": row.log.line(),
+            "celebrate": await _celebrate(user_id, row.log, before, plan, store, illness)}  # fmt: skip
+
+
+async def _celebrate(
+    user_id: str, log: Any, before: list[Any], plan: Any, store: TrainingStore, illness: Any
+) -> dict[str, Any]:
+    """练完的卡要用的（§92）：破了的纪录、本周练之前和之后的次数（和首页战报同一套算法）。"""
+    from ironm_agent.illness import sick_days
+    from ironm_agent.live import records
+    from ironm_agent.training import week_of
+    from ironm_agent.web_more import _episodes
+
+    today = date.today()
+    try:
+        sick = sick_days(await _episodes(illness, user_id, today), today)
+    except Exception:
+        sick = frozenset()
+    stored = await store.plan(user_id)
+    since = stored.since if stored else None
+    was = week_of(plan, before, today, since, sick)
+    now = week_of(plan, [*before, log], today, since, sick)
+    return {
+        "prs": records(log, before),
+        "week": {"before": was.done, "done": now.done, "planned": now.planned,
+                 "reached_now": bool(now.planned) and was.done < now.planned <= now.done},
+    }  # fmt: skip
 
 
 @router.get("/iron/api/live")
@@ -233,3 +260,106 @@ async def discard_live(
 ) -> dict[str, Any]:
     await lives.clear(user_id)
     return {"live": None}
+
+
+# ---- 训练中实时调整（spec [2026-10-23] §90）-----------------------------------------------------
+
+
+class AdjustIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(max_length=32)
+    said: str = Field(min_length=1, max_length=100)
+    item: int | None = Field(
+        default=None, ge=-1, le=14
+    )  # 说的是哪个动作；不写是正在练的，-1 是整次训练
+
+
+async def _situation(
+    user_id: str, memory: MemoryStore, illness: Any
+) -> tuple[str, list[str], list[str], str]:
+    """今天的身体状态、记着的伤病、在生病没有、管家今天的调整；读不到的当作没有。"""
+    from ironm_agent.casefile import readiness
+    from ironm_agent.illness import active
+    from ironm_agent.web_more import _episodes, _web
+
+    today = date.today()
+    state = ""
+    try:
+        snap = await _web().snapshot_for(user_id)
+        state = readiness(snap.readings, "", today).line()
+    except Exception as e:
+        _log.info("live adjust snapshot unavailable: error_type=%s", type(e).__name__)
+    try:
+        injuries = [x.content for x in await memory.items(user_id)
+                    if x.category == "injury" and x.status == "active"]  # fmt: skip
+    except Exception:
+        injuries = []
+    try:
+        sick = [e.what() for e in active(await _episodes(illness, user_id, today), today)]
+    except Exception:
+        sick = []
+    return state, injuries, sick, await coach_today(user_id)
+
+
+async def coach_today(user_id: str) -> str:
+    """管家今天复盘定的今天怎么练（§85）；读不到当作没有（测试里换掉）。"""
+    from ironm_agent.web_more import coach_deps
+
+    try:
+        state = await coach_deps().store.get(user_id)
+    except Exception as e:
+        _log.info("live adjust coach unavailable: error_type=%s", type(e).__name__)
+        return ""
+    done = state.review.today() if state is not None and state.review is not None else None
+    return (
+        f"{done.title}（{done.why}）"
+        if done is not None and state.review.day == date.today()
+        else ""
+    )
+
+
+@router.post("/iron/api/live/adjust")
+async def adjust_live(
+    body: AdjustIn,
+    user_id: str = Depends(_verify()),
+    lives: LiveStore = LIVE,
+    store: TrainingStore = TRAINING,
+    memory: MemoryStore = STORE,
+    pain: Any = PAIN,
+    illness: Any = ILLNESS,
+) -> dict[str, Any]:
+    """练的时候跟管家说一句（太重、很累、哪里疼）：模型决定后面怎么练，代码按安全底线套上并保存。"""
+    from ironm_agent import spoken
+    from ironm_agent.live_adjust import adjust, context_lines, current
+    from ironm_agent.triggers import pain_parts
+    from ironm_agent.web_more import coach_later
+
+    now = datetime.now()
+    live = await lives.get(user_id)
+    if live is None or live.id != body.id:
+        raise HTTPException(409, "这次训练已经结束或换了一次，请刷新")
+    target = current(live) if body.item is None else (None if body.item == -1 else body.item)
+    if target is not None and target >= len(live.items):
+        raise HTTPException(422, "没有这个动作")
+    plan, logs = await _context(user_id, store)
+    state, injuries, sick, coach = await _situation(user_id, memory, illness)
+    facts = context_lines(live, target, body.said, state=state, injuries=injuries, illness=sick,
+                          coach=coach, logs=logs)  # fmt: skip
+    got = await adjust(spoken.default_llm(), live, body.said, target, facts, plan=plan, logs=logs,
+                       rests=await lives.rests(user_id))  # fmt: skip
+    if got.kinds:
+        live = got.live.model_copy(update={"updated": now})
+        await lives.save(user_id, live)
+    if parts := pain_parts(body.said):  # 说疼的部位记进疼痛记录，和对话里一样（§90 需求 5）
+        try:
+            if not await memory.paused(user_id):
+                for part in parts:
+                    await pain.add(user_id, part, date.today())
+                coach_later(user_id, "说疼")
+        except Exception as e:
+            _log.warning("live pain record failed: error_type=%s", type(e).__name__)
+    _log.info("live adjusted: kinds=%s dropped=%d urgent=%s",
+              ",".join(got.kinds) or "-", got.dropped, got.urgent)  # fmt: skip
+    return {**_out(live, now), "say": got.say, "end": got.end, "urgent": got.urgent,
+            "changed": len(got.kinds)}  # fmt: skip

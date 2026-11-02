@@ -18,7 +18,15 @@ from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal, Protocol, cast
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from ironm_agent.memory_extract import digits
 from ironm_agent.numbers import written_numbers
@@ -47,8 +55,17 @@ def weekday_name(day: int) -> str:
 # ---- 计划与记录的内容 ------------------------------------------------------------------------
 
 
+# 出处标记（〔K03〕〔C2〕〔经验〕这类）只用于内部核对，计划和记录里不留，用户看不到
+REF_MARK = re.compile(r"〔[^〔〕\n]{1,12}〕")
+
+
 class _Model(BaseModel):
     model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _no_refs(cls, v: Any) -> Any:
+        return REF_MARK.sub("", v) if isinstance(v, str) else v
 
 
 class PlanItem(_Model):
@@ -85,6 +102,9 @@ class Plan(_Model):
     goal: str = Field(default="", max_length=16)
     days_per_week: int = Field(ge=1, le=7)
     sessions: list[Session] = Field(min_length=1, max_length=7)
+    # 这周早些天用过的计划（启用日期, 计划），由存储读当前计划时带上，不存进数据（§93）：
+    # 本周进度按每天当时用的那一版算应练，这周中间换了计划，前几天不会只剩新计划的一两次
+    _earlier: tuple[tuple[date, Plan], ...] = PrivateAttr(default=())
 
     @model_validator(mode="after")
     def _days(self) -> Plan:
@@ -312,6 +332,10 @@ def task_of(text: str) -> Kind | None:
     if LOG_TASK.search(text) and not _QUESTION.search(text):
         return "log"
     if PLAN_TASK.search(text) and not (_DIET.search(text) and not _TRAINING_WORD.search(text)):
+        from ironm_agent.clarify import _ASK_FOR_ONE, ASK_ABOUT_PLANS
+
+        if ASK_ABOUT_PLANS.search(text) and not _ASK_FOR_ONE.search(text):
+            return None  # 问有多少、有哪些计划，不是要写计划（§83）
         return "plan"
     return None
 
@@ -324,11 +348,37 @@ class StoredPlan:
     id: str
     plan: Plan
     created: datetime
+    edit: bool = False  # 在上一版上按操作改出来的（管家复盘、对话里挪一天换动作，§93）
+    start: date | None = None  # 这条改动链最早那一版的启用日期
 
     @property
     def since(self) -> date:
-        """这份计划从哪天开始用（本地日期）。"""
-        return self.created.astimezone().date()
+        """这份计划从哪天开始用（本地日期）：在原计划上改的沿用原计划的日期，新排的从那天起算（§93）。"""
+        return self.start or self.created.astimezone().date()
+
+
+def lineage(
+    versions: Sequence[StoredPlan], current: StoredPlan, today: date | None = None
+) -> StoredPlan:
+    """当前这一版带上开始日期：往前找，直到一版不是按操作改出来的（新排的计划）。
+    开始日期在这周中间时，再带上这周早些天用过的版本（本周进度按天用当时那一版）。"""
+    ordered = sorted(versions, key=lambda p: p.created)
+    i = next((k for k, p in enumerate(ordered) if p.id == current.id), None)
+    if i is None:
+        return current
+    while i > 0 and ordered[i].edit:
+        i -= 1
+    start = ordered[i].created.astimezone().date()
+    plan = current.plan.model_copy()
+    if start > week_start(today or date.today()):
+        plan._earlier = tuple(
+            (d, p.plan) for p in ordered[:i] if (d := p.created.astimezone().date()) < start
+        )
+    return replace(current, plan=plan, start=start)
+
+
+def _is_edit(content: dict[str, Any]) -> bool:
+    return bool(content.get("ops"))
 
 
 @dataclass(frozen=True)
@@ -399,7 +449,8 @@ class TrainingBook:
         self._logs[user_id] = [StoredLog(new_id(), x, now()) for x in logs]
 
     async def plan(self, user_id: str) -> StoredPlan | None:
-        return next((p for p, active in self._plans.get(user_id, []) if active), None)
+        current = next((p for p, active in self._plans.get(user_id, []) if active), None)
+        return lineage([p for p, _ in self._plans[user_id]], current) if current else None
 
     async def plans(self, user_id: str) -> list[StoredPlan]:
         return sorted((p for p, _ in self._plans.get(user_id, [])), key=lambda p: p.created)
@@ -434,7 +485,7 @@ class TrainingBook:
             plans = self._plans.setdefault(user_id, [])
             previous = next((p.id for p, active in plans if active), None)
             self._plans[user_id] = [(p, False) for p, _ in plans]
-            new = StoredPlan(new_id(), _plan_of(d.content), now())
+            new = StoredPlan(new_id(), _plan_of(d.content), now(), edit=_is_edit(d.content))
             self._plans[user_id].append((new, True))
             return self._put(
                 user_id, replace(d, state="confirmed", applied=new.id, previous=previous)
@@ -559,15 +610,21 @@ class PgTraining:
         return rows if isinstance(rows, list) else []
 
     async def plan(self, user_id: str) -> StoredPlan | None:
+        """当前计划，带上改动链最早那一版的开始日期（§93）。"""
         rows = await self._q(
-            "SELECT id, decrypt_content(content) AS content, created_at FROM ironm_plan"
-            " WHERE user_id = :uid AND active ORDER BY created_at DESC LIMIT 1",
+            "SELECT id, decrypt_content(content) AS content, created_at, active FROM ironm_plan"
+            " WHERE user_id = :uid ORDER BY created_at",
             {"uid": user_id},
         )
-        if not rows:
-            return None
-        r = rows[0]
-        return StoredPlan(str(r["id"]), _plan_of(json.loads(r["content"])), r["created_at"])
+        versions = []
+        current = None
+        for r in rows:
+            content = json.loads(r["content"])
+            p = StoredPlan(str(r["id"]), _plan_of(content), r["created_at"], edit=_is_edit(content))
+            versions.append(p)
+            if r["active"]:
+                current = p
+        return lineage(versions, current) if current is not None else None
 
     async def plans(self, user_id: str) -> list[StoredPlan]:
         """所有计划版本（撤销掉的已删除），按启用先后排。"""
@@ -791,12 +848,22 @@ def week_of(
     done_days = {x.day for x in this_week}
     if plan is None:
         return Week(0, 0, len(done_days))
-    day_of = {s.day: start + timedelta(days=s.day - 1) for s in plan.sessions}
-    counted = [
-        s
-        for s in plan.sessions
-        if (since is None or day_of[s.day] >= since) and day_of[s.day] not in sick
-    ]
+
+    def plan_on(d: date) -> Plan | None:
+        """那天用的计划：开始日期之后用当前的；之前用这周早些天那一版（§93），没有就不算。"""
+        if since is None or d >= since:
+            return plan
+        got = [p for s, p in plan._earlier if s <= d]
+        return got[-1] if got else None
+
+    counted = []
+    for i in range(7):
+        d = start + timedelta(days=i)
+        p = plan_on(d)
+        s = next((x for x in p.sessions if x.day == d.isoweekday()), None) if p else None
+        if s is not None and d not in sick:
+            counted.append(s)
+    day_of = {s.day: start + timedelta(days=s.day - 1) for s in counted}
     matched: set[int] = set()
     for log in this_week:
         same_day = [s for s in counted if day_of[s.day] == log.day and s.day not in matched]

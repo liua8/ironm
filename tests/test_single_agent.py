@@ -10,6 +10,7 @@ from ironm_agent.agent import APP_HELP, LOAD_SKILL
 from ironm_agent.clarify import HEAD
 from ironm_agent.llm import Reply, Stage
 from ironm_agent.metrics import Readings
+from ironm_agent.session_summary import SummaryBook
 from ironm_agent.training import TrainingBook
 from tests.fakes import call, jsonr, system_of, tool_results
 from tests.test_plan_ops import plan
@@ -25,10 +26,15 @@ class Solo:
     def __init__(self, answer: Answer) -> None:
         self.answer = answer
         self.stages: list[str] = []
+        self.routes: list[str] = []
+        self.route: Callable[[str], Reply] = lambda _: Reply("不是 JSON")
         self.system = ""
         self.user = ""
 
     def __call__(self, stage: Stage, messages: Sequence[Mapping[str, Any]], tools: bool) -> Reply:
+        if stage == "route":  # 按意图选规程（§75）：默认给不出合格的结果，退回按关键词
+            self.routes.append(str(messages[-1]["content"]))
+            return self.route(str(messages[-1]["content"]))
         self.stages.append(stage)
         assert stage == "expert", stage  # 单 Agent 没有路由、整合
         self.system = system_of(messages)
@@ -37,15 +43,23 @@ class Solo:
 
 
 def single(
-    answer: Answer, monkeypatch: Any, *, seeded: bool = False, **kw: Any
+    answer: Answer, monkeypatch: Any, *, seeded: bool = False, old: bool = False, **kw: Any
 ) -> tuple[Any, Solo]:
     s = Solo(answer)
     a = agent(s, monkeypatch=monkeypatch, snapshot=kw.pop("snapshot", snapshot_of()))
-    a._mode = "single"
     store = TrainingBook()  # 不连数据库
     if seeded:
         store.seed("42", plan())
     a._training = store
+    a._summaries = SummaryBook()  # 会话摘要（§73）不连数据库
+    if old:  # 老用户：有一条训练水平的记忆（新用户一定装初次评估，§76）
+        import asyncio
+
+        from ironm_agent.memory_store import Change, Item, now
+
+        t = now()
+        lvl = Item("lvl", "level", "练了一年", "练了一年", "said", "active", t, t)
+        asyncio.run(a._memory.apply("42", [Change("insert", item=lvl)]))
     return a, s
 
 
@@ -53,17 +67,15 @@ def cards(blocks: list[dict[str, Any]]) -> list[str]:
     return [str(b["id"]) for b in blocks if str(b.get("id", "")).startswith("card-")]
 
 
-def test_chat_is_answered_by_the_model_not_a_fixed_line(
-    monkeypatch: Any, model_only_router: Any
-) -> None:
-    # 语义相似总说很像：也不按它硬装规程（"你好"曾被装上"今天状态判断"）
-    monkeypatch.setattr(model_only_router, "similar", lambda _t, c: [0.9] * len(c), raising=False)
-    a, s = single(lambda *_: jsonr({"answer": "你好！今天想聊训练还是吃的？"}), monkeypatch)
+def test_chat_is_answered_by_the_model_not_a_fixed_line(monkeypatch: Any) -> None:
+    a, s = single(
+        lambda *_: jsonr({"answer": "你好！今天想聊训练还是吃的？"}), monkeypatch, old=True
+    )
     blocks, seen = run(a, "你好")
     assert text_of(blocks).startswith("你好！今天想聊训练还是吃的") and s.stages == ["expert"]
     assert seen["agent"] == "single" and seen["path"] == "answer" and "route" not in seen
     assert next(b["name"] for b in blocks if b["type"] == "tool_call") == "管家"
-    assert seen["skills"]["general"] == [] and "判断规则" not in s.system  # 闲聊不硬装规程
+    assert seen["skills"]["general"] == [] and "【训练基础】" not in s.system  # 闲聊不硬装规程
     assert "打招呼、道谢、闲聊时只写 answer" in s.system
 
 
@@ -72,18 +84,19 @@ def test_cross_domain_question_loads_skills_and_rules_of_both(monkeypatch: Any) 
         lambda *_: jsonr({"answer": "每周 3 次力量，热量按目标吃〔经验〕。"}), monkeypatch
     )
     _, seen = run(a, "减脂期怎么练怎么吃")
-    assert "训练的判断规则" in s.system and "饮食的判断规则" in s.system
+    assert "【训练基础】" in s.system and "【饮食基础】" in s.system  # 两个领域的基础规程（§74）
     assert "转给谁" not in s.system  # 单 Agent 不转给别人
     loaded = seen["skills"]["general"]
-    assert any(x.startswith("plan-") or "train" in x for x in loaded) and len(loaded) <= 4
+    content = [x for x in loaded if not x.endswith("-core")]  # 基础规程（§74）另算
+    assert any(x.startswith("plan-") or "train" in x for x in content) and len(content) <= 4
 
 
 def test_agent_can_load_another_skill_and_cite_it(monkeypatch: Any) -> None:
     def answer(system: str, user: str, results: list[str]) -> Reply:
-        assert "plan-muscle" in system  # 目录里看得到全部规程
+        assert "plan-build" in system  # 目录里看得到全部规程
         if not results:
-            return call(LOAD_SKILL, id="plan-muscle")
-        assert "【增肌】" in results[0]
+            return call(LOAD_SKILL, id="plan-build")
+        assert "【排训练计划】" in results[0]
         return jsonr({"answer": "增肌每个肌群每周 10 组以上〔K04〕。"})
 
     a, _ = single(answer, monkeypatch)
@@ -164,12 +177,28 @@ def test_logging_a_workout_gives_a_record_preview(monkeypatch: Any) -> None:
     assert seen["action"] == "log" and cards(blocks)
 
 
-def test_data_risk_still_blocks_training_without_calling_the_model(monkeypatch: Any) -> None:
+def test_data_risk_is_said_by_the_model_and_falls_back_when_points_are_missing(
+    monkeypatch: Any,
+) -> None:
+    """§86：危急指标又问训练，要求交给模型；没说到先别运动、尽快就医，退回固定回答。"""
     bp = Readings(systolic=((TODAY - timedelta(days=2), 186.0),),
                   diastolic=((TODAY - timedelta(days=2), 114.0),))  # fmt: skip
     a, s = single(lambda *_: jsonr({"answer": "x"}), monkeypatch, snapshot=snapshot_of(bp))
     blocks, seen = run(a, "今天练什么")
-    assert seen["path"] == "risk" and s.stages == [] and "186/114" in text_of(blocks)
+    assert s.stages == ["expert"] and "危急情况" in s.system + s.user
+    assert seen["path"] == "risk" and seen["risk_by"] == "fixed" and "186/114" in text_of(blocks)
+    said = "今天先别运动：你前天的血压 186/114 太高了，尽快去医院看看。"
+    a, s = single(lambda *_: jsonr({"answer": said}), monkeypatch, snapshot=snapshot_of(bp))
+    blocks, seen = run(a, "今天练什么")
+    assert (
+        seen["risk_by"] == "model"
+        and said in text_of(blocks)
+        and "这一轮先不给" not in text_of(blocks)
+    )
+    plan_like = "先别运动，尽快就医。等血压降下来，深蹲 3 组每组 10 次。"
+    a, s = single(lambda *_: jsonr({"answer": plan_like}), monkeypatch, snapshot=snapshot_of(bp))
+    _, seen = run(a, "今天练什么")
+    assert seen["risk_by"] == "fixed"  # 给了训练安排
 
 
 def test_several_tools_in_one_turn_then_answer(monkeypatch: Any) -> None:
@@ -177,8 +206,8 @@ def test_several_tools_in_one_turn_then_answer(monkeypatch: Any) -> None:
         if not results:
             return call(APP_HELP)
         if len(results) == 1:
-            return call(LOAD_SKILL, id="plan-muscle")
-        assert "使用说明" in results[0] and "【增肌】" in results[1]
+            return call(LOAD_SKILL, id="plan-build")
+        assert "使用说明" in results[0] and "【排训练计划】" in results[1]
         return jsonr({"answer": "增肌每个肌群每周 10 组以上〔K04〕，在计划页能看到每天的组数。"})
 
     a, s = single(answer, monkeypatch)
@@ -191,7 +220,7 @@ def test_tool_loop_is_capped_and_answers_from_what_it_has(monkeypatch: Any) -> N
     def answer(system: str, user: str, results: list[str]) -> Reply:
         if results and "不要再查了" in results[-1]:
             return jsonr({"answer": "增肌每个肌群每周 10 组以上〔K04〕。"})
-        return call(LOAD_SKILL, id="plan-muscle")  # 一直想再查
+        return call(LOAD_SKILL, id="plan-build")  # 一直想再查
 
     a, s = single(answer, monkeypatch)
     blocks, seen = run(a, "我想长点肉")
@@ -203,11 +232,11 @@ BP = Readings(systolic=((TODAY - timedelta(days=2), 186.0),),
               diastolic=((TODAY - timedelta(days=2), 114.0),))  # fmt: skip
 
 
-def test_data_risk_blocks_a_plan_request_before_the_model(monkeypatch: Any) -> None:
-    a, s = single(lambda *_: jsonr({"answer": "好，先确认一下条件。", "action": "new_plan"}),
+def test_data_risk_blocks_a_plan_request_even_if_the_model_asks_for_one(monkeypatch: Any) -> None:
+    a, _s = single(lambda *_: jsonr({"answer": "好，先确认一下条件。", "action": "new_plan"}),
                   monkeypatch, snapshot=snapshot_of(BP))  # fmt: skip
     blocks, seen = run(a, "帮我排个计划")  # 不带"练"字，原来认不出、照样调用模型
-    assert seen["path"] == "risk" and s.stages == [] and "186/114" in text_of(blocks)
+    assert seen["path"] == "risk" and seen["risk_by"] == "fixed" and "186/114" in text_of(blocks)
 
 
 def test_data_risk_drops_an_edit_without_claiming_it_was_done(monkeypatch: Any) -> None:

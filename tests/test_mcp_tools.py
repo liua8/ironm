@@ -78,8 +78,8 @@ def text(out: Any) -> str:
 def test_tools_load_with_hidden_identity() -> None:
     t = tools()
     assert set(t) == {"search_fitness_knowledge", "search_exercises", "estimate_strength",
-                      "check_training_plan", "training_patterns", "find_substitutes", "nutrition_calc",
-                      "pain_check", "trend_analysis", "query_my_training", "query_my_meals",
+                      "check_training_plan", "plan_templates", "training_patterns", "find_substitutes", "nutrition_calc",
+                      "pain_check", "trend_analysis", "explain_trends", "query_my_training", "query_my_meals",
                       "query_my_goal", "query_coach_plan"}  # fmt: skip
     for name, tool in t.items():
         schema = tool["description"]["inputSchema"]

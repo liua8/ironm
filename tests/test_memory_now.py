@@ -58,7 +58,9 @@ def test_agent_writes_a_recent_event_on_the_spot_and_sees_it_next_turn(monkeypat
     assert cold.category == "event" and cold.until == TODAY + timedelta(days=30)
     assert cold.evidence == "我感冒了" and seen["memory_now"] == 1 and "休息" in text_of(blocks)
     run(a, "今天能练吗")
-    assert "m1｜event 近期事件：感冒了，这周别练太狠" in s.user  # 下一轮带编号看得到
+    shown = s.user[s.user.index("情景记忆") :]  # 下一轮带编号出现在情景记忆里（§73）
+    first = shown.split("\n\n")[0]
+    assert "｜感冒了，这周别练太狠（" in first and "说的，到11月22日）" in first
     assert '"memory"' in s.system and "until" in s.system
 
 

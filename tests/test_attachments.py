@@ -1,4 +1,4 @@
-"""对话里的图片和报告（spec [2026-10-23] §11）：只读本人的附件，图片交给主责角色，报告说明正在识别。"""
+"""对话里的图片和报告（spec [2026-10-23] §11）：只读本人的附件，图片交给管家，报告说明正在识别。"""
 
 import asyncio
 from collections.abc import Mapping, Sequence
@@ -41,12 +41,12 @@ def test_only_the_users_own_files_are_read() -> None:
     assert big.images == () and big.skipped == ("午饭.jpg",)
 
 
-def test_meal_photo_goes_to_nutrition_with_the_image(monkeypatch: Any) -> None:
+def test_meal_photo_goes_to_the_agent_with_the_image(monkeypatch: Any) -> None:
     seen: dict[str, Any] = {}
 
     def script(stage: Stage, messages: Sequence[Mapping[str, Any]], tools: bool) -> Reply:
-        if stage == "route":
-            return jsonr({"intent": "chat"})  # 模型没看出是专业问题，也要按附了图片处理
+        if stage == "route":  # 选规程的模型说是闲聊，也要按附了图片处理
+            return jsonr({"skills": [], "domains": [], "intent": "闲聊", "fit": "chat"})
         if stage == "expert":
             seen["system"] = system_of(messages)
             seen["content"] = messages[1]["content"]
@@ -66,7 +66,7 @@ def test_meal_photo_goes_to_nutrition_with_the_image(monkeypatch: Any) -> None:
         ]
 
     blocks = asyncio.run(go())
-    assert "「营养师」" in seen["system"] and "看照片估算一餐" in seen["system"]
+    assert "看照片估算一餐" in seen["system"]  # 附了图片：装上看照片估算的规程
     content = seen["content"]
     assert isinstance(content, list) and content[1]["type"] == "image_url"
     assert "不要猜报告里写了什么" in content[0]["text"]

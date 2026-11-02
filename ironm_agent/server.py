@@ -14,7 +14,6 @@ import io
 import json
 import os
 import sys
-import threading
 from pathlib import Path
 
 
@@ -54,10 +53,6 @@ def main() -> None:
         if not path.is_file():
             sys.exit(f"IRONM_EXTRA_CONFIG 指向的文件不存在：{path}")
         files.append(str(path))
-    # 路由的本机中文小模型在后台提前载入（spec [2026-10-23] §16），第一位用户不用等
-    from ironm_agent.routing import default_router
-
-    threading.Thread(target=default_router().warm, daemon=True).start()
     print(f"AI 健身管家（iron-m，mirobody 底座）— http://{args.host}:{args.port}/iron/")
     asyncio.run(Server.start(yaml_files=files, fastapi_routers=[router]))
 

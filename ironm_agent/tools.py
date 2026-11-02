@@ -247,6 +247,9 @@ class Toolbox:
         self.spec = spec
         # 单 Agent 另加的工具（再装一份 Skill、查 App 用法，spec [2026-10-23] §67）：名字 → (说明, 执行)
         self.extra: dict[str, tuple[dict[str, Any], ExtraTool]] = dict(extra or {})
+        self.flags: frozenset[str] = (
+            frozenset()
+        )  # 这个人的少见情况：再装基础规程时带上对应的规则（§74）
         role = spec.role.value
         self.meds = meds if role in MEDS_ROLES else None  # mirobody 的用药记录工具
         self.medical = medical if role in MEDICAL_ROLES else None  # mirobody 的医学知识

@@ -4,7 +4,8 @@ from typing import Any
 
 from ironm_agent.plan_ops import Op, apply, blocked_days
 from ironm_agent.protools.plan_check import check_plan
-from tests.test_plan_ops import GEAR, Editor, _seeded, plan, run, text_of
+from tests.test_plan_ops import GEAR, Editor, _seeded, plan, run
+from tests.test_plugin import text_of
 
 
 def test_substitute_is_not_already_in_that_session() -> None:
@@ -55,9 +56,7 @@ def test_new_problems_block_the_preview(monkeypatch: Any) -> None:
 
 
 def test_dropping_a_day_the_user_named_still_goes_through_with_a_note(monkeypatch: Any) -> None:
-    from tests.test_plan_ops import Team
-
-    a, _ = _seeded(Team("trainer"), monkeypatch)
+    a, _ = _seeded(Editor([{"kind": "remove", "day": 5, "why": "你要求的"}]), monkeypatch)
     blocks, seen = run(a, "周五删掉")
     assert seen["plan_check"] == "pass" and any(
         str(b.get("id", "")).startswith("card-") for b in blocks

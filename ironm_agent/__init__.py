@@ -1,1 +1,1 @@
-"""iron-m：替换 mirobody 自带 Agent 的多 Agent 健身教练。"""
+"""iron-m：替换 mirobody 自带 Agent 的健身教练（单 Agent + Skill + 工具）。"""

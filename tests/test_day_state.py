@@ -13,7 +13,7 @@ from ironm_agent.illness import Episode, IllnessBook
 from ironm_agent.memory_store import MemoryBook
 from ironm_agent.metrics import Profile, Readings
 from ironm_agent.training import Plan, TrainingBook, WorkoutLog, plan_content
-from tests.test_turn_flow import TODAY, Team, agent, run, snapshot_of
+from tests.test_turn_flow import TODAY, Coach, agent, run, snapshot_of
 
 AT = datetime(2026, 10, 23, 5, 40, tzinfo=UTC)  # 13:40（东八区）
 
@@ -60,17 +60,17 @@ def test_today_block_has_time_or_source_on_every_line() -> None:
 
 
 def test_said_state_is_kept_for_the_next_turn(monkeypatch: Any) -> None:
-    t = Team("trainer")
+    t = Coach()
     a = agent(t, monkeypatch=monkeypatch, memory=MemoryBook(), snapshot=snapshot_of())
     book = DayBook()
     a._day = book
     _, seen = run(a, "今天有点累，深蹲怎么做")
     assert seen["day_noted"] == 1
-    t2 = Team("trainer")
+    t2 = Coach()
     a2 = agent(t2, monkeypatch=monkeypatch, memory=MemoryBook(), snapshot=snapshot_of())
     a2._day = book
     run(a2, "深蹲还能加重吗")  # 没再说累
-    shared = t2.inputs["trainer"]
+    shared = t2.input
     assert "今天的状态以这里为准" in shared and "今天有点累（" in shared
     assert "今天的身体状态：一般" in shared
 
@@ -118,7 +118,7 @@ def test_illness_line_in_today_block() -> None:
     from ironm_agent.illness import summary_line
 
     ill = Episode(symptoms=["肚子疼"], level="below", started=TODAY)
-    assert summary_line([ill], TODAY).startswith("生病：10 月 23 日开始肚子疼")
+    assert summary_line([ill], TODAY) == "生病：今天说肚子疼"  # 相对说法，不写日期和"还没好"（§82）
     done = ill.model_copy(update={"status": "resolved", "ended": TODAY})
-    assert summary_line([done], TODAY) == "生病：肚子疼 10 月 23 日已经好了"
+    assert summary_line([done], TODAY) == "生病：肚子疼今天好了"
     assert summary_line([], TODAY) == ""

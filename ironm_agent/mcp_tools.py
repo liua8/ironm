@@ -87,6 +87,8 @@ async def _context(user_id: str, src: Sources) -> pro.ToolContext:
         equipment_said=[x.content for x in items if x.category == "equipment"],
         plan=lambda: src.training.plan(user_id),
         workouts=workouts,
+        age=snap.profile.age(snap.today),
+        profile=snap.profile,
     )
 
 
@@ -148,8 +150,9 @@ class FitnessKnowledgeService:
 class FitnessToolsService:
     """健身专业计算：按本人的体重、伤病、器械、训练记录计算（读本人的数据，只读）。"""
 
-    __tools__ = ("estimate_strength", "check_training_plan", "training_patterns", "find_substitutes",
-                 "nutrition_calc", "pain_check", "trend_analysis")  # fmt: skip
+    __tools__ = ("estimate_strength", "check_training_plan", "plan_templates", "training_patterns",
+                 "find_substitutes", "nutrition_calc", "pain_check", "trend_analysis",
+                 "explain_trends")  # fmt: skip
 
     async def estimate_strength(
         self,
@@ -187,6 +190,35 @@ class FitnessToolsService:
                 "items": [{"exercise", "sets", "reps", "load", "note"}]}]}。
         """
         return await _run("check_plan", user_info, {"plan": plan})
+
+    async def plan_templates(
+        self,
+        user_info: dict[str, Any],
+        days_per_week: int | None = None,
+        level: str | None = None,
+        goal: str | None = None,
+        minutes: int | None = None,
+        place: str | None = None,
+        age: int | None = None,
+        weekdays: list[int] | None = None,
+        name: str | None = None,
+    ) -> dict[str, Any]:
+        """选初步方案：按训练水平、目标、每周天数、时长、场地、年龄，从方案库挑出最合适的方案，
+        按本人的器械和伤病换成具体动作、排好周几，给出计划草稿、为什么这样排和怎么进阶。
+
+        Args:
+            days_per_week: 每周能练几天（1–7）；不填（也不填 name）时列出方案库的全部方案。
+            level: none 零基础、lt6m 不到 6 个月、6m-2y 6 个月到 2 年、2y+ 2 年以上。
+            goal: health 健康体能、fat_loss 减脂、muscle 增肌、strength 力量、endurance 耐力；不填用档案里的目标。
+            minutes: 每次能练几分钟。
+            place: gym 健身房、home 在家。
+            age: 年龄；不填用档案里的出生日期。
+            weekdays: 能练的周几，1 是周一。
+            name: 点名要的博主或计划名，如"谭成义"。
+        """
+        return await _run("plan_templates", user_info, dict(days_per_week=days_per_week, level=level,
+                          goal=goal, minutes=minutes, place=place, age=age, weekdays=weekdays,
+                          name=name))  # fmt: skip
 
     async def training_patterns(
         self, user_info: dict[str, Any], days: int | None = 28
@@ -252,6 +284,11 @@ class FitnessToolsService:
             part: 哪里疼。
         """
         return await _run("pain_check", user_info, {"score": score, "signs": signs, "part": part})
+
+    async def explain_trends(self, user_info: dict[str, Any]) -> dict[str, Any]:
+        """综合解读本人的指标：每项和自己比、和标准比，认出的情况（恢复不够、睡得少、活动量掉了、减得太快等）、
+        同期可能有关的原因和建议的调整，每条带出处。"""
+        return await _run("explain_trends", user_info, {})
 
     async def trend_analysis(
         self, user_info: dict[str, Any], indicator: str, days: int = 28

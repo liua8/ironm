@@ -1,5 +1,5 @@
-"""问到自己的指标先查数据（spec [2026-10-23] §37）：认出指标名、规则预取、交给专业角色的话、
-规程和路由。不连数据库、不调用真实模型。"""
+"""问到自己的指标先查数据（spec [2026-10-23] §37）：认出指标名、规则预取、交给管家的话、
+规程。不连数据库、不调用真实模型。"""
 
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -9,7 +9,7 @@ import pytest
 from ironm_agent.indicators import named_indicators
 from ironm_agent.llm import Reply, Stage
 from ironm_agent.plugin import checked_note
-from tests.fakes import FakeHealth, jsonr, route_reply, system_of
+from tests.fakes import FakeHealth, jsonr
 from tests.test_plugin import agent, collect
 
 
@@ -30,7 +30,7 @@ def test_checked_note_wording() -> None:
 
 
 class Seen:
-    """记下专业角色收到的话；路由到康复恢复师。"""
+    """记下管家收到的话；选规程给不出合格结果，退回按关键词。"""
 
     def __init__(self) -> None:
         self.expert_inputs: list[str] = []
@@ -39,12 +39,10 @@ class Seen:
         self, stage: Stage, messages: Sequence[Mapping[str, Any]], has_tools: bool
     ) -> Reply:
         if stage == "route":
-            return route_reply("pro", "recovery", [])
+            return Reply("不是 JSON")
         if stage == "expert":
             self.expert_inputs.append("\n".join(str(m.get("content", "")) for m in messages))
-            if "这一轮只请了你一位" in system_of(messages):
-                return jsonr({"answer": "没有找到你的肌酐记录〔经验〕。"})
-            return jsonr({"speak": True, "conclusion": "没有找到你的肌酐记录〔经验〕。"})
+            return jsonr({"answer": "没有找到你的肌酐记录〔经验〕。"})
         return Reply("没有找到你的肌酐记录。")
 
 
@@ -83,39 +81,28 @@ def test_no_named_indicator_no_prefetch(
     assert "prefetch" not in traces_in_memory.turns[-1].trace
 
 
-def test_lab_questions_route_and_load_the_lab_skill() -> None:
-    from ironm_agent.roles import Role
-    from ironm_agent.router import keyword_route
-    from ironm_agent.skills import pick
+def test_lab_questions_load_the_lab_skill() -> None:
+    from ironm_agent.indicators import record_kinds
+    from ironm_agent.skills import pick_any
 
-    assert keyword_route("我肌酐高嘛").primary is Role.RECOVERY
-    assert "化验指标怎么看" in [x.name for x in pick(Role.RECOVERY, "我肌酐高嘛", frozenset())]
-    assert "化验指标怎么看" in [x.name for x in pick(Role.NUTRITION, "我的血糖正常吗", frozenset())]
-    assert "疼痛时怎么改动作" not in [
-        x.name for x in pick(Role.RECOVERY, "我肌酐高嘛", frozenset())
-    ]
+    for text in ("我肌酐高嘛", "我的血糖正常吗"):
+        names = [x.name for x in pick_any(text, record_kinds(text), drop={"injury", "poor"})]
+        assert "数据与化验解读" in names and "疼痛时怎么改动作" not in names, text
 
 
 def test_lab_and_metric_triggers_put_data_skills_first() -> None:
-    """路由的模型选了伤痛类规程时，点到化验指标仍先装"化验指标怎么看"，点到日常指标先装"趋势解读"。"""
+    """选规程的模型选了伤痛类规程时，点到化验指标仍先装"数据与化验解读"，伤痛规程不装（§37、§75）。"""
     from ironm_agent.indicators import kinds_of
-    from ironm_agent.roles import Role
-    from ironm_agent.skills import choose
+    from ironm_agent.skills import by_id, pick_routed
 
     assert kinds_of(named_indicators("我肌酐高嘛")) == {"lab"}
     assert kinds_of(named_indicators("我最近心率和睡眠怎么样")) == {"metric"}
-    got, _ = choose(
-        Role.RECOVERY, "我肌酐高嘛", frozenset({"lab"}), None, ("rest-pain", "rest-return")
-    )
-    assert got[0].id == "data-labs"
-    got, _ = choose(Role.RECOVERY, "我最近心率正常吗", frozenset({"metric"}), None, ())
-    assert [x.id for x in got] == ["data-trend"]
-
-
-def test_route_prompt_tells_the_model_to_pick_data_skills() -> None:
-    from ironm_agent import routing
-
-    assert "data-labs" in routing._PROMPT and "不要选伤痛" in routing._PROMPT
+    pain = [x for i in ("pain-injury", "comeback") if (x := by_id(i)) is not None]
+    got = [x.id for x in pick_routed(pain, (), "我肌酐高嘛", {"lab"}, drop={"injury", "poor"})
+           if not x.core]  # fmt: skip
+    assert got[0] == "data-read" and "pain-injury" not in got
+    got = [x.id for x in pick_routed((), (), "我最近心率正常吗", {"metric"}) if not x.core]
+    assert got == ["data-read"]
 
 
 def test_echoed_data_sentence_is_merged() -> None:
@@ -170,21 +157,21 @@ def test_remembered_injury_does_not_force_pain_skills_on_data_questions(
         agent(Seen(), health=FakeHealth(rows=[]), monkeypatch=monkeypatch, memory=memory()),
         "我肌酐高嘛",
     )
-    assert traces_in_memory.turns[-1].trace["skills"]["recovery"] == ["data-labs"]
+    assert traces_in_memory.turns[-1].trace["skills"]["general"] == ["data-read"]
     collect(
         agent(Seen(), health=FakeHealth(rows=[]), monkeypatch=monkeypatch, memory=memory()),
         "帮我解读我的一些健康指标",
     )
-    got = traces_in_memory.turns[-1].trace["skills"]["recovery"]  # 只说"指标"也算问数据（§39）
-    assert "data-labs" in got and not {"rest-pain", "rest-return"} & set(got)
+    got = traces_in_memory.turns[-1].trace["skills"]["general"]  # 只说"指标"也算问数据（§39）
+    assert "data-read" in got and not {"pain-injury", "comeback"} & set(got)
     collect(
         agent(Seen(), health=FakeHealth(rows=[]), monkeypatch=monkeypatch, memory=memory()),
         "我尿酸偏高严重吗",
     )
-    got = traces_in_memory.turns[-1].trace["skills"]["recovery"]  # "尿酸"的"酸"不是酸痛（§39）
-    assert "data-labs" in got and not {"rest-pain", "rest-return"} & set(got)
+    got = traces_in_memory.turns[-1].trace["skills"]["general"]  # "尿酸"的"酸"不是酸痛（§39）
+    assert "data-read" in got and not {"pain-injury", "comeback"} & set(got)
     collect(
         agent(Seen(), health=FakeHealth(rows=[]), monkeypatch=monkeypatch, memory=memory()),
         "膝盖疼还能练吗",
     )
-    assert "rest-pain" in traces_in_memory.turns[-1].trace["skills"]["recovery"]
+    assert "pain-injury" in traces_in_memory.turns[-1].trace["skills"]["general"]

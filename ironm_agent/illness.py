@@ -19,7 +19,8 @@ from ironm_agent.casefile import said
 
 _log = logging.getLogger("ironm_agent.illness")
 
-type Level = Literal["above", "below", "fever"]  # 颈部以上 / 颈部以下或全身 / 发烧（K23）
+# 颈部以上 / 没说哪里（只说不舒服，§82）/ 颈部以下或全身 / 发烧（K23）
+type Level = Literal["above", "vague", "below", "fever"]
 type Status = Literal["open", "better", "resolved", "unconfirmed"]
 type Answer = Literal["resolved", "better", "unwell"]
 type Mode = Literal["rest", "light", "ease"]  # 休息 / 轻松版 / 病后第一次按约七成
@@ -30,7 +31,7 @@ FEVER_DAYS = 3  # 发烧这么多天还没好建议就医
 EASE = 0.7  # 病后第一次训练按约七成
 AFTER_DAYS = 2  # 好了之后这么多天内没做到的组次不触发减重量
 RECUR_DAYS, RECUR_TIMES = 28, 2  # 4 周内病了 2 次以上：提示减量
-_RANK: dict[Level, int] = {"above": 0, "below": 1, "fever": 2}
+_RANK: dict[Level, int] = {"above": 0, "vague": 0, "below": 1, "fever": 2}
 
 # 症状：名字、说法、级别（K23：颈部以上可以降低强度活动；颈部以下、全身症状和发烧应当休息）
 SYMPTOMS: tuple[tuple[str, re.Pattern[str], Level], ...] = (
@@ -49,7 +50,7 @@ SYMPTOMS: tuple[tuple[str, re.Pattern[str], Level], ...] = (
 _TRAINED = re.compile(
     r"练完|练后|训练后|训练完|健身后|健身完|运动后|运动完|跑完|锻炼后|撸铁后|(?:昨天|前天|上次)练"
 )
-# 只说生病了、没说具体症状的：按颈部以下处理（宁可保守）
+# 只说生病了、没说具体症状的：记成"没说哪里"，今天按轻松版，由管家问一句哪里不舒服（§82）
 _GENERAL = re.compile(r"感冒|生病|病了|不舒服|难受|着凉")
 _GENERAL_OK = re.compile(
     r"(?:膝|腰|肩|腕|踝|脖子|颈)[^，。]{0,4}不舒服"
@@ -127,7 +128,7 @@ def detect(text: str) -> tuple[list[str], Level] | None:
         top = max((lv for _, lv in found), key=_RANK.__getitem__)
         return [n for n, _ in found], top
     if _reported(_GENERAL, text) and not _GENERAL_OK.search(text):
-        return ["身体不适"], "below"
+        return ["身体不适"], "vague"
     return None
 
 
@@ -177,7 +178,7 @@ def due(ep: Episode, today: date) -> bool:
 
 
 def ago(day: date, today: date) -> str:
-    n = (today - day).days
+    n = max(0, (today - day).days)
     return {0: "今天", 1: "昨天", 2: "前天"}.get(n, f"{n} 天前")
 
 
@@ -219,7 +220,7 @@ def answer(
     hint = doctor(ep, today)
     if reply == "better":
         say = "好，今天按轻松版练，别练到力竭，明天再问你。"
-    elif ep.level == "above":
+    elif ep.level in ("above", "vague"):
         say = "那今天按轻松版练，或者只做拉伸、散步，明天再问你。"
     else:
         say = "那今天先休息，多喝水、早点睡，明天再问你。"
@@ -236,7 +237,12 @@ def today_mode(
             return "light", f"{when}说{ep.what()}，今天好一些了"
         if ep.level == "above":
             return "light", f"{when}说{ep.what()}（颈部以上的症状，可以降低强度活动）"
-        return "rest", f"{when}说{ep.what()}，还没好，先休息"
+        if ep.level == "vague":  # §82：不由代码定休息
+            return "light", (
+                f"{when}说有点不舒服，没说哪里：他没问练什么就只关心一句、问哪里不舒服，不主动安排；"
+                "问了再给轻松的"
+            )
+        return "rest", f"{when}说{ep.what()}，今天先休息"
     # 好了的、没确认的（不回答不等于好了，同样按病后第一次七成过渡）
     done = [e for e in (refresh(x, today) for x in eps) if e.status in ("resolved", "unconfirmed")]
     for ep in sorted(done, key=lambda e: end_of(e, today), reverse=True):
@@ -298,16 +304,19 @@ def state_line(eps: Sequence[Episode], today: date) -> str:
 
 
 def summary_line(eps: Sequence[Episode], today: date) -> str:
-    """今日状态里的生病一行（spec [2026-10-23] §54）：正在生病的写开始日期和现在怎样；两天内好了的写哪天好的。"""
-    now = state_line(eps, today)
+    """今日状态里的生病一行（spec [2026-10-23] §54）：交给模型，用相对的说法（"昨天说肚子疼"），
+    不写日期、不写"现在还没好"这类判断，免得回答照着念（§82）；两天内好了的写哪天好的。"""
+    now = active(eps, today)
     if now:
-        return "生病：" + now
+        e = now[0]
+        return f"生病：{ago(e.started, today)}说{e.what()}" + (
+            "，后来说好一些了" if e.status == "better" else ""
+        )
     done = [e for e in eps if e.status == "resolved" and e.ended and (today - e.ended).days <= 2]
     if not done:
         return ""
     e = max(done, key=lambda x: x.ended or x.started)
-    end = e.ended or e.started
-    return f"生病：{e.what()} {end.month} 月 {end.day} 日已经好了"
+    return f"生病：{e.what()}{ago(e.ended or e.started, today)}好了"
 
 
 def merge(eps: Sequence[Episode], symptoms: list[str], level: Level, today: date) -> Episode:
@@ -317,7 +326,10 @@ def merge(eps: Sequence[Episode], symptoms: list[str], level: Level, today: date
         e = now[0]
         new = [s for s in symptoms if s not in e.symptoms and s != "身体不适"]
         top = max((e.level, level), key=_RANK.__getitem__)
-        return e.model_copy(update={"symptoms": [*e.symptoms, *new] if new else e.symptoms,
+        if e.level == "vague" and level != "vague":  # 补说了具体症状：按说的症状算（§82）
+            top = level
+        old = [x for x in e.symptoms if not (new and x == "身体不适")]
+        return e.model_copy(update={"symptoms": [*old, *new] if new else e.symptoms,
                                     "level": top, "status": "open"})  # fmt: skip
     return Episode(symptoms=symptoms, level=level, started=today)
 

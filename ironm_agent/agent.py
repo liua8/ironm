@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any
 
@@ -24,7 +24,7 @@ from ironm_agent.experts import (
     _user_message,
     experience_share,
 )
-from ironm_agent.frameworks import FRAMEWORKS, domain_rules, flags_of, framework_refs
+from ironm_agent.frameworks import FRAMEWORKS, flags_of, framework_refs
 from ironm_agent.llm import LLM, ModelUnavailable
 from ironm_agent.memory_store import CATEGORIES, Item
 from ironm_agent.memory_view import Recall, until_text
@@ -36,7 +36,7 @@ from ironm_agent.training import weekday_name
 
 LOAD_SKILL = "load_skill"
 APP_HELP = "app_help"
-NEW_PLAN = "new_plan"  # 要排新计划、本会话还没确认条件：由系统列出五项请他确认
+NEW_PLAN = "new_plan"  # 要排新计划、本会话还没确认条件：由它列出条件请他确认（§86）
 
 LOAD_SKILL_SCHEMA: dict[str, Any] = {
     "type": "function",
@@ -46,7 +46,7 @@ LOAD_SKILL_SCHEMA: dict[str, Any] = {
         "parameters": {
             "type": "object",
             "additionalProperties": False,
-            "properties": {"id": {"type": "string", "description": "规程编号，如 plan-muscle"}},
+            "properties": {"id": {"type": "string", "description": "规程编号，如 plan-build"}},
             "required": ["id"],
         },
     },
@@ -65,8 +65,8 @@ async def _load_skill(box: Toolbox, args: Mapping[str, Any]) -> str:
     skill = by_id(str(args.get("id", "")).strip())
     if skill is None:
         return "没有这个规程编号，请从目录里选。"
-    box.adopt(e for r in skill.refs if (e := box.kb.get(r)) is not None)
-    return skill.text()
+    box.adopt(e for r in skill.refs_for(box.flags) if (e := box.kb.get(r)) is not None)
+    return skill.text(box.flags)
 
 
 async def _app_help(box: Toolbox, args: Mapping[str, Any]) -> str:
@@ -81,7 +81,7 @@ _PROMPT = """你是健身 App 里的「AI 健身管家」：一位持证体能�
 
 先看上下文再答：
 1. 先判断这句话和前面的关系：新问题、对上一条回答的追问或质疑、补充条件、对计划预览的意见，还是闲聊。接着上一轮的，就接着上一轮答。被质疑时先核对你上一条回答和预览里实际说过什么：说错或漏了就认错并改正；没说错就用你说过的内容回答，不要顺着认错。
-2. 只答问的：第一句就是答案，原因放后面，没问到的不说，等他追问再展开。打招呼、闲聊一两句自然回应，不主动报今天的计划、打卡和数据。超出健身、饮食、恢复、身体数据的问题，说明帮不上、能帮什么。不诊断、不开药。
+2. 只答问的：第一句就是答案，原因放后面，没问到的不说，等他追问再展开。他提了要求（"给我安排个轻松的"），第一句先接住：能做就直接给，不能做再说为什么。他只说自己的状况（"今天有点不舒服""好累"）、没问怎么办时，关心一句、问怎么了，不主动给做法和安排。提起记忆和今天的状态像教练当面说话：用问候或一句话带过（"前两天说感冒了，好点了吗"），不报日期，不转述系统的判断（"现在还没好"），他没问的计划安排（今天本来是休息日、病后第一次按几成）不说。打招呼、闲聊一两句自然回应，不主动报今天的计划、打卡和数据。超出健身、饮食、恢复、身体数据的问题，说明帮不上、能帮什么。不诊断、不开药。
 3. 关于这个人的事实（状态、伤病、计划、记录、数据）只照档案、数据、记忆和对话说，不推测、不编造；给具体的量（组次、克数、分钟），数字用工具结果、档案或资料里的，不自己估。
 4. 需要信息就调用工具（{tools}），一轮可以调几次，拿到要的就作答。问 App 怎么用时调用 app_help。装上的规程不够时调用 load_skill 再装一份（目录在最后）。
 
@@ -92,10 +92,13 @@ _PROMPT = """你是健身 App 里的「AI 健身管家」：一位持证体能�
 
 记忆（只在需要时写；系统核对后当场记下，下一轮就能用）：
 - 他这句话说了关于他本人、以后回答要照顾到的情况（伤病和身体状况、器械和场地、可练时间、饮食、喜好、目标、回答风格、近期发生的事），在 JSON 里加上 "memory" 列表。只是提问、闲聊、别人的事、假设、否定的说法（"没有伤"）不记；档案和记忆里已经有的不重复记。
-- 每条：{{"op": "add|update|resolve", "target": "已有记忆的编号（add 不写）", "category": "injury|equipment|schedule|diet|preference|goal|style|event", "content": "一句话，不超过 40 字，照原话保留部位、左右、重量、时间", "quote": "从他这句话里一字不差摘的一段", "inferred": false, "until": "event 要写：到哪天为止（YYYY-MM-DD，含这天）"}}
+- 每条：{{"op": "add|update|resolve", "target": "已有记忆的编号（add 不写）", "category": "injury|equipment|schedule|diet|preference|goal|level|style|event|followup", "content": "一句话，不超过 40 字，照原话保留部位、左右、重量、时间", "quote": "从他这句话里一字不差摘的一段", "inferred": false, "until": "event 要写到哪天为止、followup 要写哪天到期（YYYY-MM-DD，含这天）"}}
 - inferred：内容是你根据他的话推测的、他没有直接说（比如从"膝盖响"推测是半月板的问题）写 true，系统会先放着等他确认；能不推测就不推测
 - until 按今天的日期算："这周"写这周日，"这两天"写明天，"这几天"写 3 天后，"下周"写下周日，说了具体日子照写；实在看不出写 7 天后。例：今天 2026-10-28（周三），他说"这周出差" → {{"op": "add", "category": "event", "content": "这周出差", "quote": "这周出差", "until": "2026-11-01"}}
 - 已有记忆的新情况用 update（content 写合并后的完整说法），好了、不再适用用 resolve；临时的变化（这周出差、这几天感冒）记成 event，不改长期的器械、时间和目标。
+- 长期的情况（画像）变了，用编号 update 那一行，不另加一条；同一件近况（同一次出差、同一次感冒）有了新进展，update 原来那条（"感冒好了"用 resolve）。
+- 你答应要回访的事、他要你提醒的事（"下周问问膝盖""两周后复测"），记成 followup，until 写到期日。
+- "该问的、到期的跟进"里你这一轮提了、或者他答了，用编号 resolve；他确认了画像里带？的推测，用 update 写同样的内容。
 
 {slots}
 打招呼、道谢、闲聊时只写 answer（一两句自然回应），其余几段留空，不报今天的计划、打卡和数据。{skills}
@@ -105,7 +108,8 @@ _PROMPT = """你是健身 App 里的「AI 健身管家」：一位持证体能�
 
 _ASK_FIRST = (
     '- 用户明确要一份新计划（还没有计划、要重排），或长期条件变了（换了健身房、以后每周只能练两天）要重来：这一轮先不写计划，在 JSON 里加上 "action": "new_plan"，'
-    '回答只写一句过渡（比如"好，先确认一下条件"），系统会列出目标、场景、器械、时间、伤病请他确认。'
+    '回答以"排新计划前先确认一下"开头，用你自己的话把"排新计划要用的条件"（目标、场景、器械、时间、伤病）列给他确认：'
+    "有旧答案的说出来、问还是不是这样，没有的问一句；最后请他说哪几项变了、是临时的还是以后都这样。"
 )
 _CONFIRMED = '- 用户要一份新计划：条件已经确认过了（见前几轮），按确认的条件写完整的 "plan"：'
 _TEMPORARY = (
@@ -159,13 +163,9 @@ def domains_of(skills: Sequence[Skill]) -> list[Role]:
     return [r for r in (Role.TRAINER, Role.RECOVERY, Role.NUTRITION) if r in roles]
 
 
-def framework_for(domains: Sequence[Role], flags: Collection[str]) -> str:
-    """全能的要点，加上这一轮涉及领域的思考顺序和判断规则（含这个人的少见情况）。"""
-    parts = [FRAMEWORKS[Role.GENERAL]]
-    for role in domains:
-        parts.append(f"【{ {Role.TRAINER: '训练', Role.NUTRITION: '饮食', Role.RECOVERY: '恢复'}[role] }的判断规则】\n"
-                     + domain_rules(role, flags))  # fmt: skip
-    return "\n\n".join(parts)
+def framework_for() -> str:
+    """管家提示词里的专业部分只留各专业要点的总览；领域的判断规则从基础规程来（§74）。"""
+    return FRAMEWORKS[Role.GENERAL]
 
 
 async def respond(
@@ -186,30 +186,36 @@ async def respond(
     today: date | None = None,
     images: Sequence[Mapping[str, Any]] = (),
     known: Mapping[str, Item] | None = None,
+    memory_block: str | None = None,
 ) -> Consultation:
     """单 Agent 作答一轮。出错时返回不发言的意见，不向外抛（和专业角色一样）。"""
     flags = flags_of([x.key for x in case.risks], bool(case.injuries), case.readiness.level)
     domains = domains_of(skills)
     tools = "、".join(str(s["function"]["name"]) for s in toolbox.schemas()) or "（没有可用的工具）"
     system = _PROMPT.format(
-        framework=framework_for(domains, flags),
+        framework=framework_for(),
         tools=tools,
         actions=actions_prompt(has_plan=has_plan, confirmed=confirmed, just_asked=just_asked),
         slots=slots_prompt(text, None),
-        skills=prompt_of(skills),
+        skills=prompt_of(skills, flags),
         catalog=catalog_any(),
     )
-    toolbox.adopt(e for x in skills for r in x.refs if (e := toolbox.kb.get(r)) is not None)
-    for role in (Role.GENERAL, *domains):  # 判断规则里引用的资料，照抄时也要能通过核对
-        toolbox.adopt(
-            e for r in framework_refs(role, flags) if (e := toolbox.kb.get(r)) is not None
-        )
+    toolbox.flags = flags
+    # 规程（含基础规程的判断规则）和总览里引用的资料，照抄时也要能通过核对
+    toolbox.adopt(
+        e for x in skills for r in x.refs_for(flags) if (e := toolbox.kb.get(r)) is not None
+    )
+    toolbox.adopt(
+        e for r in framework_refs(Role.GENERAL, flags) if (e := toolbox.kb.get(r)) is not None
+    )
     asked = _user_message(
         text,
         history,
         concerns,
         personal.text() if personal else "",
-        memory_text(known, today or date.today())
+        memory_block
+        if memory_block is not None
+        else memory_text(known, today or date.today())
         if known is not None
         else memory.shared()
         if memory is not None

@@ -42,6 +42,9 @@ class LiveItem(BaseModel):
     timed: bool = False  # 计时类：记秒数不记次数
     rest: int = Field(default=REST_DEFAULT, ge=15, le=600)  # 组间休息秒数
     target: str = Field(default="", max_length=40)  # 计划目标或上次做的，给他看
+    best: float | None = Field(
+        default=None, ge=0, le=1000
+    )  # 以前最好的一组的估算最大重量（§92 破纪录）
     sets: list[LiveSet] = Field(default_factory=list, max_length=20)
 
 
@@ -217,7 +220,36 @@ def new_item(
         sets = [LiveSet(weight_kg=x.weight_kg, reps=None if timed else (x.reps or None),
                         seconds=x.seconds if timed else None) for x in last[0][1][:20]]  # fmt: skip
     return LiveItem(exercise=name, timed=timed, rest=rest_of(name, rests), target=target[:40],
-                    sets=sets)  # fmt: skip
+                    best=best_e1rm(name, logs), sets=sets)  # fmt: skip
+
+
+def _e1rm(weight: float | None, reps: int | None) -> float | None:
+    from ironm_agent.protools.strength import epley
+
+    if not weight or not reps or reps > 30:
+        return None
+    return round(epley(weight, reps), 1)
+
+
+def best_e1rm(name: str, logs: Sequence[WorkoutLog]) -> float | None:
+    """这个动作以前最好的一组（估算最大重量）；没做过、没记重量返回 None。"""
+    got = [e for _, sets in history(name, logs) for s in sets if (e := _e1rm(s.weight_kg, s.reps))]
+    return max(got) if got else None
+
+
+def records(log: WorkoutLog, before: Sequence[WorkoutLog]) -> list[dict[str, Any]]:
+    """这次破了的纪录：最好的一组超过以前最好的（以前没做过的不算）。"""
+    out = []
+    for item in log.items:
+        old = best_e1rm(item.exercise, before)
+        sets = [(s, e) for s in item.done_sets if (e := _e1rm(s.weight_kg, s.reps))]
+        if old is None or not sets:
+            continue
+        s, e = max(sets, key=lambda x: x[1])
+        if e > old:
+            out.append({"exercise": item.exercise, "weight_kg": s.weight_kg, "reps": s.reps,
+                        "e1rm": e, "before": old})  # fmt: skip
+    return out
 
 
 def known(name: str) -> str:

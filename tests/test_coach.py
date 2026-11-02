@@ -195,9 +195,9 @@ def test_chat_triggers_daily_and_pain_reevaluation(
     coach_in_memory: list[tuple[str, str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from ironm_agent.memory_store import MemoryBook
-    from tests.test_turn_flow import Team, agent
+    from tests.test_turn_flow import Coach, agent
 
-    a = agent(Team("recovery"), monkeypatch=monkeypatch, memory=MemoryBook())
+    a = agent(Coach(), monkeypatch=monkeypatch, memory=MemoryBook())
     a._pain = PainBook()
 
     async def go(text: str) -> None:

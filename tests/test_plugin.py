@@ -15,39 +15,35 @@ from ironm_agent.plugin import FAILED, IronMAgent
 from ironm_agent.render import TURN_ID
 from ironm_agent.tools import HEALTH
 from ironm_agent.triggers import PainBook
-from tests.fakes import FakeHealth, call, jsonr, route_reply, system_of, tool_results
+from tests.fakes import FakeHealth, call, jsonr, system_of, tool_results
 
 
 class Scripted:
-    """按环节与角色回答的假模型（替换 TurnLLM）。"""
+    """单 Agent 的假模型（替换 TurnLLM）：先查静息心率，再写回答；选规程给不出合格结果（退回按关键词）。"""
 
-    def __init__(
-        self, compose_text: str = "", fail: bool = False, helpers: Sequence[str] = ()
-    ) -> None:
-        self.compose_text = compose_text
+    def __init__(self, answer: str = "", fail: bool = False) -> None:
+        self.answer = answer
         self.fail = fail
-        self.helpers = list(helpers)
         self.count = 0
+        self.stages: list[str] = []
+        self.inputs: list[str] = []
 
     def __call__(
         self, stage: Stage, messages: Sequence[Mapping[str, Any]], has_tools: bool
     ) -> Reply:
         self.count += 1
+        self.stages.append(stage)
         if self.fail:
             raise ModelUnavailable("missing_key")
-        system = system_of(messages)
         if stage == "route":
-            return route_reply("pro", "recovery", self.helpers)
+            return Reply("不是 JSON")
         if stage == "expert":
+            self.inputs.append("\n".join(str(m.get("content", "")) for m in messages))
             stated = "<statement>近 30 天静息心率平均 58 次/分<cite>[r1]</cite></statement>"
-            if "「康复恢复师」" in system:
-                if not tool_results(messages):
-                    return call(HEALTH, indicators=["restingHeartRates"], view="stats")
-                if "这一轮只请了你一位" in system:  # 只请到一位：它直接写给用户的回答
-                    return jsonr({"answer": self.compose_text or stated})
-                return jsonr({"speak": True, "conclusion": stated})
-            return jsonr({"conclusion": "注意循序渐进〔经验〕"})
-        return Reply(self.compose_text)
+            if has_tools and not tool_results(messages):
+                return call(HEALTH, indicators=["restingHeartRates"], view="stats")
+            return jsonr({"answer": self.answer or stated})
+        return Reply(self.answer)
 
 
 def agent(
@@ -85,7 +81,6 @@ def agent(
         illness=IllnessBook(),
         day=DayBook(),
         goals=goals if goals is not None else GoalBook(),
-        mode="multi",  # 原有测试测的是多 Agent 链路；单 Agent 见 test_single_agent
     )
 
 
@@ -108,18 +103,23 @@ def text_of(blocks: list[dict[str, Any]]) -> str:
     return "".join(b.get("text", "") for b in blocks if b["type"] == "text")
 
 
-def test_emergency_answers_without_any_model_call(monkeypatch: Any) -> None:
-    s = Scripted()
-    blocks = collect(agent(s, monkeypatch=monkeypatch), "跑步的时候胸口突然很痛，现在还在疼")
-    assert s.count == 0
-    assert "**" in text_of(blocks) and not any(b["type"] == "tool_call" for b in blocks)
+def test_emergency_answers_without_reading_data_or_tools(monkeypatch: Any) -> None:
+    """急症（§86）：只调一次模型说话，不读数据、不调工具；模型不可用时退回四段式固定回答。"""
+    health = FakeHealth()
+    s = Scripted(fail=True)
+    blocks = collect(
+        agent(s, health, monkeypatch=monkeypatch), "跑步的时候胸口突然很痛，现在还在疼"
+    )
+    assert s.stages == ["expert"] and health.asked == []
+    assert "**" in text_of(blocks) and "120" in text_of(blocks)
+    assert not any(b["type"] == "tool_call" for b in blocks)
 
 
 def test_data_question_answers_plainly_and_attaches_sources(monkeypatch: Any) -> None:
     answer = "你近 30 天静息心率很稳。<statement>平均 58 次/分<cite>[r1]</cite></statement>，在正常范围。"
     blocks = collect(agent(Scripted(answer), monkeypatch=monkeypatch), "我最近的静息心率怎么样")
     names = [b["name"] for b in blocks if b["type"] == "tool_call"]
-    assert names == ["管家", "康复恢复师", "依据与来源"]
+    assert names == ["管家", "依据与来源"]
     text = text_of(blocks)
     assert (
         "平均 58 次/分" in text
@@ -143,23 +143,12 @@ def test_asking_for_sources_explains_the_previous_answer(monkeypatch: Any) -> No
         return "计算：\n- 每日热量目标：约 2764 千卡/天。计算：每日总消耗 2513 × 1.1 = 2764\n\n资料：\n- 中国居民膳食指南（2022）"
 
     monkeypatch.setattr(plugin, "last_sources", fake_sources)
-    s = Scripted()
+    said = "2764 是按你每天总消耗 2513 千卡再加一成算的。"
+    s = Scripted(said)
     blocks = collect(agent(s, monkeypatch=monkeypatch), "2764 是怎么算的")
-    assert s.count == 0 and "2513 × 1.1" in text_of(blocks) and "膳食指南" not in text_of(blocks)
-    blocks = collect(agent(s, monkeypatch=monkeypatch), "这些依据是什么")
-    assert "上一条回答的依据" in text_of(blocks) and "膳食指南" in text_of(blocks)
-
-
-def test_failed_review_degrades_with_notice(monkeypatch: Any) -> None:
-    """请了两位、需要整合时：整合两次都没通过核对，给出主责角色核对过的意见并提示受限。"""
-    blocks = collect(
-        agent(
-            Scripted("你的静息心率平均 99 次/分。", helpers=["trainer"]), monkeypatch=monkeypatch
-        ),
-        "我最近的静息心率怎么样",
-    )
-    assert any(b["type"] == "notice" and "受限" in b["text"] for b in blocks)
-    assert "58" in text_of(blocks)  # 列出的是已经核对过的意见
+    # 依据交给模型讲（§86）：它看得到上一条回答的计算和资料，说的话就是回答，不按模板念
+    assert "2513 × 1.1" in s.inputs[-1] and "膳食指南" in s.inputs[-1]
+    assert said in text_of(blocks) and "上一条回答的依据：" not in text_of(blocks)
 
 
 def test_health_failure_still_answers(monkeypatch: Any) -> None:
@@ -183,18 +172,17 @@ def test_list_content_and_empty_message(monkeypatch: Any) -> None:
 
 def test_model_down_everywhere_gives_honest_no_answer(monkeypatch: Any) -> None:
     blocks = collect(agent(Scripted(fail=True), monkeypatch=monkeypatch), "我最近的静息心率怎么样")
-    assert "没能调用模型" in text_of(blocks)
+    assert "没答上来" in text_of(blocks)
     assert not any(b["type"] == "error" for b in blocks)
 
 
 def test_unexpected_error_hides_details(monkeypatch: Any) -> None:
     from ironm_agent import plugin
 
-    class Boom:
-        async def route(self, *_: Any, **__: Any) -> Any:
-            raise RuntimeError("SELECT secret FROM th_messages")
+    def boom(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("SELECT secret FROM th_messages")
 
-    monkeypatch.setattr(plugin, "default_router", Boom)
+    monkeypatch.setattr(plugin, "assess", boom)
     blocks = collect(agent(Scripted(), monkeypatch=monkeypatch), "我最近的静息心率怎么样")
     assert blocks == [{"type": "error", "message": FAILED}]
 
@@ -218,11 +206,13 @@ def test_web_picker_never_empty_when_some_model_is_configured() -> None:
 
 
 def test_asking_for_someone_else_is_not_supported(monkeypatch: Any) -> None:
-    """不做关爱圈：提问人（会话编号前半）和数据的主人不同，只说明不支持，不调用模型、不碰记忆。"""
+    """不做关爱圈：提问人（会话编号前半）和数据的主人不同，只说明不支持，不读对方数据、不碰记忆；
+    话交给模型说（§86），模型不可用时退回固定的一句。"""
     from ironm_agent.memory_store import Change, Item, MemoryBook
     from ironm_agent.plugin import HELP_ASK
 
-    s = Scripted("不该出现")
+    s = Scripted(fail=True)
+    health = FakeHealth()
     book = MemoryBook()
     from datetime import UTC, datetime
 
@@ -237,7 +227,7 @@ def test_asking_for_someone_else_is_not_supported(monkeypatch: Any) -> None:
             ],
         )
     )
-    a = agent(s, monkeypatch=monkeypatch, memory=book)
+    a = agent(s, health, monkeypatch=monkeypatch, memory=book)
 
     async def go() -> list[dict[str, Any]]:
         msgs = [{"role": "user", "content": "我妈最近血压怎么样，我自己膝盖也疼"}]
@@ -246,7 +236,7 @@ def test_asking_for_someone_else_is_not_supported(monkeypatch: Any) -> None:
         return blocks
 
     blocks = asyncio.run(go())
-    assert text_of(blocks) == HELP_ASK and s.count == 0
+    assert text_of(blocks) == HELP_ASK and s.stages == ["expert"] and health.asked == []
     assert [x.content for x in asyncio.run(book.items("42"))] == ["左膝旧伤"]
 
 
@@ -255,6 +245,10 @@ def test_single_mode_answers_in_one_pass_without_routing_or_composing(monkeypatc
     from tests.fakes import FakeLLM
 
     def script(stage: Stage, messages: Sequence[Mapping[str, Any]], has_tools: bool) -> Reply:
+        if stage == "route":  # 按意图选规程（§75），不是调度给角色
+            return jsonr(
+                {"skills": ["data-read"], "domains": ["rest"], "intent": "心率", "fit": "skill"}
+            )
         assert stage == "expert" and "AI 健身管家" in system_of(messages)
         if not tool_results(messages):
             return call(HEALTH, indicators=["restingHeartRates"], view="stats")
@@ -265,7 +259,7 @@ def test_single_mode_answers_in_one_pass_without_routing_or_composing(monkeypatc
         )
 
     a = agent(script, monkeypatch=monkeypatch)
-    a._mode, a._remember_on = "single", False
+    a._remember_on = False
     stages: list[str] = []
     real = FakeLLM.chat
 
@@ -275,7 +269,9 @@ def test_single_mode_answers_in_one_pass_without_routing_or_composing(monkeypatc
 
     monkeypatch.setattr(FakeLLM, "chat", spy)
     blocks = collect(a, "我最近的静息心率怎么样")
-    assert set(stages) == {"expert"}
+    assert (
+        set(stages) == {"route", "expert"} and stages.count("route") == 1
+    )  # 不整合（没有 compose）
     assert [b["name"] for b in blocks if b["type"] == "tool_call"] == ["管家", "依据与来源"]
     assert "平均 58 次/分" in text_of(blocks) and "<statement>" not in text_of(blocks)
 
@@ -285,4 +281,5 @@ def test_observer_gets_the_run_record(monkeypatch: Any) -> None:
     a = agent(Scripted("你近 30 天静息心率很稳。"), monkeypatch=monkeypatch)
     a._observe = seen.update
     collect(a, "我最近的静息心率怎么样")
-    assert seen["path"] == "answer" and seen["roles"] == ["recovery"] and seen["model_calls"] >= 3
+    assert seen["path"] == "answer" and seen["roles"] == ["general"] and seen["agent"] == "single"
+    assert seen["model_calls"] >= 3  # 选规程、查数据、作答

@@ -5,13 +5,10 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from ironm_agent import memory_extract
-from ironm_agent.memory_extract import hold, take_held, validate, worth_extracting
 from ironm_agent.memory_prefs import aspect_of, changes_for, derive, refresh
 from ironm_agent.memory_store import Change, Item, MemoryBook
 from ironm_agent.memory_view import MAX_FACTS, Recall
 from ironm_agent.training import LogItem, Plan, TrainingBook, WorkoutLog
-from ironm_agent.yamlfile import load_yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 TODAY = date(2026, 10, 24)
@@ -21,84 +18,12 @@ T0 = datetime(2026, 10, 1, 9).astimezone()
 # ---- 按需提取 ---------------------------------------------------------------------------------
 
 
-def test_pure_questions_are_not_extracted() -> None:
-    for text in (
-        "深蹲怎么做",
-        "肌酸要怎么吃",
-        "增肌一周练几次比较好",
-        "你好，今天天气不错",
-        "壶铃摇摆怎么做",
-    ):
-        assert not worth_extracting(text), text
-    for text in ("我左膝有旧伤", "你回答简短点，别列一大堆", "家里只有一对哑铃", "工作日只能晚上 8 点以后练",
-                 "感冒了还能去健身吗", "最重的是 15 公斤", "更正一下，不是左膝，是右膝"):  # fmt: skip
-        assert worth_extracting(text), text
-    assert worth_extracting("帮我排个计划", "plan") and worth_extracting("好的", "log")
 
 
-def test_memory_eval_turns_that_are_skipped_carry_no_facts() -> None:
-    """记忆考题里判为不用提取的轮次，只能出自"本来就不该记任何事"的情景（none: true）。"""
-    cases = load_yaml(ROOT / "evals/memory/cases.yaml")["cases"]  # type: ignore[index]
-    skipped = [
-        (c["id"], bool(c.get("none")), t[0])
-        for c in cases
-        for t in c["turns"]
-        if not isinstance(t, str) and not worth_extracting(t[0])
-    ]
-    assert skipped and all(none for _, none, _ in skipped), skipped
 
 
-def test_held_lines_can_be_quoted_later() -> None:
-    memory_extract._HELD.clear()
-    for i in range(6):
-        hold("s1", f"第{i}句")
-    assert take_held("s1") == ["第2句", "第3句", "第4句", "第5句"] and take_held("s1") == []
-    raw = {
-        "ops": [
-            {
-                "op": "add",
-                "category": "equipment",
-                "content": "家里有一根弹力带",
-                "quote": "家里有一根弹力带",
-            }
-        ]
-    }
-    assert validate(raw, {}, "那周末呢", "好的")[0] == []  # 原话不在这一轮里：不记
-    ops, _ = validate(raw, {}, "那周末呢", "好的", held=["对了，家里有一根弹力带"])
-    assert [o.content for o in ops] == ["家里有一根弹力带"]  # 出自先留着的那句：可以记
 
 
-def test_skipped_turn_is_held_and_sent_with_the_next_extraction(monkeypatch: Any) -> None:
-    from tests.test_turn_flow import Team, agent
-
-    memory_extract._HELD.clear()
-    seen: list[str] = []
-
-    class Spy(Team):
-        def __call__(self, stage: Any, messages: Any, tools: bool) -> Any:
-            if stage == "memory":
-                seen.append(str(messages[-1]["content"]))
-                from tests.fakes import jsonr
-
-                return jsonr({"ops": []})
-            return super().__call__(stage, messages, tools)
-
-    a = agent(Spy("exercise"), monkeypatch=monkeypatch, memory=MemoryBook())
-
-    async def go(text: str) -> Any:
-        blocks = [
-            b
-            async for b in a.generate_response(
-                "42", [{"role": "user", "content": text}], session_id="42:s9"
-            )
-        ]
-        await a.settle()
-        return blocks
-
-    asyncio.run(go("深蹲怎么做"))
-    assert seen == []  # 纯提问：没调用模型提取
-    asyncio.run(go("我左膝有旧伤，深蹲要注意什么"))
-    assert len(seen) == 1 and "深蹲怎么做" in seen[0] and "还没整理成记忆的话" in seen[0]
 
 
 # ---- 训练记录得出的偏好 -------------------------------------------------------------------------

@@ -29,8 +29,8 @@ from ironm_agent.memory_store import MemoryBook
 from ironm_agent.metrics import Profile, Readings
 from ironm_agent.training import Plan, TrainingBook, WorkoutLog, plan_content, week_of
 from ironm_agent.triggers import missed_trigger, plateau_triggers
-from tests.test_plugin import text_of
-from tests.test_turn_flow import Team, agent, book, run, snapshot_of
+from tests.fakes import jsonr
+from tests.test_turn_flow import Coach, agent, book, run, snapshot_of
 
 TODAY = date.today()
 YESTERDAY = TODAY - timedelta(days=1)
@@ -45,7 +45,7 @@ def test_symptoms_and_levels() -> None:
     assert detect("发烧了，38 度") == (["发烧"], "fever")
     assert detect("嗓子有点疼") == (["嗓子疼"], "above")
     assert detect("感冒了，流鼻涕") == (["流鼻涕"], "above")  # 有具体症状时按症状分级
-    assert detect("我生病了") == (["身体不适"], "below")  # 没说症状：按颈部以下（保守）
+    assert detect("我生病了") == (["身体不适"], "vague")  # 没说症状：没说哪里，按轻松版（§82）
     for text in ("我没发烧", "膝盖旧伤又不舒服", "没睡好", "我妈感冒了", "肚子已经不疼了"):
         assert detect(text) is None, text
     assert reply_of("好多了，就是还在拉") == "unwell" and reply_of("不疼了") == "resolved"
@@ -140,7 +140,9 @@ def test_getting_sick_twice_in_four_weeks_suggests_lighter_week() -> None:
 # ---- 对话 -----------------------------------------------------------------------------------
 
 
-def _agent(team: Team, monkeypatch: Any, ill: IllnessBook, memory: MemoryBook | None = None) -> Any:
+def _agent(
+    team: Coach, monkeypatch: Any, ill: IllnessBook, memory: MemoryBook | None = None
+) -> Any:
     a = agent(team, monkeypatch=monkeypatch, memory=memory, snapshot=snapshot_of())
     a._illness = ill
     return a
@@ -148,7 +150,7 @@ def _agent(team: Team, monkeypatch: Any, ill: IllnessBook, memory: MemoryBook | 
 
 def test_saying_sick_in_chat_starts_an_episode(monkeypatch: Any) -> None:
     ill = IllnessBook()
-    _, seen = run(_agent(Team("recovery"), monkeypatch, ill), "我今天肚子疼，还能练吗")
+    _, seen = run(_agent(Coach(), monkeypatch, ill), "我今天肚子疼，还能练吗")
     eps = list(ill.rows["42"].values())
     assert (
         seen["illness"] == "noted:below"
@@ -160,41 +162,47 @@ def test_saying_sick_in_chat_starts_an_episode(monkeypatch: Any) -> None:
 def test_chat_asks_once_a_day_and_text_replies_count(monkeypatch: Any) -> None:
     ill = IllnessBook()
     asyncio.run(ill.save("42", ep()))
-    a = _agent(Team("trainer"), monkeypatch, ill)
-    first, seen = run(a, "深蹲怎么做")
-    assert seen.get("illness_asked") and text_of(first).rstrip().endswith(
-        "昨天说肚子疼，今天好些了吗？"
-    )
-    again, _ = run(a, "卧推怎么做")
-    assert "好些了吗" not in text_of(again)  # 每天只问一次
+    t = Coach()
+    a = _agent(t, monkeypatch, ill)
+    _, seen = run(a, "深蹲怎么做")
+    # 追问交给管家在回答末尾自然地问一句（§86），不再拼在末尾
+    assert seen.get("illness_asked") and "今天还没问过他：昨天说肚子疼，今天好些了吗？" in t.input
+    _, seen = run(a, "卧推怎么做")
+    assert "好些了吗" not in t.input and not seen.get("illness_asked")  # 每天只问一次
     _, seen = run(a, "好多了")
     e = next(iter(ill.rows["42"].values()))
     assert seen["illness"] == "answered:better" and e.status == "better"
 
 
-def test_stale_illness_memory_is_not_given_to_the_experts(monkeypatch: Any) -> None:
-    memory = book(
-        ("event", "今天肚子疼，腿训和骑车有氧都停了"), ("advice", "肚子疼先别练，今天停腿训和骑车")
-    )
-    t = Team("trainer")
-    run(_agent(t, monkeypatch, IllnessBook(), memory), "深蹲怎么做")
-    assert "肚子疼" not in t.inputs["trainer"]  # 没有正在进行的生病：旧的事件和建议都不带
+STALE = (
+    ("event", "今天肚子疼，腿训和骑车有氧都停了"),
+    ("advice", "肚子疼先别练，今天停腿训和骑车"),
+)
+
+
+def test_stale_illness_memory_is_not_given_to_the_agent(monkeypatch: Any) -> None:
+    t = Coach()
+    run(_agent(t, monkeypatch, IllnessBook(), book(*STALE)), "深蹲怎么做")
+    assert "肚子疼" not in t.input  # 没有正在进行的生病：旧的事件和建议都不带
+
+
+def test_ongoing_illness_is_given_in_relative_words(monkeypatch: Any) -> None:
     ill = IllnessBook()
     asyncio.run(ill.save("42", ep()))
-    t2 = Team("trainer")
-    run(_agent(t2, monkeypatch, ill, memory), "深蹲怎么做")
-    assert "开始肚子疼，现在还没好" in t2.inputs["trainer"]
+    t = Coach()
+    run(_agent(t, monkeypatch, ill, book(*STALE)), "深蹲怎么做")
+    assert "说肚子疼" in t.input and "还没好" not in t.input  # §82：相对说法
 
 
 def test_two_day_story_sick_then_better(monkeypatch: Any) -> None:
     """第一天说肚子疼，第二天说好了再问今天练什么：回答前的档案里不再当成还在疼。"""
     ill = IllnessBook()
     asyncio.run(ill.save("42", ep()))  # 昨天记下的
-    t = Team("trainer")
+    t = Coach()
     _, seen = run(_agent(t, monkeypatch, ill), "肚子已经不疼了，深蹲怎么做")
     assert seen["illness"] == "answered:resolved"
-    assert "还没好" not in t.inputs["trainer"]
-    assert "病后第一次训练按平时的七成" in t.inputs["trainer"]  # 刚好：告诉角色按约七成练
+    assert "还没好" not in t.input
+    assert "病后第一次训练按平时的七成" in t.input  # 刚好：告诉角色按约七成练
 
 
 def test_case_file_dates_events() -> None:
@@ -203,7 +211,8 @@ def test_case_file_dates_events() -> None:
 
     memory = book(("event", "这周出差"))
     items = asyncio.run(memory.items("42"))
-    case = build(Snapshot(Profile(), Readings(), (), TODAY), Recall.of(items), "今天练什么")
+    at = items[0].created + timedelta(days=1)  # 说了之后第二天（不随真实日期过期）
+    case = build(Snapshot(Profile(), Readings(), (), TODAY), Recall.of(items, at), "今天练什么")
     assert any("这周出差（" in x and "日说的）" in x for x in case.limits)
 
 
@@ -291,3 +300,40 @@ def test_asking_about_it_is_not_being_sick() -> None:
     assert reply_of("不疼了") == "resolved"
     assert reply_of("我肚子疼不疼") is None
     assert reply_of("还不舒服") == "unwell"
+
+
+# ---- §82：只说不舒服时先接住请求 ----
+
+
+def test_vague_unwell_is_light_not_rest_and_upgrades_when_symptoms_come() -> None:
+    from ironm_agent.illness import merge
+
+    assert detect("今天有点不舒服，给我安排一个轻松的锻炼") == (["身体不适"], "vague")
+    mode = today_mode([ep("vague", started=TODAY)], TODAY)
+    assert mode is not None and mode[0] == "light" and "问哪里不舒服" in mode[1]
+    assert "不主动安排" in mode[1]  # 他没问练什么就不给（§82 修改）
+    assert "月" not in mode[1] and "还没好" not in mode[1]  # 不给日期、不给"还没好"
+    vague = ep("vague", started=TODAY, symptoms=["身体不适"])
+    fever = merge([vague], ["发烧"], "fever", TODAY)
+    assert fever.level == "fever" and fever.symptoms == ["发烧"]
+    assert today_mode([fever], TODAY)[0] == "rest"  # type: ignore[index]
+    assert detect("我拉肚子了")[1] == "below"  # type: ignore[index]  # 说了具体症状照旧
+
+
+def test_vague_unwell_reaches_the_model_as_a_light_day_without_dates(monkeypatch: Any) -> None:
+    from tests.test_single_agent import single
+
+    a, s = single(lambda *_: jsonr({"answer": "可以，今天慢走 20 分钟。"}), monkeypatch, old=True)
+    a._illness = IllnessBook()
+    run(a, "今天有点不舒服，给我安排一个轻松的锻炼")
+    run(a, "给我安排一个轻松的锻炼")
+    assert "没说哪里" in s.user and "还没好" not in s.user
+    assert "不报日期" in s.system  # 提起记忆和状态像人说话（§82）
+
+
+def test_sick_skill_takes_the_request_first_when_unwell_is_vague() -> None:
+    from ironm_agent.skills import skills
+
+    body = next(x for x in skills() if x.id == "sick-days").body
+    assert '只说"有点不舒服、难受"、没说哪里' in body and "再问一句哪里不舒服" in body
+    assert "没问怎么办：关心一句，问哪里不舒服，不主动给做法和安排" in body

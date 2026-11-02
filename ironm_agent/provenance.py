@@ -23,25 +23,19 @@ def is_provenance(text: str) -> bool:
     return bool(_POINT.search(t) or _NUMBER.search(t) or len(t) <= 8)
 
 
-def explain(question: str, sources: str | None) -> str:
-    """把来源讲给用户；问到具体数字时，先讲包含这个数字的那几条。"""
-    if sources is None:
-        return "还没有可以追溯的回答。你先问一个问题，我回答后，可以接着问依据和来源。"
-    if not sources.strip():
-        return "上一条回答没有用到资料、计算或你的数据，主要是教练的专业经验。"
-    numbers = _NUMBER.findall(question)
-    if numbers:
-        lines = [
-            ln
-            for ln in sources.splitlines()
-            if ln.startswith("- ") and any(n in ln for n in numbers)
-        ]
-        if lines:
-            return f"{'、'.join(numbers)} 是这样来的：\n" + "\n".join(lines)
-    return "上一条回答的依据：\n\n" + sources
-
-
 def is_explanation(answer: str) -> bool:
     """这条助手回复是不是追问来源的回复（不是真正的回答）。"""
     a = answer.strip()
     return a.startswith(REPLY_PREFIXES) or bool(_EXPLAINED.match(a))
+
+
+def provenance_note(sources: str | None) -> str:
+    """单 Agent 下追问来源（spec [2026-10-23] §86）：把上一条回答的依据作为要求交给模型讲，不按模板念。"""
+    if sources is None:
+        return "他在追问依据，但之前还没有可以追溯的回答：照实说，请他先问一个问题。"
+    if not sources.strip():
+        return "他在追问上一条回答的依据：上一条没有用到资料、计算或他的数据，主要是教练的经验，照实说。"
+    return (
+        "他在追问上一条回答的依据。下面是上一条回答用到的依据与来源（内部记录）：只讲他问的那一点，"
+        "用资料名称、数据和算法说清楚，不带编号，不整段照念。\n" + sources
+    )

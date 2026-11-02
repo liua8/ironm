@@ -147,8 +147,21 @@ def ask(token: str, session_id: str, text: str) -> tuple[str, list[dict[str, str
     return answer.strip(), cards, time.perf_counter() - start
 
 
+def active_events(user_id: str) -> int:
+    """重放账号现在有效的近况条数（§73：同一件事说几遍只有一条），只数条数、不读内容。"""
+    with db() as c:
+        return int(c.execute(
+            "SELECT count(*) FROM ironm_memory WHERE user_id = %s AND category = 'event'"
+            " AND status = 'active'", (user_id,),
+        ).fetchone()[0])  # fmt: skip
+
+
 def judge(
-    turn: dict[str, Any], answer: str, cards: list[dict[str, str]], ill: int | None
+    turn: dict[str, Any],
+    answer: str,
+    cards: list[dict[str, str]],
+    ill: int | None,
+    events: int | None = None,
 ) -> list[str]:
     """不符合的地方；空列表就是符合。"""
     bad = []
@@ -164,6 +177,11 @@ def judge(
         bad.append(f"该出{want}卡片，没出")
     if "illness" in turn and ill != turn["illness"]:
         bad.append(f"生病记录应有 {turn['illness']} 条，实际 {ill} 条")
+    if "events" in turn and events != turn["events"]:
+        bad.append(f"有效近况应有 {turn['events']} 条，实际 {events} 条")
+    asks = answer.count("？") + answer.count("?")
+    if "asks" in turn and asks > turn["asks"]:
+        bad.append(f"问题最多 {turn['asks']} 个，实际 {asks} 个")
     return bad
 
 
@@ -180,10 +198,20 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
     made["sessions"].append(session_id)
     ok = 0
     for turn in case["turns"]:
+        if turn.get("new_session"):  # 换一个会话接着聊（§73 会话摘要）：先等后台写完摘要
+            time.sleep(int(turn.get("pause", 20)))
+            session_id = str(
+                json.load(call("POST", "/api/session", {}, token))["data"]["session_id"]
+            )
+            made["sessions"].append(session_id)
+            print(f"{'-' * 72}\n（换了一个新会话）")
         answer, cards, secs = ask(token, session_id, turn["say"])
         made["drafts"] += [c["draft"] for c in cards if c["draft"]]
         ill = illness_rows(user_id) if "illness" in turn else None
-        bad = judge(turn, answer, cards, ill)
+        if "events" in turn:
+            time.sleep(3)  # 当场写的记忆在回答之后
+        events = active_events(user_id) if "events" in turn else None
+        bad = judge(turn, answer, cards, ill, events)
         ok += not bad
         print(f"{'-' * 72}\n问：{turn['say']}（{secs:.1f} 秒）")
         print("答：" + answer.replace("\n", "\n    "))

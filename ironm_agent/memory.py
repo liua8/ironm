@@ -136,3 +136,32 @@ async def last_sources(session_id: str, tool_call_id: str) -> str | None:
                 return str(block.get("content") or "")
         return ""  # 上一条回答没有附来源
     return None
+
+
+def transcript(rows: list[dict[str, Any]], each: int = 300) -> list[str]:
+    """整个会话的对话（写会话摘要用）：用户原话和回答，每句最多 each 个字。"""
+    out = []
+    for r in rows:
+        content = r.get("content")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        who = USER if r.get("role") == "user" else "教练：" if r.get("role") == "assistant" else ""
+        if who:
+            text = " ".join(content.split())
+            out.append(who + (text if len(text) <= each else text[:each] + "…"))
+    return out
+
+
+async def whole(session_id: str) -> list[str]:
+    """本会话全部对话（会话摘要用）；读不到时为空。"""
+    owner, session = split_thread(session_id)
+    if not owner or not session:
+        return []
+    try:
+        from mirobody.agent.chat.message import get_chat_history
+
+        rows: list[dict[str, Any]] = await get_chat_history(owner, session)
+    except Exception as e:
+        _log.warning("history unavailable: error_type=%s", type(e).__name__)
+        return []
+    return transcript(rows)

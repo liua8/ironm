@@ -279,4 +279,4 @@ def test_nav_has_tier_tab_and_avatar_into_personal_center() -> None:
     assert 'href="#tier" data-tab="tier"' in html and 'data-tab="me"' not in html
     assert 'id="avatar" href="#me"' in html
     assert "「我的」" not in js and "#me/profile" not in js and "#me/data" not in js
-    assert "const tierHref = (cat, mine = false) => `#tier/" in js
+    assert "const tierHref = (board, part = \"\") => `#tier/" in js  # §72

@@ -489,18 +489,6 @@ def impact(old: Plan, new: Plan) -> list[str]:
 
 # ---- 简单句式由规则解析，不调用模型（§45 需求 2）-----------------------------------------------
 
-_D = r"(?:周|星期|礼拜)([一二三四五六日天])"
-_MOVE = re.compile(rf"把?{_D}(?:的(?:训练|课))?(?:挪|移|换|调|改)到{_D}")
-_REMOVE_DAY = re.compile(rf"把?{_D}(?:的(?:训练|课))?(?:删掉|删了|删除|去掉|取消|不练了?|空出来)")
-_REMOVE_ITEM = re.compile(rf"把?{_D}的?([^，。,、]{{2,12}}?)(?:删掉|删了|去掉|不做了?|不要了?)")
-_REDUCE = re.compile(
-    r"(?:这周|本周|计划|整体|全部|都|每次)?[^，。]{0,6}?"
-    r"(?:轻一?点|轻松一?点|减一?点量|减量|少练一?点|轻很多|轻一半|减半|大幅减量)"
-)
-_MUCH = re.compile(r"轻很多|轻一半|减半|大幅")
-_FILLER = re.compile(
-    r"[\s，。,.！!、；;]|帮我|麻烦|请|吧|一下|然后|再|并且|还有|和|也|呢|啊|好吗|可以吗"
-)
 _ONLY_NOW = re.compile(r"今天|今晚|今早|这次|这一次|这一练|现在")
 _FOREVER = re.compile(r"以后|每周|固定|一直|长期|之后|往后|计划")
 
@@ -532,48 +520,6 @@ def blocked_days(text: str) -> set[int]:
 def scope_hint(text: str) -> str:
     """没说是只改这次还是以后都这样时，卡片上提醒一句（§45 需求 9）。"""
     return "" if _FOREVER.search(text) or _ONLY_NOW.search(text) else _SCOPE_HINT
-
-
-def only_this_time(text: str) -> bool:
-    """说的是只改这一次（走今天的版本，不改计划）。"""
-    return bool(_ONLY_NOW.search(text)) and not _FOREVER.search(text)
-
-
-def rule_conflict(text: str) -> str:
-    """一句话里删掉某天、又要改那天的内容（"周五不练了，再把周五的弯举加到 4 组"）：返回矛盾说明。"""
-    for m in _REMOVE_DAY.finditer(text):
-        rest = text.replace(m.group(0), " ")
-        day = m.group(1)
-        if re.search(rf"(?:周|星期|礼拜){day}", rest):
-            name = weekday_name(_DAY[day])
-            return f"同一句里既要删掉{name}、又要改{name}的内容"
-    return ""
-
-
-def rule_ops(text: str, plan: Plan) -> list[Op] | None:
-    """整句话都能由简单句式说清时返回操作；有一点说不清就返回 None（交给训练教练）。"""
-    rest, ops = text, []
-    for m in _MOVE.finditer(text):
-        ops.append(Op(kind="move", day=_DAY[m.group(1)], to_day=_DAY[m.group(2)], why="你要求的"))
-        rest = rest.replace(m.group(0), " ")
-    for m in _REMOVE_ITEM.finditer(rest):
-        d, name = _DAY[m.group(1)], m.group(2).removeprefix("的")
-        s = _session(list(plan.sessions), d)
-        if s is not None and any(_same(name, x.exercise) for x in s.items):
-            ops.append(Op(kind="remove", day=d, exercise=name, why="你要求的"))
-            rest = rest.replace(m.group(0), " ")
-    for m in _REMOVE_DAY.finditer(rest):
-        ops.append(Op(kind="remove", day=_DAY[m.group(1)], why="你要求的"))
-        rest = rest.replace(m.group(0), " ")
-    light = _REDUCE.search(rest)
-    if light:
-        weight = "重量" in text
-        ops.append(Op(kind="reduce", ratio=LIGHTER if _MUCH.search(light.group(0)) else LIGHT,
-                      weight=weight, why="你要求的"))  # fmt: skip
-        rest = rest.replace(light.group(0), " ").replace("重量", " ")
-    if not ops or _FILLER.sub("", rest):
-        return None
-    return ops
 
 
 # ---- 每周复盘、首页提醒的调整由规则生成（§45 需求 2；最多改两天）-------------------------------

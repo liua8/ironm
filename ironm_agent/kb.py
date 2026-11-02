@@ -25,24 +25,29 @@ type Level = Literal[
     "systematic_review",
     "consensus",
     "rct",
+    "study",
     "review",
     "textbook",
     "health_info",
     "library",
+    "web",
 ]
 
-# 证据等级从高到低：指南与立场声明 > 系统综述 > 专家共识、随机对照研究、综述、教材、权威机构的健康科普；
-# library 是 iron-m 自己的动作库（做法、要点、替代、什么情况先别做），按资料一样引用和核对
+# 证据等级从高到低：指南与立场声明 > 系统综述 > 专家共识、随机对照研究、观察性研究、综述、教材、权威机构的健康科普；
+# library 是 iron-m 自己的动作库（做法、要点、替代、什么情况先别做），按资料一样引用和核对；
+# web 是联网查到的白名单机构资料（§91），一样引用和核对，但未审、不写进知识库
 LEVEL_NAMES: dict[str, str] = {
     "guideline": "指南",
     "position_stand": "立场声明",
     "systematic_review": "系统综述与荟萃分析",
     "consensus": "专家共识",
     "rct": "随机对照研究",
+    "study": "观察性研究",
     "review": "综述",
     "textbook": "教材",
     "health_info": "权威机构健康科普",
     "library": "动作库（待审定）",
+    "web": "联网资料（未审）",
 }
 
 DOMAINS = frozenset({"training", "exercise", "nutrition", "recovery", "safety", "data", "library"})
@@ -54,7 +59,7 @@ class Point(ContractModel):
 
 
 class Entry(ContractModel):
-    id: Annotated[str, Field(pattern=r"^K\d{2,3}$")]
+    id: Annotated[str, Field(pattern=r"^K\d{2,4}$")]
     domains: tuple[str, ...] = Field(min_length=1)
     title: str
     source: str  # 资料名称
@@ -66,7 +71,7 @@ class Entry(ContractModel):
     points: tuple[Point, ...] = Field(min_length=1)
     keywords: tuple[str, ...] = ()
     url: str | None = None
-    review: Literal["approved", "claude_draft"]
+    review: Literal["approved", "claude_draft", "web"]  # web：联网查到的，未审（§91）
 
     def cite_label(self) -> str:
         """回答末尾“依据”里的一行。"""

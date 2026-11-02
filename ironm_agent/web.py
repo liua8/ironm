@@ -422,12 +422,19 @@ async def add_workout(
 
 
 async def after_workout(
-    user_id: str, log: WorkoutLog, store: TrainingStore, memory: MemoryStore, pain: Any, illness: Any
+    user_id: str,
+    log: WorkoutLog,
+    store: TrainingStore,
+    memory: MemoryStore,
+    pain: Any,
+    illness: Any,
 ) -> None:
     """记下一次训练之后（打卡、训练记录器结束，§71）：生病期间练了算好了、备注说疼、偏好、管家重新评估。"""
     if log.done:  # 生病期间打卡练了：当作已经好了（spec [2026-10-23] §46）
         await illness_trained(illness, user_id, log.day)
-    if parts := pain_parts(log.note):  # 打卡备注里说疼：触发型调整用（spec [2026-10-23] §18 需求 5）
+    if parts := pain_parts(
+        log.note
+    ):  # 打卡备注里说疼：触发型调整用（spec [2026-10-23] §18 需求 5）
         try:
             if not await memory.paused(user_id):
                 for part in parts:
@@ -570,6 +577,11 @@ router.include_router(_more)
 from ironm_agent.web_tier import router as _tier  # noqa: E402
 
 router.include_router(_tier)
+
+# 夯榜改成排行榜（spec [2026-10-23] §72）
+from ironm_agent.web_rank import router as _rank  # noqa: E402
+
+router.include_router(_rank)
 
 # 训练记录器（spec [2026-10-23] §71）
 from ironm_agent.web_live import router as _live  # noqa: E402

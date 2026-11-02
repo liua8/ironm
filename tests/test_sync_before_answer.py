@@ -6,11 +6,11 @@ from typing import Any
 
 from ironm_agent.illness import Episode, IllnessBook
 from ironm_agent.memory_store import MemoryBook
-from tests.test_turn_flow import Team, agent
+from tests.test_turn_flow import Coach, agent
 
 
 def make(monkeypatch: Any) -> tuple[Any, list[dict[str, Any]]]:
-    a = agent(Team("exercise"), monkeypatch=monkeypatch, memory=MemoryBook())
+    a = agent(Coach(), monkeypatch=monkeypatch, memory=MemoryBook())
     runs: list[dict[str, Any]] = []
     a._observe = runs.append
     return a, runs

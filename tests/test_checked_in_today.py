@@ -1,21 +1,13 @@
 """打卡了就算今天的任务完成（spec [2026-10-23] §52）：档案写明今天已练完、训练教练不再安排今天、
 说自己打过卡按训练问题、表达不满时不回打招呼。"""
 
-import asyncio
-from collections.abc import Mapping, Sequence
 from datetime import date
-from typing import Any
 
-from ironm_agent.coach import GREETING, SORRY, direct
-from ironm_agent.frameworks import FRAMEWORKS
-from ironm_agent.llm import Reply, Stage
 from ironm_agent.roles import Role
-from ironm_agent.routing import combine
+from ironm_agent.skills import core_of
 from ironm_agent.training import Plan, WorkoutLog, case_lines, parse_plan
-from tests.fakes import FakeLLM
 
 TUESDAY = date(2026, 10, 27)
-ZERO = {"trainer": 0.0, "nutrition": 0.0, "recovery": 0.0}
 
 
 def plan() -> Plan:
@@ -65,39 +57,14 @@ def test_case_without_minutes_or_not_done() -> None:
 
 
 def test_trainer_rule_for_checked_in_day() -> None:
-    rule = FRAMEWORKS[Role.TRAINER]
+    core = core_of(Role.TRAINER)
+    assert core is not None
+    rule = "\n".join(core.rules)  # 训练的基础规程（§74；§87 起不再有训练教练的单独提示词）
     assert (
         "档案写了今天已打卡完成" in rule
         and "不再安排今天怎么练" in rule
         and "不把这次算成加练" in rule
         and "等他问到再说" in rule
-    )
-
-
-def test_saying_checked_in_is_a_training_question() -> None:
-    for text in ("我不是打卡了嘛", "我打卡了你为什么还让我练", "我练过了啊", "打了卡怎么还让我练"):
-        for intent in ("app", "chat"):
-            d = combine(text, llm=(intent, ZERO), keyword=ZERO, vector=ZERO)
-            assert d.intent == "pro", (text, intent)
-    for text in ("怎么打卡", "打卡在哪里", "打卡可以撤销吗"):
-        assert combine(text, llm=("app", ZERO), keyword=ZERO, vector=ZERO).intent == "app", text
-
-
-def ask(text: str, answer: str) -> str:
-    def handler(stage: Stage, messages: Sequence[Mapping[str, Any]], tools: bool) -> Reply:
-        return Reply(answer)
-
-    return asyncio.run(direct("chat", text, [], FakeLLM(handler)))
-
-
-def test_complaint_falls_back_to_sorry_not_greeting() -> None:
-    made_up = "抱歉，今天只骑 20 分钟就好。"  # 编出来的数字，核对不通过
-    assert ask("谁让你擅自安排", made_up) == SORRY
-    assert ask("我问的是计划，你又给我加安排", made_up) == SORRY
-    assert ask("你好", made_up) == GREETING
-    assert (
-        ask("谁让你擅自安排", "抱歉，是我多安排了。你想知道哪一点？")
-        == "抱歉，是我多安排了。你想知道哪一点？"
     )
 
 
