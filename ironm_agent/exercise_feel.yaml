@@ -490,3 +490,29 @@ feel:
   foam-roll-calves:
     - cue: 像用擀面杖擀小腿，酸的地方多停几秒
       replaces: 慢速滚压
+
+  single-arm-pulldown:
+    - cue: 手只是钩子，用手肘往身体侧下方插裤兜，拉到肩膀旁边就停
+      replaces: 肘部下拉、背阔肌主导、拉至肩侧
+    - cue: 先把肩膀往下放、离耳朵远一点，再开始拉
+      replaces: 先沉肩再下拉
+
+  towel-door-row:
+    - cue: 身体像一块木板被门拉过去，别从屁股那里折
+      replaces: 躯干保持直线
+    - cue: 先把两边肩胛往中间挤，像要夹住一支笔，再弯手肘
+      replaces: 肩胛后缩启动划船
+
+  prone-pulldown:
+    - cue: 手只是钩子，用手肘往裤兜里插，像趴着做引体向上
+      replaces: 肘部下拉、背阔肌主导
+
+  prone-y-raise:
+    - cue: 两只大拇指朝天，像趴着比一个大大的 Y
+      replaces: 肩外旋位做 Y 字举
+    - cue: 肩膀往下放、离耳朵远一点，别耸
+      replaces: 沉肩，避免上斜方肌代偿
+
+  towel-curl:
+    - cue: 脚和手在拔河：手往上拉，脚往下踩着不让它轻松上来
+      replaces: 自我对抗提供阻力

@@ -1,0 +1,59 @@
+# 排行榜（spec [2026-10-23] §72、§80）自填榜的起步条目：通用名字、不写品牌，开榜时没有票。
+# 用户添加的和这些放在一起排；动作榜的条目来自动作库、训练计划榜的来自方案库，不在这里。
+# 每条：name 名字；desc 一句说明（是什么、适合谁；补剂和蛋白粉不写疗效）；tag 标签（健身餐写减脂或增肌）；
+# photo 在 Wikimedia Commons 上找配图用的英文检索词（scripts/fetch_rank_images.py 用，页面不显示）。
+# §80 起减脂餐榜、增肌餐榜合并成健身餐榜（meal）。内容由 Claude 整理，待审定。
+meal:
+  - {name: 鸡胸肉藜麦沙拉, tag: 减脂, desc: 鸡胸肉配藜麦和蔬菜，蛋白质高、油少，适合减脂期的午餐, photo: quinoa salad}
+  - {name: 番茄龙利鱼, tag: 减脂, desc: 龙利鱼和番茄一起煮，鱼肉嫩、脂肪少，配一小碗饭就是一餐, photo: fish tomato stew}
+  - {name: 牛肉西兰花糙米饭, tag: 减脂, desc: 瘦牛肉炒西兰花配糙米饭，蛋白质、蔬菜、主食都有, photo: beef broccoli stir fry}
+  - {name: 虾仁滑蛋配杂粮饭, tag: 减脂, desc: 虾仁炒鸡蛋配杂粮饭，做起来快，蛋白质足, photo: shrimp scrambled eggs}
+  - {name: 魔芋鸡丝凉面, tag: 减脂, desc: 魔芋面拌鸡丝和黄瓜，热量低、吃得饱，适合夏天, photo: shirataki noodles}
+  - {name: 清蒸鲈鱼配杂粮饭, tag: 减脂, desc: 清蒸少油，鲈鱼蛋白质高，配杂粮饭, photo: steamed sea bass}
+  - {name: 希腊酸奶燕麦杯, tag: 减脂, desc: 希腊酸奶加燕麦和水果，适合当早餐或加餐, photo: yogurt granola}
+  - {name: 荞麦面配鸡胸, tag: 减脂, desc: 荞麦面配鸡胸肉和蔬菜，主食换成粗粮, photo: cold soba noodles}
+  - {name: 金枪鱼全麦三明治, tag: 减脂, desc: 水浸金枪鱼夹全麦面包和生菜，方便带饭, photo: tuna sandwich}
+  - {name: 冬瓜虾仁汤, tag: 减脂, desc: 冬瓜加虾仁煮汤，清淡、热量低，适合晚餐配菜, photo: winter melon soup}
+  - {name: 牛肉饭加蛋, tag: 增肌, desc: 牛肉盖饭加一个鸡蛋，碳水和蛋白质都多，适合练后, photo: gyudon}
+  - {name: 三文鱼牛油果饭, tag: 增肌, desc: 三文鱼、牛油果配米饭，蛋白质和脂肪都有, photo: "File:Salmon bowl.jpg"}
+  - {name: 鸡腿肉土豆饭, tag: 增肌, desc: 去皮鸡腿肉配土豆和米饭，热量够、做法简单, photo: roast chicken potatoes}
+  - {name: 燕麦全蛋牛奶早餐, tag: 增肌, desc: 燕麦、全蛋、牛奶，早餐就把蛋白质和碳水吃够, photo: oatmeal porridge}
+  - {name: 肉酱意面, tag: 增肌, desc: 牛肉末番茄酱拌意面，碳水足，适合训练量大的日子, photo: spaghetti bolognese}
+  - {name: 香蕉花生酱吐司, tag: 增肌, desc: 吐司抹花生酱加香蕉，练前加餐方便, photo: peanut butter banana toast}
+  - {name: 卤牛肉配米饭, tag: 增肌, desc: 卤牛肉配米饭，牛肉蛋白质高，可以提前做好, photo: braised beef rice}
+  - {name: 鸡胸蛋炒饭, tag: 增肌, desc: 鸡胸丁和鸡蛋炒饭，一盘里蛋白质和碳水都有, photo: egg fried rice}
+  - {name: 酸奶坚果碗, tag: 增肌, desc: 酸奶加坚果和水果，热量密度高，适合加餐, photo: yogurt nuts bowl}
+  - {name: 红薯配鸡胸, tag: 增肌, desc: 红薯配鸡胸肉，简单的练后餐, photo: baked sweet potato}
+supplement:
+  - {name: 一水肌酸, desc: 最常见的肌酸形式，练力量的人用得多, photo: "File:Creatine monohydrate powder.jpg"}
+  - {name: 咖啡因, desc: 咖啡、茶和功能饮料里都有，有人练前喝, photo: coffee beans}
+  - {name: 维生素 D, desc: 常见的维生素补充剂，晒太阳少的人常会提到, photo: vitamin D supplement}
+  - {name: 电解质冲剂, desc: 含钠、钾等，出汗多、长时间运动时用, photo: oral rehydration salts}
+  - {name: 鱼油, desc: 含 Omega-3 脂肪酸的补充剂, photo: fish oil capsules}
+  - {name: 镁, desc: 常见的矿物质补充剂, photo: "File:Magnesium tablets.jpg"}
+  - {name: β-丙氨酸, desc: 一种氨基酸补剂，吃了皮肤可能发麻, photo: "File:Beta-Alanine-3D-balls.png"}
+  - {name: 谷氨酰胺, desc: 一种氨基酸补剂, photo: "File:Glutamine (Gln).png"}
+  - {name: BCAA, desc: 支链氨基酸（亮氨酸、异亮氨酸、缬氨酸）, photo: "File:L-leucine-3D-balls.png"}
+  - {name: 左旋肉碱, desc: 常在减脂产品里见到的补剂, photo: L-carnitine}
+protein:
+  - {name: 分离乳清, desc: 乳糖和脂肪更少的乳清蛋白，蛋白含量高, photo: whey protein}
+  - {name: 浓缩乳清, desc: 最常见的乳清蛋白，价格较低，含少量乳糖, photo: protein powder scoop}
+  - {name: 水解乳清, desc: 预先分解过的乳清蛋白，价格高, photo: protein shake}
+  - {name: 酪蛋白, desc: 牛奶里的另一种蛋白，消化得慢, photo: casein}
+  - {name: 大豆分离蛋白, desc: 植物蛋白，不含乳制品, photo: soy protein}
+  - {name: 豌豆蛋白, desc: 植物蛋白，对乳制品过敏的人可以选, photo: pea protein}
+  - {name: 即饮蛋白奶, desc: 开盖就能喝的蛋白饮料，方便带着, photo: protein drink bottle}
+  - {name: 蛋白棒, desc: 方便带的高蛋白零食，注意看糖和热量, photo: protein bar}
+  - {name: 牛肉蛋白粉, desc: 从牛肉提取的蛋白粉，不含乳制品, photo: beef protein}
+gear:
+  - {name: 可调哑铃, desc: 一副就能调重量，在家能做几乎所有哑铃动作, photo: adjustable dumbbells}
+  - {name: 弹力带, desc: 便宜、轻，在家和出差都能练, photo: "File:Resistance band.jpg"}
+  - {name: 门框引体向上杆, desc: 装在门框上做引体向上和悬垂, photo: doorway pull-up bar}
+  - {name: 壶铃, desc: 适合摇摆、深蹲、硬拉这类全身动作, photo: kettlebell}
+  - {name: 泡沫轴, desc: 练前练后放松肌肉用, photo: foam roller}
+  - {name: 跳绳, desc: 便宜的有氧器材，热身也能用, photo: jump rope}
+  - {name: 可调卧推凳, desc: 能平能斜，配哑铃做卧推、划船, photo: weight bench}
+  - {name: 瑜伽垫, desc: 在家做核心和拉伸时垫着, photo: yoga mat}
+  - {name: 举重腰带, desc: 大重量深蹲、硬拉时用，新手用不上, photo: powerlifting squat}
+  - {name: TRX 悬挂带, desc: 挂在门上或架子上做自重训练, photo: suspension trainer}
+  - {name: 健腹轮, desc: 练核心的小器材，难度较高, photo: ab wheel}

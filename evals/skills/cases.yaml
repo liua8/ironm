@@ -5,24 +5,24 @@
 version: "0.1"
 cases:
   # ---- 训练教练 ----
-  - {role: trainer, ask: 刚开始健身，什么都不懂，该从哪练起, expect: [新手入门]}
-  - {role: trainer, ask: 想把胳膊练粗一点，怎么安排, expect: [增肌]}
-  - {role: trainer, ask: 硬拉想冲一百五十公斤，怎么练, expect: [提升力量]}
-  - {role: trainer, ask: 减脂期力量训练还要不要做, expect: [减脂期训练]}
-  - {role: trainer, ask: 在宿舍没有器械，每天二十分钟怎么练, expect: [居家与时间有限]}
+  - {role: trainer, ask: 刚开始健身，什么都不懂，该从哪练起, expect: [初次评估, 排训练计划]}
+  - {role: trainer, ask: 想把胳膊练粗一点，怎么安排, expect: [排训练计划]}
+  - {role: trainer, ask: 硬拉想冲一百五十公斤，怎么练, expect: [排训练计划]}
+  - {role: trainer, ask: 减脂期力量训练还要不要做, expect: [排训练计划]}
+  - {role: trainer, ask: 在宿舍没有器械，每天二十分钟怎么练, expect: [排训练计划]}
   - {role: trainer, ask: 今天浑身没劲，还按计划练吗, on: [poor], expect: [按今天的状态调整]}
   - {role: trainer, ask: 练了两个月感觉卡住了，重量加不上去, expect: [减量与平台期]}
   - {role: trainer, ask: 出差回来一个多月没练了, expect: [中断后回归]}
-  - {role: trainer, ask: 帮我排一个下周的训练, on: [plan], expect: [排每周计划]}
+  - {role: trainer, ask: 帮我排一个下周的训练, on: [plan], expect: [排训练计划]}
   - {role: trainer, ask: 罗马尼亚硬拉的要点是什么, on: [move], expect: [动作教学]}
   - {role: trainer, ask: 家里没有卧推凳，可以换成什么, expect: [替代动作选择]}
   - {role: trainer, ask: 练腿之前要做哪些准备活动, expect: [热身]}
-  - {role: trainer, ask: 每周跑几次步对减脂最好, expect: [有氧耐力, 减脂期训练]}
+  - {role: trainer, ask: 每周跑几次步对减脂最好, expect: [有氧耐力, 排训练计划]}
   - {role: trainer, ask: 骑动感单车多久算有效, expect: [有氧耐力]}
   - {role: trainer, ask: 工作太忙，总是练两周就断了, expect: [坚持与习惯]}
   - {role: trainer, ask: 一点都不想动，怎么让自己有动力, expect: [坚持与习惯]}
-  - {role: trainer, ask: 这周想练胸和背，帮我改一下计划, on: [plan], expect: [排每周计划]}
-  - {role: trainer, ask: 引体向上一个都拉不上去怎么办, expect: [动作教学, 替代动作选择, 新手入门]}
+  - {role: trainer, ask: 这周想练胸和背，帮我改一下计划, on: [plan], expect: [排训练计划]}
+  - {role: trainer, ask: 引体向上一个都拉不上去怎么办, expect: [动作教学, 替代动作选择, 排训练计划]}
   # ---- 营养师 ----
   - {role: nutrition, ask: 我一天该吃多少卡路里, expect: [热量与蛋白质目标]}
   - {role: nutrition, ask: 增肌期一天要吃几顿, expect: [增肌饮食]}
@@ -65,7 +65,7 @@ cases:
   - {role: recovery, ask: 前天练背今天背好酸，是受伤了吗, expect: [酸痛还是受伤]}
   - {role: recovery, ask: 今天手表显示恢复分很低，要不要休息, expect: [今天状态判断]}
   - {role: trainer, ask: 昨晚没睡好，今天的腿要怎么练, on: [poor], expect: [按今天的状态调整]}
-  - {role: trainer, ask: 卧推卡在八十公斤两个月了, expect: [减量与平台期, 提升力量]}
+  - {role: trainer, ask: 卧推卡在八十公斤两个月了, expect: [减量与平台期, 排训练计划]}
   - {role: trainer, ask: 健身房人太多没有深蹲架，换什么练, expect: [替代动作选择]}
   - {role: nutrition, ask: 一个人在家做饭，减脂期一周怎么吃, expect: [减脂饮食]}
   - {role: nutrition, ask: 每天点外卖还能增肌吗, expect: [外卖与食堂怎么选, 增肌饮食]}

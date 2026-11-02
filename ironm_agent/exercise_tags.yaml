@@ -110,3 +110,8 @@ tags:
   knee-to-chest: {pattern: stretch, friendly: [joint.lumbar]}
   foam-roll-quads: {pattern: stretch, friendly: [joint.knee]}
   foam-roll-calves: {pattern: stretch, friendly: [joint.ankle]}
+  single-arm-pulldown: {pattern: v_pull, groups: [part.back, group.biceps], stress: [joint.shoulder], muscles: [muscle.lats], assist: [muscle.biceps, muscle.mid_lower_traps]}
+  towel-door-row: {pattern: h_pull, groups: [part.back, group.biceps], muscles: [muscle.lats, muscle.rhomboids], assist: [muscle.biceps, muscle.posterior_delt, muscle.mid_lower_traps]}
+  prone-pulldown: {pattern: v_pull, groups: [part.back], muscles: [muscle.lats, muscle.mid_lower_traps], assist: [muscle.erector_spinae, muscle.posterior_delt]}
+  prone-y-raise: {pattern: shoulder, groups: [part.shoulder, part.back], friendly: [joint.shoulder], muscles: [muscle.posterior_delt, muscle.mid_lower_traps], assist: [muscle.rhomboids]}
+  towel-curl: {pattern: curl, groups: [group.biceps], muscles: [muscle.biceps], assist: [muscle.brachialis, muscle.forearms]}

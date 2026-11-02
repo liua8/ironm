@@ -60,6 +60,8 @@ entries:
         where: Novice training — loading and volume
       - text: 新手每周训练 2–3 天（全身）；中级 3–4 天；高级 4–5 天。
         where: Frequency
+      - text: 中级指持续抗阻训练约 6 个月的人，高级指有多年抗阻训练经验的人；没有训练经验或经验很少的是新手。
+        where: Introduction / Progression models（训练水平的划分）
       - text: 当能连续两次训练都比目标次数多做 1–2 次时，负荷增加 2–10%。
         where: Progression — load
       - text: 以增肌为目标时，新手和中级者用 70–85% 1RM、8–12 次、1–3 组；高级者以 6–12 次为主，3–6 组。
@@ -1005,4 +1007,1364 @@ entries:
         where: Results; Conclusions
     keywords: [训练量, 组数, 恢复, 深蹲]
     url: https://doi.org/10.1007/s00421-017-3598-9
+    review: claude_draft
+
+  - id: K56
+    domains: [safety, training]
+    title: "开始运动前的健康筛查与分流（ACSM 2015）"
+    source: "Updating ACSM's Recommendations for Exercise Preparticipation Health Screening（Med Sci Sports Exerc 47(11):2473–2479）"
+    publisher: "美国运动医学会（Riebe、Franklin、Thompson 等）"
+    year: 2015
+    level: consensus
+    population: "准备开始或继续运动的成年人"
+    summary: "筛查只看三件事：现在有没有规律运动、有没有心血管、代谢或肾脏疾病及相关症状、打算练到多大强度；不再按危险因素个数分层，目的是减少不必要的就医门槛。"
+    points:
+      - text: "筛查依据三点：当前的身体活动水平；是否有心血管、代谢、肾脏疾病或相关症状；打算进行的运动强度。"
+        where: "Abstract; Figure 1"
+      - text: "规律运动指过去至少 3 个月，每周至少 3 天、每次至少 30 分钟中等强度的有计划运动。"
+        where: "Figure 1 footnote"
+      - text: "需要留意的症状包括胸部、颈部、下颌、手臂等处可能与缺血有关的疼痛或不适，静息或轻微活动时气短，头晕或晕厥，夜间憋醒或平躺时气短，脚踝水肿，心悸或心动过速，间歇性跛行，已知的心脏杂音，日常活动中异常的疲劳或气短。"
+        where: "Figure 1 footnote"
+      - text: "有症状的人，不论是否已知有病，开始或继续任何强度的运动前都应先请医生评估。"
+        where: "Figure 1"
+      - text: "没有规律运动、没有疾病和症状的人，可以不经医生评估从低到中等强度开始，逐步加量。"
+        where: "Figure 1"
+      - text: "已知有疾病但没有症状的人：没有规律运动的，开始前先请医生评估；已有规律运动的，可以继续中等强度，加到高强度前先请医生评估。"
+        where: "Figure 1"
+      - text: "强度划分：低强度约 2–3 梅脱、主观用力 9–11 分；中等强度约 3–6 梅脱、12–13 分；高强度 6 梅脱以上、14 分以上（6–20 分量表）。"
+        where: "Figure 1 footnote"
+    keywords: [运动前筛查, 能不能运动, 医生评估, 胸痛, 头晕, 心脏病, 糖尿病, 肾病, 开始运动]
+    url: https://doi.org/10.1249/MSS.0000000000000664
+    review: claude_draft
+
+  - id: K57
+    domains: [training]
+    title: "设定目标能提高身体活动量"
+    source: "The effectiveness of multi-component goal setting interventions for changing physical activity behaviour: a systematic review and meta-analysis（Health Psychol Rev 10(1):67–88）"
+    publisher: "McEwan、Harden、Zumbo 等"
+    year: 2016
+    level: systematic_review
+    population: "各类人群的身体活动干预研究（45 篇、5912 人）"
+    summary: "设定目标的干预能明显增加身体活动，效果中等；目标配合进度反馈等其他做法时效果更稳定。"
+    points:
+      - text: "设定目标的干预对身体活动有中等程度的正面作用（合并效应量 d 约 0.55）。"
+        where: "Abstract; Results"
+      - text: "这类干预在不同人群和场景中都有效，常和进度反馈、自我监测等做法组合使用。"
+        where: "Discussion"
+    keywords: [目标, 设定目标, 坚持, 目标怎么定, 定目标]
+    url: https://doi.org/10.1080/17437199.2015.1104258
+    review: claude_draft
+
+  - id: K58
+    domains: [data, training]
+    title: "30 秒坐站测试：下肢力量的简单测法"
+    source: "Normative Reference Values and Validity for the 30-Second Chair-Stand Test in Healthy Young Adults（Int J Sports Phys Ther 17(5)）；测法来自 Rikli & Jones（1999）"
+    publisher: "Lein 等；测法：Rikli、Jones"
+    year: 2022
+    level: study
+    population: "19–35 岁健康成年人；测法最早用于 60 岁以上"
+    summary: "坐在约 43 厘米高、没有扶手的椅子上，双手交叉抱胸，30 秒内尽量多次完全站起再坐下，记次数；在年轻成年人中也能反映下肢力量，并能区分活动量够和不够的人。"
+    points:
+      - text: "测法：椅子座高约 43 厘米、没有扶手、靠墙放稳；双手交叉抱在胸前；30 秒内完全站直再坐下，记完成的次数。"
+        where: "Methods（沿用 Rikli & Jones 1999 的测法）"
+      - text: "在 19–35 岁健康成年人中，30 秒坐站与下肢力量的实验室测量有关，并能区分身体活动充足和不足的人。"
+        where: "Results; Conclusion"
+    keywords: [坐站, 基线测试, 体能测试, 下肢力量, 自测]
+    url: https://doi.org/10.26603/001c.36432
+    review: claude_draft
+
+  - id: K59
+    domains: [training, safety]
+    title: "老年人力量训练怎么练（NSCA 2019）"
+    source: "Resistance Training for Older Adults: Position Statement From the National Strength and Conditioning Association（J Strength Cond Res 33(8):2019–2052）"
+    publisher: "美国国家体能协会（Fragala、Cadore、Dorgo、Izquierdo、Kraemer、Peterson、Ryan）"
+    year: 2019
+    level: position_stand
+    population: "健康的老年人；体弱、有慢病的另有调整"
+    summary: "设计得当、有动作指导的力量训练对健康老年人是安全的；每周 2–3 次，每个主要肌群做 1–2 个多关节动作、2–3 组，强度逐步加到 70–85% 1RM，并加入中等重量、向上发力要快的爆发力练习；初学和体弱的从 1 组、较轻的重量和器械或弹力带开始，不练到力竭。"
+    points:
+      - text: "有合适的动作指导和保护时，力量训练对健康老年人是安全的。"
+        where: "Practical Applications 1"
+      - text: "每个主要肌群做 1–2 个多关节动作，逐步做到 2–3 组，强度达到 70–85% 1RM，每周 2–3 次；包括用 40–60% 1RM、向上发力尽量快的爆发力练习。"
+        where: "Practical Applications 2"
+      - text: "初学者和体弱的人从每个动作 1 组开始，逐步加到 2–3 组；初学者用较轻的重量做 10–15 次。"
+        where: "Table 1（Sets、Repetitions）"
+      - text: "从能承受的重量开始，逐步加到 70–85% 1RM；初学、体弱、有心血管病或骨质疏松的人用较轻的重量；不练到力竭以减少关节负担。"
+        where: "Table 1（Intensity）"
+      - text: "每个肌群每周练 2–3 次，安排在不连续的日子。"
+        where: "Table 1（Frequency）"
+      - text: "初学、体弱或活动受限的人适合用固定器械、弹力带和静力练习；能力较好的老年人加上自由重量更有益；加入模仿日常动作、改变支撑面和身体姿势的练习。"
+        where: "Table 1（Modality、Functional movements）"
+      - text: "力量和耐力在同一次训练里做时，先做力量。"
+        where: "Table 1 注"
+    keywords: [老年人, 老人, 60岁, 65岁, 退休, 长辈, 父母, 爸妈, 骨质疏松, 防跌倒]
+    url: https://doi.org/10.1519/JSC.0000000000003230
+    review: claude_draft
+
+  - id: K60
+    domains: [training, safety]
+    title: "青少年力量训练怎么练（2014 国际共识）"
+    source: "Position statement on youth resistance training: the 2014 International Consensus（Br J Sports Med 48(7):498–505）"
+    publisher: "Lloyd、Faigenbaum、Stone 等（改编自英国体能协会的立场声明，多个儿科和运动医学组织认可）"
+    year: 2014
+    level: consensus
+    population: "儿童和青少年"
+    summary: "有合格指导时力量训练对儿童青少年是合适的；没练过的先用低训练量、较轻的重量学会动作，动作过关后再逐步加量；每周 2–3 次、不连续的日子最合适；整个训练过程都要看着动作是否正确。"
+    points:
+      - text: "没练过的孩子开始时用低训练量（1–2 组）和中低强度（不超过 60% 1RM），练多种动作模式；刚学深蹲这类多关节动作时每组只做 1–3 次、每次都给反馈。"
+        where: "Progression of volume and intensity"
+      - text: "动作掌握后可以进阶，例如每个动作 2–4 组、每组 6–12 次，强度不超过 80% 1RM。"
+        where: "Progression of volume and intensity"
+      - text: "每周 2–3 次、安排在不连续的日子，最适合提高儿童青少年的力量。"
+        where: "Training frequency"
+      - text: "训练中要一直看着动作是否正确；组间、动作间休息不足的高强度循环练法可能让动作变形。"
+        where: "Training volume and intensity"
+    keywords: [青少年, 孩子, 小孩, 儿童, 中学生, 初中, 高中, 未成年, 18岁以下]
+    url: https://doi.org/10.1136/bjsports-2013-092952
+    review: claude_draft
+
+  - id: K61
+    domains: [training]
+    title: "时间不多时怎么练力量"
+    source: "No Time to Lift? Designing Time-Efficient Training Programs for Strength and Hypertrophy: A Narrative Review（Sports Med 51:2079–2095）"
+    publisher: "Iversen、Norum、Schoenfeld、Fimland"
+    year: 2021
+    level: review
+    population: "时间有限的普通人（所引研究多为没练过或业余锻炼的人）"
+    summary: "时间不多时，优先做双侧、多关节、全幅度的动作，每个肌群每周至少 4 组、用 6–15 次能做到的重量；每周总组数比练几次更重要；超级组、递减组能把时间缩短一半左右，但更适合增肌、不适合大重量的自由重量动作；热身只做针对动作的热身组。"
+    points:
+      - text: "优先做双侧、多关节、全幅度的动作，每个肌群每周至少 4 组，用 6–15RM 的重量。"
+        where: "Abstract; Key Points"
+      - text: "想少花时间时，先保证每周的总训练量，比追求一周练几次更重要。"
+        where: "Abstract"
+      - text: "至少包括一个腿部推蹬类动作（如深蹲）、一个上肢拉的动作和一个上肢推的动作；固定器械和自由重量都可以。"
+        where: "Abstract"
+      - text: "超级组、递减组、休息-暂停能把训练时间缩短约一半而训练量不变，但对增肌比对力量更有效；不建议用在深蹲、卧推这类大重量自由重量动作上。"
+        where: "Abstract; Table 1"
+      - text: "热身只做针对动作的热身组，不必做一般热身和拉伸。"
+        where: "Abstract; Table 1"
+    keywords: [没时间, 时间少, 半小时, 30分钟, 20分钟, 忙, 省时间, 超级组]
+    url: https://doi.org/10.1007/s40279-021-01490-1
+    review: claude_draft
+
+  - id: K62
+    domains: [training]
+    title: "分化练和全身练效果差不多"
+    source: "Efficacy of Split Versus Full-Body Resistance Training on Strength and Muscle Growth: A Systematic Review With Meta-Analysis（J Strength Cond Res 38(7):1330–1340）"
+    publisher: "Ramos-Campo、Benito-Peinado、Andreu-Caravaca、Rojo-Tirado、Rubio-Arias"
+    year: 2024
+    level: systematic_review
+    population: "成年人（14 项研究、392 人；多为 4–12 周的短期研究）"
+    summary: "每周训练量相同时，分化训练和全身训练在力量和增肌上没有明显差别，可以按个人喜好和时间安排来选。"
+    points:
+      - text: "每周训练量相同时，分化和全身两种安排对卧推和下肢力量的提高没有明显差别。"
+        where: "Abstract（Results）"
+      - text: "两种安排在上臂、大腿肌肉横截面积和瘦体重的增加上也没有明显差别。"
+        where: "Abstract（Results）"
+      - text: "训练量相同时，可以按个人喜好选择分化或全身训练。"
+        where: "Abstract（Conclusions）"
+    keywords: [分化, 全身, 上下肢, 推拉腿, 怎么分, 练法, 一天练一个部位]
+    url: https://doi.org/10.1519/JSC.0000000000004774
+    review: claude_draft
+
+  - id: K63
+    domains: [training]
+    title: "弹力带和常规器械练出的力量差不多"
+    source: "Effects of training with elastic resistance versus conventional resistance on muscular strength: A systematic review and meta-analysis（SAGE Open Med 7:2050312119831116；2020 年有更正）"
+    publisher: "Lopes、Machado、Micheletti 等"
+    year: 2019
+    level: systematic_review
+    population: "8 项研究：青少年、运动员、冠心病和慢阻肺患者、健康成年人、大学生"
+    summary: "用弹力带练和用固定器械、自由重量练，上肢和下肢力量的提高没有明显差别。"
+    points:
+      - text: "弹力带训练和常规器械训练相比，上肢和下肢力量的提高都没有明显差别。"
+        where: "Abstract（Results）；2020 年更正"
+      - text: "弹力带训练在不同人群、不同方案里都能带来和常规训练相近的力量提高。"
+        where: "Abstract（Conclusion）"
+    keywords: [弹力带, 在家, 居家, 没器械, 阻力带]
+    url: https://doi.org/10.1177/2050312119831116
+    review: claude_draft
+
+  - id: K64
+    domains: [training, nutrition]
+    title: "减重需要多少运动量（ACSM 2009）"
+    source: "Appropriate Physical Activity Intervention Strategies for Weight Loss and Prevention of Weight Regain for Adults（Med Sci Sports Exerc 41(2):459–471）"
+    publisher: "美国运动医学会（Donnelly、Blair、Jakicic 等）"
+    year: 2009
+    level: position_stand
+    population: "超重或肥胖的成年人"
+    summary: "每周 150–250 分钟中等强度活动能防止体重增加，只带来少量减重；超过 250 分钟和更明显的减重、减重后不反弹有关；力量训练本身不加快减重，但能增加去脂体重、改善健康风险。"
+    points:
+      - text: "每周 150–250 分钟中等强度身体活动能有效防止体重增加。"
+        where: "Abstract"
+      - text: "每周 150–250 分钟中等强度活动只带来少量减重；超过 250 分钟和有临床意义的减重有关。"
+        where: "Abstract"
+      - text: "减重后每周活动超过 250 分钟，更容易保持体重。"
+        where: "Abstract"
+      - text: "力量训练不会加快减重，但可能增加去脂体重，并和健康风险降低有关。"
+        where: "Abstract"
+    keywords: [减重, 减肥, 减脂, 运动多少, 每周多少分钟, 反弹]
+    url: https://doi.org/10.1249/MSS.0b013e3181949333
+    review: claude_draft
+
+  - id: K65
+    domains: [training]
+    title: "高强度间歇和持续有氧都能明显提高最大摄氧量"
+    source: "Effectiveness of High-Intensity Interval Training (HIT) and Continuous Endurance Training for VO2max Improvements: A Systematic Review and Meta-Analysis of Controlled Trials（Sports Med 45(10):1469–1481）"
+    publisher: "Milanović、Sporiš、Weston"
+    year: 2015
+    level: systematic_review
+    population: "18–45 岁健康成年人（28 项对照研究、723 人，平均 25 岁）"
+    summary: "和不运动相比，持续有氧和高强度间歇都能大幅提高最大摄氧量；两者直接比较时，高强度间歇多出的提高幅度不大（约 1.2 毫升/千克/分钟）；基础体能越差、练的周期越长，提高越多。"
+    points:
+      - text: "和不运动相比，持续有氧训练让最大摄氧量平均提高约 4.9 毫升/千克/分钟，高强度间歇约 5.5 毫升/千克/分钟，都属于大的提高。"
+        where: "Abstract（Results）"
+      - text: "高强度间歇和持续有氧直接比较时，高强度间歇只多提高约 1.2 毫升/千克/分钟，属于可能的小优势。"
+        where: "Abstract（Results）"
+      - text: "基础体能较差、训练周期较长的人，最大摄氧量提高得更多。"
+        where: "Abstract（Results）"
+    keywords: ["HIIT", "高强度间歇", "间歇跑", "有氧", "慢跑", "心肺", "最大摄氧量", "耐力"]
+    url: https://doi.org/10.1007/s40279-015-0365-0
+    review: claude_draft
+
+  - id: K66
+    domains: [training, nutrition]
+    title: "高强度间歇和中等强度持续有氧减脂效果差不多"
+    source: "The effects of high-intensity interval training vs. moderate-intensity continuous training on body composition in overweight and obese adults: a systematic review and meta-analysis（Obes Rev 18(6):635–646）"
+    publisher: "Wewege、van den Berg、Ward、Keech"
+    year: 2017
+    level: systematic_review
+    population: "18–45 岁超重或肥胖成年人（13 项研究，平均每周 3 次、练 10 周）"
+    summary: "高强度间歇和中等强度持续有氧都能减少全身脂肪和腰围，两者在各项身体成分指标上没有明显差别，但高强度间歇约少花 40% 的时间；短期内体重本身可能变化不大。"
+    points:
+      - text: "高强度间歇和中等强度持续有氧都能明显减少全身脂肪量和腰围。"
+        where: "Abstract（Results）"
+      - text: "两种练法在所有身体成分指标上都没有明显差别，但高强度间歇少花约 40% 的训练时间。"
+        where: "Abstract（Results）"
+      - text: "短期有氧训练能小幅改善身体成分，即使体重没有跟着变化。"
+        where: "Abstract（Conclusions）"
+    keywords: ["HIIT", "间歇", "有氧减脂", "燃脂", "腰围", "体脂", "跑步减肥", "哪种有氧"]
+    url: https://doi.org/10.1111/obr.12532
+    review: claude_draft
+
+  - id: K67
+    domains: [training, data]
+    title: "说话测试：用能不能舒服说话判断有氧强度"
+    source: "The talk test: a useful tool for prescribing and monitoring exercise intensity（Curr Opin Cardiol 29(5):475–480）"
+    publisher: "Reed、Pipe"
+    year: 2014
+    level: review
+    population: "健康成年人、运动员和心血管病患者"
+    summary: "运动时还能舒服地连贯说话，强度一般在通气阈或乳酸阈以下；说不了完整的话，强度就超过了这个阈值；用说话测试定出的强度落在中等到较大强度范围内，在走、跑、骑车等不同方式里都一致，但不太适合用来控制高强度间歇。"
+    points:
+      - text: "还能舒服说话时，运动强度通常低于通气阈或乳酸阈；已经不能舒服说话时，强度通常超过这个阈值。"
+        where: "Abstract（Recent findings）"
+      - text: "用说话测试定出的强度落在指南认可的中等到较大强度范围内。"
+        where: "Abstract（Recent findings）"
+      - text: "说话测试在步行、慢跑、骑车、椭圆机、爬楼机上结果一致，但可能不适合用来控制高强度间歇。"
+        where: "Abstract（Recent findings）"
+      - text: "说话测试有效、可靠、简便、不花钱，适合健康成年人、运动员和心血管病患者。"
+        where: "Abstract（Summary）"
+    keywords: ["说话测试", "能不能说话", "喘不喘", "强度怎么判断", "没有心率表", "有氧强度", "中等强度"]
+    url: https://doi.org/10.1097/HCO.0000000000000097
+    review: claude_draft
+
+  - id: K68
+    domains: [training, safety]
+    title: "新手跑步：照“每周加 10%”慢慢加，受伤并没有更少"
+    source: "No effect of a graded training program on the number of running-related injuries in novice runners: a randomized controlled trial（Am J Sports Med 36(1):33–39）"
+    publisher: "Buist、Bredeweg、van Mechelen、Lemmink、Pepping、Diercks"
+    year: 2008
+    level: rct
+    population: "准备参加 6.7 公里业余跑步活动的新手跑者（532 人）"
+    summary: "按每周加 10% 规则设计的 13 周渐进跑步计划，和普通 8 周计划相比，跑步相关伤病的发生率没有差别，两组都约有五分之一的人受伤；说明新手跑步受伤很常见，单靠“每周加 10%”这条规则并不能预防。"
+    points:
+      - text: "按每周加 10% 规则设计的 13 周渐进计划，和普通 8 周计划相比，跑步相关伤病没有减少。"
+        where: "Abstract（Results、Conclusions）"
+      - text: "两组跑步相关伤病的发生率都在 20% 左右（20.8% 和 20.3%）。"
+        where: "Abstract（Results）"
+      - text: "研究把跑步相关伤病定义为下肢或腰背的肌肉骨骼不适、至少一周影响跑步。"
+        where: "Abstract（Methods）"
+    keywords: ["新手跑步", "开始跑步", "跑步受伤", "10%原则", "加量", "跑量", "跑步计划"]
+    url: https://doi.org/10.1177/0363546507307505
+    review: claude_draft
+
+  - id: K69
+    domains: [training, safety]
+    title: "新手跑量一下子加太多，和某些跑步伤有关"
+    source: "Excessive progression in weekly running distance and risk of running-related injuries: an association which varies according to type of injury（J Orthop Sports Phys Ther 44(10):739–747）"
+    publisher: "Nielsen、Parner、Nohr、Sørensen、Lind、Rasmussen"
+    year: 2014
+    level: study
+    population: "自行开始跑步的健康新手（874 人，前瞻性队列，随访 1 年）"
+    summary: "按每周跑量增幅分组，总的跑步伤病发生率没有明显差别；但每周跑量增幅超过 30% 的人，和跑量相关的伤（髌股疼痛、髂胫束综合征、胫骨内侧应力综合征等）有增多的趋势（未达统计学显著）；作者建议新手每周跑量增幅不超过 30%，但这是探索性结论。"
+    points:
+      - text: "按跑量增幅（低于 10%、10%–30%、高于 30%）分组，总的跑步伤病发生率没有明显差别。"
+        where: "Abstract（Results）"
+      - text: "跑量增幅超过 30% 的人，髌股疼痛、髂胫束综合征、胫骨内侧应力综合征等跑量相关的伤有增多趋势（风险比约 1.59，P = 0.07，未达显著）。"
+        where: "Abstract（Results）"
+      - text: "作者建议新手每周跑量增幅控制在 30% 以内，但说明这是探索性研究，需要随机试验验证。"
+        where: "Abstract（Conclusion）"
+    keywords: ["跑量", "加量", "新手跑步", "跑步受伤", "髂胫束", "胫骨疼", "膝盖疼"]
+    url: https://doi.org/10.2519/jospt.2014.5164
+    review: claude_draft
+
+  - id: K70
+    domains: [training, exercise]
+    title: "练前静态拉伸：每个部位不到 60 秒影响很小"
+    source: "Acute effects of muscle stretching on physical performance, range of motion, and injury incidence in healthy active individuals: a systematic review（Appl Physiol Nutr Metab 41(1):1–11）"
+    publisher: "Behm、Blazevich、Kay、McHugh"
+    year: 2016
+    level: systematic_review
+    population: "健康、经常运动的人"
+    summary: "拉伸后马上测试，静态拉伸和 PNF 拉伸让表现小幅下降、动态拉伸小幅提高；静态拉伸每个肌群 60 秒以上下降更多，不到 60 秒影响很小；拉伸后再做动态热身时影响不明显；拉伸能暂时增加关节活动度，一般维持不到 30 分钟。"
+    points:
+      - text: "拉伸后马上测试，静态拉伸让表现平均下降约 3.7%，PNF 拉伸约 4.4%，动态拉伸反而提高约 1.3%。"
+        where: "Abstract"
+      - text: "每个肌群静态拉伸 60 秒及以上，表现下降约 4.6%；不到 60 秒只下降约 1.1%。"
+        where: "Abstract"
+      - text: "拉伸后再做动态热身活动时，对后续表现没有明显影响。"
+        where: "Abstract"
+      - text: "静态拉伸和 PNF 拉伸对总体伤病和劳损类伤病没有明确的预防作用。"
+        where: "Abstract"
+      - text: "各种拉伸都能增加关节活动度，但这种一次性的增加一般维持不到 30 分钟。"
+        where: "Abstract"
+    keywords: ["拉伸", "静态拉伸", "动态拉伸", "练前拉伸", "热身拉伸", "拉伸多久", "柔韧"]
+    url: https://doi.org/10.1139/apnm-2015-0235
+    review: claude_draft
+
+  - id: K71
+    domains: [training, exercise]
+    title: "长期拉伸能增加关节活动度"
+    source: "Chronic effects of stretching on range of motion with consideration of potential moderating variables: A systematic review with meta-analysis（J Sport Health Sci 13(2):186–194）"
+    publisher: "Konrad、Alizadeh、Daneshjoo 等"
+    year: 2024
+    level: systematic_review
+    population: "健康人（77 项研究、186 个效应量）"
+    summary: "坚持拉伸训练能中等程度地增加关节活动度；静态拉伸和 PNF 拉伸比弹震式、动态拉伸效果更好；拉伸的时长、强度、频率和效果之间没有发现明显关系。"
+    points:
+      - text: "和不拉伸相比，坚持拉伸训练能中等程度地增加关节活动度。"
+        where: "Abstract（Results）"
+      - text: "想长期增加活动度，静态拉伸或 PNF 拉伸比弹震式或动态拉伸效果更好。"
+        where: "Abstract（Results、Conclusion）"
+      - text: "拉伸的量、强度和频率都没有发现对活动度的增加有明显影响。"
+        where: "Abstract（Conclusion）"
+    keywords: ["柔韧性", "活动度", "筋紧", "拉伸", "劈叉", "压腿", "身体硬", "够不到脚尖"]
+    url: https://doi.org/10.1016/j.jshs.2023.06.002
+    review: claude_draft
+
+  - id: K72
+    domains: [recovery, exercise]
+    title: "泡沫轴：练前用小幅提高柔韧，练后用稍减酸痛"
+    source: "A Meta-Analysis of the Effects of Foam Rolling on Performance and Recovery（Front Physiol 10:376）"
+    publisher: "Wiewelhove、Döweling、Schneider 等"
+    year: 2019
+    level: systematic_review
+    population: "21 项研究（14 项练前滚、7 项练后滚）"
+    summary: "泡沫轴对表现和恢复的作用总体很小：练前滚能小幅提高冲刺和柔韧，对跳跃、力量几乎无影响；练后滚能稍微减轻肌肉酸痛感、减少冲刺和力量的下降；证据更支持把它当热身的一部分，而不是主要的恢复手段。"
+    points:
+      - text: "练前用泡沫轴，冲刺表现小幅提高约 0.7%，柔韧性提高约 4.0%；对跳跃和力量的影响可以忽略。"
+        where: "Abstract"
+      - text: "练后用泡沫轴，能稍微减少练后冲刺和力量的下降，并减轻肌肉酸痛的感觉（约 6.0%）。"
+        where: "Abstract"
+      - text: "泡沫轴对表现和恢复的作用总体较小，证据更支持把它用作热身，而不是恢复手段。"
+        where: "Abstract"
+    keywords: ["泡沫轴", "滚轴", "筋膜放松", "筋膜枪", "放松", "练后放松"]
+    url: https://doi.org/10.3389/fphys.2019.00376
+    review: claude_draft
+
+  - id: K73
+    domains: [safety, training]
+    title: "坐姿、弯腰等姿势和腰痛：有关联，但不能说是原因"
+    source: "No consensus on causality of spine postures or physical exposure and low back pain: A systematic review of systematic reviews（J Biomech 102:109312）"
+    publisher: "Swain、Pan、Owen、Schmidt、Belavy"
+    year: 2020
+    level: systematic_review
+    population: "41 篇系统综述（脊柱姿势、久坐久站、弯腰扭转、重体力劳动与腰痛）"
+    summary: "关于脊柱姿势、久坐久站、弯腰扭转、重体力劳动和腰痛的关系，已有综述结论不一；只纳入前瞻性研究的综述更难得出一致结论；目前没有共识认为这些姿势或体力暴露会导致腰痛，只能说有关联。"
+    points:
+      - text: "关于脊柱姿势、久站、久坐、弯腰扭转、别扭姿势和重体力劳动与腰痛的关系，已有综述既有阳性结论也有阴性结论。"
+        where: "Abstract"
+      - text: "只纳入前瞻性研究的综述更难得出一致结论；这些因素是否先于首次腰痛出现、是否存在剂量关系，证据也不一致。"
+        where: "Abstract"
+      - text: "目前对这些姿势和体力暴露是否导致腰痛没有共识；有关联不等于是原因。"
+        where: "Abstract"
+    keywords: ["体态", "姿势", "坐姿", "驼背", "弯腰", "腰痛", "纠正体态", "久坐"]
+    url: https://doi.org/10.1016/j.jbiomech.2019.08.006
+    review: claude_draft
+
+  - id: K74
+    domains: [safety, training]
+    title: "头前伸和脖子疼：成年人有关联，青少年基本没有"
+    source: "The Relationship Between Forward Head Posture and Neck Pain: a Systematic Review and Meta-Analysis（Curr Rev Musculoskelet Med 12(4):562–577）"
+    publisher: "Mahmoud、Hassan、Abdelmajeed、Moustafa、Silva"
+    year: 2019
+    level: systematic_review
+    population: "15 项横断面研究（青少年、成年人、老年人）"
+    summary: "有脖子疼的成年人头前伸更明显，头前伸程度和疼痛强度、功能受限有关；青少年里两者基本没有关联；纳入的都是横断面研究，只能说明有关联，不能说明头前伸导致脖子疼。"
+    points:
+      - text: "成年人中，有脖子疼的人比没有的人头前伸更明显；青少年中两组没有明显差别。"
+        where: "Abstract（Recent findings）"
+      - text: "成年人和老年人的头前伸程度和脖子疼的强度、功能受限程度有关。"
+        where: "Abstract（Recent findings）"
+      - text: "纳入的 15 项研究都是横断面研究。"
+        where: "Abstract（Recent findings）"
+    keywords: ["头前伸", "探颈", "富贵包", "脖子疼", "颈椎", "低头", "体态"]
+    url: https://doi.org/10.1007/s12178-019-09594-y
+    review: claude_draft
+
+  - id: K75
+    domains: [exercise, training]
+    title: "教动作时提示动作效果（外部注意），常比提示身体部位效果好"
+    source: "Superiority of external attentional focus for motor performance and learning: Systematic reviews and meta-analyses（Psychol Bull 147(6):618–645）"
+    publisher: "Chua、Jimenez-Diaz、Lewthwaite、Kim、Wulf"
+    year: 2021
+    level: systematic_review
+    population: "73 项研究 1,824 人（表现）；40 项研究 1,274 人（学习）"
+    summary: "把注意力放在动作要达到的效果上（外部注意），比放在身体部位的动作上（内部注意），当场表现和后续学习效果都更好，不受年龄、健康状况和水平影响；但此结论后来被发表偏倚分析质疑（见 KA12）。"
+    points:
+      - text: "外部注意比内部注意的当场表现更好（效应量约 0.26），保持测试和迁移测试的学习效果也更好（效应量约 0.58）。"
+        where: "Abstract"
+      - text: "年龄、健康状况和技术水平都不影响外部注意的优势。"
+        where: "Abstract"
+      - text: "注意点离身体更远的外部注意，比离身体近的效果稍好（效应量约 0.22）。"
+        where: "Abstract"
+    keywords: ["动作提示", "怎么教动作", "注意力", "发力感", "外部提示", "口令"]
+    url: https://doi.org/10.1037/bul0000335
+    review: claude_draft
+
+  - id: K76
+    domains: [exercise, training]
+    title: "外部注意的优势可能被发表偏倚放大了"
+    source: "Reporting bias, not external focus: A robust Bayesian meta-analysis and systematic review of the external focus of attention literature（Psychol Bull 150(11):1347–1362）"
+    publisher: "McKay、Corson、Seedu 等"
+    year: 2024
+    level: systematic_review
+    population: "重新分析 KA11 等已有元分析的数据"
+    summary: "用考虑发表偏倚的贝叶斯方法重新分析后，各项分析都有中到强的发表偏倚证据；校正后外部注意相对内部注意的平均效果接近零，各研究之间差异很大；不能说外部注意总是更好，效果取决于尚不清楚的具体情境。"
+    points:
+      - text: "重新分析发现所有分析都有中等到强的发表偏倚证据。"
+        where: "Abstract"
+      - text: "校正发表偏倚后，外部注意在表现、保持、迁移上的平均优势都可以忽略（效应量约 0.01–0.15）。"
+        where: "Abstract"
+      - text: "研究之间差异明显，注意力提示的效果取决于尚不清楚的情境，不能说外部注意总是更好。"
+        where: "Abstract"
+    keywords: ["动作提示", "注意力", "外部提示", "内部提示", "发力感", "怎么教动作"]
+    url: https://doi.org/10.1037/bul0000451
+    review: claude_draft
+
+  - id: K77
+    domains: [exercise, training]
+    title: "全幅度比半幅度更长力量、下肢肌肉"
+    source: "Effects of range of motion on resistance training adaptations: A systematic review and meta-analysis（Scand J Med Sci Sports 31(10):1866–1881）"
+    publisher: "Pallarés、Hernández-Belmonte、Martínez-Cava、Vetrovsky、Steffl、Courel-Ibáñez"
+    year: 2021
+    level: systematic_review
+    population: "16 项研究"
+    summary: "全幅度训练比部分幅度更能提高力量（效应量约 0.56）和下肢肌肉（约 0.88），功能表现也倾向全幅度更好；两者对肌肉结构（厚度、羽状角、肌束长度）的影响差别不大。"
+    points:
+      - text: "全幅度训练比部分幅度训练更能提高肌肉力量（效应量约 0.56）。"
+        where: "Abstract（Results）"
+      - text: "全幅度训练比部分幅度训练更能增加下肢肌肉（效应量约 0.88）。"
+        where: "Abstract（Results）"
+      - text: "全幅度和部分幅度对肌肉厚度、羽状角、肌束长度的影响没有大的差别。"
+        where: "Abstract（Results、Conclusion）"
+    keywords: ["全程", "半程", "幅度", "蹲多深", "半蹲", "全蹲", "动作幅度", "做不到底"]
+    url: https://doi.org/10.1111/sms.14006
+    review: claude_draft
+
+  - id: K78
+    domains: [data, training]
+    title: "用“整体累不累 × 练了多久”记训练负荷（session-RPE）"
+    source: "Session-RPE Method for Training Load Monitoring: Validity, Ecological Usefulness, and Influencing Factors（Front Neurosci 11:612）"
+    publisher: "Haddad、Stylianides、Djaoui、Dellal、Chamari"
+    year: 2017
+    level: review
+    population: "36 项验证研究：不同性别、年龄（儿童到成年人）、水平的运动者，含力量训练"
+    summary: "练完后用 0–10 分评价整次训练有多累，乘以训练分钟数，就得到这次的训练负荷；多项研究证实这种方法有效、可靠，可以单独使用；但性别、年龄、体能水平、环境和心理因素都会影响打分。"
+    points:
+      - text: "训练负荷 = 整次训练的主观用力评分（0–10 分的改良 CR-10 量表）× 训练时长（分钟）。"
+        where: "Session-RPE method: rationale（公式、Table 1）"
+      - text: "评分在训练结束后给出，回答一个简单的问题：“这次练得怎么样（累不累）”。"
+        where: "Session-RPE method: ecological usefulness"
+      - text: "36 项研究证实这种方法在多种运动、不同年龄和水平的人群中有效且可靠，可以单独用来监测训练负荷，也有人建议配合心率。"
+        where: "Abstract（Results、Conclusion）"
+      - text: "性别、年龄、体能和训练水平，以及温度、海拔、咖啡因、音乐等因素都会影响主观用力评分。"
+        where: "Factors influencing perceived exertion"
+    keywords: ["训练负荷", "累不累", "主观疲劳", "RPE", "打分", "记训练", "练得怎么样"]
+    url: https://doi.org/10.3389/fnins.2017.00612
+    review: claude_draft
+
+  - id: K79
+    domains: [training, data]
+    title: "估“还剩几次”平均差约 1 次，越接近力竭估得越准"
+    source: "Accuracy in Predicting Repetitions to Task Failure in Resistance Exercise: A Scoping Review and Exploratory Meta-analysis（Sports Med 52(2):377–390）"
+    publisher: "Halperin、Malleron、Har-Nir、Androulakis-Korakakis、Wolf、Fisher、Steele"
+    year: 2022
+    level: systematic_review
+    population: "健康人（12 项研究、414 人；范围综述加探索性元分析）"
+    summary: "人们估计离力竭还剩几次时，平均少估约 1 次，研究间差异很大；越接近力竭、每组次数越少（重量越大）、越往后的组，估得越准；训练经验和上下肢动作对准确度影响不大。"
+    points:
+      - text: "人们估计离力竭还能做几次时，平均少估约 0.95 次，但研究之间差异很大。"
+        where: "Abstract（Results）"
+      - text: "越接近力竭时估、每组到力竭的次数越少（12 次以内比 12 次以上准），估得越准；越往后的组也稍准一些。"
+        where: "Abstract（Results、Conclusions）"
+      - text: "训练经验对估计准确度没有明显影响，上肢和下肢动作之间也没有明显差别。"
+        where: "Abstract（Results）"
+    keywords: ["还剩几次", "RIR", "估次数", "留几个", "力竭", "RPE准不准"]
+    url: https://doi.org/10.1007/s40279-021-01559-x
+    review: claude_draft
+
+  - id: K80
+    domains: [training, recovery, data]
+    title: "按心率变异性安排耐力训练强度：最大摄氧量多提高一点点"
+    source: "HRV-Based Training for Improving VO2max in Endurance Athletes. A Systematic Review with Meta-Analysis（Int J Environ Res Public Health 17(21):7999）"
+    publisher: "Granero-Gallegos、González-Quílez、Plews、Carrasco-Poyatos"
+    year: 2020
+    level: systematic_review
+    population: "有训练的耐力运动者（6 项随机对照试验、195 人）"
+    summary: "每天根据心率变异性决定当天练高强度还是中等强度（或休息），和按固定计划练相比，最大摄氧量的提高稍大，但差别很小；业余和女性运动者效果较明显；研究数量少，只涉及耐力训练。"
+    points:
+      - text: "纳入研究里，每天按心率变异性决定强度：心率变异性不降就练高强度，下降就改中等强度或休息。"
+        where: "Table 1；4.1.2 Interventions"
+      - text: "按心率变异性安排和按固定计划都能提高最大摄氧量，按心率变异性的提高稍大，但组间差别很小（效应量差约 0.19）。"
+        where: "Abstract"
+      - text: "业余水平和女性运动者的效果更明显。"
+        where: "Abstract"
+      - text: "只纳入 6 项研究、195 人，作者认为还需要更多研究。"
+        where: "4.1.2 Participants；6.2 Research Implications"
+    keywords: ["心率变异性", "HRV", "今天练不练", "状态差", "恢复不好", "降强度"]
+    url: https://doi.org/10.3390/ijerph17217999
+    review: claude_draft
+
+  - id: K81
+    domains: [recovery, training]
+    title: "睡得少，第二天运动表现会下降"
+    source: "Effects of Acute Sleep Loss on Physical Performance: A Systematic and Meta-Analytical Review（Sports Med 52(11):2669–2690）"
+    publisher: "Craven、McCartney、Desbrow、Sabapathy、Bellinger、Roberts、Irwin"
+    year: 2022
+    level: systematic_review
+    population: "69 篇研究、959 人（89% 为男性）"
+    summary: "一天内睡 6 小时或更少，运动表现平均下降约 7.6%，各类运动（力量、爆发力、耐力、间歇、技术）都受影响；整夜不睡和早起导致的缺觉影响最一致；醒着的时间越长表现越差，每多醒 1 小时约降 0.4%；下午、晚上练受影响明显，上午练基本不受影响。"
+    points:
+      - text: "睡眠不足（24 小时内睡 6 小时或更少）让运动表现平均下降约 7.6%，力量、爆发力、耐力、间歇和技术类表现都受影响。"
+        where: "Abstract（Search and inclusion；Results）"
+      - text: "整夜不睡和比平时早起导致的缺觉影响最一致；晚睡导致的缺觉影响不一致。"
+        where: "Abstract（Results）"
+      - text: "运动前醒着的时间越长表现越差，大约每多醒 1 小时下降 0.4%。"
+        where: "Abstract（Results）"
+      - text: "缺觉后下午或晚上的运动表现下降明显，上午的运动基本不受影响；如果避免不了缺觉，优先安排上午练。"
+        where: "Abstract（Results、Conclusions）"
+    keywords: ["没睡好", "睡得少", "熬夜", "失眠", "早起", "今天还练吗", "状态差"]
+    url: https://doi.org/10.1007/s40279-022-01706-y
+    review: claude_draft
+
+  - id: K82
+    domains: [training]
+    title: "按当天状态调重量，和按固定百分比练效果差不多"
+    source: "The Effect of Load and Volume Autoregulation on Muscular Strength and Hypertrophy: A Systematic Review and Meta-Analysis（Sports Med Open 8:9）"
+    publisher: "Hickmott、Chilibeck、Shaw、Butcher"
+    year: 2022
+    level: systematic_review
+    population: "有力量训练经验的人（15 项研究：6 项调重量、9 项调训练量）"
+    summary: "按当天状态调整重量（自我调节）和按固定百分比安排，最大力量的提高没有明显差别；按速度下降控制每组次数时，速度下降不超过 25% 就停对力量更好，下降超过 20%–25% 再停对增肌更好。"
+    points:
+      - text: "按当天状态调整重量和按固定百分比安排，1RM 力量的提高没有明显差别。"
+        where: "Abstract（Results、Conclusions）"
+      - text: "组数和相对强度相同时，速度下降不超过 25% 就停对提高力量更有利。"
+        where: "Abstract（Results、Conclusions）"
+      - text: "速度下降超过 20%–25% 再停，因为累积了更多训练量，对增肌更有利。"
+        where: "Abstract（Results、Conclusions）"
+    keywords: ["自我调节", "按状态调", "今天重量", "加不加重", "降重量", "RPE训练", "速度训练"]
+    url: https://doi.org/10.1186/s40798-021-00404-9
+    review: claude_draft
+
+  - id: K83
+    domains: [training]
+    title: "周期化安排对力量有小幅好处，对增肌没区别"
+    source: "Effects of Periodization on Strength and Muscle Hypertrophy in Volume-Equated Resistance Training Programs: A Systematic Review and Meta-analysis（Sports Med 52(7):1647–1666）"
+    publisher: "Moesgaard、Beck、Christiansen、Aagaard、Lundbye-Jensen"
+    year: 2022
+    level: systematic_review
+    population: "35 项训练量相等的研究（练过和没练过的人）"
+    summary: "总训练量相同时，周期化训练比不变化的训练更能提高 1RM 力量（效应量约 0.31），增肌没有差别；每天或每周变换次数和强度的波动式周期比线性周期力量提高更多，但只在有训练经验的人里明显。"
+    points:
+      - text: "训练量相同时，周期化训练比不做周期化的训练更能提高 1RM 力量（效应量约 0.31），增肌没有明显差别。"
+        where: "Abstract（Results）"
+      - text: "波动式周期（每天或每周变换次数和强度）比线性周期的 1RM 提高更多，但只在有训练经验的人里明显；没练过的人两者没有差别。"
+        where: "Abstract（Results、Conclusion）"
+      - text: "线性周期和波动式周期在增肌上没有差别。"
+        where: "Abstract（Conclusion）"
+    keywords: ["周期化", "平台期", "卡住", "不涨了", "线性", "波动", "怎么安排", "换计划"]
+    url: https://doi.org/10.1007/s40279-021-01636-1
+    review: claude_draft
+
+  - id: K84
+    domains: [training]
+    title: "停练后力量会掉，停得越久掉得越多，老年人掉得更多"
+    source: "Effect of training cessation on muscular performance: a meta-analysis（Scand J Med Sci Sports 23(3):e140–e149）"
+    publisher: "Bosquet、Berryman、Dupuy、Mekary、Arvisais、Bherer、Mujika"
+    year: 2013
+    level: systematic_review
+    population: "103 项研究"
+    summary: "停止力量训练后，次最大力量、最大力量和最大爆发力都会下降；停得越久下降越多；65 岁以上的人下降更多；不常运动的人比业余运动员最大力量和爆发力下降更多。"
+    points:
+      - text: "停止力量训练后，次最大力量、最大力量和最大爆发力都会下降。"
+        where: "Abstract"
+      - text: "停练时间越长，下降越多（存在剂量关系）。"
+        where: "Abstract"
+      - text: "65 岁以上的人下降更多；不常运动的人比业余运动员最大力量和爆发力下降更多。"
+        where: "Abstract"
+    keywords: ["停练", "中断", "好久没练", "掉力量", "掉肌肉", "休息太久", "回归"]
+    url: https://doi.org/10.1111/sms.12047
+    review: claude_draft
+
+  - id: K85
+    domains: [training]
+    title: "每周练一次就能基本保住力量和肌肉（年轻人）"
+    source: "Exercise dosing to retain resistance training adaptations in young and older adults（Med Sci Sports Exerc 43(7):1177–1187）"
+    publisher: "Bickel、Cross、Bamman"
+    year: 2011
+    level: rct
+    population: "20–35 岁和 60–75 岁成年人（第一阶段 70 人，第二阶段 56 人）"
+    summary: "先每周练 3 次、练 16 周，再随机分到完全停练、每周 1 次同样组数（原量的三分之一）、每周 1 次每个动作 1 组（原量的九分之一）三组，持续 32 周；完全停练的人 8 周内练出的肌肉基本掉光，但力量 32 周后只小幅下降；两种每周一次的维持方案都保住了力量；年轻人两种方案都保住了肌纤维大小，老年人都没保住。"
+    points:
+      - text: "第一阶段每周练 3 次、每次 3 个下肢动作各 3 组 8–12 次、练 16 周；维持阶段改为每周 1 次（三分之一量：每个动作仍 3 组；九分之一量：每个动作 1 组），强度和动作不变。"
+        where: "Methods（Phase 1；Phase 2）"
+      - text: "完全停练的人，在停练后 8 周内练出来的大腿瘦体重基本掉光；力量 32 周后只下降约 7%，仍比训练前高约 23%。"
+        where: "Results（TLM；Voluntary strength）"
+      - text: "两种每周一次的维持方案都保住了力量，32 周后力量还比第一阶段末再多 7%–8%。"
+        where: "Results（Voluntary strength）"
+      - text: "年轻人两种维持方案都保住了肌纤维大小，三分之一量还继续增长；老年人两种方案都没保住肌纤维大小，但力量基本保住。"
+        where: "Abstract（Results）；Discussion"
+    keywords: ["保持", "维持", "忙", "出差", "一周一次", "少练", "停练", "保住肌肉"]
+    url: https://doi.org/10.1249/MSS.0b013e318207c15d
+    review: claude_draft
+
+  - id: K86
+    domains: [training]
+    title: "停 3 周再练，恢复得快，半年总效果和一直练差不多"
+    source: "Comparison of muscle hypertrophy following 6-month of continuous and periodic strength training（Eur J Appl Physiol 113(4):975–985）"
+    publisher: "Ogasawara、Yasuda、Ishii、Abe"
+    year: 2013
+    level: rct
+    population: "没练过的年轻男性（14 人，卧推训练）"
+    summary: "一组连续练 24 周，另一组练 6 周、停 3 周循环三次；停后再练时肌肉和力量的增长比同期一直练的组更快，24 周后两组肌肉和力量的总提高差不多；样本小、只练卧推。"
+    points:
+      - text: "两组都用 75% 1RM、3 组 10 次的卧推，每周 3 次；一组连续练 24 周，另一组练 6 周、停 3 周，循环三次。"
+        where: "Abstract"
+      - text: "第二次“停 3 周再练 6 周”期间，间断组的肌肉和力量增长明显高于同期一直练的组。"
+        where: "Abstract"
+      - text: "24 周后，间断组和连续组的肌肉横截面积和力量总提高差不多。"
+        where: "Abstract"
+    keywords: ["肌肉记忆", "停练再练", "回归", "练回来", "中断", "休息几周"]
+    url: https://doi.org/10.1007/s00421-012-2511-9
+    review: claude_draft
+
+  - id: K87
+    domains: [nutrition, training]
+    title: "热量缺口太大会少长肌肉（每天不超过约 500 千卡）"
+    source: "Energy deficiency impairs resistance training gains in lean mass but not strength: A meta-analysis and meta-regression（Scand J Med Sci Sports 32(1):125–137）"
+    publisher: "Murphy、Koehler"
+    year: 2022
+    level: systematic_review
+    population: "做力量训练、同时处于热量缺口（至少 3 周）的成年人的随机对照试验"
+    summary: "一边力量训练一边吃得少于消耗，力量照样能涨，但去脂体重的增加会受影响；缺口到每天约 500 千卡时去脂体重基本长不上去，想在减重时保住肌肉，每天缺口不宜超过约 500 千卡。"
+    points:
+      - text: "力量训练期间有热量缺口的人，去脂体重的增加明显少于没有缺口的人（效应量约 −0.57）。"
+        where: "Abstract（Results）"
+      - text: "有没有热量缺口，力量的提高没有明显差别（效应量约 −0.31，差异不显著）。"
+        where: "Abstract（Results）"
+      - text: "回归分析显示，每天约 500 千卡的热量缺口就会让去脂体重不再增加。"
+        where: "Abstract（Results，meta-regression）"
+      - text: "想增加去脂体重的人应避免长时间处在热量缺口里；减重时想保住去脂体重，每天缺口不宜超过约 500 千卡。"
+        where: "Abstract（Conclusions）"
+      - text: "纳入的研究要求热量缺口至少持续 3 周。"
+        where: "Abstract（Methods）"
+    keywords: ["热量缺口", "少吃多少", "每天少吃", "500大卡", "掉肌肉", "减脂保肌", "节食", "吃太少"]
+    url: https://doi.org/10.1111/sms.14075
+    review: claude_draft
+
+  - id: K88
+    domains: [nutrition, training]
+    title: "增肌期多吃多少（有训练基础的人）"
+    source: "Nutrition Recommendations for Bodybuilders in the Off-Season: A Narrative Review（Sports (Basel) 7(7):154）"
+    publisher: "Iraki、Fitschen、Espinar、Helms"
+    year: 2019
+    level: review
+    population: "有训练基础的健美训练者（非比赛期增肌）"
+    summary: "增肌期每天比维持热量多吃约 10–20%，新手和中级每周体重涨约 0.25–0.5%；练得越久越要保守，多吃太多只会多长脂肪。"
+    points:
+      - text: "增肌期热量比维持水平多约 10–20%。"
+        where: "Section 2（Energy）"
+      - text: "新手和中级训练者每周体重增加约为体重的 0.25–0.5%。"
+        where: "Abstract；Section 2（Energy）"
+      - text: "训练年限长的人热量盈余和每周增重都应更保守，取范围的低端；脂肪涨得明显时再往下调。"
+        where: "Abstract；Section 2（Energy）"
+      - text: "热量盈余过大会带来不必要的脂肪增加。"
+        where: "Section 2（Positive Energy Balance）"
+      - text: "建议每天蛋白质 1.6–2.2 克/公斤、脂肪 0.5–1.5 克/公斤，碳水至少 3–5 克/公斤，剩下的热量由碳水补足。"
+        where: "Abstract"
+    keywords: ["增肌", "增重", "多吃多少", "热量盈余", "每周涨多少", "增肌期", "脏增肌", "干净增肌"]
+    url: https://doi.org/10.3390/sports7070154
+    review: claude_draft
+
+  - id: K89
+    domains: [nutrition, training]
+    title: "增重时吃得过多，多出来的主要是脂肪（精英运动员随机试验）"
+    source: "Effect of nutritional intervention on body composition and performance in elite athletes（Eur J Sport Sci 13(3):295–303）"
+    publisher: "Garthe、Raastad、Refsnes、Sundgot-Borgen"
+    year: 2013
+    level: rct
+    population: "39 名精英运动员（平均约 19 岁），8–12 周增重期，每周额外 4 次力量训练"
+    summary: "有营养指导、吃得更多的一组体重涨得更多，但去脂体重的增加和随意吃的一组差不多，多涨的主要是脂肪；增重时热量不宜多得过头。"
+    points:
+      - text: "营养指导组每天平均摄入约 3585 千卡，随意吃的一组约 2964 千卡。"
+        where: "Abstract（Results）"
+      - text: "营养指导组体重增加约 3.9%，随意吃的一组约 1.5%；两组去脂体重的增加没有差别。"
+        where: "Abstract（Results）"
+      - text: "营养指导组脂肪量增加约 15%，随意吃的一组约 3%。"
+        where: "Abstract（Results）"
+      - text: "作者提醒增重期过多的热量会带来不想要的脂肪增加。"
+        where: "Abstract（Conclusion）"
+    keywords: ["增肌", "增重", "吃太多", "长肥", "热量盈余", "脏增肌"]
+    url: https://doi.org/10.1080/17461391.2011.643923
+    review: claude_draft
+
+  - id: K90
+    domains: [nutrition, safety]
+    title: "健康人吃高蛋白不伤肾（不适用于肾病患者）"
+    source: "Changes in Kidney Function Do Not Differ between Healthy Adults Consuming Higher- Compared with Lower- or Normal-Protein Diets: A Systematic Review and Meta-Analysis（J Nutr 148(11):1760–1775）"
+    publisher: "Devries、Sithamparapillai、Brimble、Banfield、Morton、Phillips"
+    year: 2018
+    level: systematic_review
+    population: "没有慢性肾病的成年人（28 项随机对照试验、1358 人，23–72 岁；含肥胖、2 型糖尿病、高血压者）"
+    summary: "和正常或较低蛋白饮食相比，高蛋白饮食没有让健康成年人的肾小球滤过率出现不利变化；结论不适用于慢性肾病、1 型糖尿病、蛋白尿、肾结石史等人群。"
+    points:
+      - text: "纳入 28 项、试验期超过 4 天的随机对照试验，共 1358 人。"
+        where: "Abstract；Results（Study and subject characteristics）"
+      - text: "高蛋白定义为每天至少 1.5 克/公斤、或占热量至少 20%、或每天至少 100 克；高蛋白组平均约 1.8 克/公斤，对照组平均约 0.9 克/公斤。"
+        where: "Abstract（Methods）；Results（Diet protocol characteristics）"
+      - text: "从基线到试验结束，肾小球滤过率的变化在高蛋白组和对照组之间没有差别。"
+        where: "Abstract（Results）"
+      - text: "作者结论：较高的蛋白质摄入不会对健康成年人的肾功能产生不利影响。"
+        where: "Abstract（Conclusions）"
+      - text: "有慢性肾病、1 型糖尿病、蛋白尿、肾结石史或近期手术的人被排除在外，结论不能推到这些人身上。"
+        where: "Methods（Inclusion criteria）"
+      - text: "证据确定性被评为低到很低。"
+        where: "Results（Certainty in the evidence）；Table 3"
+    keywords: ["高蛋白", "伤肾", "肾", "蛋白吃多了", "肾功能", "蛋白粉伤肾"]
+    url: https://doi.org/10.1093/jn/nxy197
+    review: claude_draft
+
+  - id: K91
+    domains: [nutrition]
+    title: "补维生素 D 对肌肉力量的作用很小"
+    source: "The effects of vitamin D on skeletal muscle strength, muscle mass, and muscle power: a systematic review and meta-analysis of randomized controlled trials（J Clin Endocrinol Metab 99(11):4336–4345）"
+    publisher: "Beaudart、Buckinx、Rabenda 等"
+    year: 2014
+    level: systematic_review
+    population: "30 项随机对照试验、5615 人，平均约 61 岁"
+    summary: "补维生素 D 对整体肌肉力量有小而明确的好处，对肌肉量和爆发力没有明显作用；维生素 D 很低的人和 65 岁以上的人获益更明显。"
+    points:
+      - text: "补充维生素 D 对整体肌肉力量有小的正面作用（标准化均数差约 0.17）。"
+        where: "Abstract（Results）"
+      - text: "对肌肉量和肌肉爆发力没有明显作用。"
+        where: "Abstract（Results）"
+      - text: "血中 25-羟维生素 D 低于 30 nmol/L 的人、65 岁及以上的人，力量的改善更明显。"
+        where: "Abstract（Results，亚组分析）"
+      - text: "最合适的剂量、给法和疗程还不清楚。"
+        where: "Abstract（Conclusions）"
+    keywords: ["维生素D", "维D", "补钙", "晒太阳", "肌肉力量", "补剂"]
+    url: https://doi.org/10.1210/jc.2014-1742
+    review: claude_draft
+
+  - id: K92
+    domains: [nutrition, safety]
+    title: "普通补剂里可能混有没标出的激素类成分"
+    source: "Analysis of non-hormonal nutritional supplements for anabolic-androgenic steroids – results of an international study（Int J Sports Med 25(2):124–129）"
+    publisher: "Geyer、Parr、Mareck、Reinhart、Schrader、Schänzer"
+    year: 2004
+    level: study
+    population: "13 个国家、215 家供应商的 634 种非激素类补剂（2000–2001 年购买）"
+    summary: "约七分之一的普通补剂检出了标签上没写的合成类固醇，卖激素前体产品的公司出的产品比例更高；可配合 K39 用来解释为什么要选第三方检测过的产品。数据较早，只说明风险存在，不代表现在的比例。"
+    points:
+      - text: "634 种补剂中有 94 种（14.8%）检出了标签上没有标注的合成类固醇。"
+        where: "Abstract"
+      - text: "同时销售激素前体产品的公司，其产品检出比例约 21%；不卖这类产品的公司约 10%。"
+        where: "Abstract"
+      - text: "这项研究的样品在 2000–2001 年购买，比例只能说明风险存在，不能当作现在市场的比例。"
+        where: "Abstract（购买时间）"
+    keywords: ["补剂污染", "兴奋剂", "违禁", "尿检", "第三方检测", "补剂安全", "增肌粉"]
+    url: https://doi.org/10.1055/s-2004-819955
+    review: claude_draft
+
+  - id: K93
+    domains: [safety, training, data]
+    title: "吃 β 受体阻滞剂时心率区间不可靠"
+    source: "Exercise intensity assessment and prescription in cardiovascular rehabilitation and beyond: why and how: a position statement from the Secondary Prevention and Rehabilitation Section of the European Association of Preventive Cardiology（Eur J Prev Cardiol 29(1):230–245）"
+    publisher: "欧洲预防心脏病学会（EAPC）二级预防与康复分会（Hansen、Abreu、Ambrosetti 等）"
+    year: 2022
+    level: position_stand
+    population: "心血管病患者的运动康复，也适用于更广泛的人群"
+    summary: "β 受体阻滞剂会改变心率和运动强度之间的对应关系，按最大心率或心率储备百分比定的强度可能不准；有条件时用通气阈来定强度，主观用力感觉配合客观指标使用，但这类药也会让主观感觉更难解读。"
+    points:
+      - text: "服用 β 受体阻滞剂或心率上不去的人，心率和摄氧量的对应关系会改变，按峰值心率、心率储备百分比定的强度要非常谨慎地使用。"
+        where: "Objective methods（Indices of peak exercise capacity）；Table 1"
+      - text: "β 受体阻滞剂剂量调整后，原来的目标心率不再适用；可以用最近训练的负荷运动至少 5 分钟，记下这时的心率作为新的目标心率。"
+        where: "Objective methods（Indices of peak exercise capacity）"
+      - text: "主观用力感觉最好和心率等客观指标一起用；服用 β 受体阻滞剂可能让主观用力感觉更难解读。"
+        where: "Subjective methods（Ratings of perceived exertion）"
+      - text: "有条件时，以第一、第二通气阈来确定有氧强度，比按峰值的百分比更好。"
+        where: "Objective methods（Ventilatory threshold）；Table 1"
+    keywords: ["β受体阻滞剂", "倍他乐克", "美托洛尔", "比索洛尔", "降压药", "心率上不去", "心率区间", "吃药运动"]
+    url: https://doi.org/10.1093/eurjpc/zwab007
+    review: claude_draft
+
+  - id: K94
+    domains: [safety, recovery]
+    title: "吃他汀时肌肉酸痛要分清是不是练出来的"
+    source: "Statin-associated muscle symptoms: impact on statin therapy—European Atherosclerosis Society Consensus Panel Statement on Assessment, Aetiology and Management（Eur Heart J 36(17):1012–1022）"
+    publisher: "欧洲动脉粥样硬化学会（EAS）共识专家组（Stroes 等）"
+    year: 2015
+    level: consensus
+    population: "服用他汀类降脂药的人"
+    summary: "他汀相关的肌肉症状在运动多的人中更常见，大运动量本身也是风险因素；肌酸激酶轻度升高常常只是运动引起的；症状一般在开始吃药后 4–6 周内出现。有肌肉疼痛或无力应告诉医生，由医生判断。"
+    points:
+      - text: "他汀相关的肌肉症状在身体活动多的人中更常见；高水平的身体活动被列为风险因素之一。"
+        where: "Assessment and diagnosis；Box 1"
+      - text: "有症状、肌酸激酶高于正常上限但不到 4 倍时，常见原因是运动或身体活动增加。"
+        where: "Table 1"
+      - text: "判断是不是他汀引起的，要先排除身体活动增加等其他原因；不建议常规监测肌酸激酶。"
+        where: "Assessment and diagnosis；Management"
+      - text: "肌肉疼痛、无力通常在开始服用他汀后 4–6 周内出现，也可能在多年后、加量或加用有相互作用的药之后出现。"
+        where: "Assessment and diagnosis"
+    keywords: ["他汀", "降脂药", "阿托伐他汀", "瑞舒伐他汀", "肌肉痛", "吃药肌肉酸", "肌酸激酶"]
+    url: https://doi.org/10.1093/eurheartj/ehv043
+    review: claude_draft
+
+  - id: K95
+    domains: [data]
+    title: "手环手表：步数、心率较准，消耗热量不准"
+    source: "Reliability and Validity of Commercially Available Wearable Devices for Measuring Steps, Energy Expenditure, and Heart Rate: Systematic Review（JMIR Mhealth Uhealth 8(9):e18694）"
+    publisher: "Fuller、Colwell、Low 等"
+    year: 2020
+    level: systematic_review
+    population: "158 篇研究、9 个品牌的消费级可穿戴设备"
+    summary: "在实验室条件下，主流手环手表的步数和心率大体可信（因品牌型号而异），但没有一个品牌的能量消耗是准的，多数偏低、也有偏高；手表上的消耗热量只能看趋势，不能拿来精确算吃多少。"
+    points:
+      - text: "能量消耗在受控条件下只有约 9% 的对比误差在 ±3% 以内，多数偏低（约 54%）、部分偏高（约 37%）。"
+        where: "Results（Validity for Energy Expenditure in Controlled Settings）"
+      - text: "没有一个品牌的能量消耗误差在 ±3% 以内的次数超过约 13%。"
+        where: "Results（Validity for Energy Expenditure by Brand）"
+      - text: "日常生活中测的能量消耗，只有约 18% 的对比误差在 ±10% 以内。"
+        where: "Results（Validity for Energy Expenditure in Free-Living Settings）"
+      - text: "心率在受控条件下约 57% 的对比误差在 ±3% 以内，整体略偏低。"
+        where: "Results（Validity for Heart Rate in Controlled Settings）"
+      - text: "作者结论：步数和心率在实验室中较准但取决于品牌，能量消耗所有品牌都不准。"
+        where: "Abstract（Conclusions）"
+    keywords: ["手环", "手表", "消耗热量", "卡路里准不准", "运动消耗", "心率准不准", "Apple Watch", "华为手表", "小米手环", "Garmin"]
+    url: https://doi.org/10.2196/18694
+    review: claude_draft
+
+  - id: K96
+    domains: [data]
+    title: "腕戴设备心率误差小、热量误差大（Stanford 实测）"
+    source: "Accuracy in Wrist-Worn, Sensor-Based Measurements of Heart Rate and Energy Expenditure in a Diverse Cohort（J Pers Med 7(2):3）"
+    publisher: "Shcherbina、Mattsson、Waggott 等"
+    year: 2017
+    level: study
+    population: "60 名成年人，7 款腕戴设备，坐、走、跑、骑车"
+    summary: "多数设备心率的中位误差在 2–7% 左右，但能量消耗的中位误差最好的也有约 27%，最差的超过 90%；心率可以参考，消耗热量只能当粗略参考。"
+    points:
+      - text: "7 款设备里有 6 款在骑车时心率中位误差低于 5%。"
+        where: "Abstract"
+      - text: "各设备心率的中位误差从约 2.0% 到约 6.8%。"
+        where: "Results 3.1（Heart Rate）"
+      - text: "没有一款设备的能量消耗误差低于 20%；中位误差从约 27% 到约 93%。"
+        where: "Abstract；Results 3.2（Energy Expenditure）"
+    keywords: ["手环", "手表", "消耗热量", "卡路里准不准", "心率准不准", "运动消耗"]
+    url: https://doi.org/10.3390/jpm7020003
+    review: claude_draft
+
+  - id: K97
+    domains: [data, nutrition]
+    title: "体重每天都在波动，看一周的平均"
+    source: "Weekly, seasonal and holiday body weight fluctuation patterns among individuals engaged in a European multi-centre behavioural weight loss maintenance intervention（PLoS One 15(4):e0232152）"
+    publisher: "Turicchi、O'Driscoll、Horgan 等"
+    year: 2020
+    level: study
+    population: "参加减重后维持项目的欧洲成年人（周内波动分析 1421 人，用智能体重秤）"
+    summary: "体重有固定的周内规律：周末后最高、周五最低，一周内差约 0.35%（约 0.3 公斤）；单次称重还受水分、糖原影响，所以看趋势要用多次称重的平均，不要只看某一天。"
+    points:
+      - text: "一周内体重波动约为体重的 0.35%，这群人约 0.3 公斤。"
+        where: "Abstract（Results）；Results（Weekly patterns）"
+      - text: "体重周一最高（其次周日、周二），周五最低，周末涨、工作日降。"
+        where: "Results（Weekly patterns）"
+      - text: "单次称重会受体内水分、糖原等正常波动影响，研究用多次称重平滑后的趋势来分析。"
+        where: "Methods"
+      - text: "圣诞假期后体重平均增加约 1.35%，之后几个月没有完全回落。"
+        where: "Abstract（Results）"
+    keywords: ["体重波动", "称重", "体重忽高忽低", "体重涨了", "一天重一斤", "周平均", "体重秤"]
+    url: https://doi.org/10.1371/journal.pone.0232152
+    review: claude_draft
+
+  - id: K98
+    domains: [data, recovery, safety]
+    title: "练后肌酸激酶升高很常见，别过度解读"
+    source: "Creatine-Kinase- and Exercise-Related Muscle Damage Implications for Muscle Performance and Recovery（J Nutr Metab 2012:960363）"
+    publisher: "Baird、Graham、Baker、Bickerstaff"
+    year: 2012
+    level: review
+    population: "运动人群与一般人群"
+    summary: "肌酸激酶只是肌肉损伤的间接指标，个体差异很大；训练后几天内明显升高很常见，峰值时间因训练方式而异，一般 1 周左右回落；经常大量训练的人平时就偏高。化验单上的高值要结合最近几天的训练来看。"
+    points:
+      - text: "一般人群的基础值多在 35–175 U/L，但整体范围可从 20 到 16000 U/L。"
+        where: "Section 3（Clinical Significance of Raised Serum CK）"
+      - text: "经常大量训练的人平时的肌酸激酶就明显高于不运动的人；部分族群天生偏高，与损伤无关。"
+        where: "Section 2；Section 4"
+      - text: "同样的训练，有些人肌酸激酶升得特别高（高反应者），常找不到原因。"
+        where: "Section 2；Section 9"
+      - text: "峰值时间因训练方式而异：离心力量训练多在 72–96 小时，杠铃深蹲约 24 小时，跳跃训练约 48 小时。"
+        where: "Section 10（Exercise Modality）"
+      - text: "轻到中度损伤后，相关指标一般在 7–9 天内回到基线。"
+        where: "Section 2（Muscle Response to Exercise）"
+      - text: "健康人即使训练后肌酸激酶超过 20000 U/L，也没有发现与肾功能受损有确定的联系。"
+        where: "Section 2（Muscle Response to Exercise）"
+      - text: "有学者建议把运动人群的正常上限提高到 1.5 倍；只有在不能用运动解释、且至少达到 3 倍上限时才考虑做肌肉活检；目前没有公认标准。"
+        where: "Section 3（Clinical Significance of Raised Serum CK）"
+    keywords: ["肌酸激酶", "CK", "化验", "体检", "肌酸激酶高", "横纹肌溶解", "练后验血"]
+    url: https://doi.org/10.1155/2012/960363
+    review: claude_draft
+
+  - id: K99
+    domains: [data]
+    title: "体脂秤测的体脂率，个人误差很大"
+    source: "Accuracy of Bioelectrical Impedance Consumer Devices for Measurement of Body Composition in Comparison to Whole Body Magnetic Resonance Imaging and Dual X-Ray Absorptiometry（Obes Facts 1(6):319–324）"
+    publisher: "Bosy-Westphal、Later、Hitze 等"
+    year: 2008
+    level: study
+    population: "106 名成年人（体重正常、超重、肥胖），对比 3 款脚踩式和 1 款手脚八电极式消费级设备"
+    summary: "脚踩式体脂秤对一群人的平均值还算接近，但放到个人身上误差可能达到十几个百分点，且都有系统偏差；手脚都接触的八电极设备好一些。体脂秤的读数只适合看自己的变化趋势，不要当成准确值。"
+    points:
+      - text: "脚踩式（双电极）设备与双能 X 线测的体脂率相比，95% 一致性界限最宽可达约 −14.5 到 +8.6 个百分点。"
+        where: "Abstract（Results）"
+      - text: "手脚都接触的四电极设备一致性界限较窄，约 −6.6 到 +4.6 个百分点。"
+        where: "Abstract（Results）"
+      - text: "所有脚踩式设备都存在系统性偏差，四电极设备没有。"
+        where: "Abstract（Results）"
+      - text: "作者结论：脚踩式设备可以用于群体估计，个人使用更推荐四电极设备。"
+        where: "Abstract（Conclusions）"
+    keywords: ["体脂秤", "体脂率", "准不准", "体成分", "智能秤", "测体脂", "InBody"]
+    url: https://doi.org/10.1159/000176061
+    review: claude_draft
+
+  - id: K100
+    domains: [training, nutrition]
+    title: "养成习惯要多久：因人而异，从几周到大半年"
+    source: "How are habits formed: Modelling habit formation in the real world（Eur J Soc Psychol 40(6):998–1009）"
+    publisher: "Lally、van Jaarsveld、Potts、Wardle"
+    year: 2010
+    level: study
+    population: "96 名志愿者，每天在固定情境（如早饭后）做一件饮食、饮水或活动类的新行为，持续 12 周"
+    summary: "在固定情境里重复做，自动化程度会逐渐上升并趋于稳定；达到稳定所需时间个人差异很大，从 18 天到 254 天；偶尔漏一次不影响，越规律越容易形成习惯。"
+    points:
+      - text: "在同一情境里反复做一件事，自动化程度按逐渐趋平的曲线上升。"
+        where: "Abstract"
+      - text: "达到自身自动化上限 95% 所需的时间从 18 天到 254 天不等，个人差异很大，可能需要很长时间。"
+        where: "Abstract"
+      - text: "漏掉一次机会不会实质性影响习惯形成。"
+        where: "Abstract"
+      - text: "做得越规律，越符合习惯形成的曲线。"
+        where: "Abstract"
+    keywords: ["习惯", "坚持", "多久养成", "21天", "坚持不下去", "漏了一次", "断了"]
+    url: https://doi.org/10.1002/ejsp.674
+    review: claude_draft
+
+  - id: K101
+    domains: [training, nutrition]
+    title: "自我记录加上其他自我调节方法更有效"
+    source: "Effective techniques in healthy eating and physical activity interventions: a meta-regression（Health Psychol 28(6):690–701）"
+    publisher: "Michie、Abraham、Whittington、McAteer、Gupta"
+    year: 2009
+    level: systematic_review
+    population: "122 项健康饮食和身体活动干预评估、44747 人"
+    summary: "在 26 种行为改变技术里，自我记录最能解释干预效果的差异；把自我记录和至少一种基于控制理论的其他自我调节技术组合起来，效果明显更好。"
+    points:
+      - text: "健康饮食和身体活动干预的合并效应量约 0.31。"
+        where: "Abstract（Results）"
+      - text: "自我记录是解释各研究效果差异最多的技术（约 13%）。"
+        where: "Abstract（Results）"
+      - text: "自我记录与至少一种基于控制理论的其他技术组合的干预，效应量约 0.42；没有这样组合的约 0.26。"
+        where: "Abstract（Results）"
+    keywords: ["记录", "打卡", "记训练", "记饮食", "自我监测", "坚持", "动力"]
+    url: https://doi.org/10.1037/a0016136
+    review: claude_draft
+
+  - id: K102
+    domains: [training]
+    title: "\"如果……就……\"计划能帮人多运动"
+    source: "A meta-analytic review of the effect of implementation intentions on physical activity（Health Psychol Rev 7(1):23–54）"
+    publisher: "Bélanger-Gravel、Godin、Amireault"
+    year: 2013
+    level: systematic_review
+    population: "26 项身体活动干预研究"
+    summary: "事先定好\"在什么时间、什么地点、遇到什么情况就怎么做\"的执行计划，对增加身体活动有小到中等的作用，随访时仍有效；计划里包含应对障碍的办法时效果更大。"
+    points:
+      - text: "干预刚结束时，执行计划对身体活动的效应量约 0.31。"
+        where: "Abstract（Results）"
+      - text: "随访时效应量约 0.24，随访时间长短对效果没有明显影响。"
+        where: "Abstract（Results）"
+      - text: "计划中包含应对障碍的内容时效果更大；在学生和临床人群中效果更好。"
+        where: "Abstract（Results，调节因素）"
+    keywords: ["计划", "如果就", "执行意图", "什么时候练", "坚持", "没动力", "拖延"]
+    url: https://doi.org/10.1080/17437199.2011.560095
+    review: claude_draft
+
+  - id: K103
+    domains: [recovery, safety]
+    title: "软组织扭伤拉伤怎么处理（PEACE & LOVE）"
+    source: "Soft-tissue injuries simply need PEACE and LOVE（Br J Sports Med 54(2):72–73）"
+    publisher: "Dubois、Esculier"
+    year: 2020
+    level: review
+    population: "扭伤、拉伤等软组织损伤的人（这是期刊社论，属于专家意见，不是系统综述）"
+    summary: "受伤头几天以保护为主（PEACE）：减少负重 1–3 天、抬高、加压包扎，不常规用消炎药和冰敷，并了解恢复要靠主动练；过了头几天转入 LOVE：疼痛允许时尽早恢复负荷和日常活动、保持乐观、做不引起疼痛的有氧、逐步做恢复活动度、力量和平衡的练习。"
+    points:
+      - text: "受伤后先减少负重或限制活动 1–3 天；休息不宜过久，什么时候停止保护以疼痛为参考。"
+        where: "P for protect"
+      - text: "把受伤的肢体抬到高于心脏的位置；证据弱，但风险很低。"
+        where: "E for elevate"
+      - text: "消炎药可能不利于组织的长期修复，作者建议不作为常规处理；冰敷没有高质量证据支持，主要起止痛作用。"
+        where: "A for avoid anti-inflammatory modalities"
+      - text: "用绷带或贴布加压可以限制肿胀；脚踝扭伤后加压似乎能减轻肿胀。"
+        where: "C for compress"
+      - text: "头几天过后，在不加重疼痛的前提下尽早加负荷，症状允许就恢复日常活动。"
+        where: "L for load"
+      - text: "受伤几天后开始做不引起疼痛的有氧运动。"
+        where: "V for vascularisation"
+      - text: "用练习恢复活动度、力量和本体感觉；恢复期避免引起疼痛，以疼痛作为加量的参考。"
+        where: "E for exercise"
+    keywords: ["扭伤", "拉伤", "崴脚", "冰敷", "消炎药", "受伤", "软组织", "肿"]
+    url: https://doi.org/10.1136/bjsports-2019-101253
+    review: claude_draft
+
+  - id: K104
+    domains: [recovery, safety]
+    title: "崴脚（外踝扭伤）后怎么处理（荷兰临床指南 2018）"
+    source: "Diagnosis, treatment and prevention of ankle sprains: update of an evidence-based clinical guideline（Br J Sports Med 52(15):956）"
+    publisher: "Vuurberg、Hoorntje、Wink 等"
+    year: 2018
+    level: guideline
+    population: "急性外踝扭伤的人"
+    summary: "怀疑骨折要由医务人员按渥太华踝关节规则判断要不要拍片；单靠 RICE 没有证据；固定最多不超过 10 天，之后用护踝等支具 4–6 周并尽早开始练习；练习能减少再次扭伤；有监督的本体感觉、力量、协调和功能练习能更快回到运动。"
+    points:
+      - text: "怀疑骨折时，应由医务人员用渥太华踝关节规则判断是否需要拍片。"
+        where: "Diagnostics — Recommendation (new)"
+      - text: "单用 RICE（休息、冰敷、加压、抬高），或单用冰敷、单用加压，都没有证据能改善疼痛、肿胀或功能。"
+        where: "Treatment — RICE, Recommendation (modified)"
+      - text: "消炎药可以用来减轻疼痛和肿胀，但有并发症风险，也可能延缓自然愈合。"
+        where: "Non-steroidal anti-inflammatory drugs — Recommendation (new)"
+      - text: "如果为止痛消肿而固定，最长不超过 10 天，之后改为功能性治疗。"
+        where: "Immobilisation — Recommendation (not changed)"
+      - text: "护踝或贴布等功能性支持用 4–6 周，优于固定；护踝的效果最好。"
+        where: "Functional support — Recommendation (modified)"
+      - text: "扭伤后应开始练习来恢复关节功能；早开始的练习能把再次扭伤的风险降到约 0.62 倍（RR 0.62）。"
+        where: "Exercise — text and Recommendation (modified)"
+      - text: "疼痛通常在头两周内明显减轻，但 1–4 年后仍有 5%–46% 的人有疼痛、3%–34% 的人再次扭伤。"
+        where: "Prognostic factors"
+      - text: "包括本体感觉、力量、协调和功能的有监督练习，能更快回到运动。"
+        where: "Sport resumption — Recommendation (modified)"
+    keywords: ["崴脚", "扭脚", "踝关节扭伤", "脚踝", "护踝", "拍片", "骨折"]
+    url: https://doi.org/10.1136/bjsports-2017-098106
+    review: claude_draft
+
+  - id: K105
+    domains: [recovery, training]
+    title: "跟腱病：先从小腿练习开始"
+    source: "Which treatment is most effective for patients with Achilles tendinopathy? A living systematic review with network meta-analysis of 29 randomised controlled trials（Br J Sports Med 55(5):249–256）"
+    publisher: "van der Vlist、Winters、Weir 等"
+    year: 2021
+    level: systematic_review
+    population: "跟腱病患者（29 项随机对照试验，86% 是跟腱中段病变；证据确定性很低到低）"
+    summary: "跟腱中段病变时，各种积极治疗在 3 个月时都比只观望好，彼此之间没有明显差别；练习简单、便宜、副作用少，可以先从小腿肌肉练习方案开始。"
+    points:
+      - text: "跟腱中段病变不建议只观望：3 个月时各种积极治疗都比观望好（证据确定性很低到低）。"
+        where: "Abstract（Results; Summary/Conclusion）"
+      - text: "3 个月和 12 个月时，不同积极治疗之间的效果没有临床上有意义的差别。"
+        where: "Abstract（Summary/Conclusion）"
+      - text: "练习容易安排、花费低、危害少，可以先从小腿肌肉练习方案开始。"
+        where: "Abstract（Summary/Conclusion）"
+    keywords: ["跟腱", "跟腱炎", "跟腱痛", "肌腱", "小腿", "提踵"]
+    url: https://doi.org/10.1136/bjsports-2019-101872
+    review: claude_draft
+
+  - id: K106
+    domains: [safety]
+    title: "腰背痛什么时候要看医生、什么时候要立即就医"
+    source: "Back pain（NHS website，2026-03-05 审阅）"
+    publisher: "英国国家医疗服务体系（NHS）"
+    year: 2026
+    level: health_info
+    population: "腰背痛的人"
+    summary: "腰背痛大多几周内自行好转，宜保持活动、不要久卧；但出现双腿麻木无力、会阴部感觉减退、大小便异常、胸痛或严重外伤后疼痛时要立即就医；伴发热不适、突然剧痛或迅速加重时要尽快看医生；几周不好、夜间加重、体重无故下降等要看医生。"
+    points:
+      - text: "腰背痛同时出现双腿疼痛、刺痛、无力或麻木，会阴或肛门周围感觉减退，排尿排便异常（如尿不出、失禁），性功能突然改变，胸痛，或在严重事故后开始疼痛，应立即叫急救或去急诊。"
+        where: "Immediate action required: Call 999 or go to A&E if"
+      - text: "腰背痛伴发热、发冷、寒战或全身不适，或疼痛突然剧烈、迅速加重，应尽快看医生。"
+        where: "Urgent advice"
+      - text: "在家处理几周不见好、影响日常活动、体重无故下降、背部有肿块或变形、休息不缓解或夜间加重、咳嗽打喷嚏排便时加重、疼痛在两肩胛之间，应去看医生。"
+        where: "Non-urgent advice: See a GP if"
+      - text: "腰背痛时尽量保持活动、继续日常活动，不要长时间卧床；做练习时如果疼痛加重就停下并咨询医生。"
+        where: "How to ease back pain yourself — Do / Don't; Exercises and stretches"
+    keywords: ["腰痛", "背痛", "腰疼", "腿麻", "大小便", "会阴", "红旗", "急诊"]
+    url: https://www.nhs.uk/conditions/back-pain/
+    review: claude_draft
+
+  - id: K107
+    domains: [safety, recovery]
+    title: "新冠等病毒感染后怎么逐步恢复运动（普通人）"
+    source: "Returning to physical activity after covid-19（BMJ 372:m4721，Practice Pointer）"
+    publisher: "Salman、Vishnubala、Le Feuvre 等"
+    year: 2021
+    level: review
+    population: "新冠后体能下降、但没有长新冠的普通人（基于共识和专家经验，没有高质量研究）"
+    summary: "先分流：病中有胸痛、严重气短、心悸、晕厥或接近晕厥的，先就医评估；没有这些情况的，症状消失满 7 天后再开始，先用至少两周做极轻和轻度活动，每阶段至少 7 天，按自觉用力程度逐步加量；症状反复就停下、退回上一阶段，必要时就医。"
+    points:
+      - text: "症状消失至少 7 天后才恢复运动，并先用至少两周做很轻的活动。"
+        where: "What you need to know; How to start — Phases 1–2"
+      - text: "病中出现胸痛、严重气短、心悸、心衰表现、晕厥或接近晕厥的人，恢复运动前要先就医检查；住过院的人要在医疗团队配合下康复。"
+        where: "How do I know if my patient can safely return to physical activity?"
+      - text: "第 1 阶段 7 天做极轻活动（自觉用力 6–8 分，满分 6–20）；第 2 阶段 7 天做轻活动（6–11 分），如散步、轻瑜伽，能耐受时每天加 10–15 分钟。"
+        where: "How to start — Phases 1–2"
+      - text: "第 3 阶段做两段各 5 分钟、中间休息的间歇活动（自觉用力 12–14 分，仍能说话）；第 4 阶段加入考验协调、力量和平衡的动作；每阶段至少 7 天。"
+        where: "Phases 3–4"
+      - text: "练后 1 小时或第二天还没缓过来、气短或心率异常、过度疲劳时，退回前一阶段，拿不准就就医。"
+        where: "Phases 3–4"
+      - text: "咳嗽、异常气短、心悸、发热、嗅觉丧失等症状再次出现时要停下，必要时就医，症状消失后再重新开始。"
+        where: "How do I guide a patient back to physical activity?"
+      - text: "心肌炎时运动与更高的发病和死亡风险有关；病毒性心肌炎不只见于新冠，流感等许多病毒都可能引起；确诊心肌炎的，欧美指南建议限制运动 3–6 个月。"
+        where: "What are the risks...; Box 1; risk-stratification paragraph"
+    keywords: ["新冠", "阳了", "感冒后", "发烧后", "病后恢复", "心肌炎", "心悸", "胸痛"]
+    url: https://doi.org/10.1136/bmj.m4721
+    review: claude_draft
+
+  - id: K108
+    domains: [safety, recovery, training]
+    title: "运动员新冠后分级回到训练（英国各运动研究院）"
+    source: "Infographic. Graduated return to play guidance following COVID-19 infection（Br J Sports Med 54(19):1174–1175）"
+    publisher: "Elliott、Martin、Heron、Elliott、Grimstead、Biswas"
+    year: 2020
+    level: consensus
+    population: "轻到中度新冠的运动员（以有氧成分的运动为主；需在医疗监督下进行）"
+    summary: "开始前要能完成日常活动并平地走 500 米不过度疲劳或气短，发病后至少休息 10 天、无症状至少 7 天且停用所有药物；之后分阶段加量，心率和时长都有上限，最早第 17 天恢复常规训练；出现症状就退回上一阶段。"
+    points:
+      - text: "开始分级恢复前，要能完成日常活动，并能平地走 500 米而不过度疲劳或气短。"
+        where: "正文 GRTP 前提"
+      - text: "发病后至少休息 10 天、无症状至少 7 天，并已停用所有治疗药物（如退烧药）。"
+        where: "正文；Figure 1"
+      - text: "第 2 阶段（至少 2 天）做轻活动，心率低于最大心率的 70%、少于 15 分钟，不做力量训练。"
+        where: "Figure 1（Stage 2）"
+      - text: "第 3A、3B 阶段（各至少 1 天）心率低于 80%，时长分别少于 30、45 分钟；第 4 阶段（至少 2 天）心率低于 80%、少于 60 分钟；第 5 阶段最早在第 17 天恢复常规训练。"
+        where: "Figure 1（Stages 3A–5）"
+      - text: "过程中出现任何症状（包括过度疲劳），退回前一阶段，无症状休息至少 24 小时后再进。"
+        where: "正文 setbacks"
+      - text: "有糖尿病、心血管病、肾病，或病情复杂、住过院的人，开始前要先做医学评估。"
+        where: "正文；Figure 1"
+    keywords: ["新冠", "阳了", "病后恢复", "运动员", "心率", "分级恢复"]
+    url: https://doi.org/10.1136/bjsports-2020-102637
+    review: claude_draft
+
+  - id: K109
+    domains: [safety, training]
+    title: "产后什么时候、怎样恢复跑步"
+    source: "Returning to running postnatal – guidelines for medical, health and fitness professionals managing this population（2019 年 3 月；2020 年在 Br J Sports Med 54(18):1114–1115 发表信息图）"
+    publisher: "Goom、Donnelly、Brockwell"
+    year: 2019
+    level: consensus
+    population: "产后女性（顺产和剖宫产都适用；属于专家意见，没有专门研究）"
+    summary: "产后头 3 个月做低冲击练习，最早产后 3–6 个月再恢复跑步；有盆底功能障碍症状时不宜跑；跑前先通过一组负荷和冲击测试；跑步要循序渐进、先加量再加强度。"
+    points:
+      - text: "产后不满 3 个月不建议跑步；之后如果出现盆底功能障碍的症状，也不宜跑步（专家意见）。"
+        where: "Evidence-Based Recommendation 2（p10）"
+      - text: "产后头 3 个月按低冲击练习的时间线进行，最早在产后 3–6 个月恢复跑步。"
+        where: "p10；p12"
+      - text: "出现盆腔下坠或拖拽感、漏尿或控制不住排便、腹部明显下垂或中线分离、盆腔或腰部疼痛、产后 8 周后仍有与月经无关的出血时，应找盆底康复专科评估。"
+        where: "p12（Guidance for patients and non-clinical persons）"
+      - text: "恢复跑步前，应能完成以下动作而不出现疼痛、下坠、拖拽或漏尿：走 30 分钟、单腿站 10 秒、单腿蹲每侧 10 次、原地慢跑 1 分钟、向前跳 10 次、单腿原地跳每侧 10 次、单腿摆臂抬腿每侧 10 次。"
+        where: "Load and impact management assessment（p16）"
+      - text: "力量测试（单腿提踵、单腿臀桥、单腿坐站、侧卧抬腿）以每项 20 次为目标；力量不足不是跑步的禁忌，而是提示练什么。"
+        where: "Strength testing（p17）"
+      - text: "产后 6–8 周可以开始轻重量的硬拉动作练习，起始不超过婴儿加安全座椅的重量（15 千克），逐步加重。"
+        where: "Appendix 2（Week 6 to 8）"
+      - text: "产后 12 周以后按分级计划（如从零到 5 公里）恢复跑步，先加距离或时间、再加强度，并留意症状。"
+        where: "Appendix 3"
+    keywords: ["产后", "生完孩子", "坐月子", "剖腹产", "顺产", "漏尿", "盆底", "产后跑步"]
+    url: https://athleticsni.org/download/files/Returning_to_running_postnatal_guideline_for_medical_health_and_fitness_professionals_managing_this_population.05.pdf
+    review: claude_draft
+
+  - id: K110
+    domains: [safety, training]
+    title: "孕期运动的禁忌证与注意事项（加拿大 2019 指南）"
+    source: "2019 Canadian guideline for physical activity throughout pregnancy（Br J Sports Med 52(21):1339–1346；同时刊于 J Obstet Gynaecol Can）"
+    publisher: "加拿大妇产科医师学会与加拿大运动生理学会（Mottola、Davenport、Ruchat 等）"
+    year: 2018
+    level: guideline
+    population: "孕妇"
+    summary: "没有禁忌证的孕妇整个孕期都应活动，每周至少 150 分钟中等强度、分在至少 3 天，有氧和力量结合；有绝对禁忌证的只保持日常活动，有相对禁忌证的先和产检医生商量；列出了必须停止并就医的信号和需要避免的活动。"
+    points:
+      - text: "绝对禁忌证：胎膜破裂、早产临产、不明原因的持续阴道出血、28 周后前置胎盘、子痫前期、宫颈机能不全、胎儿生长受限、三胎及以上、未控制的 1 型糖尿病、高血压或甲状腺病，以及其他严重心肺或全身疾病；这些人只保持日常活动，不做较费力的运动。"
+        where: "Contraindications（absolute）；Table 2"
+      - text: "相对禁忌证：反复流产、妊娠期高血压、自发早产史、轻中度心肺疾病、有症状的贫血、营养不良、进食障碍、28 周后的双胎等；这些人做中高强度运动前要先和产检医生商量。"
+        where: "Contraindications（relative）；Table 2"
+      - text: "每周至少 150 分钟中等强度活动，分在至少 3 天；有氧和力量训练结合效果更好。"
+        where: "Recommendations 2–4"
+      - text: "平躺运动时出现头晕、恶心或不适的，改用其他姿势。"
+        where: "Recommendation 6"
+      - text: "出现休息后不缓解的气短、剧烈胸痛、规律而疼痛的宫缩、阴道出血、持续阴道流液、休息后不缓解的头晕或晕厥感，应停止活动并就医。"
+        where: "Box 2"
+      - text: "避免潜水、有身体接触或易摔倒的运动（如骑马、滑雪、体操、奥举）、户外骑车、高温高湿下剧烈运动；平时住在 2500 米以下的人避免在 2500 米以上运动。"
+        where: "Safety precautions；Box 1"
+      - text: "出现腹直肌分离的，避免卷腹类腹肌练习并寻求物理治疗建议；用力憋气时头晕的应避免憋气。"
+        where: "Safety precautions"
+      - text: "研究里最高强度约相当于慢跑（7 METs）；长期高强度运动的安全性不清楚，高强度只建议在有监护的情况下进行。"
+        where: "Recommendations 2–4 正文"
+    keywords: ["怀孕", "孕期", "孕妇", "禁忌", "前置胎盘", "憋气", "平躺", "腹直肌分离"]
+    url: https://doi.org/10.1136/bjsports-2018-100056
+    review: claude_draft
+
+  - id: K111
+    domains: [safety, training]
+    title: "骨质疏松的人怎么练（Too Fit To Fracture 2014）"
+    source: "Too Fit To Fracture: exercise recommendations for individuals with osteoporosis or osteoporotic vertebral fracture（Osteoporos Int 25(3):821–835）"
+    publisher: "Giangregorio、Papaioannou、MacIntyre 等（国际专家组，GRADE 方法）"
+    year: 2014
+    level: consensus
+    population: "65 岁以上骨质疏松或有骨质疏松性椎体骨折的人"
+    summary: "强烈建议做包含力量和平衡训练的综合方案：力量每周至少 2 天、每个主要肌群 2 组 8–12RM，平衡每天 15–20 分钟、每周累计约 2 小时；不要只做有氧；有椎体骨折或骨折风险高的人先咨询物理治疗师。"
+    points:
+      - text: "强烈建议骨质疏松（含椎体骨折）的人做包含力量训练和平衡训练的综合运动方案；建议不要只做有氧而不做力量和平衡。"
+        where: "Abstract（Results）；Recommendations"
+      - text: "力量训练每周至少 2 天，每个主要肌群至少 1 个动作、2 组、8–12RM；久坐、骨折风险高或没练过的人先用更低强度。"
+        where: "Resistance training；Table 6"
+      - text: "平衡训练每天 15–20 分钟，每周累计约 2 小时，可以分段做或融入日常活动，从静态练到动态。"
+        where: "Balance training；Table 6"
+      - text: "骨折风险高的人开始新方案前宜咨询熟悉骨质疏松的物理治疗师；所有人都要学会在转身弯腰、负重、平衡挑战时安全地动。"
+        where: "Recommendations（safety paragraph）"
+      - text: "有椎体骨折的人建议咨询物理治疗师，以确保运动安全合适。"
+        where: "Recommendations for older adults with osteoporotic vertebral fracture"
+      - text: "有氧运动每周 3–5 天、每天 30–60 分钟，可以用每次 10 分钟的短段；时间不够时，有氧不能挤掉力量和平衡。"
+        where: "Table 6 及注"
+    keywords: ["骨质疏松", "骨密度", "骨折", "压缩性骨折", "驼背", "老年", "绝经后"]
+    url: https://doi.org/10.1007/s00198-013-2523-2
+    review: claude_draft
+
+  - id: K112
+    domains: [safety, training]
+    title: "膝、髋骨关节炎：运动是核心治疗（NICE 2022）"
+    source: "Osteoarthritis in over 16s: diagnosis and management（NICE guideline NG226）"
+    publisher: "英国国家卫生与临床优化研究所（NICE）"
+    year: 2022
+    level: guideline
+    population: "16 岁以上的骨关节炎患者"
+    summary: "所有骨关节炎患者都应做量身定制的治疗性运动（局部肌力和全身有氧）；刚开始关节可能更疼，但坚持规律运动有益；超重的人减重越多越好；不常规用护具、鞋垫。"
+    points:
+      - text: "所有骨关节炎患者都应做按个人情况调整的治疗性运动，如局部肌肉力量练习和全身有氧练习；可以考虑有指导的练习课程。"
+        where: "Recommendations 1.3.1–1.3.2"
+      - text: "刚开始运动时关节疼痛可能加重；即便起初有些疼或不适，规律坚持运动对关节有益，长期坚持能减轻疼痛、改善功能和生活质量。"
+        where: "Recommendation 1.3.3"
+      - text: "超重或肥胖的人减重能改善功能、减轻疼痛；减多少都有益，减掉体重的 10% 可能比 5% 更好。"
+        where: "Recommendation 1.3.5"
+      - text: "下肢骨关节炎可以考虑用手杖等助行工具；不常规使用鞋垫、护膝、贴布，除非有关节不稳且单靠运动无效。"
+        where: "Recommendations 1.3.10–1.3.11"
+      - text: "45 岁以上、活动相关的关节痛、没有晨僵或晨僵不超过 30 分钟的，可以不拍片做出临床诊断；有不典型表现时才考虑影像检查（由医生判断）。"
+        where: "Recommendations 1.1.1–1.1.2"
+    keywords: ["骨关节炎", "关节炎", "膝关节炎", "膝盖疼", "髋关节", "退行性", "老寒腿"]
+    url: https://www.nice.org.uk/guidance/ng226
+    review: claude_draft
+
+  - id: K113
+    domains: [recovery, nutrition]
+    title: "睡前 6 小时内的咖啡因也会影响睡眠"
+    source: "Caffeine effects on sleep taken 0, 3, or 6 hours before going to bed（J Clin Sleep Med 9(11):1195–1200）"
+    publisher: "Drake、Roehrs、Shambroom、Roth"
+    year: 2013
+    level: rct
+    population: "12 名睡眠正常的健康成年人（19–48 岁，男女各半；随机双盲交叉试验，样本小）"
+    summary: "睡前 0、3、6 小时服 400 毫克咖啡因都会扰乱睡眠；即使在睡前 6 小时服用，客观测得的总睡眠时间也少了 1 小时以上，而本人不一定察觉。"
+    points:
+      - text: "睡前 0、3、6 小时服用 400 毫克咖啡因，都比安慰剂明显扰乱睡眠。"
+        where: "Abstract（Results）"
+      - text: "客观测量的总睡眠时间在三个时间点都减少约 1.1–1.2 小时；睡前 6 小时服用也少睡 1 小时以上。"
+        where: "Results（objective measures）；Discussion"
+      - text: "睡前 6 小时服用时，本人记录的睡眠只减少约 41 分钟且无统计学差异，只有客观测量发现了明显影响。"
+        where: "Results（diary measures）；Discussion"
+      - text: "作者建议睡前至少 6 小时内不摄入大量咖啡因，下午喝咖啡最好在 17 点之前。"
+        where: "Abstract（Conclusion）；Discussion"
+    keywords: ["咖啡", "咖啡因", "失眠", "睡不着", "下午喝咖啡", "预锻炼", "能量饮料"]
+    url: https://doi.org/10.5664/jcsm.3170
+    review: claude_draft
+
+  - id: K114
+    domains: [recovery, nutrition]
+    title: "练后大量饮酒会降低肌肉蛋白合成"
+    source: "Alcohol ingestion impairs maximal post-exercise rates of myofibrillar protein synthesis following a single bout of concurrent training（PLoS One 9(2):e88384）"
+    publisher: "Parr、Camera、Areta、Burke、Phillips、Hawley、Coffey"
+    year: 2014
+    level: rct
+    population: "8 名经常运动的男性（随机交叉试验；饮酒量很大，约 12 个标准杯）"
+    summary: "力量加有氧训练后大量饮酒（每公斤体重 1.5 克酒精），即使同时补充蛋白质，肌肉蛋白合成也比只补蛋白质低约 24%；酒配碳水时低约 37%。"
+    points:
+      - text: "练后按每公斤体重 1.5 克酒精饮酒（约 12±2 个标准杯）。"
+        where: "Abstract（Methods）"
+      - text: "与只补充蛋白质相比，饮酒同时补蛋白质时肌肉蛋白合成低约 24%，饮酒配碳水时低约 37%。"
+        where: "Abstract（Results）"
+      - text: "即使和蛋白质一起摄入，酒精也会抑制练后肌肉的合成反应，可能影响恢复和训练适应。"
+        where: "Abstract（Conclusion）"
+    keywords: ["喝酒", "饮酒", "酒精", "啤酒", "聚餐", "练后恢复", "增肌"]
+    url: https://doi.org/10.1371/journal.pone.0088384
+    review: claude_draft
+
+  - id: K115
+    domains: [recovery, training]
+    title: "力量训练后马上冰水浴可能削弱增肌"
+    source: "Throwing cold water on muscle growth: A systematic review with meta-analysis of the effects of postexercise cold water immersion on resistance training-induced hypertrophy（Eur J Sport Sci 24(2):177–189）"
+    publisher: "Piñero、Burke、Augustin 等（含 Schoenfeld）"
+    year: 2024
+    level: systematic_review
+    population: "8 项随机研究，20–26 岁年轻人为主（7 项只有男性）；研究质量一般到较差"
+    summary: "每次力量训练后马上冰水浴，增肌幅度比不浴小（小效应，可信区间刚好跨过 0），训练过的人和新手都一样；想最大化增肌的人不宜在练后马上冰水浴。结论只适用于练后 15 分钟内浸泡，偶尔用或隔几小时用没有研究。"
+    points:
+      - text: "只做力量训练的增肌效应约为 0.36（小到中等），练后加冰水浴时只有约 0.14（小到可忽略）。"
+        where: "Abstract"
+      - text: "直接比较时冰水浴组增肌更少（效应 −0.22，95% 可信区间 −0.47 到 0.04），有约 96% 的概率确实不如不浴。"
+        where: "Abstract"
+      - text: "训练水平（练过还是新手）不改变这个结果。"
+        where: "Abstract；Highlights"
+      - text: "结论只适用于练后 15 分钟内冰水浴；隔几小时或偶尔使用的情况没有研究。"
+        where: "Discussion（practical implications）"
+      - text: "纳入研究质量一般到较差，结论需谨慎看待。"
+        where: "Abstract"
+    keywords: ["冰水浴", "冰浴", "冷水澡", "冷疗", "泡冰水", "增肌", "恢复"]
+    url: https://doi.org/10.1002/ejsc.12074
+    review: claude_draft
+
+  - id: K116
+    domains: [recovery]
+    title: "延长睡眠和小睡对运动表现最有帮助"
+    source: "The Impact of Sleep Interventions on Athletic Performance: A Systematic Review（Sports Med Open 9:58）"
+    publisher: "Cunha、Costa、Marques、Brito、Lastella、Figueiredo"
+    year: 2023
+    level: systematic_review
+    population: "个人项目和团队项目的运动员（25 项干预研究，2011–2021 年）"
+    summary: "在各种睡眠干预里，夜里多睡（延长睡眠）和白天小睡对改善睡眠和运动表现最有效；睡眠卫生宣教、晚上不用电子设备、冷水浴没看到效果，但研究很少。整体高质量证据有限。"
+    points:
+      - text: "延长夜间睡眠和小睡是研究最多、也最有效的改善睡眠和表现的办法。"
+        where: "Abstract（Results; Conclusion）"
+      - text: "睡眠卫生宣教、晚上移除电子设备、冷水浴对睡眠和随后的表现或恢复没有效果，但只基于少数研究。"
+        where: "Abstract（Results）"
+      - text: "高质量证据有限，结论需谨慎。"
+        where: "Abstract（Conclusion）"
+    keywords: ["睡眠", "多睡", "午睡", "小睡", "补觉", "睡不够", "恢复"]
+    url: https://doi.org/10.1186/s40798-023-00599-z
     review: claude_draft

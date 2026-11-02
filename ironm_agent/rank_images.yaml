@@ -1,0 +1,403 @@
+# 排行榜起步条目的配图清单（spec [2026-10-23] §80），由 scripts/fetch_rank_images.py 生成，不要手改。
+# 图片来自 Wikimedia Commons，每张写明作者、许可和来源；条目页署名。图片文件在本机数据目录，不进仓库。
+images:
+  c:鸡胸肉藜麦沙拉:
+    file: meal-01.jpg
+    name: 鸡胸肉藜麦沙拉
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/6/64/Healthy_quinoa_salad_with_dried_fruit.jpg/330px-Healthy_quinoa_salad_with_dried_fruit.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Healthy_quinoa_salad_with_dried_fruit.jpg
+    license: CC BY 4.0
+    license_url: https://creativecommons.org/licenses/by/4.0
+    author: TorbeyCharbel
+  c:番茄龙利鱼:
+    file: meal-02.jpg
+    name: 番茄龙利鱼
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/f/fe/Fish_tomato_stew.jpg/330px-Fish_tomato_stew.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Fish_tomato_stew.jpg
+    license: CC0
+    license_url: http://creativecommons.org/publicdomain/zero/1.0/deed.en
+    author: Bicanski on Pixnio
+  c:牛肉西兰花糙米饭:
+    file: meal-03.jpg
+    name: 牛肉西兰花糙米饭
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/5/58/Beef_and_broccoli_stir_fry.jpg/330px-Beef_and_broccoli_stir_fry.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Beef_and_broccoli_stir_fry.jpg
+    license: CC BY 2.0
+    license_url: https://creativecommons.org/licenses/by/2.0
+    author: Joy
+  c:虾仁滑蛋配杂粮饭:
+    file: meal-04.jpg
+    name: 虾仁滑蛋配杂粮饭
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6b/Baby_shrimp_with_scrambled_egg.jpg/330px-Baby_shrimp_with_scrambled_egg.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Baby_shrimp_with_scrambled_egg.jpg
+    license: CC0
+    license_url: http://creativecommons.org/publicdomain/zero/1.0/deed.en
+    author: Ser Amantio di Nicolao
+  c:魔芋鸡丝凉面:
+    file: meal-05.jpg
+    name: 魔芋鸡丝凉面
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a4/Shirataki_noodle_dish.jpg/330px-Shirataki_noodle_dish.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Shirataki_noodle_dish.jpg
+    license: CC BY-SA 2.0
+    license_url: https://creativecommons.org/licenses/by-sa/2.0
+    author: Craig Dugas
+  c:清蒸鲈鱼配杂粮饭:
+    file: meal-06.jpg
+    name: 清蒸鲈鱼配杂粮饭
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/3/37/CHILEAN_SEA_BASS_with_SUKI_SAUCE_%28Spicy%29_Steamed_sea_bass_topped_with_our_special_spicy_chili_sauce._Served_on_top_of_steamed_vegetables.jpg/330px-CHILEAN_SEA_BASS_with_SUKI_SAUCE_%28Spicy%29_Steamed_sea_bass_topped_with_our_special_spicy_chili_sauce._Served_on_top_of_steamed_vegetables.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:CHILEAN_SEA_BASS_with_SUKI_SAUCE_(Spicy)_Steamed_sea_bass_topped_with_our_special_spicy_chili_sauce._Served_on_top_of_steamed_vegetables.jpg
+    license: CC BY 2.0
+    license_url: https://creativecommons.org/licenses/by/2.0
+    author: T.Tseng
+  c:希腊酸奶燕麦杯:
+    file: meal-07.jpg
+    name: 希腊酸奶燕麦杯
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/7/72/Granola_and_Yogurt.jpg/330px-Granola_and_Yogurt.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Granola_and_Yogurt.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Bambiwa
+  c:荞麦面配鸡胸:
+    file: meal-08.jpg
+    name: 荞麦面配鸡胸
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0c/Bento_with_soba_noodles_07_03_2013.jpg/330px-Bento_with_soba_noodles_07_03_2013.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Bento_with_soba_noodles_07_03_2013.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Andreas F. Borchert
+  c:金枪鱼全麦三明治:
+    file: meal-09.jpg
+    name: 金枪鱼全麦三明治
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6d/Tuna_olive_and_avocado_sandwich.jpg/330px-Tuna_olive_and_avocado_sandwich.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Tuna_olive_and_avocado_sandwich.jpg
+    license: CC BY-SA 2.0
+    license_url: https://creativecommons.org/licenses/by-sa/2.0
+    author: Richard Masoner
+  c:冬瓜虾仁汤:
+    file: meal-10.jpg
+    name: 冬瓜虾仁汤
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/5/52/Winter_melon_soup_in_home.jpg/330px-Winter_melon_soup_in_home.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Winter_melon_soup_in_home.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Peachyeung316
+  c:牛肉饭加蛋:
+    file: meal-11.jpg
+    name: 牛肉饭加蛋
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/4/45/Gyuu-don_001.jpg/330px-Gyuu-don_001.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Gyuu-don_001.jpg
+    license: CC0
+    license_url: http://creativecommons.org/publicdomain/zero/1.0/deed.en
+    author: Ocdp
+  c:三文鱼牛油果饭:
+    file: meal-12.jpg
+    name: 三文鱼牛油果饭
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/1/15/Salmon_bowl.jpg/330px-Salmon_bowl.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Salmon_bowl.jpg
+    license: CC BY 2.0
+    license_url: https://creativecommons.org/licenses/by/2.0
+    author: Janine from Mililani, Hawaii, United States
+  c:鸡腿肉土豆饭:
+    file: meal-13.jpg
+    name: 鸡腿肉土豆饭
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/9/92/Roasted_potatoes_chicken.jpg/330px-Roasted_potatoes_chicken.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Roasted_potatoes_chicken.jpg
+    license: CC BY 4.0
+    license_url: https://creativecommons.org/licenses/by/4.0
+    author: P1898
+  c:燕麦全蛋牛奶早餐:
+    file: meal-14.jpg
+    name: 燕麦全蛋牛奶早餐
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/6/68/Oatmeal_porridge_with_fruits.jpg/330px-Oatmeal_porridge_with_fruits.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Oatmeal_porridge_with_fruits.jpg
+    license: CC BY 4.0
+    license_url: https://creativecommons.org/licenses/by/4.0
+    author: Shisma
+  c:肉酱意面:
+    file: meal-15.jpg
+    name: 肉酱意面
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ae/Spaghetti_Bolognese_-_Figaros%2C_Brighton_2023-10-06.jpg/330px-Spaghetti_Bolognese_-_Figaros%2C_Brighton_2023-10-06.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Spaghetti_Bolognese_-_Figaros,_Brighton_2023-10-06.jpg
+    license: CC0
+    license_url: http://creativecommons.org/publicdomain/zero/1.0/deed.en
+    author: Andy Li
+  c:香蕉花生酱吐司:
+    file: meal-16.jpg
+    name: 香蕉花生酱吐司
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/6/64/Peanut_butter_and_banana_on_toasted_homemade_bread_-_Massachusetts.jpg/330px-Peanut_butter_and_banana_on_toasted_homemade_bread_-_Massachusetts.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Peanut_butter_and_banana_on_toasted_homemade_bread_-_Massachusetts.jpg
+    license: CC0
+    license_url: http://creativecommons.org/publicdomain/zero/1.0/deed.en
+    author: Daderot
+  c:卤牛肉配米饭:
+    file: meal-17.jpg
+    name: 卤牛肉配米饭
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9a/Braised_Beef_Shin_Rice_Bowl_-_Tiger_Bites_Pig_2025-09-17.jpg/330px-Braised_Beef_Shin_Rice_Bowl_-_Tiger_Bites_Pig_2025-09-17.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Braised_Beef_Shin_Rice_Bowl_-_Tiger_Bites_Pig_2025-09-17.jpg
+    license: CC0
+    license_url: http://creativecommons.org/publicdomain/zero/1.0/deed.en
+    author: Andy Li
+  c:鸡胸蛋炒饭:
+    file: meal-18.jpg
+    name: 鸡胸蛋炒饭
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/3/30/Fried_rice_with_chicken_and_egg.jpg/330px-Fried_rice_with_chicken_and_egg.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Fried_rice_with_chicken_and_egg.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: daSupremo
+  c:酸奶坚果碗:
+    file: meal-19.jpg
+    name: 酸奶坚果碗
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e1/Liat_Portal_for_Foodie_Disorder_-_Yogurt_Bowl_with_Figs%2C_Nuts%2C_Chia_Seeds%2C_and_Seaweed.jpg/330px-Liat_Portal_for_Foodie_Disorder_-_Yogurt_Bowl_with_Figs%2C_Nuts%2C_Chia_Seeds%2C_and_Seaweed.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Liat_Portal_for_Foodie_Disorder_-_Yogurt_Bowl_with_Figs,_Nuts,_Chia_Seeds,_and_Seaweed.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: HaJunkiyada
+  c:红薯配鸡胸:
+    file: meal-20.jpg
+    name: 红薯配鸡胸
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/5/51/Baked_potato%2C_baked_sweet_potato%2C_and_steamed_kale.jpg/330px-Baked_potato%2C_baked_sweet_potato%2C_and_steamed_kale.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Baked_potato,_baked_sweet_potato,_and_steamed_kale.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: User:O'Dea
+  c:一水肌酸:
+    file: supplement-01.jpg
+    name: 一水肌酸
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/5/58/Creatine_monohydrate_powder.jpg/330px-Creatine_monohydrate_powder.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Creatine_monohydrate_powder.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Awkwafaba
+  c:咖啡因:
+    file: supplement-02.jpg
+    name: 咖啡因
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c5/Roasted_coffee_beans.jpg/330px-Roasted_coffee_beans.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Roasted_coffee_beans.jpg
+    license: Public domain
+    license_url: ''
+    author: MarkSweep
+  c:维生素d:
+    file: supplement-03.jpg
+    name: 维生素 D
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c7/Vitamin_D_pills.jpg/330px-Vitamin_D_pills.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Vitamin_D_pills.jpg
+    license: CC0
+    license_url: http://creativecommons.org/publicdomain/zero/1.0/deed.en
+    author: Mx. Granger
+  c:电解质冲剂:
+    file: supplement-04.jpg
+    name: 电解质冲剂
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6c/Oral_rehydration_salts_-_Packet.jpg/330px-Oral_rehydration_salts_-_Packet.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Oral_rehydration_salts_-_Packet.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Cjp24
+  c:鱼油:
+    file: supplement-05.jpg
+    name: 鱼油
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2c/Omega_3_Fish_oil_softgel_capsules.jpg/330px-Omega_3_Fish_oil_softgel_capsules.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Omega_3_Fish_oil_softgel_capsules.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Gpkp
+  c:镁:
+    file: supplement-06.jpg
+    name: 镁
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/1/19/Magnesium_tablets.jpg/330px-Magnesium_tablets.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Magnesium_tablets.jpg
+    license: CC BY-SA 3.0
+    license_url: https://creativecommons.org/licenses/by-sa/3.0
+    author: Kulmalukko
+  c:β丙氨酸:
+    file: supplement-07.png
+    name: β-丙氨酸
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/3/3c/Beta-Alanine-3D-balls.png/330px-Beta-Alanine-3D-balls.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Beta-Alanine-3D-balls.png
+    license: CC0
+    license_url: http://creativecommons.org/publicdomain/zero/1.0/deed.en
+    author: Jynto
+  c:谷氨酰胺:
+    file: supplement-08.png
+    name: 谷氨酰胺
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/c/cc/Glutamine_%28Gln%29.png/330px-Glutamine_%28Gln%29.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Glutamine_(Gln).png
+    license: CC0
+    license_url: http://creativecommons.org/publicdomain/zero/1.0/deed.en
+    author: Science images
+  c:bcaa:
+    file: supplement-09.png
+    name: BCAA
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/8/87/L-leucine-3D-balls.png/330px-L-leucine-3D-balls.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:L-leucine-3D-balls.png
+    license: Public domain
+    license_url: ''
+    author: Benjah-bmm27
+  c:左旋肉碱:
+    file: supplement-10.jpg
+    name: 左旋肉碱
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f7/L-Carnitine.jpg/330px-L-Carnitine.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:L-Carnitine.jpg
+    license: CC BY 4.0
+    license_url: https://creativecommons.org/licenses/by/4.0
+    author: Fat Photon (Максим Бондаренко)
+  c:分离乳清:
+    file: protein-01.jpg
+    name: 分离乳清
+    source: https://upload.wikimedia.org/wikipedia/commons/7/7c/Prote%C3%ADna_de_suero_de_leche.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled
+    page: https://commons.wikimedia.org/wiki/File:Prote%C3%ADna_de_suero_de_leche.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: tt
+  c:浓缩乳清:
+    file: protein-02.jpg
+    name: 浓缩乳清
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/6/68/User_measures_a_scoop_of_protein_powder_from_a_container_in_a_kitchen.jpg/330px-User_measures_a_scoop_of_protein_powder_from_a_container_in_a_kitchen.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:User_measures_a_scoop_of_protein_powder_from_a_container_in_a_kitchen.jpg
+    license: CC BY 2.0
+    license_url: https://creativecommons.org/licenses/by/2.0
+    author: Shixart1985
+  c:水解乳清:
+    file: protein-03.jpg
+    name: 水解乳清
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c2/Protein_shake.jpg/330px-Protein_shake.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Protein_shake.jpg
+    license: CC BY 3.0
+    license_url: https://creativecommons.org/licenses/by/3.0
+    author: Sandstein
+  c:酪蛋白:
+    file: protein-04.jpg
+    name: 酪蛋白
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/b/bd/Casein.jpg/330px-Casein.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Casein.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Jhon Matthew O. Leron
+  c:大豆分离蛋白:
+    file: protein-05.jpg
+    name: 大豆分离蛋白
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2d/Soja_texturiert.jpg/330px-Soja_texturiert.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Soja_texturiert.jpg
+    license: CC BY-SA 3.0
+    license_url: http://creativecommons.org/licenses/by-sa/3.0/
+    author: Elke Wetzig ( Elya )
+  c:豌豆蛋白:
+    file: protein-06.jpg
+    name: 豌豆蛋白
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b5/Chocolate_Pea_Protein_Powder.jpg/330px-Chocolate_Pea_Protein_Powder.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Chocolate_Pea_Protein_Powder.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Em87128712
+  c:即饮蛋白奶:
+    file: protein-07.jpg
+    name: 即饮蛋白奶
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/7/74/Mixing_a_protein_shake_in_a_kitchen_while_preparing_to_serve_a_drink.jpg/330px-Mixing_a_protein_shake_in_a_kitchen_while_preparing_to_serve_a_drink.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Mixing_a_protein_shake_in_a_kitchen_while_preparing_to_serve_a_drink.jpg
+    license: CC BY 2.0
+    license_url: https://creativecommons.org/licenses/by/2.0
+    author: Shixart1985
+  c:蛋白棒:
+    file: protein-08.jpg
+    name: 蛋白棒
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/5/55/Three_protein_bars.jpg/330px-Three_protein_bars.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Three_protein_bars.jpg
+    license: CC0
+    license_url: http://creativecommons.org/publicdomain/zero/1.0/deed.en
+    author: Mx. Granger
+  c:牛肉蛋白粉:
+    file: protein-09.png
+    name: 牛肉蛋白粉
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ed/Grass-fed_Beef_Bone_Broth_Protein.png/330px-Grass-fed_Beef_Bone_Broth_Protein.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Grass-fed_Beef_Bone_Broth_Protein.png
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Amyvbeth
+  c:可调哑铃:
+    file: gear-01.jpg
+    name: 可调哑铃
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e3/TwoDumbbells.JPG/330px-TwoDumbbells.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:TwoDumbbells.JPG
+    license: CC BY-SA 3.0
+    license_url: http://creativecommons.org/licenses/by-sa/3.0/
+    author: Wikimedia Commons
+  c:弹力带:
+    file: gear-02.jpg
+    name: 弹力带
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/f/fa/Resistance_band.jpg/330px-Resistance_band.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Resistance_band.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Corn cheese
+  c:门框引体向上杆:
+    file: gear-03.jpg
+    name: 门框引体向上杆
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/9/97/Gymnastics_rings_hung_from_a_doorway_pull-up_bar_02.jpg/330px-Gymnastics_rings_hung_from_a_doorway_pull-up_bar_02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Gymnastics_rings_hung_from_a_doorway_pull-up_bar_02.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Buidhe
+  c:壶铃:
+    file: gear-04.jpg
+    name: 壶铃
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d9/Kettlebell_Dead_Snatch_Squat_2_-_Pull.jpg/330px-Kettlebell_Dead_Snatch_Squat_2_-_Pull.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Kettlebell_Dead_Snatch_Squat_2_-_Pull.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Taco fleur
+  c:泡沫轴:
+    file: gear-05.jpg
+    name: 泡沫轴
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/4/41/Hartschaumrolle.jpg/330px-Hartschaumrolle.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Hartschaumrolle.jpg
+    license: CC BY-SA 3.0
+    license_url: https://creativecommons.org/licenses/by-sa/3.0
+    author: Finfit
+  c:跳绳:
+    file: gear-06.jpg
+    name: 跳绳
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/7/77/Ghanaian_kid_%28skipping_rope%29_02.jpg/330px-Ghanaian_kid_%28skipping_rope%29_02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Ghanaian_kid_(skipping_rope)_02.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Pambelle12
+  c:可调卧推凳:
+    file: gear-07.jpg
+    name: 可调卧推凳
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/8/8b/Weight_Bench_set.jpg/330px-Weight_Bench_set.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Weight_Bench_set.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: SAgbley
+  c:瑜伽垫:
+    file: gear-08.jpg
+    name: 瑜伽垫
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f3/Yoga_Mat_Made_of_Carpet_Underlay.jpg/330px-Yoga_Mat_Made_of_Carpet_Underlay.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Yoga_Mat_Made_of_Carpet_Underlay.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Ian Alexander
+  c:举重腰带:
+    file: gear-09.jpg
+    name: 举重腰带
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b2/Alessio_Pavone_squat_European_Championships.jpg/330px-Alessio_Pavone_squat_European_Championships.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Alessio_Pavone_squat_European_Championships.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: FactNoter
+  c:trx悬挂带:
+    file: gear-10.jpg
+    name: TRX 悬挂带
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7b/Www.army.mil_%282573330198%29.jpg/330px-Www.army.mil_%282573330198%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Www.army.mil_(2573330198).jpg
+    license: Public domain
+    license_url: ''
+    author: The U.S. Army
+  c:健腹轮:
+    file: gear-11.jpg
+    name: 健腹轮
+    source: https://thumb.wikimedia.org/wikipedia/commons/thumb/7/76/Dirty_ab_wheel.jpg/330px-Dirty_ab_wheel.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail
+    page: https://commons.wikimedia.org/wiki/File:Dirty_ab_wheel.jpg
+    license: CC BY-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-sa/4.0
+    author: Corn cheese
