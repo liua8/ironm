@@ -290,8 +290,10 @@ function askBox() {
 // 进度环（spec [2026-10-23] §19）：本周按次数，本月按天数（§64）
 function ring(done, planned, label = "本周", unit = "次") {
   const p = planned ? Math.min(1, done / planned) : 0;
-  return h("div", { class: `ring${planned && done >= planned ? " full" : ""}`, style: `--p:${p}`, role: "img", "aria-label": planned ? `${label}完成 ${done} / ${planned} ${unit}` : `${label}还没有计划` },
+  const el = h("div", { class: `ring${planned && done >= planned ? " full" : ""}`, style: `--p:${matchMedia("(prefers-reduced-motion: reduce)").matches ? p : 0}`, role: "img", "aria-label": planned ? `${label}完成 ${done} / ${planned} ${unit}` : `${label}还没有计划` },
     h("div", { class: "ring-in" }, h("b", {}, String(done)), h("span", {}, planned ? `/ ${planned}` : unit), h("small", {}, label)));
+  setTimeout(() => { if (el.style.getPropertyValue("--p") === "0") el.style.setProperty("--p", String(p)); }, 60);  // 打开时从 0 涨上来（§93）
+  return el;
 }
 
 // 打卡成功的庆祝画面：写明本周第几练；点一下或 2.4 秒后自动消失
@@ -306,7 +308,62 @@ async function celebrate() {
   const close = () => el.remove();
   el.addEventListener("click", close);
   document.body.append(el);
+  if (won) confetti();
   setTimeout(close, 2400);
+}
+
+// ---- 完成反馈（spec [2026-10-23] §92）：系统设了减少动态效果时只留文字和静态标记 ----------------------
+const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const e1rm = (w, r) => (w && r && r <= 30 ? (r === 1 ? w : w * (1 + r / 30)) : null);  // 和服务端同一个公式
+const buzz = (p) => { try { if (!calm()) navigator.vibrate?.(p); } catch { /* 不支持振动 */ } };
+
+// 彩带：撒一阵，1.5 秒内结束；颜色取主题里的
+function confetti() {
+  if (calm()) return;
+  const cs = getComputedStyle(document.documentElement);
+  const colors = ["--accent", "--warn", "--ink", "--heat"].map((v) => cs.getPropertyValue(v).trim()).filter(Boolean);
+  const dpr = devicePixelRatio || 1;
+  const c = h("canvas", { class: "confetti", "aria-hidden": "true" });
+  document.body.append(c);
+  const W = (c.width = innerWidth * dpr), H = (c.height = innerHeight * dpr);
+  const g = c.getContext("2d");
+  const bits = Array.from({ length: 90 }, () => ({
+    x: W / 2 + (Math.random() - 0.5) * W * 0.3, y: H * 0.38,
+    vx: (Math.random() - 0.5) * 18 * dpr, vy: (-Math.random() * 16 - 6) * dpr,
+    r: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.4, s: (4 + Math.random() * 5) * dpr,
+    k: colors[Math.floor(Math.random() * colors.length)],
+  }));
+  const t0 = performance.now();
+  const step = (t) => {
+    const p = (t - t0) / 1500;
+    g.clearRect(0, 0, W, H);
+    for (const b of bits) {
+      b.vy += 0.55 * dpr; b.x += b.vx; b.y += b.vy; b.r += b.vr;
+      g.save(); g.translate(b.x, b.y); g.rotate(b.r); g.globalAlpha = Math.max(0, 1 - p); g.fillStyle = b.k;
+      g.fillRect(-b.s / 2, -b.s / 4, b.s, b.s / 2); g.restore();
+    }
+    if (p < 1) requestAnimationFrame(step); else c.remove();
+  };
+  requestAnimationFrame(step);
+}
+
+// 从 0 数到目标，0.9 秒
+function countUp(el, to, fmt = (x) => String(Math.round(x))) {
+  if (calm()) { el.textContent = fmt(to); return; }
+  const t0 = performance.now();
+  const step = (t) => {
+    const p = Math.min(1, (t - t0) / 900);
+    el.textContent = fmt(to * (1 - (1 - p) ** 3));
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// 一句短提示，2.4 秒后消失（破纪录时用）
+function flash(node) {
+  const el = h("div", { class: "flash", role: "status" }, node);
+  document.body.append(el);
+  setTimeout(() => el.remove(), 2400);
 }
 
 // 目标与进度（spec [2026-10-23] §18 需求 6；§65 设定和进度合成一块，放在个人中心）
@@ -325,10 +382,33 @@ function goalBlock() {
     }
     const kg = (v) => (v == null ? "—" : `${num(v)}`);
     const tone = { reached: "good", on_track: "good", ahead: "good", behind: "warn", wrong_way: "warn" }[p.status] || "";
+    if (p.status === "reached") {  // 达到目标（§93）：换成"目标达成"，第一次看到放彩带，服务端记下
+      const days = Math.max(0, Math.floor((Date.now() - new Date(`${g.set_day}T00:00:00`).getTime()) / 86400000));
+      const moved = p.changed != null ? `${p.changed < 0 ? "减了" : "增了"} ${num(Math.abs(p.changed))} 公斤` : "";
+      box.replaceChildren(h("div", { class: "card goal goal-won" },
+        h("div", { class: "done-hero" }, h("div", { class: "cheer-burst" }, icon("check")),
+          h("b", { class: "done-title" }, "目标达成"),
+          h("p", {}, p.start != null ? `从 ${kg(p.start)} 到 ${kg(p.current)} 公斤，${moved}，用了 ${days} 天` : `现在 ${kg(p.current)} 公斤，到目标了`)),
+        h("button", { class: "btn block", type: "button", onclick: () => edit(null) }, "定下一个目标"),
+        h("p", { class: "muted" }, "也可以转为保持：体重在目标上下波动就算保持住了。")));
+      if (p.celebrate) {
+        p.celebrate = false;  // 取消改目标再画一次时不重放
+        confetti(); buzz([40, 60, 40]);
+        api("/iron/api/goal/celebrated", { method: "POST" }).catch(() => {});
+      }
+      return;
+    }
+    const pct = p.percent;
+    const bar = pct != null ? h("div", { class: "goal-bar", role: "img", "aria-label": `完成 ${pct}%` },
+      h("div", { class: "goal-fill", style: `width:${calm() ? pct : 0}%` }),
+      ...[25, 50, 75, 100].map((m) => h("i", { class: `goal-dot${pct >= m ? " on" : ""}`, style: `left:${m}%` }))) : null;
+    if (bar && !calm()) setTimeout(() => { bar.firstChild.style.width = `${pct}%`; }, 60);
     box.replaceChildren(h("div", { class: "card goal" },
       h("div", { class: "goal-head" }, h("b", {}, `目标体重 ${kg(g.value)} 公斤`), h("span", { class: "muted" }, `${fmtDay(g.by)}前`)),
       h("div", { class: "goal-nums" },
         ...[["起点", p.start], ["当前", p.current], ["目标", p.target]].map(([k, v]) => h("div", {}, h("span", { class: "muted" }, k), h("b", {}, kg(v)), h("span", { class: "muted" }, "公斤")))),
+      bar ? h("div", { class: "goal-progress" }, bar,
+        h("p", {}, p.changed ? `已${p.changed < 0 ? "减" : "增"} ${num(Math.abs(p.changed))} 公斤 · ` : "", h("b", {}, `完成 ${pct}%`))) : null,
       p.predicted ? h("p", {}, "预计达成：", h("b", {}, fmtDay(p.predicted))) : null,
       p.message ? h("p", { class: tone ? `tone-${tone}` : "" }, p.message) : null,
       p.missing ? h("p", { class: "muted" }, p.missing) : null,
@@ -797,7 +877,7 @@ async function moves(view) {
         const toggle = () => { if (all) moveOpen.delete(part); else moveOpen.add(part); draw(); };
         return h("section", { class: "move-group" },
           h("div", { class: "move-group-head" }, h("h2", {}, part, h("small", {}, `${mine.length} 个`),
-            MOVE_PARTS.includes(part) ? h("a", { class: "tier-link", href: tierHref(`move:${part}`) }, icon("trophy", "xs"), "夯榜") : null),
+            MOVE_PARTS.includes(part) ? h("a", { class: "tier-link", href: tierHref("move", part) }, icon("trophy", "xs"), "夯榜") : null),
             mine.length > GROUP_SHOW ? h("button", { class: `link${all ? " open" : ""}`, type: "button", "aria-expanded": String(all), onclick: toggle }, all ? "收起" : `全部 ${mine.length} 个`, icon("chevron", "xs")) : null),
           h("div", { class: "move-grid" }, (all ? mine : mine.slice(0, GROUP_SHOW)).map(card)));
       }).filter(Boolean));
@@ -915,7 +995,7 @@ async function food(view) {
   redraw(day);
   view.append(summary, mealEntry(() => today, redraw),
     section("吃了什么", null, record),
-    h("div", { class: "tier-entry" }, h("a", { class: "pill", href: tierHref("food") }, icon("trophy", "xs"), "食物夯榜"), h("a", { class: "pill", href: tierHref("supplement") }, icon("trophy", "xs"), "补剂和蛋白粉夯榜")),
+    h("div", { class: "tier-entry" }, [["fat", "减脂餐榜"], ["gain", "增肌餐榜"], ["supplement", "补剂榜"], ["protein", "蛋白粉榜"]].map(([b, n]) => h("a", { class: "pill", href: tierHref(b) }, icon("trophy", "xs"), n))),
     section("问营养师", null, h("div", { class: "asks" },
       ["早餐怎么吃够蛋白质", "练前练后吃什么", "外卖怎么点更健康", "要不要吃肌酸", "减脂期饿了怎么办"].map((q) => askChip(q)))));
 }
@@ -1117,9 +1197,10 @@ async function presetsBox(redraw) {
 
 // ---- 数据：人体图 → 常看指标 → 每周复盘 → 其余指标 → 导入数据（spec [2026-10-23] §13）-------------------
 // 数据页（spec [2026-10-23] §26）：重要指标在前；目标与计算一组；其余放在更多指标里，有数据才显示
-const IMPORTANT = ["weight", "body_fat", "waist", "resting_hr", "hrv", "sleep", "steps", "active_kcal"];
-const CALC = ["bmi", "bmr", "tdee", "kcal_target", "protein_target"];
-const MORE = ["weight_trend", "blood_pressure", "hrv_sdnn", "hrv_rmssd", "exercise_min", "lean_mass", "vo2max"];
+const IMPORTANT = ["weight", "body_fat", "waist", "resting_hr", "hrv", "sleep", "steps", "active_kcal"];  // 常记的：缺了提示补记录
+const METRIC_ORDER = ["weight", "weight_trend", "body_fat", "waist", "lean_mass", "bmi",
+  "resting_hr", "hrv", "blood_pressure", "vo2max",
+  "steps", "active_kcal", "exercise_min", "sleep", "bmr", "tdee", "kcal_target", "protein_target"];
 const IMPORTANT_NAMES = { weight: "体重", body_fat: "体脂率", waist: "腰围", resting_hr: "静息心率", hrv: "心率变异性", sleep: "睡眠时长", steps: "步数", active_kcal: "活动消耗" };
 // 能自己记的（指标 → 记录的种类）；血压要记收缩压和舒张压两个数
 const MANUAL = { weight: ["weight"], body_fat: ["body_fat"], waist: ["waist"], resting_hr: ["resting_hr"], sleep: ["sleep"], blood_pressure: ["systolic", "diastolic"] };
@@ -1138,20 +1219,17 @@ async function dataPart(view, me) {
   const m = byKey(list);
   view.append(h("div", { class: "fresh" }, icon("info", "xs"),
     list.as_of ? `数据截至 ${md(list.as_of)}${list.stale_days > 1 ? `（${list.stale_days} 天前）` : ""} · 点开任一项看怎么算的、自己记一条` : "还没有同步到健康数据，可以先自己记一条"));
-  const have = IMPORTANT.filter((k) => m[k] && m[k].value != null), lack = IMPORTANT.filter((k) => !have.includes(k));
-  view.append(section("重要指标", null,
-    have.length ? h("div", { class: "tiles" }, have.map((k) => tile(m[k]))) : null,
+  // 所有指标合成一块（§94）：身体成分 → 心肺 → 活动 → 睡眠 → 能量和目标；"还缺几项"只看常记的那几项
+  const have = METRIC_ORDER.filter((k) => m[k] && m[k].value != null), lack = IMPORTANT.filter((k) => !(m[k] && m[k].value != null));
+  view.append(section("身体指标", null,
+    have.length ? h("div", { class: "tiles" }, have.map((k, i) => tile(m[k], { wide: have.length % 2 === 1 && i === have.length - 1 }))) : null,
     lack.length ? pressable(h("div", { class: "card lack-row" },
       h("div", { class: "row-main" }, h("span", { class: "row-title" }, `还缺 ${lack.length} 项`), h("span", { class: "row-sub" }, lack.map((k) => IMPORTANT_NAMES[k]).join("、"))),
       h("span", { class: "row-end" }, "补记录", icon("chevron", "sm"))), () => lackSheet(lack, m)) : null));
   view.append(section("肌肉人体图", h("span", { class: "caption" }, "近 7 天"), muscles ? bodyMap(muscles, brief, me?.sex) : failed(new Error("人体图暂时算不出来"), () => render())));
   if (brief) view.append(section("每周复盘", h("span", { class: "caption" }, `${md(brief.week.from)}–${md(brief.week.to)}`), weekCard(brief.week)));
-  const more = [...CALC, ...MORE].map((k) => m[k]).filter((x) => x && x.value != null);
-  if (more.length) {
-    view.append(h("details", { class: "more-metrics" }, h("summary", {}, "更多指标", icon("chevron", "xs")), metricGroup("", more)));
-  }
   const [catalog, files] = await Promise.all([catalogSection(), filesSection()]);
-  view.append(h("details", { class: "me-more" }, h("summary", {}, "全部指标、导入数据、我的文件", icon("chevron", "xs")),
+  view.append(h("details", { class: "me-more" }, h("summary", {}, "原始记录、导入数据、我的文件", icon("chevron", "xs")),
     h("div", { class: "me-more-body" }, section("导入数据", null, addGrid()), catalog, files)));
 }
 
@@ -1235,24 +1313,19 @@ function readingRow(r, row, refresh, msg) {
   return el;
 }
 
-function metricGroup(title, present) {
-  const have = present.filter((x) => x.value != null);
-  const miss = present.filter((x) => x.value == null);
-  const wide = have.filter((x) => (x.series || []).length > 1);
-  const small = have.filter((x) => (x.series || []).length <= 1);
-  const tiles = [...wide.map((x) => tile(x, { wide: true })), ...small.map((x, i) => tile(x, { wide: small.length % 2 === 1 && i === small.length - 1 }))];
-  return section(title, null,
-    tiles.length ? h("div", { class: "tiles" }, tiles) : null,
-    miss.length ? h("div", { class: "card missing-list" }, h("div", { class: "rows" }, miss.map((x) => h("button", { class: "row-item", type: "button", onclick: () => metricSheet(x) },
-      h("div", { class: "row-main" }, h("span", { class: "row-title" }, x.name), h("span", { class: "row-sub" }, missingHint(x))),
-      h("span", { class: "row-end" }, "暂无", icon("chevron", "sm")))))) : null);
-}
-
 // 人体图（spec [2026-10-23] §57）：openGym 那种平面图（MuscleMap 原图，MIT），正面、背面并排；
 // 图没加载出来时退回按部位分组的列表
 let flatShapes = null;
 const loadFlat = () => (flatShapes ||= fetch("/iron/musclemap-v1.json").then((r) => { if (!r.ok) throw new Error("图没加载出来"); return r.json(); }));
 const NOT_MUSCLE = new Set(["head", "hair", "hands", "feet", "ankles", "knees"]);
+
+// 人体图的五种状态（§94）：颜色和说法都从这里取，图上、选中、列表一致；百分数只在详情里写
+const muscleTone = (m) => (m.state === "sore" ? "sore" : m.tier === "ready" ? (m.last ? "t-ready" : "t-none") : `t-${m.tier}`);
+const muscleWord = (m) => (m.state === "sore" ? "自述酸痛" : m.tier === "high" ? "刚练过" : m.tier === "ready" ? (m.last ? "可以练" : "最近没练") : "恢复中");
+const muscleRow = (m, onPick) => pressable(h("div", { class: "muscle-row" },
+  h("span", { class: "mr-name" }, m.name, m.state === "sore" ? h("em", {}, "酸痛") : null),
+  h("span", { class: "mr-bar" }, h("i", { class: muscleTone(m), style: `width:${m.recovery}%` })),
+  h("span", { class: `mr-sets ${muscleTone(m)}` }, muscleWord(m))), onPick);
 
 function flatBody(mm, pick, sex) {
   const wrap = h("div", { class: "flat-body" }, h("p", { class: "muted" }, "人体图加载中…"));
@@ -1261,24 +1334,29 @@ function flatBody(mm, pick, sex) {
   // 两块肌肉共用一块图（臀、小腿）：先选是哪一块
   const choose = (ms) => {
     if (ms.length === 1) return pick(ms[0]);
-    openSheet("是哪一块？", h("div", { class: "muscle-rows" }, ms.map((m) => pressable(h("div", { class: "muscle-row" },
-      h("span", { class: "mr-name" }, m.name, m.state === "sore" ? h("em", {}, "酸痛") : null),
-      h("span", { class: "mr-bar" }, h("i", { class: `t-${m.tier}`, style: `width:${m.recovery}%` })),
-      h("span", { class: "mr-sets" }, m.tier === "ready" ? "可训练" : `${m.recovery}%`)), () => { closeSheet(); pick(m); }))));
+    openSheet("是哪一块？", h("div", { class: "muscle-rows" }, ms.map((m) => muscleRow(m, () => { closeSheet(); pick(m); }))));
   };
   // 点一下选中（描轮廓、图下出名字），再点同一块或点"查看"才打开（§70）
   const bar = h("div", { class: "mm-pick", hidden: true });
   let chosen = null;
-  const select = (key, ms) => {
+  const select = (key, ms, ev) => {
     if (chosen === key) { choose(ms); return; }
     chosen = key;
     for (const el of wrap.querySelectorAll(".mm.sel")) el.classList.remove("sel");
     for (const el of wrap.querySelectorAll(`.mm[data-key="${key}"]`)) el.classList.add("sel");
     wrap.classList.add("picking");
-    const said = ms.map((m) => (m.state === "sore" ? "自述酸痛" : m.tier === "ready" ? "可训练" : `恢复 ${m.recovery}%`)).join(" / ");
+    const said = ms.map(muscleWord).join(" / ");
     bar.replaceChildren(h("span", {}, h("b", {}, ms.map((m) => m.name).join(" / ")), h("small", {}, said)),
       h("button", { class: "link", type: "button", onclick: () => choose(ms) }, "查看", icon("chevron", "xs")));
     bar.hidden = false;
+    // 点的时候气泡出在手指旁边（§94），不出图的边；键盘选中时留在图下面
+    if (ev && ev.clientX) {
+      const r = wrap.getBoundingClientRect();
+      const half = Math.min(110, r.width / 2);
+      bar.classList.add("bubble");
+      bar.style.left = `${Math.max(half, Math.min(r.width - half, ev.clientX - r.left))}px`;
+      bar.style.top = `${Math.max(56, ev.clientY - r.top)}px`;
+    } else { bar.classList.remove("bubble"); bar.style.left = bar.style.top = ""; }
   };
   const figure = (fig, side) => {
     const [x, y, w, hgt] = fig.viewBox;
@@ -1288,9 +1366,8 @@ function flatBody(mm, pick, sex) {
       const g = s("g", {});
       if (ms.length) {
         const low = ms.reduce((a, m) => (m.recovery < a.recovery ? m : a));  // 共用一块图的按恢复得少的那块
-        const tone = ms.some((m) => m.state === "sore") ? "sore" : `t-${low.tier}`;
-        const said = (m) => (m.state === "sore" ? "自述酸痛" : m.tier === "ready" ? "可训练" : `恢复 ${m.recovery}%`);
-        const label = ms.map((m) => `${m.name}：${said(m)}`).join("；");
+        const tone = ms.some((m) => m.state === "sore") ? "sore" : muscleTone(low);
+        const label = ms.map((m) => `${m.name}：${muscleWord(m)}`).join("；");
         const key = ms.map((m) => m.code).join("+");
         g.setAttribute("class", `mm ${tone}`);
         g.dataset.key = key;
@@ -1298,8 +1375,9 @@ function flatBody(mm, pick, sex) {
         g.setAttribute("role", "button");
         g.setAttribute("aria-label", label);
         const tip = s("title", {}); tip.textContent = label; g.append(tip);
-        g.addEventListener("click", () => select(key, ms));
-        g.addEventListener("focus", () => { if (chosen !== key) select(key, ms); });
+        g.addEventListener("click", (ev) => select(key, ms, ev));
+        // 只有键盘移过来时才在获得焦点时选中；手指、鼠标点的时候焦点先到，不能把这一下算成"再点一次"（§94）
+        g.addEventListener("focus", () => { if (chosen !== key && g.matches(":focus-visible")) select(key, ms); });
         g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(ms); } });
       } else {
         g.setAttribute("class", part.slug === "hair" ? "mm-hair" : NOT_MUSCLE.has(part.slug) ? "mm-base" : "mm-base mm-other");
@@ -1311,7 +1389,7 @@ function flatBody(mm, pick, sex) {
   };
   loadFlat().then((data) => {
     const fig = data.figures[sex === "female" ? "female" : "male"];
-    wrap.replaceChildren(figure(fig.front, "front"), figure(fig.back, "back"), bar);
+    wrap.replaceChildren(h("p", { class: "mm-hint" }, icon("info", "xs"), "点一块肌肉看详情"), figure(fig.front, "front"), figure(fig.back, "back"), bar);
   }).catch(() => wrap.replaceChildren(h("p", { class: "muted" }, "人体图没加载出来，按部位列出："), partList(mm, pick)));
   return wrap;
 }
@@ -1325,111 +1403,339 @@ function partList(mm, pick) {
   }
   return h("div", { class: "part-list" }, parts.map((p) => h("div", { class: "part-group" },
     h("h3", {}, p.name),
-    p.items.map((m) => pressable(h("div", { class: "muscle-row" },
-      h("span", { class: "mr-name" }, m.name, m.state === "sore" ? h("em", {}, "酸痛") : null),
-      h("span", { class: "mr-bar" }, h("i", { class: `t-${m.tier}`, style: `width:${m.recovery}%` })),
-      h("span", { class: "mr-sets" }, m.tier === "ready" ? "可训练" : `${m.recovery}%`)), () => pick(m))))));
+    p.items.map((m) => muscleRow(m, () => pick(m))))));
 }
 
-// ---- 夯拉榜（spec [2026-10-23] §60、§66）：所有人可见，每人一票，按评分排名 ------------------------------
+// ---- 夯榜（spec [2026-10-23] §72）：搜索热点、一次滑一个榜、前 10、榜单页、条目详情和评论 ---------------
+// 地址：#tier 首页；#tier/<榜> 榜单（动作榜 #tier/move/p:<部位>）；#tier/<榜>/i:<条目> 详情
 const MOVE_PARTS = ["胸", "背", "肩", "手臂", "核心", "腿臀"];
-const TIER_CATS = new Set(["supplement", "food", ...MOVE_PARTS.map((p) => `move:${p}`)]);
-const tierHref = (cat, mine = false) => `#tier/${encodeURIComponent(cat)}${mine ? "/mine" : ""}`;
+const tierHref = (board, part = "") => `#tier/${encodeURIComponent(board)}${part ? `/p:${encodeURIComponent(part)}` : ""}`;
+const itemHref = (board, key) => `#tier/${encodeURIComponent(board)}/i:${encodeURIComponent(key)}`;
+let rankTimer = null; // 首页转盘自动换榜；离开页面时停掉
+const rankTiers = (b) => Object.fromEntries((b.tiers || []).map((t) => [t.key, t.name]));
+const tierTag = (b, x) => (x.tier ? h("span", { class: `rk-tag t-${x.tier}` }, rankTiers(b)[x.tier]) : null);
+const trendCls = (t) => (t.startsWith("↑") ? "up" : t.startsWith("↓") ? "down" : t === "新" ? "new" : "");
+const rkNo = (n) => h("span", { class: `rk-no${n && n <= 3 ? ` r${n}` : ""}` }, n ? String(n) : "–");
+const scoreText = (x) => (x.mean != null ? x.mean.toFixed(1) : "—");
+// 配图（§80）：有图用图，没有用这个榜的图标
+const rkPic = (x, ic, cls = "rk-pic") => (x.image ? h("img", { class: cls, src: x.image, alt: "", loading: "lazy" }) : h("span", { class: `${cls} none` }, ic));
+const rkLabel = (x) => h("span", { class: "rk-label" }, h("span", { class: "rk-name" }, x.name, x.tag ? h("em", { class: "rk-kind" }, x.tag) : null),
+  x.desc ? h("small", { class: "rk-desc" }, x.desc) : null);
+
 async function tierPage(view, sub, extra) {
-  const cat = decodeURIComponent(sub || "");
-  const category = TIER_CATS.has(cat) ? cat : "move:胸";
-  const mine = extra === "mine";
-  const kind = category.startsWith("move:") ? "move" : category;
-  const link = (href, name, on) => h("a", { class: `pill${on ? " on" : ""}`, href }, name);
+  let board = decodeURIComponent(sub || "");
+  let rest = extra || "";
+  // §66 的旧地址：#tier/move:胸、#tier/food、#tier/supplement
+  if (board.startsWith("move:")) { rest = `p:${board.slice(5)}`; board = "move"; }
+  if (board === "food") board = "";
+  if (!board) return rankHome(view);
+  if (rest.startsWith("i:")) return rankItem(view, board, rest.slice(2));
+  return rankBoard(view, board, rest.startsWith("p:") ? rest.slice(2) : "");
+}
+
+// 首页：搜索和热搜、转盘（§80 起下面不再放全部榜单）
+async function rankHome(view) {
+  const d = await api("/iron/api/rank");
+  const input = h("input", { type: "search", placeholder: "搜动作、训练计划、健身餐、补剂、器材…", autocomplete: "off", "aria-label": "搜榜单里的条目" });
+  const results = h("div", { class: "rk-results", hidden: true });
+  const ringBox = h("div", { class: "rk-ring-wrap" });
+  let seq = 0;
+  const search = async (q, record) => {
+    const text = q.trim();
+    const mine = ++seq;
+    results.hidden = !text; ringBox.hidden = Boolean(text);
+    if (!text) { results.replaceChildren(); return; }
+    let got;
+    try { got = await api(`/iron/api/rank/search?q=${encodeURIComponent(text)}&record=${record}`); }
+    catch (err) { if (mine === seq) results.replaceChildren(h("p", { class: "rk-none" }, err.message)); return; }
+    if (mine !== seq) return;
+    results.replaceChildren(...(got.items.length ? got.items.map((x) => h("a", { class: "rk-hit", href: itemHref(x.board, x.key) },
+      h("span", { class: "rk-hit-name" }, x.name), tierTag(d, x), h("small", {}, `${x.icon} ${x.board_name}`)))
+      : [h("p", { class: "rk-none" }, `没有找到「${text}」。可以进对应的榜单，点右上角「添加」。`)]));
+  };
+  let typing = 0;
+  input.addEventListener("input", () => { clearTimeout(typing); typing = setTimeout(() => search(input.value, false), 250); });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(typing); search(input.value, true); } });
+  const hot = d.hot.length ? h("div", { class: "rk-hot" }, h("span", { class: "rk-hot-label" }, "热搜"),
+    d.hot.map((x, i) => h("button", { class: "rk-chip", type: "button", onclick: () => { input.value = x.term; search(x.term, true); } },
+      h("b", { class: i < 4 ? "hi" : "" }, String(i + 1)), x.term, x.flag ? h("em", { class: `rk-flag f-${{ 热: "hot", 新: "new", 升: "up" }[x.flag]}` }, x.flag) : null))) : null;
+  ringBox.append(...rankRing(d));
   view.append(
-    h("nav", { class: "seg seg-2", "aria-label": "看哪个榜" },
-      h("a", { href: tierHref(category), class: mine ? "" : "on", "aria-current": mine ? null : "page" }, "社区榜"),
-      h("a", { href: tierHref(category, true), class: mine ? "on" : "", "aria-current": mine ? "page" : null }, "我排的")),
-    h("div", { class: "pills" }, link(tierHref("move:胸", mine), "动作", kind === "move"), link(tierHref("supplement", mine), "补剂和蛋白粉", kind === "supplement"), link(tierHref("food", mine), "食物", kind === "food")),
-    kind === "move" ? h("div", { class: "pills" }, MOVE_PARTS.map((p) => link(tierHref(`move:${p}`, mine), p, category === `move:${p}`))) : null);
-  const box = h("div", { class: "tier-box" });
-  view.append(box);
-  const draw = (b) => box.replaceChildren(tierBoard(b, draw, mine), b.custom ? tierAdd(b, draw) : null);
-  draw(await api(`/iron/api/tier?category=${encodeURIComponent(category)}`));
-  view.append(h("p", { class: "caption", style: "padding:0 2px" }, mine
-    ? "点一个条目投票，放进哪一档就是投哪一档。谁投了什么不公开。"
-    : "用户评分，不代表平台观点。每人一票（夯 5 分 … 拉 1 分），按平均分分档，同一档里票少的排在后面；不到 3 票的在待评。"));
+    h("div", { class: "rk-search" }, icon("search", "sm"), input), hot, results, ringBox,
+    h("p", { class: "caption", style: "padding:0 2px" }, "用户评分，不代表平台观点。每人一票（夯 5 分 … 拉 1 分），不到 3 票的在待评。"));
 }
 
-// 社区榜：五档放平均分落在这一档的条目，不到 3 票的在待评；我排的：五档放我投的票
-function tierBoard(b, draw, mine) {
-  const rows = [...b.tiers.map((t) => [t.key, t.name]), ["", mine ? "还没排" : "待评"]];
-  const tierOf = (x) => (mine ? x.mine : x.tier);
-  const meta = (x) => {
-    if (mine) return null;
-    if (x.tier) return h("small", {}, `${x.mean.toFixed(1)} · ${x.votes}人`);
-    return h("small", {}, x.votes ? `还差 ${b.min_votes - x.votes} 票` : "没人评");
+// 转盘：正面一个榜，两侧露出前后两个；一次滑动只换一个；不碰时每 4.5 秒换下一个，碰过停 6 秒
+function rankRing(d) {
+  const N = d.boards.length;
+  const cards = d.boards.map((b, i) => {
+    const rows = [...b.top, ...b.fill];
+    const first = b.top[0];
+    return h("article", { class: "rk-card", "data-i": String(i), "aria-label": b.name },
+      h("div", { class: "rk-card-head" }, h("span", { class: "rk-ic" }, b.icon),
+        h("div", {}, h("h2", {}, b.name), h("small", {}, b.people ? `本周 · ${b.people} 人参与` : "刚开榜，还没人评")),
+        h("a", { class: "rk-all", href: tierHref(b.board) }, "全部", icon("chevron", "xs"))),
+      h("div", { class: "rk-rows" }, rows.map((x) => [
+        h("a", { class: `rk-row${x.rank ? "" : " wait"}`, href: itemHref(b.board, x.key) },
+          rkNo(x.rank), rkPic(x, b.icon), rkLabel(x),
+          h("span", { class: `rk-tr ${trendCls(x.trend)}` }, x.trend),
+          x.rank ? tierTag(d, x) : h("span", { class: "rk-tag t-wait" }, "待评"),
+          h("span", { class: "rk-sc" }, x.rank ? scoreText(x) : "")),
+        x === first && x.top_comment ? h("div", { class: "rk-quote" }, `“${x.top_comment.text}”`, h("b", {}, ` 👍 ${x.top_comment.likes}`)) : null])));
+  });
+  const ring = h("div", { class: "rk-ring", tabindex: "0", role: "region", "aria-roledescription": "转盘", "aria-label": "各类榜单，左右滑动切换" }, cards);
+  const dots = h("div", { class: "rk-dots" }, d.boards.map((b, i) => h("button", { type: "button", "aria-label": b.name, onclick: () => turn(near(i)) })));
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const mod = (a, n) => ((a % n) + n) % n;
+  let pos = 0, anim = 0, touched = 0, drag = null, moved = false;
+  const near = (i) => { let k = mod(i - pos, N); if (k > N / 2) k -= N; return Math.round(pos + k); };
+  function layout() {
+    const cur = mod(Math.round(pos), N);
+    cards.forEach((c, i) => {
+      let k = mod(i - pos, N); if (k > N / 2) k -= N;
+      const a = Math.abs(k);
+      c.style.transform = `translateX(${k * 64}%) translateZ(${-a * 170}px) rotateY(${-k * 38}deg)`;
+      c.style.opacity = a <= 1 ? "1" : String(Math.max(0, 1 - (a - 1) * 0.9)); // 正面和两侧不透明，免得后面的字透过来
+      c.style.filter = `brightness(${(1 - Math.min(a, 1) * 0.5).toFixed(3)})`;
+      c.style.zIndex = String(100 - Math.round(a * 10));
+      c.style.pointerEvents = a > 1.6 ? "none" : "auto";
+      c.classList.toggle("on", i === cur && a < 0.5);
+      if (c.dataset.on !== String(i === cur)) { // 键盘和读屏只进正面这张；两侧的还能点（点了转过来）
+        c.dataset.on = String(i === cur);
+        c.setAttribute("aria-hidden", String(i !== cur));
+        for (const a of c.querySelectorAll("a")) a.tabIndex = i === cur ? 0 : -1;
+      }
+    });
+    [...dots.children].forEach((x, i) => x.classList.toggle("on", i === cur));
+  }
+  function turn(target, dur = 600) {
+    cancelAnimationFrame(anim);
+    touched = Date.now();
+    const from = pos, start = performance.now();
+    if (reduce) dur = Math.min(dur, 200);
+    const step = (now) => {
+      const k = Math.min(1, (now - start) / dur);
+      pos = from + (target - from) * (1 - (1 - k) ** 3); layout();
+      if (k < 1) anim = requestAnimationFrame(step); else { pos = target; layout(); }
+    };
+    anim = requestAnimationFrame(step);
+  }
+  ring.addEventListener("dragstart", (e) => e.preventDefault());
+  ring.addEventListener("pointerdown", (e) => {
+    cancelAnimationFrame(anim);
+    drag = { x: e.clientX, y: e.clientY, pos: Math.round(pos), w: cards[0].offsetWidth, axis: null, id: e.pointerId };
+    moved = false; touched = Date.now();
+  });
+  ring.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.axis && Math.abs(dx) + Math.abs(dy) > 6) {
+      drag.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      if (drag.axis === "x") ring.setPointerCapture(drag.id);
+    }
+    if (drag.axis !== "x") return;
+    moved = true; pos = drag.pos + Math.max(-1.2, Math.min(1.2, -dx / (drag.w * 0.8))); layout();
+  });
+  const release = () => {
+    if (!drag) return;
+    const was = drag; drag = null;
+    if (moved) { const v = pos - was.pos; turn(was.pos + (Math.abs(v) > 0.15 ? Math.sign(v) : 0)); } // 滑得再远也只换一个
+    else if (pos !== Math.round(pos)) turn(Math.round(pos));
   };
-  return h("div", { class: "tier-board" }, rows.map(([key, name]) => {
-    const items = b.items.filter((x) => tierOf(x) === key);
-    if (!key && !items.length) return null;
-    return h("div", { class: `tier-row${key ? "" : " rest"}` },
-      h("div", { class: `tier-label t-${key || "rest"}` }, name),
-      h("div", { class: "tier-items" }, items.length ? items.map((x) => pressable(h("span", { class: `tier-item${x.mine ? " voted" : ""}`, "aria-label": `${x.name}，点了投票` },
-        x.image ? h("img", { src: x.image, alt: "", loading: "lazy" }) : null, h("span", {}, x.name), meta(x)), () => tierSheet(b, x, draw)))
-        : h("span", { class: "tier-empty" }, "空")));
-  }));
+  ring.addEventListener("pointerup", release);
+  ring.addEventListener("pointercancel", release);
+  ring.addEventListener("click", (e) => {
+    if (moved) { e.preventDefault(); e.stopPropagation(); moved = false; return; }
+    const card = e.target.closest(".rk-card");
+    if (card && !card.classList.contains("on")) { e.preventDefault(); e.stopPropagation(); turn(near(Number(card.dataset.i))); }
+  }, true);
+  ring.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight") turn(Math.round(pos) + 1);
+    if (e.key === "ArrowLeft") turn(Math.round(pos) - 1);
+  });
+  ring.addEventListener("mouseenter", () => { touched = Date.now() + 60000; });
+  ring.addEventListener("mouseleave", () => { touched = Date.now(); });
+  layout();
+  if (rankTimer) clearInterval(rankTimer);
+  if (!reduce && N > 1) rankTimer = setInterval(() => {
+    if (document.hidden || drag || !ring.isConnected || ring.closest("[hidden]") || Date.now() - touched < 6000) return;
+    turn(Math.round(pos) + 1, 800);
+  }, 4500);
+  return [ring, h("div", { class: "rk-ctl" }, dots, h("span", { class: "caption" }, "左右滑，一次换一个榜"))];
 }
 
-// 点一个条目：各档几票、我投在哪，投票、改票、撤回、举报
-function tierSheet(b, x, draw) {
-  const go = async (tier) => {
-    try { draw(await api("/iron/api/tier", { method: "PUT", body: JSON.stringify({ category: b.category, key: x.key, tier }) })); closeSheet(); }
-    catch (err) { alert(err.message); }
+// 两步确认（页面里不弹框）：第一次点按钮变成"确认…"，3 秒内再点才执行
+function twoStep(label, sure, action, cls = "rk-act") {
+  let armed = 0;
+  const b = h("button", { class: cls, type: "button" }, label);
+  b.addEventListener("click", () => {
+    if (Date.now() - armed > 3000) { armed = Date.now(); b.textContent = sure; setTimeout(() => { if (b.isConnected) b.textContent = label; }, 3000); return; }
+    armed = 0; action(b);
+  });
+  return b;
+}
+const rankBar = (back, title, ...right) => h("div", { class: "rk-bar" },
+  h("a", { class: "icon-btn", href: back, "aria-label": "返回" }, icon("back", "sm")), h("h2", {}, title), ...right);
+
+// 榜单页：完整排名、动作榜按部位筛、三种排法、待评、添加
+let rankParts = null;
+const RANK_SORTS = { 综合: null, 评论多: (a, b) => b.comments - a.comments || (b.score || 0) - (a.score || 0), 新上榜: (a, b) => b.added.localeCompare(a.added) };
+async function rankBoard(view, board, part) {
+  const d = await api(`/iron/api/rank/board?board=${encodeURIComponent(board)}${part ? `&part=${encodeURIComponent(part)}` : ""}`);
+  if (d.parts.length) rankParts = d.parts;
+  const ranked = d.items.filter((x) => x.rank);
+  const waiting = d.items.filter((x) => !x.rank).sort((a, b) => b.votes - a.votes);
+  const list = h("div", { class: "rk-list" });
+  const sorts = h("div", { class: "pills" });
+  let sort = "综合";
+  const draw = () => {
+    const by = RANK_SORTS[sort];
+    const rows = sort === "新上榜" ? d.items.filter((x) => x.added).sort(by) : by ? [...ranked].sort(by) : ranked;
+    sorts.replaceChildren(...Object.keys(RANK_SORTS).filter((k) => d.can_add || k !== "新上榜").map((k) => h("button", { class: `pill${k === sort ? " on" : ""}`, type: "button", onclick: () => { sort = k; draw(); } }, k)));
+    list.replaceChildren(...(rows.length ? rows.map((x) => rankLine(d, x)) : [h("p", { class: "rk-none" }, sort === "新上榜" ? "还没有用户添加的条目。" : "还没有上榜的（要 3 个人评过）。下面待评的点进去投一票。")]));
   };
-  const report = async () => {
-    if (!confirm("举报这一条？3 个人举报后会先隐藏，等管理员处理。")) return;
-    try { draw(await api("/iron/api/tier/report", { method: "POST", body: JSON.stringify({ category: b.category, key: x.key }) })); closeSheet(); }
-    catch (err) { alert(err.message); }
-  };
-  const top = Math.max(1, ...Object.values(x.counts));
-  const name = Object.fromEntries(b.tiers.map((t) => [t.key, t.name]));
-  openSheet(x.name,
-    h("p", { class: "muted" }, x.votes ? `平均 ${x.mean.toFixed(1)} 分 · ${x.votes} 人评过${x.votes < b.min_votes ? `，还差 ${b.min_votes - x.votes} 票上榜` : ""}` : "还没人评过，来投第一票"),
-    x.votes ? h("div", { class: "tier-dist" }, b.tiers.map((t) => h("div", { class: "td-row" },
-      h("span", { class: "td-name" }, t.name),
-      h("span", { class: "td-bar" }, h("i", { class: `t-${t.key}`, style: `width:${(x.counts[t.key] / top) * 100}%` })),
-      h("span", { class: "td-n" }, String(x.counts[t.key]))))) : null,
-    h("p", { class: "caption" }, x.mine ? `我投的：${name[x.mine]}` : "我还没投，点一档就是投票："),
-    h("div", { class: "tier-pick" }, b.tiers.map((t) => h("button", { class: `tier-btn t-${t.key}${x.mine === t.key ? " on" : ""}`, type: "button", onclick: () => go(t.key) }, t.name))),
-    x.mine ? h("button", { class: "btn ghost block", type: "button", onclick: () => go("") }, "撤回我的票") : null,
-    b.custom ? h("button", { class: "btn quiet block", type: "button", onclick: report }, "举报这一条") : null);
+  draw();
+  const adder = rankAdd(d);
+  adder.hidden = true;
+  const addBtn = h("button", { class: "btn ghost small", type: "button", onclick: () => { adder.hidden = !adder.hidden; if (!adder.hidden) adder.querySelector("input").focus(); } }, icon("plus", "xs"), "添加");
+  view.append(rankBar("#tier", `${d.icon} ${d.name}`, d.can_add ? addBtn : null), d.can_add ? adder : null,
+    board === "move" ? h("div", { class: "pills" }, h("a", { class: `pill${part ? "" : " on"}`, href: tierHref("move") }, "全部"),
+      (rankParts || MOVE_PARTS).map((p) => h("a", { class: `pill${p === part ? " on" : ""}`, href: tierHref("move", p) }, p))) : null,
+    h("p", { class: "caption" }, `${d.people} 人参与 · ${d.disclaimer}${part ? " 按部位看时名次是这个部位里的，不显示名次变化。" : ""}`),
+    sorts, list,
+    waiting.length ? h("section", { class: "rk-pending" }, h("h3", {}, `待评 ${waiting.length} 个 · 3 个人评过才上榜`),
+      waiting.map((x) => h("a", { href: itemHref(board, x.key) }, rkPic(x, d.icon, "rk-pic sm"), rkLabel(x), h("small", {}, x.votes ? `还差 ${d.min_votes - x.votes} 票` : "没人评")))) : null);
+}
+function rankLine(d, x) {
+  const c = x.top_comment;
+  return h("a", { class: "rk-line", href: itemHref(d.board, x.key) },
+    rkNo(x.rank), rkPic(x, d.icon), rkLabel(x), tierTag(d, x),
+    h("span", { class: "rk-right" }, h("span", { class: "rk-sc" }, scoreText(x)), h("small", { class: `rk-tr ${trendCls(x.trend)}` }, x.trend)),
+    h("span", { class: "rk-meta" }, `${x.votes} 人评过 · ${x.comments} 条评论${c ? ` · “${c.text}”` : ""}`));
 }
 
-// 添加条目（补剂、食物）：同名的用已有的；有相似的先问"是不是这个"，都不是再新建；加好后直接投票
-function tierAdd(b, draw) {
-  const input = h("input", { type: "text", maxlength: "30", placeholder: b.category === "food" ? "加一种食物，比如鸡胸肉" : "加一种，比如乳清蛋白粉、肌酸", "aria-label": "添加" });
+// 添加：同名的直接用已有的；有相似的先问"是不是这个"，都不是再新建；加好后进详情投票
+function rankAdd(d) {
+  const input = h("input", { type: "text", maxlength: "30", placeholder: `加到${d.name}，写通用名字，不写品牌`, "aria-label": "添加条目" });
   const msg = h("p", { class: "error" });
   const ask = h("div", { class: "tier-similar" });
   const add = async (name, force = false) => {
     msg.textContent = ""; ask.replaceChildren();
     try {
-      const r = await api("/iron/api/tier/items", { method: "POST", body: JSON.stringify({ category: b.category, name, force }) });
-      if (r.similar.length) { // 没新建，榜没变：不重画（重画会换掉这张添加卡）
-        ask.replaceChildren(h("p", { class: "caption" }, "榜上已经有相似的，是不是这个？"),
-          h("div", { class: "asks" }, r.similar.map((s) => h("button", { class: "ask-chip", type: "button", onclick: () => { const x = r.items.find((i) => i.key === s.key); if (x) tierSheet(r, x, draw); } }, s.name))),
-          h("button", { class: "btn ghost small", type: "button", onclick: () => add(name, true) }, `都不是，新建「${name.trim()}」`));
-        return;
-      }
-      draw(r);
-      const x = r.items.find((i) => i.key === r.key);
-      if (x) tierSheet(r, x, draw);
+      const r = await api("/iron/api/rank/items", { method: "POST", body: JSON.stringify({ board: d.board, name, force }) });
+      if (r.key) { location.hash = itemHref(d.board, r.key); return; }
+      ask.replaceChildren(h("p", { class: "caption" }, "榜上已经有相似的，是不是这个？"),
+        h("div", { class: "asks" }, r.similar.map((x) => h("a", { class: "ask-chip", href: itemHref(d.board, x.key) }, x.name))),
+        h("button", { class: "btn ghost small", type: "button", onclick: () => add(name, true) }, `都不是，新建「${name.trim()}」`));
     } catch (err) { msg.textContent = err.message; }
   };
   const form = h("form", { class: "tier-add" }, input, h("button", { class: "btn small", type: "submit" }, "添加"));
   form.addEventListener("submit", (e) => { e.preventDefault(); add(input.value); });
-  const wrap = h("div", { class: "card tier-add-card" }, form, msg, ask);
-  if (b.category === "food") {
-    api("/iron/api/tier/food-suggest").then((s) => {
-      if (s.names.length) wrap.append(h("p", { class: "caption" }, `最近 ${s.days} 天常吃的：`), h("div", { class: "asks" }, s.names.map((n) => h("button", { class: "ask-chip", type: "button", onclick: () => add(n) }, n))));
-    }).catch(() => {});
-  }
-  return wrap;
+  return h("div", { class: "card tier-add-card" }, form, h("p", { class: "caption" }, "每人每天最多加 10 个。"), msg, ask);
+}
+
+// 条目详情：平均分、档位、几人评过、名次变化；五档各几票；我的一票；评论
+async function rankItem(view, board, key) {
+  const d = await api(`/iron/api/rank/item?board=${encodeURIComponent(board)}&key=${encodeURIComponent(key)}`);
+  const box = h("div", { class: "rk-item" });
+  let cmSort = "热门";
+  const send = async (path, opts) => {
+    const r = await api(path, opts);
+    if (r && r.item) Object.assign(d, r);
+    else Object.assign(d, await api(`/iron/api/rank/item?board=${encodeURIComponent(board)}&key=${encodeURIComponent(key)}`));
+    draw();
+  };
+  const draw = () => {
+    const x = d.item, names = rankTiers(d);
+    const top = Math.max(1, ...Object.values(x.counts));
+    const msg = h("p", { class: "error" });
+    const vote = (tier) => send("/iron/api/rank/vote", { method: "PUT", body: JSON.stringify({ board, key, tier }) }).catch((err) => { msg.textContent = err.message; });
+    box.replaceChildren(
+      rankBar(tierHref(board), d.name),
+      h("div", { class: "rk-hero" },
+        x.image ? h("img", { class: "rk-hero-pic", src: x.image, alt: x.name }) : null,
+        h("h1", {}, x.name, x.tag ? h("em", { class: "rk-kind" }, x.tag) : null),
+        x.desc ? h("p", { class: "rk-hero-desc" }, x.desc) : null,
+        x.credit ? h("p", { class: "caption rk-credit" }, "图：", x.credit.page ? h("a", { href: x.credit.page, target: "_blank", rel: "noopener" }, x.credit.author || "Wikimedia Commons") : (x.credit.author || "Wikimedia Commons"),
+          ` · ${x.credit.license}`) : null,
+        h("div", { class: "rk-score" }, h("span", { class: "rk-big" }, scoreText(x)), x.tier ? h("span", { class: `rk-tag big t-${x.tier}` }, names[x.tier]) : null,
+          h("small", {}, x.votes >= d.min_votes ? `第 ${x.rank} 名 · ${x.votes} 人评过${x.trend ? ` · 本周 ${x.trend}` : ""}` : x.votes ? `${x.votes} 人评过，还差 ${d.min_votes - x.votes} 票上榜` : "还没人评过，来投第一票"))),
+      x.votes ? h("div", { class: "tier-dist" }, d.tiers.map((t) => h("div", { class: "td-row" },
+        h("span", { class: "td-name" }, t.name),
+        h("span", { class: "td-bar" }, h("i", { class: `t-${t.key}`, style: `width:${(x.counts[t.key] / top) * 100}%` })),
+        h("span", { class: "td-n" }, String(x.counts[t.key]))))) : null,
+      h("div", { class: "card" },
+        h("div", { class: "rk-vote-head" }, h("strong", {}, x.mine ? `我投的：${names[x.mine]}` : "我的一票"),
+          x.mine ? h("button", { class: "rk-act", type: "button", onclick: () => vote("") }, "撤回") : h("small", { class: "muted" }, "夯 5 分 … 拉 1 分")),
+        h("div", { class: "tier-pick" }, d.tiers.map((t) => h("button", { class: `tier-btn t-${t.key}${x.mine === t.key ? " on" : ""}`, type: "button", "aria-pressed": String(x.mine === t.key), onclick: () => vote(t.key) }, t.name))),
+        msg),
+      d.plan ? rankPlan(d.plan) : null,
+      h("p", { class: `rk-disclaim${d.no_claims ? " warn" : ""}` }, d.disclaimer),
+      rankComments(d, board, key, send, cmSort, (s) => { cmSort = s; draw(); }),
+      x.custom ? h("div", { class: "rk-foot" }, twoStep("举报这个条目", "确认举报？3 个人举报后先隐藏", (b) => api("/iron/api/rank/report", { method: "POST", body: JSON.stringify({ board, key }) })
+        .then(() => { b.textContent = "已举报"; b.disabled = true; }).catch((err) => { b.textContent = err.message; }))) : null);
+  };
+  draw();
+  view.append(box);
+}
+
+// 训练计划榜的条目（§80）：每周怎么练（健身房版）、为什么、进阶、减量、来源；按我的情况用 → 进对话由管家改
+function rankPlan(p) {
+  const days = p.days.length > 1 ? `有每周 ${p.days.join("、")} 天几个版本，这里是每周 ${p.sessions.length} 天的健身房版。` : "这里是健身房版。";
+  return h("section", { class: "card rk-plan" },
+    h("h3", {}, "每周怎么练"), h("p", { class: "caption" }, `${days}在家、伤病、时间不够时，管家会按你的情况换动作。`),
+    p.sessions.map((s) => h("div", { class: "rk-plan-day" }, h("b", {}, `${weekdayName(s.day)} · ${s.name}`), h("small", { class: "muted" }, ` 约 ${s.minutes} 分钟`),
+      h("ul", {}, s.items.map((t) => h("li", {}, t))))),
+    h("h3", {}, "为什么这样排"), h("p", {}, p.why),
+    h("h3", {}, "强度和进阶"), h("p", {}, p.intensity), h("p", {}, p.progress), h("p", {}, p.deload),
+    p.differs.length ? [h("h3", {}, "要注意"), h("ul", {}, p.differs.map((t) => h("li", {}, t)))] : null,
+    p.source ? h("p", { class: "caption" }, `参考${p.source.authors.join("、")}的公开计划（`,
+      h("a", { href: p.source.url, target: "_blank", rel: "noopener" }, p.source.secondhand ? "第三方整理" : "原发"),
+      `，${p.source.seen} 查看），不是官方计划。`) : null,
+    h("button", { class: "btn", type: "button", onclick: () => askCoach(p.ask) }, "按我的情况用这个计划"));
+}
+
+// 评论：热门 / 最新；写评论（200 字内）；点赞、举报、删自己的；昵称可改
+function rankComments(d, board, key, send, sort, setSort) {
+  const list = [...d.comments];
+  if (sort === "最新") list.sort((a, b) => b.at.localeCompare(a.at));
+  const text = h("textarea", { maxlength: String(d.comment_max), rows: "2", placeholder: d.no_claims ? "说说用着怎么样（不写疗效）" : "说说你的看法", "aria-label": "写评论" });
+  const count = h("span", { class: "rk-count" }, `0/${d.comment_max}`);
+  const msg = h("p", { class: "error" });
+  text.addEventListener("input", () => { count.textContent = `${[...text.value].length}/${d.comment_max}`; });
+  const form = h("form", { class: "rk-compose" }, text, h("button", { class: "btn small", type: "submit" }, "发送"));
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (!text.value.trim()) return;
+    msg.textContent = "";
+    send("/iron/api/rank/comments", { method: "POST", body: JSON.stringify({ board, key, text: text.value }) }).catch((err) => { msg.textContent = err.message; });
+  });
+  const nick = h("button", { class: "rk-act", type: "button", onclick: () => rankNick(nick) }, d.nick ? `我的昵称：${d.nick}` : "发第一条评论时给你一个随机昵称");
+  return h("section", { class: "rk-comments" },
+    h("div", { class: "rk-cm-head" }, h("h3", {}, `评论 ${d.comments.length}`),
+      h("div", { class: "pills" }, ["热门", "最新"].map((k) => h("button", { class: `pill${k === sort ? " on" : ""}`, type: "button", onclick: () => setSort(k) }, k)))),
+    form, h("div", { class: "rk-cm-sub" }, nick, count), msg,
+    list.length ? list.map((c) => h("div", { class: "rk-cm" },
+      h("div", { class: "rk-who" }, h("b", {}, c.nick), h("small", {}, md(c.at)), c.mine ? h("em", {}, "我") : null),
+      h("p", {}, c.text),
+      h("div", { class: "rk-acts" },
+        h("button", { class: `rk-act${c.liked ? " on" : ""}`, type: "button", "aria-pressed": String(c.liked),
+          onclick: () => send(`/iron/api/rank/comments/${c.id}/like`, { method: "POST", body: JSON.stringify({ on: !c.liked }) }).catch((err) => { msg.textContent = err.message; }) }, `👍 ${c.likes}`),
+        c.mine ? twoStep("删除", "确认删除？", () => send(`/iron/api/rank/comments/${c.id}`, { method: "DELETE" }).catch((err) => { msg.textContent = err.message; }))
+          : twoStep("举报", "确认举报？", (b) => api(`/iron/api/rank/comments/${c.id}/report`, { method: "POST" }).then(() => { b.textContent = "已举报"; b.disabled = true; }).catch((err) => { msg.textContent = err.message; })))))
+      : h("p", { class: "rk-none" }, "还没有评论，说说你的看法。"));
+}
+function rankNick(btn) {
+  const input = h("input", { type: "text", maxlength: "12", placeholder: "2–12 个字", "aria-label": "新昵称" });
+  const msg = h("p", { class: "error" });
+  const form = h("form", { class: "tier-add" }, input, h("button", { class: "btn small", type: "submit" }, "保存"));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try { const r = await api("/iron/api/rank/nick", { method: "PUT", body: JSON.stringify({ nick: input.value }) }); btn.textContent = `我的昵称：${r.nick}`; closeSheet(); }
+    catch (err) { msg.textContent = err.message; }
+  });
+  openSheet("改昵称", h("p", { class: "caption" }, "评论区只显示昵称，不显示账号。"), form, msg);
+  input.focus();
 }
 
 function bodyMap(mm, brief, sex) {
@@ -1453,9 +1759,9 @@ function bodyMap(mm, brief, sex) {
     const aka = [m.formal && `正式名：${m.formal}`, m.says?.length && `也叫：${m.says.join("、")}`].filter(Boolean).join("　");
     openSheet(m.name,
       aka ? h("p", { class: "caption" }, aka) : null,
-      h("div", { class: "sheet-big" }, m.tier === "ready" ? h("span", { class: "v" }, "可训练") : h("span", { class: "v" }, `${m.recovery}%`, h("small", {}, "恢复度"))),
+      h("div", { class: "sheet-big" }, h("span", { class: `v ${muscleTone(m)}` }, muscleWord(m)), m.tier !== "ready" ? h("small", {}, `估算恢复 ${m.recovery}%`) : null),
       h("div", { class: `recover-box ${m.state === "sore" ? "sore" : "ready"}` },
-        h("b", {}, m.state === "sore" ? "自述酸痛：建议酸痛缓解后再训练这块肌肉" : m.tier === "ready" ? "已恢复，可训练" : `恢复 ${m.recovery}%`),
+        h("b", {}, m.state === "sore" ? "自述酸痛：建议酸痛缓解后再训练这块肌肉" : m.tier === "ready" ? "已恢复，可以练" : `${muscleWord(m)}，估算恢复 ${m.recovery}%`),
         h("p", { class: "muted" }, "恢复度是估算，你的感受优先。"),
         h("div", { class: "btn-row" }, m.state === "sore" ? fine : sore)),
       h("div", { class: "kv" }, h("span", {}, "近 7 天"), h("span", {}, `${m.sets_7d} 组`)),
@@ -1470,25 +1776,15 @@ function bodyMap(mm, brief, sex) {
   const rd = brief?.today?.readiness;
   return h("div", { class: "card body-card" },
     flatBody(mm, pick, sex),
-    h("div", { class: "legend" }, h("span", {}, h("i", { class: "t-high" }), "恢复 40% 以下"), h("span", {}, h("i", { class: "t-mid" }), "40–70%"), h("span", {}, h("i", { class: "t-low" }), "70–95%"), h("span", {}, h("i", { class: "t-ready" }), "可训练"), h("span", {}, h("i", { class: "mm-sore" }), "自述酸痛")),
+    h("div", { class: "legend" }, ...[["t-high", "刚练过"], ["t-mid", "恢复中"], ["t-ready", "可以练"], ["t-none", "最近没练"], ["mm-sore", "自述酸痛"]].map(([c, t]) => h("span", {}, h("i", { class: c }), t))),
     rd && (rd.level === "poor" || rd.level === "fair") && rd.reasons?.length ? h("div", { class: "notice-line" }, icon("alert", "xs"), `${rd.reasons[0]}：今天整体恢复偏慢，可以降低强度。`) : null,
     mm.sessions === 0 ? h("p", { class: "muted" }, "最近还没有训练记录：在首页打卡，或在对话里说“今天练了……”就会记下来。") : h("div", { class: "muscle-rows" },
-      top.length ? top.slice(0, 6).map((m) => pressable(h("div", { class: "muscle-row" },
-        h("span", { class: "mr-name" }, m.name, m.state === "sore" ? h("em", {}, "酸痛") : null),
-        h("span", { class: "mr-bar" }, h("i", { class: `t-${m.tier}`, style: `width:${m.recovery}%` })),
-        h("span", { class: "mr-sets" }, m.tier === "ready" ? "可训练" : `${m.recovery}%`)), () => pick(m)))
-        : h("p", { class: "muted" }, "全部肌肉都已恢复，可训练。")),
+      top.length ? top.slice(0, 6).map((m) => muscleRow(m, () => pick(m)))
+        : h("p", { class: "muted" }, "全部肌肉都已恢复，可以练。")),
     untrained.length && mm.sessions ? h("div", { class: "notice-line" }, icon("info", "xs"), `近 7 天没练：${untrained.join("、")}`) : null,
     untrained.length && mm.sessions ? h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`我最近${untrained.join("、")}没怎么练，下次训练怎么补上？`) }, icon("coach", "sm"), "让教练帮我补上") : null,
     h("details", { class: "all-muscles" }, h("summary", {}, `全部 ${mm.muscles.length} 块肌肉`), partList(mm, pick)),
     h("p", { class: "caption" }, mm.note));
-}
-
-function missingHint(m) {
-  const missing = m.missing || [];
-  const how = missing.join("；").match(/（(.+?)）/);
-  if (how) return `${how[1]}后显示`;
-  return missing.length ? `还缺：${missing.join("、")}` : "暂无数据";
 }
 
 // ---- 添加数据：上传报告、随手记一条、导入苹果健康、基因数据、连接设备 ----------------------------
@@ -1577,7 +1873,7 @@ function uploadSheet() {
     try {
       const r = await send("/files/upload?file=true", form, (p) => bar.set(p));
       const n = (r.data || []).length;
-      msg.textContent = r.code === 0 ? `已上传 ${n} 个文件，正在识别，结果会出现在「数据」页的「我的文件」和「全部指标」里。` : `有的文件没有上传成功：${r.msg || ""}`;
+      msg.textContent = r.code === 0 ? `已上传 ${n} 个文件，正在识别，结果会出现在个人中心的「我的文件」和「原始记录」里。` : `有的文件没有上传成功：${r.msg || ""}`;
       picked = []; list.replaceChildren();
       cache.files = null; watchFiles();
     } catch (err) { msg.className = "error"; msg.textContent = err.message; go.disabled = false; }
@@ -1842,7 +2138,7 @@ function fileSheet(f) {
     h("div", {}, h("h3", {}, "删除"), h("p", { class: "caption" }, "删除后，从这份文件识别出的数据也会一起去掉。"), del));
 }
 
-// ---- 全部指标（含报告里识别出的化验值） ----
+// ---- 原始记录（含报告里识别出的化验值，§94 改名） ----
 const LOINC_ZH = {
   "29463-7": "体重", "8302-2": "身高", "39156-5": "BMI", "8480-6": "收缩压", "8462-4": "舒张压",
   "40443-4": "静息心率", "8867-4": "心率", "41950-7": "步数", "80404-7": "心率变异性（SDNN）", "93832-4": "睡眠时长",
@@ -1894,7 +2190,7 @@ async function catalogSection() {
       box.append(all);
     }
   } catch (err) { box.append(h("div", { class: "error" }, err.message)); }
-  return section("全部指标", null, box, h("p", { class: "caption", style: "padding:0 2px" }, "包括从上传的报告里识别出的化验值。"));
+  return section("原始记录", null, box, h("p", { class: "caption", style: "padding:0 2px" }, "同步和导入的每一条数据，包括从上传的报告里识别出的化验值。"));
 }
 function indicatorSheet(r) {
   const name = zhName(r);
@@ -2080,6 +2376,24 @@ function chatPage(view) {
   })();
 }
 
+// 管家复盘的调整（§85）：模型决定的，写着为什么；自动生效的可以"不用这样调"（计划、热量、今天都恢复原来的）
+function reviewExtra(c) {
+  const box = h("div", { class: "cc-extra" });
+  if (c.why) box.append(h("p", { class: "muted" }, c.why));
+  if (c.status === "auto") {
+    const undo = h("button", { class: "btn ghost small", type: "button" }, "不用这样调");
+    undo.addEventListener("click", async () => {
+      undo.disabled = true;
+      try {
+        await api("/iron/api/coach/decide", { method: "POST", body: JSON.stringify({ key: c.key, decision: "undo" }) });
+        box.replaceChildren(h("p", { class: "muted" }, "好的，已经恢复原来的安排。"));
+      } catch (err) { undo.disabled = false; box.append(h("p", { class: "error" }, err.message)); }
+    });
+    box.append(undo);
+  }
+  return box;
+}
+
 // 管家消息（spec [2026-10-23] §26）：上次看过之后的调整和要你确认的调整，放在对话最新的位置，在这里确认或暂不
 let coachInbox = null;
 async function loadInbox() {
@@ -2118,7 +2432,8 @@ function inboxView(r) {
     h("div", { class: "inbox-head" }, icon("coach", "sm"), h("b", {}, "管家"), h("span", { class: "muted" }, "按你最新的数据调整了方案")),
     others.length ? h("ul", { class: "inbox-list" }, others.slice(0, 3).map((c) => h("li", {},
       h("span", { class: `cc-tag ${c.change}` }, INBOX_WORD[c.change] || "调整"),
-      h("div", { class: "cc-main" }, h("span", {}, c.change === "removed" ? `${c.before}（已解除）` : c.after))))) : null,
+      h("div", { class: "cc-main" }, h("span", {}, c.change === "removed" ? `${c.before}（已解除）` : c.after),
+        c.kind === "review" && c.change === "added" ? reviewExtra(c) : null)))) : null,
     r.pending.length ? h("div", { class: "inbox-pending" }, r.pending.map((x) => {
       const row = h("div", { class: "inbox-item" });
       const yes = h("button", { class: "btn small", type: "button" }, x.key === "proposal:diet" ? "确认调整" : "确认，出方案");
@@ -2493,12 +2808,14 @@ async function livePage(view) {
   const skew = Date.now() - new Date(data.now).getTime();  // 手机和服务器的时钟差
   const t0 = new Date(L.started).getTime() + skew;
   let timing = null;  // 正在计时的一组 {i, j, from}
+  let justDone = null;  // 刚点完成的一组：这一次画的时候弹一下（§92）
   let rest = null;    // 组间休息 {i, end}
   let saveT = null;
   const total = h("b", { class: "live-total" }, "0:00");
   const status = h("span", { class: "live-status" });
   const list = h("div", { class: "live-list" });
   const restBar = h("div", { class: "live-rest", hidden: true });
+  const coachNote = h("div", { class: "card live-coach", hidden: true });  // 管家刚说的（§90）
   const sound = h("button", { class: "icon-btn", type: "button", "aria-label": "提示音", onclick: () => { liveSound.on = !liveSound.on; sound.replaceChildren(icon(liveSound.on ? "bell" : "mute", "sm")); } }, icon(liveSound.on ? "bell" : "mute", "sm"));
 
   const save = (now = false) => {
@@ -2522,7 +2839,17 @@ async function livePage(view) {
     if (timing && timing.i === i && timing.j === j) { s.seconds = Math.max(1, Math.round((Date.now() - timing.from) / 1000)); timing = null; }
     s.done = true; s.at = new Date().toISOString();
     rest = { i, end: Date.now() + it.rest * 1000 };
+    // 破纪录：超过以前最好的一组，也超过这次已经做完的（同一次只提示新高的那一下，§92）
+    const e = e1rm(s.weight_kg, s.reps);
+    const bar = Math.max(it.best || 0, ...it.sets.filter((x, k) => x.done && k !== j).map((x) => e1rm(x.weight_kg, x.reps) || 0));
+    if (it.best && e && e > bar + 0.05) {
+      buzz([30, 60, 30]);
+      flash(h("span", {}, icon("trophy", "sm"), h("b", {}, "新纪录 "),
+        `${it.exercise} ${s.weight_kg}×${s.reps}，估算最大重量 ${Math.round(e)} 公斤（以前 ${Math.round(it.best)}）`));
+    } else buzz(15);
+    justDone = { i, j };
     save(true); draw(); tick();
+    justDone = null;
   };
   const toggleTiming = (i, j) => {
     timing = timing && timing.i === i && timing.j === j ? null : { i, j, from: Date.now() };
@@ -2546,14 +2873,18 @@ async function livePage(view) {
       ? [field(s, "seconds", { inputmode: "numeric", min: "1", max: "3600", placeholder: "秒", "aria-label": `第 ${j + 1} 组秒数` }), h("span", { class: "unit" }, "秒")]
       : [field(s, "weight_kg", { inputmode: "decimal", min: "0", max: "500", step: "0.5", placeholder: "公斤", "aria-label": `第 ${j + 1} 组重量` }), h("span", { class: "unit" }, "×"),
         field(s, "reps", { inputmode: "numeric", min: "0", max: "100", placeholder: "次", "aria-label": `第 ${j + 1} 组次数` })];
-    return h("div", { class: `set-row${s.done ? " done" : ""}` },
+    const pop = justDone && justDone.i === i && justDone.j === j;
+    const pr = s.done && it.best && (e1rm(s.weight_kg, s.reps) || 0) > it.best;
+    return h("div", { class: `set-row${s.done ? " done" : ""}${pop ? " pop" : ""}` },
       h("span", { class: "set-n" }, String(j + 1)), ...inputs, it.timed ? null : tbtn,
+      pr ? h("span", { class: "pr-tag" }, "新纪录") : null,
       h("button", { class: "live-done", type: "button", "aria-pressed": String(s.done), "aria-label": s.done ? "取消完成" : "完成这一组", onclick: () => markDone(i, j) }, icon("check", "sm")),
       !s.done && it.sets.length > 1 ? h("button", { class: "live-x", type: "button", "aria-label": "删掉这一组", onclick: () => dropSet(i, j) }, icon("x", "xs")) : h("span", { class: "live-x" }));
   };
-  const card = (it, i) => h("section", { class: "card live-card" },
+  const card = (it, i) => h("section", { class: `card live-card${it.sets.length && it.sets.every((s) => s.done) ? " all-done" : ""}` },
     h("div", { class: "live-head" },
-      h("div", { class: "row-main" }, h("b", {}, it.exercise), it.target ? h("span", { class: "row-sub" }, it.target) : null),
+      h("div", { class: "row-main" }, h("b", {}, it.exercise, it.sets.length && it.sets.every((s) => s.done) ? h("span", { class: "done-mark", "aria-label": "这个动作做完了" }, icon("check", "xs")) : null),
+        it.target ? h("span", { class: "row-sub" }, it.target) : null),
       h("button", { class: "icon-btn", type: "button", "aria-label": "上移", onclick: () => move(i, -1), disabled: i === 0 }, icon("arrowUp", "xs")),
       h("button", { class: "icon-btn", type: "button", "aria-label": "下移", onclick: () => move(i, 1), disabled: i === L.items.length - 1 }, icon("arrowDown", "xs")),
       h("button", { class: "icon-btn", type: "button", "aria-label": "删掉这个动作", onclick: () => dropItem(i) }, icon("x", "xs"))),
@@ -2602,6 +2933,40 @@ async function livePage(view) {
     q.addEventListener("input", show); show();
     openSheet("加动作", q, box);
   };
+  // 跟管家说（§90）：太重、很累、哪里疼……由管家改后面的组
+  const talk = async () => {
+    await save(true);
+    const cur = L.items.findIndex((it) => it.sets.some((s) => !s.done));
+    let pick = cur;
+    const sel = h("select", { "aria-label": "说的是哪个动作" },
+      ...L.items.map((it, i) => h("option", { value: String(i), selected: i === pick }, it.exercise)),
+      h("option", { value: "-1", selected: pick === -1 }, "整次训练"));
+    sel.addEventListener("change", () => { pick = Number(sel.value); });
+    const input = h("input", { type: "text", maxlength: "100", placeholder: "比如：膝盖有点疼、只剩 10 分钟", "aria-label": "跟管家说" });
+    const msg = h("p", { class: "error" });
+    const btns = [];
+    const send = async (said) => {
+      if (!said.trim()) { input.focus(); return; }
+      btns.forEach((b) => { b.disabled = true; });
+      msg.textContent = "管家在想……";
+      try {
+        const r = await api("/iron/api/live/adjust", { method: "POST", body: JSON.stringify({ id: L.id, said: said.trim(), item: pick }) });
+        L.items = r.live.items; draw(); closeSheet();
+        coachNote.hidden = false;
+        coachNote.replaceChildren(h("div", { class: "live-coach-head" }, icon("coach", "sm"), h("b", {}, "管家")), h("p", {}, r.say),
+          r.end ? h("button", { class: "btn small", type: "button", onclick: finish }, "结束训练") : null);
+      } catch (err) { msg.textContent = err.message; btns.forEach((b) => { b.disabled = false; }); }
+    };
+    const quick = ["太重了", "太轻了", "很累", "时间不够了"].map((t) => h("button", { class: "btn ghost small", type: "button", onclick: () => send(t) }, t));
+    const hurt = h("button", { class: "btn ghost small", type: "button", onclick: () => { input.value = "有点疼"; input.focus(); input.setSelectionRange(0, 0); } }, "哪里疼");
+    const go = h("button", { class: "btn small", type: "button", onclick: () => send(input.value) }, "发送");
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") send(input.value); });
+    btns.push(...quick, hurt, go);
+    openSheet("跟管家说", h("div", { class: "sheet-stack" },
+      h("label", {}, "说的是", sel),
+      h("div", { class: "btn-row live-quick" }, ...quick, hurt),
+      h("div", { class: "live-say" }, input, go), msg));
+  };
   const finish = () => {
     const doneSets = L.items.flatMap((it) => it.sets.filter((s) => s.done).map((s) => [it, s]));
     const vol = doneSets.reduce((n, [it, s]) => n + (it.timed ? 0 : (s.weight_kg || 0) * (s.reps || 0)), 0);
@@ -2625,9 +2990,30 @@ async function livePage(view) {
           const r = await api("/iron/api/live/finish", { method: "POST", body: JSON.stringify({ rpe }) });
           liveNow = null; cache.metrics = null;
           const line = r.workout?.line || "";
-          body.replaceChildren(h("div", { class: "empty" }, icon("check"), "已保存这次训练"), h("p", {}, line),
+          // 练完的卡（§92）：完成动效、数字数上来、破纪录、本周进度环涨上去，刚好达成本周目标时放彩带
+          const c = r.workout?.celebrate || {}, wk = c.week || {}, prs = c.prs || [];
+          const won = Boolean(wk.reached_now);
+          const nums = [["总时长", r.summary.minutes || 0, " 分钟"], ["组数", doneSets.length, " 组"], ["总训练量", Math.round(vol), " 公斤"]];
+          const cells = nums.map(([k, v, u]) => { const b = h("b", {}, calm() ? String(v) : "0"); return { el: h("div", {}, h("span", { class: "muted" }, k), h("span", {}, b, h("small", { class: "muted" }, u))), b, v }; });
+          const rg = wk.planned ? ring(wk.before ?? wk.done, wk.planned) : null;
+          body.replaceChildren(
+            h("div", { class: "done-hero" }, h("div", { class: "cheer-burst" }, icon("check")),
+              h("b", { class: "done-title" }, won ? "本周目标达成" : prs.length ? "破纪录了" : "练完了"),
+              h("p", { class: "muted" }, line)),
+            h("div", { class: "live-sum done-sum" }, ...cells.map((x) => x.el)),
+            prs.length ? h("div", { class: "pr-list" }, ...prs.map((p) => h("div", { class: "pr-item" }, icon("trophy", "sm"),
+              h("div", {}, h("b", {}, `${p.exercise} ${p.weight_kg}×${p.reps}`), h("small", { class: "muted" }, `估算最大重量 ${Math.round(p.e1rm)} 公斤，以前 ${Math.round(p.before)}`))))) : null,
+            rg ? h("div", { class: "done-week" }, rg, h("p", {}, won ? "这一练让本周目标刚好达成！" : wk.done >= wk.planned ? "本周目标已经达成，这一练是额外加分。" : `本周第 ${wk.done} 练，还差 ${wk.planned - wk.done} 练。`)) : null,
             h("button", { class: "btn ghost block", type: "button", onclick: () => askCoach(`我刚练完：${line}，总时长 ${r.summary.minutes} 分钟${rpe ? `，感受 ${rpe} 分` : ""}。这次练得怎么样？下次要怎么调？`) }, icon("coach", "sm"), "问问教练"),
             h("a", { class: "btn block", href: "#home", onclick: closeSheet }, "回首页"));
+          cells.forEach((x) => countUp(x.b, x.v));
+          if (rg) setTimeout(() => {
+            rg.style.setProperty("--p", String(Math.min(1, wk.done / wk.planned)));
+            rg.querySelector("b").textContent = String(wk.done);
+            if (wk.done >= wk.planned) rg.classList.add("full");
+          }, calm() ? 0 : 350);
+          buzz(won || prs.length ? [40, 60, 40] : 25);
+          if (won || prs.length) confetti();
         } catch (err) { msg.textContent = err.message; }
       } }, doneSets.length ? "保存这次训练" : "还没有完成的组"),
       h("button", { class: "link danger-link", type: "button", onclick: () => { sure.hidden = false; } }, "放弃本次"), sure);
@@ -2638,8 +3024,10 @@ async function livePage(view) {
     h("div", { class: "chat-bar live-bar" }, back,
       h("div", { class: "who" }, h("span", {}, L.session ? `训练中 · ${L.session}` : "训练中"), total),
       sound, h("button", { class: "btn small", type: "button", onclick: finish }, "结束")),
-    status, list,
-    h("button", { class: "btn ghost block", type: "button", onclick: addMove }, icon("plus", "sm"), "加动作"),
+    status, coachNote, list,
+    h("div", { class: "btn-row live-actions" },
+      h("button", { class: "btn ghost", type: "button", onclick: addMove }, icon("plus", "sm"), "加动作"),
+      h("button", { class: "btn ghost", type: "button", onclick: talk }, icon("coach", "sm"), "跟管家说")),
     restBar));
   draw(); tick();
   liveTick = setInterval(tick, 500);
@@ -2652,7 +3040,7 @@ const PAGES = {
   chat: { title: "教练", full: true, render: chatPage },
   live: { title: "训练中", full: true, render: livePage },
   food: { title: "饮食", render: food, skeleton: [180, 220, 150] },
-  tier: { title: "夯拉榜", render: tierPage, skeleton: [44, 40, 520] },
+  tier: { title: "夯榜", render: tierPage, skeleton: [44, 40, 520] },
   me: { title: "个人中心", render: me, skeleton: [120, 200, 320] },
 };
 const WITH_COACH = new Set(["moves", "food", "tier", "me"]); // 右下角悬浮"教练"按钮（§59 需求 3、§65）
@@ -2660,6 +3048,7 @@ let renderSeq = 0;
 
 async function render() {
   closeSheet();
+  if (rankTimer) { clearInterval(rankTimer); rankTimer = null; }
   if (liveTick) { clearInterval(liveTick); liveTick = null; }  // 离开训练页：停掉计时（训练本身存在服务端，回来接着计）
   const seq = ++renderSeq;
   const view = $("view");
