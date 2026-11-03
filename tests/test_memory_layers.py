@@ -38,14 +38,14 @@ def item(i: str, cat: str, text: str, day: date = TODAY, status: str = "active",
 def test_profile_lines_carry_date_and_source_and_mark_guesses() -> None:
     lay = layers([
         item("a", "equipment", "家里可调哑铃，最重 20 公斤", date(2026, 10, 22)),
-        item("b", "injury", "左膝半月板旧伤", date(2026, 10, 23), status="pending"),
+        item("b", "injury", "左膝半月板旧伤", TODAY - timedelta(days=2), status="pending"),
         item("c", "injury", "右肩撞击", date(2026, 9, 1), status="resolved"),
         item("d", "equipment", "家里一对哑铃", date(2026, 10, 1), status="superseded"),
         item("e", "goal", "减脂到 65 公斤", date(2026, 10, 26)),
     ], TODAY)  # fmt: skip
     text = "\n".join(lay.profile)
     assert "目标：减脂到 65 公斤（10月26日，你说的）" in text
-    assert "伤病与身体状况：左膝半月板旧伤？（10月23日，推测的）" in text
+    assert "伤病与身体状况：左膝半月板旧伤？（10月27日，推测的）" in text
     assert "伤病与身体状况（已好）：右肩撞击" in text
     assert "家里一对哑铃" not in text  # 被取代的不带
     assert lay.profile[0].startswith("m1｜目标")  # 目标排第一，带编号能更新

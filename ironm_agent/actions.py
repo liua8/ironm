@@ -234,6 +234,8 @@ REMEMBER_SCHEMA: dict[str, Any] = {
             "short 的（今天累、这周出差）系统记成近期的事，until：\"这周\"写周日、\"这两天\"写明天，看不出写 7 天后。"
             "长期的情况变了 update 那一条；他说好了、结束了、取消了，resolve 还在生效的近况和跟进，不新增\"已结束\"。"
             "答应回访、他要你提醒的记 followup；\"该问的、到期的跟进\"里你提了或他答了，用编号 resolve。"
+            "画像里推测的（带？）他说对了、或长期的情况他说还是这样，按编号 confirm（quote 写他的原话，content 不写）；"
+            "推测的他说不对，resolve 那条。"
             "系统先按规则核一遍，没通过的会告诉你原因；回答写完后再核对才写入。"
         ),
         "parameters": {
@@ -245,7 +247,7 @@ REMEMBER_SCHEMA: dict[str, Any] = {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "op": {"type": "string", "enum": ["add", "update", "resolve"]},
+                            "op": {"type": "string", "enum": ["add", "update", "resolve", "confirm"]},
                             "target": {"type": "string", "description": "已有记忆编号（add 不写）"},
                             "category": {"type": "string", "enum": _CATEGORIES},
                             "content": {"type": "string", "description": "一句话≤40字，留部位左右重量时间"},

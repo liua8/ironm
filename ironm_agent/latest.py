@@ -49,6 +49,8 @@ def keys(item: Item) -> frozenset[str]:
     from ironm_agent.memory_extract import _EVENT_KINDS
 
     c, text = item.category, item.content
+    if c == "followup" and item.evidence.startswith("auto:"):  # 系统生成的该问的：各是各的，不顶掉近况（复核 11-03）
+        return frozenset({item.evidence})
     if item.key:  # 伤病、特殊情况有字段（§148）：按部位+左右、按代码算同一件事
         return _fact_keys(item)
     if c in _ONE:
@@ -75,13 +77,18 @@ def keys(item: Item) -> frozenset[str]:
 
 
 def shadowed(items: Iterable[Item]) -> set[str]:
-    """被同一件事更近的一条替换掉的记忆编号（被取代的不算在内）。"""
+    """被同一件事更近的一条替换掉的记忆编号（被取代的不算在内）。
+    推测的（待确认）不顶掉他说过的：两条都留着，推测的带"？"等他确认（§154 复核）。"""
     rows = sorted((x for x in items if x.status != "superseded"), key=lambda x: x.created)
     newest: dict[str, Item] = {}
+    firm: dict[str, Item] = {}  # 不算推测的，最近的那条
     for x in rows:
         for k in keys(x):
             newest[k] = x
-    return {x.id for x in rows if any(newest[k] is not x for k in keys(x))}
+            if x.status != "pending":
+                firm[k] = x
+    return {x.id for x in rows
+            if any((newest if x.status == "pending" else firm)[k] is not x for k in keys(x))}  # fmt: skip
 
 
 def current(items: Iterable[Item]) -> list[Item]:

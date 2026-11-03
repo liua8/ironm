@@ -1040,7 +1040,10 @@ class IronMAgent:
                 llm = TurnLLM(self._models, self._environ)
                 out = await extract(llm, items, text, answer, context, held)
                 await store.apply(user_id, out.changes)
-            await self._illness_from_memory(user_id, out.changes)
+            # 推测的说对了换成的那条，推测时已经看过一次生病，不再算（复核 11-03）
+            await self._illness_from_memory(
+                user_id, [c for c in out.changes if c.item is None or c.item.id not in out.confirmed]
+            )
         except Exception as e:  # 提取失败不影响已经发出的回答
             _log.warning("memory extraction failed: error_type=%s", type(e).__name__)
             return
@@ -2167,13 +2170,14 @@ class IronMAgent:
             room = MEMORY_CAP - len(desk.memory)
             if room <= 0:
                 return Outcome(False, f"这一轮已经交了 {MEMORY_CAP} 条，够了，不用再交。", "memory")
-            kept, why = [], []
+            kept, why, again = [], [], 0
             for op in ops[:room]:
                 ok, bad = validate({"ops": [op]}, known or {}, text, "", today=today)
                 target = (known or {}).get(str(op.get("target") or ""))
                 cat = str(op.get("category") or getattr(target, "category", ""))
                 if ok or cat == "followup":  # 跟进（含按编号结束的）原话可能在回答里：先收下
                     kept.append(op)
+                    again += op.get("op") == "add" and all(o.op == "confirm" for o in ok) and bool(ok)
                 elif bad:
                     why += bad[:1]
             if not kept and not why:  # 已经记着的：validate 静默跳过（复核 11-03）
@@ -2184,6 +2188,9 @@ class IronMAgent:
             back = f"没记：{'；'.join(dict.fromkeys(why))}。改了再交，或者不记。" if why else ""
             if not kept:
                 return Outcome(False, back, "memory")
+            if again == len(kept):  # 原样又说了一遍：算他确认了那条（§154）
+                return Outcome(True, "这些已经记着了，算他又确认了一次（更新日期改成今天），不用再交。",
+                               kind="memory", what="memory")  # fmt: skip
             return Outcome(
                 True,
                 f"收到 {len(kept)} 条，回答写完后核对写入。{back}",

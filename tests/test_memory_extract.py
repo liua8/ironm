@@ -97,7 +97,7 @@ def test_inferred_items_wait_for_confirmation() -> None:
 def test_same_fact_is_not_added_twice() -> None:
     again = op(category="equipment", content="家里有一对哑铃", quote="一对哑铃")
     ops, rejected = check([again, again], "我家里有一对哑铃", items=[BELLS])
-    assert ops == [] and rejected == []
+    assert [(o.op, o.target) for o in ops] == [("confirm", BELLS)] and rejected == []  # 又说了一遍：确认（§154）
 
 
 def test_same_item_cannot_be_changed_twice_in_one_turn() -> None:

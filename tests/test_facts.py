@@ -90,7 +90,9 @@ def test_same_key_updates_the_old_one_and_same_words_are_skipped() -> None:
     assert ch[0].kind == "status" and ch[0].id == "i1" and ch[1].item is not None
     assert ch[1].item.key == "injury:joint.knee:左" and ch[1].item.supersedes == "i1"
     same = {"op": "add", "category": "injury", "content": "左膝疼", "quote": "左膝疼"}
-    assert validate({"ops": [same]}, known, "我左膝疼", "", today=TODAY) == ([], [])  # 已经记着了
+    [again], bad = validate({"ops": [same]}, known, "我左膝疼", "", today=TODAY)
+    assert not bad and again.op == "confirm" and again.target is old  # 已经记着了：算又确认了一次（§154）
+    assert changes_of([again], T0) == [Change("status", id="i1", status="active")]
 
 
 def test_side_not_said_is_a_guess() -> None:

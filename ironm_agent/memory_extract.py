@@ -58,14 +58,14 @@ _PROMPT = """你负责替健身教练团队记住"这个用户本人"的情况�
 1. 只记用户明确说的、关于他本人的情况。不记：打招呼和闲聊；一般知识提问（问"肌酸怎么吃"不代表他在吃）；别人的情况（"我爸有高血压"是他爸的事）；假设（"如果我膝盖疼怎么办"不代表他膝盖疼）；否定的说法不能记成有（"没有伤病"不能记出任何伤病）；问句里带出的事不等于他有这件事（"肌酐含量高了怎么办""今天不是周一吗"不能记成他肌酐高、今天练什么），问句里顺带说了自己的近况（"我吃了布洛芬能练吗"）可以记那部分。
 2. content 是一句简短的陈述，不超过 40 字，保留原话里的具体信息：部位和左右、重量、时间、次数、程度、原因；不加原话里没有的推测和判断（如"未痊愈""没有就医""需要注意"）。数字照原话写，不换算。只写他说了的：教练这一轮怎么安排、建议了什么不写进他的记忆（关键决定记成 advice），也不写"还没说""没问"这类旁白。一句话里说了几类事（目标和器械）分开记。
 3. quote 是从用户这一轮的话里一字不差摘出的一段，能支撑这条记忆；advice 的 quote 从教练这一轮的回答里一字不差地摘。
-4. 和已有记忆是同一件事的新情况，用 update，target 写那条记忆的编号，content 写合并后的完整新说法（如原来"家里有一对哑铃"，现在说"最重的是 15 公斤"，更新成"家里有一对哑铃，最重 15 公斤"；目标、可练时间、伤病情况变了也用 update）。已经好了、不再适用的，用 resolve，target 写编号，content 写现在的情况；他说好了、结束了、取消了（"身体好了""不出差了"），把还在生效的那几条近况和待跟进都 resolve，不新增"已结束"。改了以前给过的建议（同一件事给了新的量），用 update 指向那条建议。新的、不同的事用 add（新买的器械是另一件器械，用 add，原来的保留）。
+4. 和已有记忆是同一件事的新情况，用 update，target 写那条记忆的编号，content 写合并后的完整新说法（如原来"家里有一对哑铃"，现在说"最重的是 15 公斤"，更新成"家里有一对哑铃，最重 15 公斤"；目标、可练时间、伤病情况变了也用 update）。已经好了、不再适用的，用 resolve，target 写编号，content 写现在的情况；他说好了、结束了、取消了（"身体好了""不出差了"），把还在生效的那几条近况和待跟进都 resolve，不新增"已结束"。改了以前给过的建议（同一件事给了新的量），用 update 指向那条建议。他说已有的长期情况还是这样、推测的（待确认）那条说对了，用 confirm，target 写编号，content 不写；推测的说不对，resolve 那条。新的、不同的事用 add（新买的器械是另一件器械，用 add，原来的保留）。
 5. inferred 只在内容是你根据他的话推测出来、他并没有直接说的时候写 true。能不推测就不推测。
 6. 每条写 lasting：long（以后一直要照顾到：习惯、伤病、器械、目标、水平）或 short（只关于某一天、这几天：这顿吃了什么、今天练了什么、今天累、这周出差）；short 的系统记成 event。一顿饭吃了什么、一次训练练了什么不记（饮食记录、训练记录里有）。明显是临时的变化（"这两周出差""下周旅游""最近加班"）记成 event，不要 update 或 resolve 原来的器械、时间和目标；长期的变化（"我换健身房了""现在每天只有半小时"）才 update 原来那条。
 7. 没有要记的，输出空列表。
 
 8. event 写 until（到哪天为止，YYYY-MM-DD，含这天），按今天的日期算："这周"写这周日，"这两天"写明天，"这几天"写 3 天后，"下周"写下周日，说了具体日子照写；实在看不出写 7 天后。
 
-只输出 JSON：{"ops": [{"op": "add|update|resolve", "target": "已有记忆的编号（add 不写）", "category": "...", "content": "...", "quote": "...", "inferred": false, "lasting": "long|short", "until": "event 才写"}]}"""
+只输出 JSON：{"ops": [{"op": "add|update|resolve|confirm", "target": "已有记忆的编号（add 不写）", "category": "...", "content": "...", "quote": "...", "inferred": false, "lasting": "long|short", "until": "event 才写"}]}"""
 
 UNTIL_DAYS = 60  # 近况最多记多少天
 
@@ -119,7 +119,7 @@ def digits(text: str, *, chinese: bool = False) -> set[str]:
 
 @dataclass(frozen=True)
 class Op:
-    op: Literal["add", "update", "resolve"]
+    op: Literal["add", "update", "resolve", "confirm"]
     category: Category
     content: str
     quote: str
@@ -134,6 +134,7 @@ class Op:
 class Extraction:
     changes: list[Change] = field(default_factory=list)
     rejected: list[str] = field(default_factory=list)  # 被拒的原因（不含记忆内容，可以进日志）
+    confirmed: set[str] = field(default_factory=set)  # 推测的说对了、换成的新条目（不再当新说的事）
     failed: str = ""  # 模型没能给出结果的原因
 
 
@@ -170,6 +171,46 @@ def messages_for(
     ]
 
 
+def _confirm(
+    raw: Mapping[str, Any], items: Mapping[str, Item], user_text: str, held: str
+) -> tuple[Op | None, str]:
+    """确认一条画像记忆（§154）：要按编号指向还在用的那条，原话是他说的；内容和字段照旧。"""
+    target = items.get(str(raw.get("target") or ""))
+    if target is None or target.status not in ("active", "pending") or target.category not in _PROFILE:
+        return None, "确认的目标不存在，或不是还在用的画像记忆"
+    quote = str(raw.get("quote") or "").strip()
+    q, said = norm(quote), norm(f"{user_text}\n{held}")  # 标点、全半角不同也算同一句（复核 11-03）
+    if len(q) < 2 or q not in said:
+        return None, "原话片段在原文里找不到"
+    if all(i > 0 and said[i - 1] in "不没别" for i in _find_all(said, q)):  # "不对"里的"对"（复核 11-03）
+        return None, "他说的是不对"
+    content, data = target.content, dict(target.data)
+    if target.status == "pending":  # 推测的说对了：同一件事他说过的那条，内容和字段一起带上，不被顶掉（复核 11-03）
+        from ironm_agent.latest import keys
+
+        mine = keys(target)
+        firm = max((x for x in items.values() if x.status == "active" and x.id != target.id
+                    and x.category == target.category and keys(x) & mine),
+                   key=lambda x: x.created, default=None)  # fmt: skip
+        if firm is not None:
+            if norm(firm.content) not in norm(content) and len(content) + len(firm.content) < MAX_CONTENT:
+                content = f"{content}，{firm.content}"
+            data = {**firm.data, **target.data}
+            for name in ("triggers", "avoid", "codes", "gear", "custom", "days"):
+                both = [*firm.data.get(name, []), *target.data.get(name, [])]
+                if both:
+                    data[name] = list(dict.fromkeys(both))
+    return Op("confirm", target.category, content, quote, target, data=data, key=target.key or ""), ""
+
+
+def _find_all(text: str, part: str) -> list[int]:
+    out, i = [], text.find(part)
+    while i >= 0:
+        out.append(i)
+        i = text.find(part, i + 1)
+    return out
+
+
 def _problem(
     raw: Mapping[str, Any],
     items: Mapping[str, Item],
@@ -179,6 +220,8 @@ def _problem(
     today: date | None = None,
 ) -> tuple[Op | None, str]:
     kind = raw.get("op")
+    if kind == "confirm":  # 他说还是这样、推测的说对了：确认那一条（§154）
+        return _confirm(raw, items, user_text, held)
     if kind not in ("add", "update", "resolve"):
         return None, "未知的操作"
     target = None
@@ -292,7 +335,7 @@ def _problem(
             data["since"] = (today or date.today()).isoformat()
         key = key_of(category, data)  # 沿用了原来的字段（每周几次、左右）：键按最后的字段算（§150）
     content = absolute(content, today or date.today())  # "今天"写成日期（§103），数字核对在这之前
-    op = Op(cast(Literal["add", "update", "resolve"], kind), cast(Category, category), content,
+    op = Op(cast(Literal["add", "update", "resolve", "confirm"], kind), cast(Category, category), content,
             quote, target, inferred, until, data, key)  # fmt: skip
     return op, ""
 
@@ -449,11 +492,10 @@ def validate(
         if op is None:
             rejected.append(problem)
             continue
-        twin = next(
-            (i for i, o in enumerate(ops) if op.key and o.key == op.key and o.op != "resolve"), None
-        )
+        twin = next((i for i, o in enumerate(ops)
+                     if op.key and o.key == op.key and o.op not in ("resolve", "confirm")), None)  # fmt: skip
         if (
-            twin is not None and op.op != "resolve"
+            twin is not None and op.op not in ("resolve", "confirm")
         ):  # 同一轮同一件事交了两条：合成一条（复核 11-03）
             first = ops[twin]
             if first.target is not None and op.target is not None and first.target is not op.target:
@@ -472,7 +514,7 @@ def validate(
             ops[twin] = replace(keep, op="update" if target is not None else "add", target=target,
                                 data=merged, inferred=first.inferred and op.inferred)  # fmt: skip
             continue
-        if op.target is not None:
+        if op.target is not None and op.op != "confirm":  # 确认不占这一条：同一轮还能接着改（复核 11-03）
             if op.target.id in touched:
                 rejected.append("同一条记忆改了两次")
                 continue
@@ -482,6 +524,12 @@ def validate(
         if op.op == "add" and any(
             c == op.category and norm(t) == norm(op.content) for c, t in seen
         ):
+            same = next((x for x in items.values() if x.category == op.category and x.category in _PROFILE
+                         and x.status in ("active", "pending") and norm(x.content) == norm(op.content)
+                         and x.id not in touched), None)  # fmt: skip
+            if same is not None and not op.inferred:  # 原样又说了一遍：算确认那一条（§154）
+                ops.append(Op("confirm", same.category, same.content, op.quote, same,
+                              data=dict(same.data), key=same.key))  # fmt: skip
             continue  # 已经记着了，不重复
         if (
             op.op == "add"
@@ -504,7 +552,16 @@ def validate(
                     ops.append(Op("resolve", x.category, op.content, op.quote, x))
             continue
         ops += _one_per_code(op, items, touched)
-    return ops[:MAX_OPS], rejected
+    changed = {o.target.id for o in ops if o.target is not None and o.op != "confirm"}
+    kept: list[Op] = []
+    for o in ops:  # 同一条这一轮已经改了、结束了，或确认了两次：确认不再另算
+        if o.op == "confirm" and o.target is not None:
+            if o.target.id in changed:
+                continue
+            changed.add(o.target.id)
+        kept.append(o)
+    kept.sort(key=lambda o: o.op == "confirm")  # 确认排在最后：超过上限时先丢确认，不丢新说的（复核 11-03）
+    return kept[:MAX_OPS], rejected
 
 
 def _one_per_code(op: Op, items: Mapping[str, Item], touched: set[str]) -> list[Op]:
@@ -538,10 +595,17 @@ def changes_of(ops: Sequence[Op], at: datetime | None = None) -> list[Change]:
     at = at or now()
     out: list[Change] = []
     for op in ops:
+        if op.target is not None and op.op == "confirm" and op.target.status != "pending":
+            out.append(Change("status", id=op.target.id, status="active"))  # 还是这样：更新日期改成今天（§154）
+            continue
+        if (op.target is not None and op.op == "resolve" and op.target.status == "pending"
+                and op.category in _PROFILE):  # fmt: skip
+            out.append(Change("status", id=op.target.id, status="superseded"))  # 推测的说不对：作废
+            continue
         origin: Origin = (
             "advice" if op.category == "advice" else ("inferred" if op.inferred else "said")
         )
-        status: Status = (
+        status: Status = (  # 推测的他说对了：记成他说的，原话换成他这句（§154）
             "resolved" if op.op == "resolve" else ("pending" if op.inferred else "active")
         )
         if op.target is not None:
@@ -573,7 +637,10 @@ async def extract(
     ops, rejected = validate(parse_json(reply.content), known, user_text, answer, held)
     if rejected:
         _log.info("memory ops rejected: %s", json.dumps(rejected, ensure_ascii=False))
-    return Extraction(changes_of(ops), rejected)
+    changes = changes_of(ops)
+    guesses = {o.target.id for o in ops if o.op == "confirm" and o.target is not None and o.target.status == "pending"}
+    confirmed = {c.item.id for c in changes if c.item is not None and c.item.supersedes in guesses}
+    return Extraction(changes, rejected, confirmed=confirmed)
 
 
 # ---- 按需提取（spec [2026-10-23] §17）：先用规则判断这一轮可能含个人信息，才调用模型 ----------------

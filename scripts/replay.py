@@ -110,9 +110,18 @@ def login() -> tuple[str, str]:
 
 def db() -> Any:
     import psycopg
+    import yaml
 
+    # 预置记忆要用库里的 encrypt_content：和本机服务一样，密钥取环境变量，没有就取 mirobody 的 config.yaml
+    key = os.environ.get("PG_ENCRYPTION_KEY") or str(
+        (yaml.safe_load((ROOT / "vendor" / "mirobody" / "config.yaml").read_text()) or {}).get(
+            "PG_ENCRYPTION_KEY", ""
+        )
+    )
     return psycopg.connect(
-        f"postgresql://ironm:{os.environ['PG_PASSWORD']}@127.0.0.1:55432/mirobody", autocommit=True
+        f"postgresql://ironm:{os.environ['PG_PASSWORD']}@127.0.0.1:55432/mirobody",
+        autocommit=True,
+        options=f"-c app.encryption_key={key}" if key else "",
     )
 
 
@@ -180,6 +189,36 @@ def memory_keys(user_id: str) -> set[str]:
     return {str(r[0]) for r in rows}
 
 
+def seed_memories(user_id: str, rows: list[dict[str, Any]]) -> None:
+    """预置记忆（§154）：推测的、很久没确认的、系统生成的该问的；days 是几天前说的（也是更新日期）；
+    跟进没写 until 的今天到期。"""
+    with db() as c:
+        for r in rows:
+            c.execute(
+                "INSERT INTO ironm_memory (id, user_id, category, content, evidence, origin, status,"
+                " supersedes, until, created_at, updated_at, data, key) VALUES (%s, %s, %s,"
+                " encrypt_content(%s), encrypt_content(%s), %s, %s, NULL, %s,"
+                " now() - make_interval(days => %s), now() - make_interval(days => %s),"
+                " CASE WHEN %s::text IS NULL THEN NULL ELSE encrypt_content(%s) END, %s)",
+                (r["id"], user_id, r["category"], r["content"], r.get("evidence", r["content"]),
+                 r.get("origin", "said"), r.get("status", "active"),
+                 r.get("until") or (date.today().isoformat() if r["category"] == "followup" else None),
+                 int(r.get("days", 0)), int(r.get("days", 0)),
+                 json.dumps(r["data"], ensure_ascii=False) if r.get("data") else None,
+                 json.dumps(r["data"], ensure_ascii=False) if r.get("data") else None, r.get("key")),
+            )  # fmt: skip
+
+
+def old_memories(user_id: str) -> dict[str, int]:
+    """有效记忆里 30 天以上没更新（没确认）的，按类别数条数（§154），不读内容。"""
+    with db() as c:
+        rows = c.execute(
+            "SELECT category, count(*) FROM ironm_memory WHERE user_id = %s AND status = 'active'"
+            " AND updated_at < now() - interval '30 days' GROUP BY category", (user_id,),
+        ).fetchall()  # fmt: skip
+    return {str(k): int(n) for k, n in rows}
+
+
 def memories(user_id: str) -> dict[str, int]:
     """重放账号现在有效的记忆，按类别数条数（§145），只数条数、不读内容。"""
     with db() as c:
@@ -208,6 +247,7 @@ def judge(
     gear: set[str] | None = None,
     official: dict[str, Any] | None = None,
     undone: dict[str, Any] | None = None,
+    old: dict[str, int] | None = None,
 ) -> list[str]:
     """不符合的地方；空列表就是符合。"""
     bad = []
@@ -242,6 +282,10 @@ def judge(
         got_v = (undone or {}).get(name)
         if got_v != want_v:
             bad.append(f"撤销后正式目标的 {name} 应是 {want_v}，实际 {got_v}")
+    for cat, n in (turn.get("old") or {}).items():  # 很久没确认的（§154）
+        got = (old or {}).get(cat, 0)
+        if got != n:
+            bad.append(f"30 天以上没确认的 {cat} 记忆应有 {n} 条，实际 {got} 条")
     lack = [g for g in turn.get("gear") or [] if g not in (gear or set())]
     if lack:
         bad.append("器械页少了 " + "、".join(lack))
@@ -260,6 +304,9 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
     if "checkin" in setup:
         call("POST", "/iron/api/workouts", setup["checkin"], token)
         print("  准备：今天已打卡")
+    if "memories" in setup:
+        seed_memories(user_id, setup["memories"])
+        print(f"  准备：预置 {len(setup['memories'])} 条记忆")
     session_id = str(json.load(call("POST", "/api/session", {}, token))["data"]["session_id"])
     made["sessions"].append(session_id)
     rows: list[Row] = made.setdefault("rows", [])  # 跑完一轮记一轮：中途出错时前面的轮照样进报告
@@ -281,10 +328,11 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
                 if c["kind"] in ("plan", "goal") and c["draft"]:
                     call("POST", f"/iron/api/drafts/{c['draft']}/confirm", {}, token)
         ill = illness_rows(user_id) if "illness" in turn else None
-        if "events" in turn or "memory" in turn or "memory_keys" in turn or "gear" in turn:
+        if any(k in turn for k in ("events", "memory", "memory_keys", "gear", "old")):
             time.sleep(3)  # 当场写的记忆在回答之后
         events = active_events(user_id) if "events" in turn else None
         mem = memories(user_id) if "memory" in turn else None
+        old = old_memories(user_id) if "old" in turn else None
         keys = memory_keys(user_id) if "memory_keys" in turn else None
         gear = None
         if "gear" in turn:  # 器械页看到的（§150：读字段，和他在页面上看到的一样）
@@ -297,7 +345,7 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
                 if c["kind"] == "goal" and c["draft"]:
                     call("POST", f"/iron/api/drafts/{c['draft']}/undo", {}, token)
             undone = official_of(token)
-        bad = judge(turn, answer, cards, ill, events, mem, keys, gear, official, undone)
+        bad = judge(turn, answer, cards, ill, events, mem, keys, gear, official, undone, old)
         rows.append(Row(case=case["id"], turn=n, say=turn["say"], ok=not bad, bad=bad, secs=round(secs, 1),
                         answer=answer, cards=[c["kind"] for c in cards], tools=steps))  # fmt: skip
         print(f"{'-' * 72}\n问：{turn['say']}（{secs:.1f} 秒）")

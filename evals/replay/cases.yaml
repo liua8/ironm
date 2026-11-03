@@ -12,6 +12,8 @@
 #   gear      这一轮之后器械页应有的器械（§150），如 [哑铃, 壶铃]
 #   official  这一轮之后的正式目标（§151）：{type: 档案的目标类型, weight: 目标表的目标体重}
 #   undone    撤销这一轮确认的改目标之后应恢复成的正式目标（§151），写法同 official
+#   old       这一轮之后 30 天以上没更新（没确认）的有效记忆条数，如 {equipment: 0}（§154）
+# setup.memories 预置记忆（§154）：id、category、content、status、origin、days（几天前说的）、until、evidence、key、data
 # 只用规则判断，不打分。
 
 profile: {height_cm: 175, birth: "1995-06-01", sex: male, goal: fat_loss, activity: moderate}
@@ -273,6 +275,33 @@ cases:
         official: {type: muscle, weight: 73.0}
         undone: {type: fat_loss, weight: null}
       # 说法选的是合理的速度：定得太快（三个月增 5 公斤以上）时，管家会先给现实的版本让他选、这一轮不出卡片（建档规程），那是该有的行为，所以不用那种说法
+
+  - id: guess-confirmed
+    from: §154 推测的伤病（3 天内）他说对了：记成他说的
+    setup:
+      memories:
+        - {id: r154g, category: injury, content: 左膝半月板损伤, evidence: 左膝, origin: inferred, status: pending,
+           days: 1, key: "injury:joint.knee:左", data: {parts: [joint.knee], side: 左}}
+    turns:
+      - say: 对，医生看过了，就是左膝半月板损伤，今晚还能练上半身吗
+        memory: {injury: 1}
+
+  - id: stale-gear-confirmed
+    from: §154 器械三个多月没确认：问一句，他说还是那些后更新日期变成今天
+    setup:
+      memories:
+        - {id: r154e, category: equipment, content: 家里有一对 10 公斤哑铃和弹力带, days: 100,
+           data: {place: home, gear: [哑铃, 弹力带]}}
+        - {id: r154f, category: followup, origin: system, days: 0,
+           evidence: "auto:stale:r154e",
+           content: 「器械与场地：家里有一对 10 公斤哑铃和弹力带」是三个多月前说的，三个月没确认了：这一轮要用到它（排训练、选动作）时，照它答完在最后顺带问一句现在还是不是这样（是就 confirm 那条，变了就 update）}
+    turns:
+      - say: 今晚在家练什么好
+        must: [[还是]]
+      - say: 对，家里还是那对 10 公斤哑铃和弹力带
+        must_not: [排新计划前先确认]
+        old: {equipment: 0}
+        memory: {equipment: 1}
 
 # 后台用例（§138 需求 1）：到期复查（kind: checkup，§129）、练完定下次（kind: next，§132）。
 # 本进程内存存储 + 真实模型，不登录、不碰账号和数据库。setup：

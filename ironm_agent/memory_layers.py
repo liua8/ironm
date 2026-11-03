@@ -2,7 +2,8 @@
 
 - 用户画像：长期的情况（目标、水平、伤病、器械、时间、饮食、喜好、回答风格），每行写更新日期和来源，推测的带"？"；
 - 情景记忆：发生过的事（近期事件、给过的建议、待跟进），只追加；每轮只带还在影响训练的；
-- 该问的：过了结束日没听他说结束的近况、到期的待跟进、每天检查出来的（反复疼、练得远少于计划），最多 3 条；
+- 该问的：过了结束日没听他说结束的近况、刚推测还没确认的、到期的待跟进、每天检查出来的（反复疼、练得远少于计划、
+  长期的很久没确认），最多 3 条；
 - 查记忆工具：按关键词、天数（传入 similar 时再加上语义相似）查全部记忆，含已结束、被取代的。
 
 每轮只常驻目标和安全相关的几类，其余按这一轮的决定取（spec 2026-10-30 记忆改进）：日程、饮食、偏好
@@ -56,6 +57,10 @@ SEMANTIC_MAX = 5  # 一次最多补几条语义命中
 PAIN_DAYS, PAIN_TIMES = 30, 3  # 30 天里说疼 3 天以上，问要不要记成长期的
 GAP_WEEKS = 3  # 连续几周都练不到计划的一半，问要不要改得更现实
 AUTO = "auto:"  # 系统生成的该问的：evidence 里放这个前缀加去重键
+PENDING_DAYS = 3  # 推测的几天内带着问一句，过了还没确认就不再带（§154）
+STALE_DAYS: dict[str, int] = {"equipment": 90, "schedule": 90, "level": 90, "injury": 60}  # 多久没更新问一句
+STALE_PER_DAY = 1  # 每天最多新生成几条"还是这样吗"
+STALE = "stale:"  # 去重键前缀，后面是那条记忆的编号
 
 
 def _day(x: Item) -> date:
@@ -96,6 +101,7 @@ class Layers:
         if self.asks:
             parts.append(
                 "该问的、到期的跟进（由你决定这一轮提不提：一次最多提一件；他在问急事、说身体不适时不提；"
+                "这一轮回答要用到其中说的推测的、很久没确认的那条（比如按那份器械排训练），就照它答完在最后加一句问还是不是这样；"
                 "提了或他答了，用编号标为已解决）：\n" + "\n".join(self.asks)
             )
         if summaries:
@@ -113,6 +119,7 @@ def layers(items: Sequence[Item], today: date, focus: Collection[str] | None = N
     """
     out = Layers()
     n = 0
+    guesses: list[str] = []
 
     def handle(x: Item) -> str:
         nonlocal n
@@ -134,11 +141,19 @@ def layers(items: Sequence[Item], today: date, focus: Collection[str] | None = N
                     key=lambda x: (PROFILE.index(x.category), x.updated)):  # fmt: skip
         if x.status == "resolved" and x.category != "injury":
             continue  # 旧伤好了还带着（写明已好），别的已解决的长期情况不带
+        if x.status == "pending" and (today - _day(x)).days > PENDING_DAYS:
+            continue  # 推测的过了几天没确认：不再当事实带（§154），查记忆还查得到
         mark = "？" if x.status == "pending" else ""
         state = "（已好）" if x.status == "resolved" else ""
         src = "推测的" if x.status == "pending" else "你说的" if x.origin != "data" else "训练记录"
-        out.profile.append(f"{handle(x)}｜{CATEGORIES[x.category]}{state}：{said(x)}{mark}"
-                           f"（{_md(x.updated.astimezone().date())}，{src}）")  # fmt: skip
+        h = handle(x)
+        old = (x.status == "active" and x.category in STALE_DAYS and x.origin not in ("data", "system")
+               and (today - x.updated.astimezone().date()).days >= STALE_DAYS[x.category])  # fmt: skip
+        stale = "，很久没确认：用到它时答完问一句还是不是这样" if old else ""  # 和该问的同一个口径（§154）
+        out.profile.append(f"{h}｜{CATEGORIES[x.category]}{state}：{said(x)}{mark}"
+                           f"（{_md(x.updated.astimezone().date())}，{src}{stale}）")  # fmt: skip
+        if x.status == "pending":
+            guesses.append(f"{h}｜推测他「{said(x)}」，还没确认：合适时问一句对不对（对就 confirm {h}，不对就 resolve {h}）")
 
     for x in sorted((x for x in live if x.category == "event" and x.status == "active"), key=_day):
         end = event_end(x)
@@ -154,10 +169,20 @@ def layers(items: Sequence[Item], today: date, focus: Collection[str] | None = N
     for x in sorted(advice, key=_day)[-ADVICE_KEEP:]:
         out.episodes.append(f"{handle(x)}｜给过的建议：{said(x)}（{_md(_day(x))}）")
 
+    shown = {x.id: h for h, x in out.handles.items()}
+    by_id = {x.id: x for x in live}
     due = [x for x in live if x.category == "followup" and x.status == "active" and x.until
            and x.until <= today and (today - x.until).days <= DUE_KEEP]  # fmt: skip
     for x in sorted(due, key=lambda x: x.until or today):
+        about = x.evidence[len(AUTO + STALE):] if x.evidence.startswith(AUTO + STALE) else ""
+        if about:  # "还是这样吗"：那条确认过、改过、不带了，就不再问（§154）
+            fact = by_id.get(about)
+            if fact is None or about not in shown or fact.updated > x.created:
+                continue
+            out.asks.append(f"{handle(x)}｜{said(x)}（是 {shown[about]} 那条）")
+            continue
         out.asks.append(f"{handle(x)}｜{said(x)}（{_md(x.until or today)}到期）")
+    out.asks += guesses  # 到期的跟进（他要的提醒）排在推测的前面（复核 11-03）
     out.asks = out.asks[:ASK_MAX]
     return out
 
@@ -224,6 +249,30 @@ def daily_asks(
                     today,
                 )
             )
+    return out + _stale_asks(items, seen, today)
+
+
+def _stale_asks(items: Sequence[Item], seen: Collection[str], today: date) -> list[Change]:
+    """器械、可练时间、训练水平 90 天、伤病 60 天没更新：问一句还是不是这样（§154）。
+    更新日期就是上次确认的日子；训练记录推出来的、系统生成的不问；最久的先问，每天最多 1 条，30 天内不重问。"""
+    from ironm_agent.latest import shadowed
+
+    gone = shadowed(items)
+    made = sum(1 for x in items if x.category == "followup" and x.evidence.startswith(AUTO + STALE)
+               and _day(x) == today)  # 重启后同一天再查一次：今天已经问过的算上（复核 11-03）  # fmt: skip
+    old = [x for x in items if x.category in STALE_DAYS and x.status == "active" and x.id not in gone
+           and x.origin not in ("data", "system")
+           and (today - x.updated.astimezone().date()).days >= STALE_DAYS[x.category]
+           and AUTO + STALE + x.id not in seen]  # fmt: skip
+    out = []
+    for x in sorted(old, key=lambda x: x.updated)[: max(0, STALE_PER_DAY - made)]:
+        when = _md(x.updated.astimezone().date())
+        ask = (f"「{CATEGORIES[x.category]}：{said(x)}」是{when}说的，好久没提了：这一轮要用到它或聊到训练时，顺带问一句现在怎么样了"
+               "（好了就 resolve 那条，还那样就 confirm，有变化就 update）"
+               if x.category == "injury" else
+               f"「{CATEGORIES[x.category]}：{said(x)}」是{when}说的，三个月没确认了：这一轮要用到它（排训练、选动作）时，"
+               "照它答完在最后顺带问一句现在还是不是这样（是就 confirm 那条，变了就 update）")  # fmt: skip
+        out.append(_auto(STALE + x.id, ask, today))
     return out
 
 
