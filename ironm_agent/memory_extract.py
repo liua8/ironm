@@ -275,13 +275,22 @@ def _problem(
                 and not (inferred and same.status == "active")):  # fmt: skip
             kind, target = "update", same
         if target is not None and target.category == category:  # 更新时没再交的字段沿用原来那条
-            for name in ("kind", "severity", "triggers", "avoid", "codes", "since"):
+            for name in ("kind", "severity", "triggers", "avoid", "codes", "since",  # 伤病（§148）
+                         "per_week", "days", "minutes"):  # 可练时间（§150）
                 if name not in data and name in target.data:
                     data[name] = target.data[name]
-        if data.get("kind") == "术后" and not data.get(
-            "since"
-        ):  # 术后从第一次记的那天算，更新不重新计时
+            if category == "equipment" and not data.get("place"):  # 没说在哪练：是补充，场所沿用、器械合起来
+                if target.data.get("place"):
+                    data["place"] = target.data["place"]
+                for name in ("gear", "custom"):
+                    both = [*target.data.get(name, []), *data.get(name, [])]
+                    if both:
+                        data[name] = list(dict.fromkeys(both))
+            # 说了在哪练是重新完整说一遍（"搬家了，在家练，只有自重"）：器械不沿用（复核 11-03）
+        # 术后从第一次记的那天算，更新不重新计时
+        if data.get("kind") == "术后" and not data.get("since"):
             data["since"] = (today or date.today()).isoformat()
+        key = key_of(category, data)  # 沿用了原来的字段（每周几次、左右）：键按最后的字段算（§150）
     content = absolute(content, today or date.today())  # "今天"写成日期（§103），数字核对在这之前
     op = Op(cast(Literal["add", "update", "resolve"], kind), cast(Category, category), content,
             quote, target, inferred, until, data, key)  # fmt: skip
@@ -451,7 +460,7 @@ def validate(
                 rejected.append("同一件事交了两条，改的不是同一条")
                 continue
             merged = {**first.data, **op.data}
-            for name in ("triggers", "avoid", "codes"):
+            for name in ("triggers", "avoid", "codes", "gear", "custom", "days"):
                 both = [*first.data.get(name, []), *op.data.get(name, [])]
                 if both:
                     merged[name] = list(dict.fromkeys(both))

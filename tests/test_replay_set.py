@@ -296,3 +296,14 @@ def test_chat_judge_checks_memory_keys() -> None:
     assert mod.judge(keyed, "好", [], None, None, None, set()) == [
         "应有记忆键 injury:joint.knee:左，没有"
     ]
+
+
+def test_chat_judge_checks_the_gear_page() -> None:
+    """对话用例能查器械页上有哪些（§150）。"""
+    spec = importlib.util.spec_from_file_location("replay_script", ROOT / "scripts" / "replay.py")
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    want = {"gear": ["哑铃", "壶铃"]}
+    assert mod.judge(want, "好", [], None, None, None, None, {"哑铃", "壶铃", "弹力带"}) == []
+    assert mod.judge(want, "好", [], None, None, None, None, {"哑铃"}) == ["器械页少了 壶铃"]

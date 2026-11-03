@@ -222,7 +222,7 @@ REMEMBER_SCHEMA: dict[str, Any] = {
             "已有的不重复记。只写他说了的：问句带出的不算（「肌酐高了怎么办」「久坐圆肩怎么改善」不记）；你的安排不写进去；"
             "圆肩驼背是体态不是 injury。一顿饭、一次训练不记（那是 log_meal、log_workout）。"
             "伤病（injury）写 parts、side（他说了左右才写）、哪些动作会疼 triggers、不能做的 avoid；"
-            "孕期、心脏病、糖尿病、高血压、近期手术记成 special，写 codes（几种都写）。系统按原话核对部位，对不上会退回。"
+            "孕期、心脏病、糖尿病、高血压、近期手术记成 special，写 codes（几种都写）。器械（equipment）说了在哪练写 place、有什么写 gear；可练时间（schedule）写 per_week、days、minutes。系统按原话核对部位，对不上会退回。"
             "short 的（今天累、这周出差）系统记成近期的事，until：\"这周\"写周日、\"这两天\"写明天，看不出写 7 天后。"
             "长期的情况变了 update 那一条；他说好了、结束了、取消了，resolve 还在生效的近况和跟进，不新增\"已结束\"。"
             "答应回访、他要你提醒的记 followup；\"该问的、到期的跟进\"里你提了或他答了，用编号 resolve。"
@@ -259,6 +259,17 @@ REMEMBER_SCHEMA: dict[str, Any] = {
                             "codes": {"type": "array", "items": {"type": "string", "enum": [
                                 "pregnancy", "cardiac", "diabetes", "hypertension", "surgery"]},
                                       "description": "special（伤病里顺带说了也写）：孕期、心脏病、糖尿病、高血压、近期手术"},
+                            "place": {"type": "string", "enum": ["gym", "home", "both"],
+                                      "description": "equipment：在哪练（健身房、家里、都有）"},
+                            "gear": {"type": "array", "items": {"type": "string", "enum": [
+                                "哑铃", "壶铃", "弹力带", "杠铃", "单杠", "器械"]},
+                                     "description": "equipment：有哪些（他说到的）；器械＝健身器械"},
+                            "custom": {"type": "array", "items": {"type": "string"},
+                                       "description": "equipment：上面没有的器材（如划船机），他说的原名"},
+                            "per_week": {"type": "integer", "description": "schedule：每周能练几次"},
+                            "days": {"type": "array", "items": {"type": "integer"},
+                                     "description": "schedule：哪几天（1 是周一）"},
+                            "minutes": {"type": "integer", "description": "schedule：每次多少分钟"},
                         },
                         "required": ["op"],
                     },

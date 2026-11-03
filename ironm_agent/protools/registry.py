@@ -14,6 +14,7 @@ from typing import Any
 
 from ironm_agent.body import joint_code
 from ironm_agent.exercises import Equipment
+from ironm_agent.facts import equipment as equipment_in
 from ironm_agent.kb import Entry
 from ironm_agent.protools.movement import JOINT_NAMES, equipment_of, substitutes
 from ironm_agent.protools.nutrition import ITEMS, Item, nutrition
@@ -63,7 +64,8 @@ class ToolContext:
         readings: Any,
         kcal_target: float | None = None,
         injured: Iterable[str],
-        equipment_said: Iterable[str],
+        equipment_said: Iterable[str] = (),
+        equipment_items: Sequence[Any] | None = None,  # 器械与场地的记忆条目（读字段，§150）
         plan: Loader[StoredPlan | None] | None = None,
         workouts: Callable[[date], Awaitable[list[WorkoutLog]]] | None = None,
         age: int | None = None,
@@ -78,7 +80,9 @@ class ToolContext:
             kcal_target,
             readings,
             tuple(injured),
-            equipment_of(equipment_said),
+            equipment_in(equipment_items)
+            if equipment_items is not None
+            else equipment_of(equipment_said),
             plan,
             workouts,
             age,

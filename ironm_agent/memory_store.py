@@ -284,10 +284,15 @@ def _fields(category: Category, content: str) -> tuple[Category, dict[str, Any],
 
 
 def _filled(x: Item) -> Item | None:
-    """还没补字段的伤病、特殊情况（§148 之前记的）：按内容补上；补不出（只说了体态等）返回 None。"""
-    if x.category not in ("injury", "special") or x.data or x.status == "superseded":
+    """还没补字段的伤病、特殊情况、器械、可练时间（§148、§150 之前记的）：按内容补上；补不出返回 None。
+    系统从训练记录推出的作息（"通常在周一、周三练"）不带键：两条推出来的不互相顶掉（复核 11-03）。"""
+    from ironm_agent.facts import STRUCTURED
+
+    if x.category not in STRUCTURED or x.data or x.status == "superseded":
         return None
     cat, data, key = _fields(x.category, x.content)
+    if x.origin == "data":
+        key = ""
     return replace(x, category=cat, data=data, key=key) if data else None
 
 
@@ -347,6 +352,8 @@ class PgMemory:
                 )
 
     async def edit(self, user_id: str, item_id: str, content: str) -> Item | None:
+        from ironm_agent.facts import STRUCTURED
+
         rows = await self._q(
             "UPDATE ironm_memory SET content = encrypt_content(:content), origin = 'edited',"
             " status = CASE WHEN status = 'pending' THEN 'active' ELSE status END, updated_at = now()"
@@ -356,10 +363,7 @@ class PgMemory:
         if not rows:
             return None
         got = await self._one(user_id, item_id)
-        if got is not None and got.category in (
-            "injury",
-            "special",
-        ):  # 改了内容：字段跟着补（§148）
+        if got is not None and got.category in STRUCTURED:  # 改了内容：字段跟着补（§148、§150）
             cat, data, key = _fields(got.category, content)
             await self.set_fields(user_id, item_id, cat, data, key)
             got = await self._one(user_id, item_id)

@@ -9,6 +9,7 @@
 #   confirm   true：这一轮出的计划预览当场确认，后面几轮在这份计划上改（§120）
 #   memory    这一轮之后重放账号各类有效记忆的条数，如 {injury: 1}（§145）；不写就不检查
 #   memory_keys 这一轮之后应有的记忆键，如 [injury:joint.knee:左]（§148 伤病、特殊情况结构化）
+#   gear      这一轮之后器械页应有的器械（§150），如 [哑铃, 壶铃]
 # 只用规则判断，不打分。
 
 profile: {height_cm: 175, birth: "1995-06-01", sex: male, goal: fat_loss, activity: moderate}
@@ -249,6 +250,18 @@ cases:
       - say: 我有高血压，一直在吃药
         memory: {injury: 1, special: 1}
         memory_keys: [injury:joint.knee:左, special:hypertension]
+  - id: gear-structured
+    from: §150 器械和可练时间结构化：在家的器械记成字段；补一句不顶掉原来的；每周几次几分钟
+    turns:
+      - say: 我在家练，有一对 10 公斤哑铃和弹力带
+        memory: {equipment: 1}
+        memory_keys: [equipment]
+        gear: [哑铃, 弹力带]
+      - say: 我还买了一个壶铃
+        memory_keys: [equipment]
+        gear: [哑铃, 弹力带, 壶铃]  # 另记一条或更新那一条都行：原来的不能被顶掉
+      - say: 我每周能练 3 次，每次 40 分钟
+        memory_keys: [equipment, schedule]
 
 # 后台用例（§138 需求 1）：到期复查（kind: checkup，§129）、练完定下次（kind: next，§132）。
 # 本进程内存存储 + 真实模型，不登录、不碰账号和数据库。setup：

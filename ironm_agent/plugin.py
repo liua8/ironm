@@ -523,11 +523,7 @@ class IronMAgent:
             ),
             readings=snapshot.readings,
             injured=case.injuries,
-            equipment_said=[
-                x.content
-                for x in recall.items
-                if x.category == "equipment" and x.status == "active"
-            ],
+            equipment_items=recall.items,  # 读字段（§150）
             plan=lambda: store.plan(user_id),
             workouts=workouts,
             age=snapshot.profile.age(snapshot.today),

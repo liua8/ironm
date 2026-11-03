@@ -1,6 +1,7 @@
 """场所与器材（spec [2026-10-23] §107）：开头填一次、档案里改、跟管家说也能改，都是记忆里同一份"器械与场地"。
 
-表单填的写成一句话存进记忆；读的时候和排计划、换动作一样用 equipment_of 认器械。不读写存储。
+表单填的存成字段（场所、器械、自己加的，§150），句子照写给人看；读的时候先看字段，§150 之前的旧记录按句子认。
+不读写存储。
 """
 
 from __future__ import annotations
@@ -74,12 +75,23 @@ def read(items: Sequence[Item]) -> dict[str, Any]:
         return {"known": False, "place": None, "gear": [], "custom": [], "text": "", "form": False}
     texts = [x.content for x in mine]
     joined = "；".join(texts)
+    form = len(mine) == 1 and mine[0].evidence == FORM  # 就是档案里填的那一条：页面不再重复原话
+    if all(x.data for x in mine) and (
+        not form or "custom" in mine[0].data
+    ):  # 有字段：照字段（§150）
+        placed = [x.data["place"] for x in mine if x.data.get("place")]
+        have = {g for x in mine for g in x.data.get("gear") or []}
+        added = clean_custom([c for x in mine for c in x.data.get("custom") or []])
+        if not placed:  # 都是补充一句的（没说在哪练）：照原来按句子认（"家里有…"算在家）
+            gym, home = bool(_GYM.search(joined)), bool(_HOME.search(joined))
+            placed = ["both" if gym and home else "gym" if gym else "home"] if gym or home else []
+        return {"known": True, "place": placed[-1] if placed else None,
+                "gear": [g for g in GEAR if g in have], "custom": added, "text": joined, "form": form}  # fmt: skip
     gym, home = bool(_GYM.search(joined)), bool(_HOME.search(joined))
     place: Place | None = "both" if gym and home else "gym" if gym else "home" if home else None
     # 家里有什么：只看说家里的那几句（健身房那句会被认成"器械都有"）
     home_texts = [t for t in texts if not _GYM.search(t) or _HOME.search(t)]
     found = equipment_of([_GYM.sub("", t) for t in home_texts]) or frozenset()
-    form = len(mine) == 1 and mine[0].evidence == FORM  # 就是档案里填的那一条：页面不再重复原话
     gear = [g for g in GEAR if g in found]
     custom: list[str] = []
     if (

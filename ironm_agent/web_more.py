@@ -875,9 +875,9 @@ async def _rule_proposal(
     """按规则生成操作、由代码改计划（spec [2026-10-23] §45）；变不成操作或一条都套不上时返回 None。"""
     from ironm_agent.casefile import injured_parts
     from ironm_agent.constraints import Context, annotate_plan
+    from ironm_agent.facts import equipment as equipment_in
     from ironm_agent.memory_view import Recall
     from ironm_agent.plan_ops import apply, describe, fit_time, review_ops
-    from ironm_agent.protools.movement import equipment_of
     from ironm_agent.protools.plan_check import changed_days
     from ironm_agent.training import plan_content
 
@@ -889,9 +889,7 @@ async def _rule_proposal(
         _log.warning("memory unavailable: error_type=%s", type(e).__name__)
         items = ()
     injured = injured_parts(items, "")
-    equipment = equipment_of(
-        [x.content for x in items if x.category == "equipment" and x.status == "active"]
-    )
+    equipment = equipment_in(items)  # 读字段（§150）
     ops = review_ops(actions, plan, equipment=equipment, injured=injured)
     if not ops:
         return None

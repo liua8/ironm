@@ -37,8 +37,8 @@ async def _limits(
 ) -> tuple[frozenset[Equipment] | None, tuple[str, ...], frozenset[str]]:
     """他的器械、伤处、特殊情况（和对话里改计划用的同一份）；读不到当作不知道。"""
     from ironm_agent.casefile import injured_parts
+    from ironm_agent.facts import equipment as equipment_in
     from ironm_agent.memory_view import Recall
-    from ironm_agent.protools.movement import equipment_of
     from ironm_agent.web_live import _special
 
     try:
@@ -46,9 +46,7 @@ async def _limits(
     except Exception as e:
         _log.warning("memory unavailable: error_type=%s", type(e).__name__)
         items = ()
-    equipment = equipment_of(
-        [x.content for x in items if x.category == "equipment" and x.status == "active"]
-    )
+    equipment = equipment_in(items)  # 读字段（§150）
     return equipment, injured_parts(items, ""), await _special(user_id, memory)
 
 
@@ -177,21 +175,24 @@ async def put_gear(
     store: TrainingStore = TRAINING,
 ) -> dict[str, Any]:
     """存成一条"器械与场地"记忆，之前的标成被取代（对话里记的也一样）；回给他计划里要用没有的器械的动作。"""
-    from ironm_agent.gear import FORM, current, custom_ok, missing, read, sentence
+    from ironm_agent.facts import equipment
+    from ironm_agent.gear import FORM, clean_custom, custom_ok, missing, read, sentence
     from ironm_agent.memory_store import Change, Item, new_id, now
-    from ironm_agent.protools.movement import equipment_of
 
     if why := next((w for w in map(custom_ok, body.custom) if w), ""):
         raise HTTPException(422, why)
-    old = current(await memory.items(user_id))
-    text = sentence(body.place, body.gear, body.custom if body.place != "gym" else ())
+    old = [x for x in await memory.items(user_id) if x.category == "equipment"
+           and x.status in ("active", "pending")]  # 取代所有还生效的器械记录（补充的那几句也算，§150）  # fmt: skip
+    custom = clean_custom(body.custom) if body.place != "gym" else []
+    text = sentence(body.place, body.gear, custom)
+    data = {"place": body.place, "gear": [g for g in body.gear if g != "自重"], "custom": custom}  # §150
     t = now()
     item = Item(id=new_id(), category="equipment", content=text, evidence=FORM,
                 origin="edited", status="active", created=t, updated=t,
-                supersedes=old[-1].id if old else None)  # fmt: skip
+                supersedes=old[-1].id if old else None, data=data, key="equipment")  # fmt: skip
     await memory.apply(user_id, [*(Change(kind="status", id=x.id, status="superseded") for x in old),
                                  Change(kind="insert", item=item)])  # fmt: skip
     stored = await store.plan(user_id)
-    lacking = missing(stored.plan if stored else None, equipment_of([text]))
+    lacking = missing(stored.plan if stored else None, equipment([item]))
     _log.info("gear saved: place=%s gear=%d lacking=%d", body.place, len(body.gear), len(lacking))
     return {**read(await memory.items(user_id)), "lacking": lacking}

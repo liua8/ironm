@@ -34,6 +34,8 @@ def _fact_keys(item: Item) -> frozenset[str]:
     特殊情况一种一个键（同一条带了几种时，后来单说其中一种也算同一件事）。"""
     from ironm_agent.facts import codes_of
 
+    if item.category == "equipment":  # 说了在哪练的：和没字段的旧说法同一个键（§150）
+        return frozenset({"在哪练"})
     if item.category == "special":
         return frozenset(f"special:{c}" for c in codes_of(item.data)) or frozenset({item.key})
     side = str(item.data.get("side") or "")

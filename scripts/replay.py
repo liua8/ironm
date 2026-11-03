@@ -198,6 +198,7 @@ def judge(
     events: int | None = None,
     mem: dict[str, int] | None = None,
     keys: set[str] | None = None,
+    gear: set[str] | None = None,
 ) -> list[str]:
     """不符合的地方；空列表就是符合。"""
     bad = []
@@ -222,6 +223,9 @@ def judge(
     bad += [
         f"应有记忆键 {k}，没有" for k in turn.get("memory_keys") or [] if k not in (keys or set())
     ]
+    lack = [g for g in turn.get("gear") or [] if g not in (gear or set())]
+    if lack:
+        bad.append("器械页少了 " + "、".join(lack))
     asks = answer.count("？") + answer.count("?")
     if "asks" in turn and asks > turn["asks"]:
         bad.append(f"问题最多 {turn['asks']} 个，实际 {asks} 个")
@@ -256,12 +260,16 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
                 if c["kind"] == "plan" and c["draft"]:
                     call("POST", f"/iron/api/drafts/{c['draft']}/confirm", {}, token)
         ill = illness_rows(user_id) if "illness" in turn else None
-        if "events" in turn or "memory" in turn or "memory_keys" in turn:
+        if "events" in turn or "memory" in turn or "memory_keys" in turn or "gear" in turn:
             time.sleep(3)  # 当场写的记忆在回答之后
         events = active_events(user_id) if "events" in turn else None
         mem = memories(user_id) if "memory" in turn else None
         keys = memory_keys(user_id) if "memory_keys" in turn else None
-        bad = judge(turn, answer, cards, ill, events, mem, keys)
+        gear = None
+        if "gear" in turn:  # 器械页看到的（§150：读字段，和他在页面上看到的一样）
+            got = json.load(call("GET", "/iron/api/gear", token=token))
+            gear = {*got.get("gear", []), *got.get("custom", [])}
+        bad = judge(turn, answer, cards, ill, events, mem, keys, gear)
         rows.append(Row(case=case["id"], turn=n, say=turn["say"], ok=not bad, bad=bad, secs=round(secs, 1),
                         answer=answer, cards=[c["kind"] for c in cards], tools=steps))  # fmt: skip
         print(f"{'-' * 72}\n问：{turn['say']}（{secs:.1f} 秒）")

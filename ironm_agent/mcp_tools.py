@@ -84,7 +84,7 @@ async def _context(user_id: str, src: Sources) -> pro.ToolContext:
         ),
         readings=snap.readings,
         injured=injured_parts(items, ""),
-        equipment_said=[x.content for x in items if x.category == "equipment"],
+        equipment_items=items,  # 读字段（§150）
         plan=lambda: src.training.plan(user_id),
         workouts=workouts,
         age=snap.profile.age(snap.today),
