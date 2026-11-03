@@ -75,7 +75,9 @@ class Done(BaseModel):
     """管家复盘里一条已经生效的调整（§85）：模型决定的，代码校验后执行。"""
 
     key: str  # review:today / review:plan / review:kcal / review:note / review:ask
-    type: Literal["today", "plan", "kcal", "note", "ask"]
+    type: Literal[
+        "today", "plan", "kcal", "note", "ask", "propose"
+    ]  # propose：提的改计划，等他确认（§129）
     title: str  # 给人看的一句话：改了什么
     why: str = ""  # 模型写的原因
     basis: str = ""  # 用到的事实和资料（追问依据时讲）
@@ -319,7 +321,9 @@ def _food_items(inp: Inputs) -> list[Item]:
                         why=why, basis=kcal.source, action="auto",
                         value={"kcal": round(kcal.value),
                                "protein": protein.value if protein else None}))  # fmt: skip
-    proposal, _ = propose(inp.snapshot.metrics, inp.snapshot.profile, inp.diet, inp.snapshot.today, inp.seen)
+    proposal, _ = propose(
+        inp.snapshot.metrics, inp.snapshot.profile, inp.diet, inp.snapshot.today, inp.seen
+    )
     if proposal is not None:
         more = "多" if proposal.delta > 0 else "少"
         out.append(Item(key="proposal:diet", kind="proposal", action="confirm",
@@ -392,12 +396,19 @@ def _sick(inp: Inputs, today: date) -> frozenset[date]:
     return sick_days(inp.illness, today)
 
 
+def _proposed(inp: Inputs) -> bool:
+    return inp.review is not None and any(
+        d.type == "propose" and not d.undone for d in inp.review.done
+    )
+
+
 def _review_items(inp: Inputs) -> list[Item]:
     """管家复盘里已经生效的调整（§85），给页面和管家消息看；撤销了的不再列出。"""
     if inp.review is None:
         return []
-    out = [Item(key=d.key, kind="review", title=d.title, why=d.why, basis=d.basis,
-                action="info" if d.type in ("note", "ask") else "auto",
+    out = [Item(key=d.key, kind="proposal" if d.type == "propose" else "review", title=d.title, why=d.why,
+                basis=d.basis,
+                action="confirm" if d.type == "propose" else "info" if d.type in ("note", "ask") else "auto",
                 value={"type": d.type, "expect": d.expect, **d.value})
            for d in inp.review.done if not d.undone]  # fmt: skip
     # 今天核对完的以前的调整、4 周阶段小结（§89）：只告诉他
@@ -416,7 +427,9 @@ def compute(inp: Inputs, today: date) -> list[Item]:
         _today_item(inp, today),
         *_weather_items(inp, today),
         *_alert_items(inp, today),
-        *_review_item(inp),
+        *(
+            _review_item(inp) if not _proposed(inp) else []
+        ),  # 复查提了改计划：不再出规则的每周建议（§129）
     ]
     items += _food_items(inp)
     items += _goal_items(inp)
@@ -631,7 +644,9 @@ async def _gather(user_id: str, deps: Deps, today: date) -> Inputs:
     if deps.meals is not None:  # 和饮食页同一个算法，管家和饮食页的提议一致（§118）
         from ironm_agent.diet_adjust import OBSERVE_DAYS, by_day, observed
 
-        rows = await safely("meals", deps.meals.since(user_id, today - timedelta(days=OBSERVE_DAYS - 1)))
+        rows = await safely(
+            "meals", deps.meals.since(user_id, today - timedelta(days=OBSERVE_DAYS - 1))
+        )
         if rows is not None:
             inp.seen = observed(by_day(rows), snap.readings.weight, today)[0]
     if deps.day is not None:

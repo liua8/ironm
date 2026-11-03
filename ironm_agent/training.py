@@ -476,7 +476,9 @@ class TrainingStore(Protocol):
     async def workouts(self, user_id: str, since: date) -> list[StoredLog]: ...
     async def add_draft(self, user_id: str, kind: Kind, content: dict[str, Any]) -> Draft: ...
     async def draft(self, user_id: str, draft_id: str) -> Draft | None: ...
-    async def pending_plan(self, user_id: str, minutes: int = MERGE_MINUTES) -> Draft | None: ...
+    async def pending_plan(
+        self, user_id: str, minutes: int = MERGE_MINUTES, *, skip_source: str = ""
+    ) -> Draft | None: ...
     async def confirm(self, user_id: str, draft_id: str) -> Draft | None: ...
     async def cancel(self, user_id: str, draft_id: str) -> Draft | None: ...
     async def undo(self, user_id: str, draft_id: str) -> Draft | None: ...
@@ -524,10 +526,13 @@ class TrainingBook:
     async def draft(self, user_id: str, draft_id: str) -> Draft | None:
         return self._drafts.get(user_id, {}).get(draft_id)
 
-    async def pending_plan(self, user_id: str, minutes: int = MERGE_MINUTES) -> Draft | None:
+    async def pending_plan(
+        self, user_id: str, minutes: int = MERGE_MINUTES, *, skip_source: str = ""
+    ) -> Draft | None:
         since = now() - timedelta(minutes=minutes)
         rows = [d for d in self._drafts.get(user_id, {}).values()
-                if d.kind == "plan" and d.state == "pending" and d.created >= since]  # fmt: skip
+                if d.kind == "plan" and d.state == "pending" and d.created >= since
+                and not (skip_source and d.content.get("source") == skip_source)]  # fmt: skip
         return max(rows, key=lambda d: d.created, default=None)
 
     def _put(self, user_id: str, d: Draft) -> Draft:
@@ -719,15 +724,21 @@ class PgTraining:
         rows = await self._q(_DRAFT, {"uid": user_id, "id": draft_id})
         return _draft_row(rows[0]) if rows else None
 
-    async def pending_plan(self, user_id: str, minutes: int = MERGE_MINUTES) -> Draft | None:
+    async def pending_plan(
+        self, user_id: str, minutes: int = MERGE_MINUTES, *, skip_source: str = ""
+    ) -> Draft | None:
+        # 内容是加密的，来源只能取出来再看：取最近几份，跳过 skip_source 那种（每日复查存的预览，§129）
         rows = await self._q(
             "SELECT id, kind, decrypt_content(content) AS content, state, applied, previous, created_at"
             " FROM ironm_draft WHERE user_id = :uid AND kind = 'plan' AND state = 'pending'"
             f" AND created_at > now() - interval '{int(minutes)} minutes'"
-            " ORDER BY created_at DESC LIMIT 1",
+            " ORDER BY created_at DESC LIMIT 5",
             {"uid": user_id},
         )
-        return _draft_row(rows[0]) if rows else None
+        found = (_draft_row(r) for r in rows)
+        return next(
+            (d for d in found if not (skip_source and d.content.get("source") == skip_source)), None
+        )
 
     async def confirm(self, user_id: str, draft_id: str) -> Draft | None:
         """确认一份预览：在一个事务里先按人加锁，再改预览状态、换下旧计划、写入新计划（或记录）。

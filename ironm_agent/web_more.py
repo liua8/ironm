@@ -762,6 +762,8 @@ async def review_proposal(
     stored = await training.plan(user_id)
     if stored is None:
         raise HTTPException(409, "还没有训练计划：先让教练排一份")
+    if not trigger and (ready := await _checkup_proposal(user_id, training)) is not None:
+        return ready  # 每日复查提的改计划：已经存成预览，直接给他看（§129 需求 3）
     snap = await _web().snapshot_for(user_id)
     if trigger:
         found = await _triggers(user_id, training, pain, snap.today, illness)
@@ -816,6 +818,37 @@ async def review_proposal(
         if n > REVIEW_MAX_DAYS and not trigger
         else "",
     }
+
+
+async def _checkup_proposal(user_id: str, training: TrainingStore) -> dict[str, Any] | None:
+    """今天的复查提了改计划、预览还没确认：把那份预览交给页面（不再重新生成）。"""
+    try:
+        state = await coach_deps().store.get(user_id)
+    except Exception as e:
+        _log.warning("coach state unavailable: error_type=%s", type(e).__name__)
+        return None
+    review = state.review if state is not None else None
+    if review is None or review.day != date.today():
+        return None
+    d = next((x for x in review.done if x.type == "propose" and not x.undone), None)
+    draft = await training.draft(user_id, str(d.value.get("draft"))) if d is not None else None
+    if d is None:
+        return None
+    if (
+        draft is None or draft.state != "pending"
+    ):  # 确认过、作废了或过期了：不再生成另一份（复核 11-03）
+        return {"status": "no_change", "message": "这条建议已经处理过了；想再调可以直接告诉我。"}
+    stored = await training.plan(user_id)
+    if stored is None or draft.content.get("base") != stored.id:  # 计划后来改过：这份预览过时了
+        from ironm_agent.review import undo
+
+        await undo(user_id, coach_deps(), d.key, today=review.day)  # 作废预览，这条待确认也一并收起
+        return {
+            "status": "no_change",
+            "message": "计划后来改过了，这条建议不再适用；想再调可以直接告诉我。",
+        }
+    return {"status": "ok", "tips": [d.why], "answer": f"{d.title}。{d.why}", "draft": draft.json(),
+            "changed_days": 0, "warning": ""}  # fmt: skip
 
 
 def _trigger_actions(hit: Any, plan: Any) -> list[dict[str, Any]]:

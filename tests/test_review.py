@@ -10,7 +10,7 @@ from ironm_agent.coach_state import CoachBook
 from ironm_agent.diet_adjust import DietBook
 from ironm_agent.metrics import Readings, compute_all
 from ironm_agent.training import TrainingBook, plan_content
-from tests.fakes import FakeLLM, jsonr
+from tests.fakes import FakeLLM, call, jsonr
 from tests.test_coach import TODAY, deps, plan_today
 from tests.test_insights import BUSY, ME, tired
 
@@ -30,12 +30,24 @@ def setup(r: Readings | None = None) -> Any:
     )
 
 
+_TOOL = {"today": "adjust_today", "kcal": "propose_kcal_change", "plan": "propose_plan_edit",
+         "note": "coach_note", "ask": "coach_note"}  # fmt: skip
+
+
 def model(*adjust: dict[str, Any], summary: str = "恢复不够") -> tuple[FakeLLM, list[str]]:
+    """假管家（§129）：按顺序把每条调整交给对应的工具，交完写一句总结；seen 记下它看到的事实。"""
     seen: list[str] = []
 
     def answer(stage: Any, messages: Any, tools: Any) -> Any:
-        seen.append(str(messages[-1]["content"]))
-        return jsonr({"summary": summary, "adjust": list(adjust)})
+        seen.append(str(messages[1]["content"]))
+        done = sum(1 for m in messages if m.get("role") == "tool")
+        if tools and done < len(adjust):
+            a = dict(adjust[done])
+            kind = a.pop("type")
+            if kind in ("note", "ask"):
+                a["kind"] = kind
+            return call(_TOOL[kind], **a)
+        return jsonr({"summary": summary})
 
     return FakeLLM(answer), seen
 
@@ -72,23 +84,34 @@ def test_the_model_decides_today_and_a_note_and_it_takes_effect() -> None:
     assert not calls  # 一天一次
 
 
-def test_plan_change_is_applied_and_can_be_undone() -> None:
+def test_plan_change_is_proposed_on_a_stage_day_and_needs_his_ok() -> None:
+    """§129：复查提的改计划只在满 4 周那天有；存成预览、出一条待确认，他同意才保存；不用了就作废。"""
+    from ironm_agent.coach_state import pending
+
     dp = setup()
+    stage = TODAY + timedelta(days=28)
     probe, seen = model()
-    asyncio.run(review.run("42", dp, probe))
+    asyncio.run(review.run("42", dp, probe, today=stage))
     f = facts_id(seen, "当前计划")
     day = TODAY.isoweekday()
-    llm, _ = model({"type": "plan", "why": "膝盖不舒服先换", "basis": [f],
-                    "ops": [{"kind": "swap", "day": day, "exercise": "杠铃深蹲", "to": "高脚杯深蹲"}]})  # fmt: skip
-    got = asyncio.run(review.run("42", dp, llm, force=True))
-    assert got.done[0].type == "plan"
+    op = {"kind": "swap", "day": day, "exercise": "杠铃深蹲", "to": "高脚杯深蹲"}
+    llm, _ = model({"type": "plan", "why": "膝盖不舒服先换", "basis": [f], "ops": [op]})
+    got = asyncio.run(review.run("42", dp, llm, force=True, today=stage))
+    assert [d.type for d in got.done] == ["propose"]
     names = [x.exercise for s in asyncio.run(dp.training.plan("42")).plan.sessions for x in s.items]
-    assert "高脚杯深蹲" in names and "杠铃深蹲" not in names
-    assert asyncio.run(review.undo("42", dp, "review:plan")) is not None
-    names = [x.exercise for s in asyncio.run(dp.training.plan("42")).plan.sessions for x in s.items]
-    assert "杠铃深蹲" in names  # 恢复上一版
+    assert "杠铃深蹲" in names and "高脚杯深蹲" not in names  # 没自动保存
+    draft = asyncio.run(dp.training.draft("42", str(got.done[0].value["draft"])))
+    assert draft is not None and draft.state == "pending"  # 存成了预览
     state = asyncio.run(dp.store.get("42"))
-    assert state.item("review:plan") is None  # 撤销了的不再列出
+    asks = pending(state, stage)
+    mine = [x for x in asks if x.key == "review:propose"]
+    assert mine and "高脚杯深蹲" in mine[0].title  # 出一条待确认
+    assert all(x.key != "proposal:review" for x in asks)  # 这天不再出规则的每周复盘建议
+    assert asyncio.run(review.undo("42", dp, "review:propose", today=stage)) is not None
+    assert asyncio.run(dp.training.draft("42", draft.id)).state == "cancelled"  # type: ignore[union-attr]
+    # 平时（不是满 4 周那天）没有改计划这个工具
+    plain, _ = model({"type": "plan", "why": "x", "basis": [f], "ops": [op]})
+    assert not asyncio.run(review.run("42", dp, plain, force=True)).done
 
 
 def test_kcal_change_respects_the_safety_floor_and_can_be_undone() -> None:
@@ -101,10 +124,18 @@ def test_kcal_change_respects_the_safety_floor_and_can_be_undone() -> None:
     assert got.done and "按基础代谢和安全下限" in got.done[0].title  # 低了按下限执行并写明
     floor_adj = asyncio.run(dp.diet.current("42"))
     assert floor_adj is not None and floor_adj.kcal < 0
+    soon, _ = model({"type": "kcal", "delta": 200, "why": "减得太快", "basis": [f]})
+    assert not asyncio.run(
+        review.run("42", dp, soon, force=True)
+    ).done  # 不到 14 天不复查热量（§129）
+    later = TODAY + timedelta(days=14)
+    probe2, seen2 = model()
+    asyncio.run(review.run("42", dp, probe2, force=True, today=later))
+    f = facts_id(seen2, "每日热量目标")  # 换了一天，事实重新编号
     up, _ = model({"type": "kcal", "delta": 200, "why": "减得太快", "basis": [f]})
-    asyncio.run(review.run("42", dp, up, force=True))
+    asyncio.run(review.run("42", dp, up, force=True, today=later))
     assert asyncio.run(dp.diet.current("42")).kcal == floor_adj.kcal + 200  # type: ignore[union-attr]
-    asyncio.run(review.undo("42", dp, "review:kcal"))
+    asyncio.run(review.undo("42", dp, "review:kcal", today=later))
     assert asyncio.run(dp.diet.current("42")).kcal == floor_adj.kcal  # type: ignore[union-attr]
 
 

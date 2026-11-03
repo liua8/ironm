@@ -141,13 +141,14 @@ def test_tools_and_daily_review_apply_the_rules(monkeypatch: Any) -> None:
         diastolic=((TODAY - timedelta(days=3), 102.0),),
     )
     dp = setup(bp)
+    stage = TODAY + timedelta(days=28)  # 改计划只在满 4 周那天提（§129）
     probe, seen = model()
-    asyncio.run(review.run("42", dp, probe))
+    asyncio.run(review.run("42", dp, probe, today=stage))
     f = next(x for x in seen[0].split("\n") if "当前计划" in x).split("]")[0].lstrip("[")
     day = TODAY.isoweekday()
     lighter, _ = model({"type": "plan", "why": "血压偏高先减量", "basis": [f],
                         "ops": [{"kind": "reduce", "day": day, "ratio": 0.7}]})  # fmt: skip
-    assert asyncio.run(review.run("42", dp, lighter, force=True)).done
+    assert asyncio.run(review.run("42", dp, lighter, force=True, today=stage)).done
     heavier, _ = model({"type": "plan", "why": "x", "basis": [f],
                         "ops": [{"kind": "edit", "day": day, "exercise": "罗马尼亚硬拉", "sets": 3, "reps": "3–5"}]})  # fmt: skip
-    assert not asyncio.run(review.run("42", dp, heavier, force=True)).done
+    assert not asyncio.run(review.run("42", dp, heavier, force=True, today=stage)).done

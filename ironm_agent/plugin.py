@@ -1581,7 +1581,7 @@ class IronMAgent:
         """路由没把握时管家看的上下文（spec [2026-10-23] §56）：待确认的计划预览、今天的训练状态、计划目标。"""
         out: list[str] = []
         try:
-            draft = await self._training_store().pending_plan(user_id)
+            draft = await self._training_store().pending_plan(user_id, skip_source="checkup")
         except Exception as e:
             _log.warning("pending plan unavailable: error_type=%s", type(e).__name__)
             draft = None
@@ -2035,7 +2035,8 @@ class IronMAgent:
         prior = None
         if merge:
             try:
-                prior = await store.pending_plan(user_id)
+                # 每日复查提的预览不是这段对话给的：取的时候就跳过（不压住这段对话更早的预览，复核 11-03）
+                prior = await store.pending_plan(user_id, skip_source="checkup")
             except Exception as e:
                 _log.warning("pending plan unavailable: error_type=%s", type(e).__name__)
         base = parse_plan(prior.content.get("plan"))[0] if prior is not None else None
@@ -2130,7 +2131,9 @@ class IronMAgent:
         review = state.review if state is not None else None
         if review is not None and review.day == today:
             lines += [(f"管家今天已经调整：{d.title}（原因：{d.why}）", f"{d.title}。原因：{d.why}。依据：{d.basis}")
-                      for d in review.done if not d.undone]  # fmt: skip
+                      for d in review.done if not d.undone and d.type != "propose"]  # fmt: skip
+            lines += [(f"管家今天提了改计划、还没确认：{d.title}（原因：{d.why}）", f"{d.title}。原因：{d.why}")
+                      for d in review.done if not d.undone and d.type == "propose"]  # fmt: skip
             lines += [(f"管家今天核对了以前的调整：{x}", x) for x in review.checked]  # §89
         if state is not None and state.stage_text and state.stage_day is not None:
             when = f"{state.stage_day.month}月{state.stage_day.day}日"

@@ -1,9 +1,11 @@
-"""管家复盘（spec [2026-10-23] §85）：代码只负责算对，调不调、调什么、调多少由模型决定。
+"""管家复盘（spec [2026-10-23] §85、§129）：代码只负责算对，调不调、调什么、调多少由管家按规程决定。
 
-每天一次：代码把算好的事实（两种比较、认出的情况和同期发生的事、训练、今天的计划、热量目标）编好号交给模型，
-模型决定今天按几成练或休息、改计划、调热量、只提醒或问一句，每条写原因、依据和预期。代码只做三件事：
+每天一次叫醒管家做"到期复查"：代码把算好的事实（两种比较、认出的情况和同期发生的事、训练、今天的计划、热量目标）
+编好号交给它，装上该复查的规程（今天练不练每次都装，饮食方案满 14 天没调热量才装，排训练计划满 4 周才装），
+它用工具调：今天按几成练或休息、调热量、提改计划、提醒或问一句，每条写原因、依据和预期。代码只做三件事：
 依据的编号要存在；改计划的操作套得上、检查没有必须改的问题；热量不低于基础代谢和安全下限、危急指标不调训练。
-通过的直接生效、记进调整经历、能撤销。模型调用失败时不调整，不退回规则替它决定。
+今天、热量通过的直接生效、记进调整经历、能撤销；改计划存成预览，他同意才保存（§129 需求 3）。
+模型调用失败时不调整，不退回规则替它决定。
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+from ironm_agent.actions import ADJUST_TODAY, KCAL_CHANGE, PLAN_EDIT
 from ironm_agent.casefile import risks
 from ironm_agent.coach_state import (
     Change,
@@ -42,29 +45,83 @@ TIMEOUT_S = 60.0
 # 复盘时常用的资料（模型引用时写编号）；认出的情况和两种比较用到的资料另外加进来
 COMMON = ("K03", "K09", "K16", "K18", "K28", "K31", "K37", "K64", "K81", "K82", "K87", "K88")
 
-_PROMPT = """你是健身 App 里的管家，正在给这个人做每天一次的复盘。下面是系统算好的事实（编号 F..，数都是代码算的，照用，不要自己算、不要编）和可以引用的资料（编号 K..）。
+_PROMPT = """你是健身 App 里的「AI 健身管家」。现在不是他在问你，是系统每天叫醒你做一次到期复查：下面是系统算好的事实（编号 F..，数都是代码算的，照用，不要自己算、不要编）和可以引用的资料（编号 K..）。
 
-请你判断今天要不要调整、调什么、调多少——由你决定，没有固定的规则。可以做这几种（可以做几种，也可以都不做）：
-- today：只改今天这一次训练。{"type": "today", "ratio": 0.5 到 0.9（按原来的几成练）} 或 {"type": "today", "rest": true}
-- plan：改训练计划（以后每周都按新的练）。{"type": "plan", "ops": [操作]}，操作和改计划时一样：
-  {"kind": "swap", "day": 1–7, "exercise": "原动作", "to": "新动作"}、{"kind": "move", "day": 几, "to_day": 几}、
-  {"kind": "edit", "day": 几, "exercise": "动作", "sets": 组数, "reps": "次数"}、{"kind": "add", "day": 几, "exercise": "动作", "sets": 组数, "reps": "次数"}、
-  {"kind": "remove", "day": 几, "exercise": "动作"}、{"kind": "reduce", "day": 几或不写（整份）, "ratio": 0.5–0.9}
-- kcal：调每日热量目标。{"type": "kcal", "delta": 每天多吃（正数）或少吃（负数）多少千卡}
-- note：只提醒他一句。{"type": "note", "text": "一句话"}
-- ask：拿不准、需要他说清楚时问一句。{"type": "ask", "text": "一句话"}
-每一条都要加上：
-- "why"：一句话的原因，像当面对他说，不写编号；
-- "basis"：用到的事实和资料编号，如 ["F2", "F5", "K18"]，至少有一个 F；
-- "expect"：一个能检查的预期，带时间（如"两周后静息心率回到 62 次/分以下"）；note、ask 可以不写。
-- "check"：同一个预期写成系统到期能核对的样子（today、plan、kcal 都要写）：
-  {"metric": "weight|resting_hr|hrv|sleep|steps|waist|body_fat|completion|e1rm", "op": "<=" 或 ">=", "value": 数, "days": 3–42}；
-  e1rm 是某个动作的估算最大重量，加 "exercise": "动作名"；completion 是按计划的完成率（百分数）。
-判断时把事实放在一起看：同期发生的事只是"可能有关"，不要当成因果；数据不够或说不准时，宁可不调或问一句。危急的情况系统已经拦下，你不用处理。
-事实里有"以前调整的效果"：没达到的不要原样再来一次（换个做法、或者问他）；"还在等结果"的同类调整不要叠加。
-事实里有"阶段："开头的几条时，今天满 4 周了，另外写 "stage"：3–5 句阶段小结，像当面对他说——这 4 周练得怎么样、变了什么、调整有没有用、下 4 周的重点；数照事实里的写。
+按装上的规程里「到期复查」一节判断今天要不要调、调什么、调多少；没有固定的规则，由你决定。要调就调用工具（{tools}），可以调几样，也可以都不调：
+- 每次调用都写 why（一句话原因，像当面对他说，不写编号）、basis（用到的事实和资料编号，至少一个 F）、expect（给人看的预期，带时间）、check（系统到期能核对的预期：{{"metric": "weight|resting_hr|hrv|sleep|steps|waist|body_fat|completion|e1rm", "op": "<=" 或 ">=", "value": 数, "days": 3–42}}，e1rm 加 "exercise"；提醒和问一句可以不写预期）。
+- 只有调用了工具才算调了：总结里写"今天按七成练""热量少吃 200"不会生效。
+- 结果会告诉你生效了没有；没生效的看原因，改了再调或者不调。
+- 把事实放在一起看：同期发生的事只是"可能有关"，不当成因果；数据不够或说不准时，宁可不调或问一句。危急的情况系统已经拦下，你不用处理。
+- 事实里有"以前调整的效果"：没达到的不要原样再来一次（换个做法、或者问他）；"还在等结果"的同类调整不要叠加。
+{stage}
+做完只输出 JSON：{{"summary": "一句话：今天看到的最重要的情况（都正常就写都正常）"{stage_field}}}
 
-只输出 JSON：{"summary": "一句话：今天看到的最重要的情况（都正常就写都正常）", "adjust": [ ... ], "stage": "只有满 4 周时写"}"""
+装上的规程（到期复查）：
+{skills}"""
+
+_STAGE = '事实里有"阶段："开头的几条：今天满 4 周了，另外写 stage：3–5 句阶段小结，像当面对他说——这 4 周练得怎么样、变了什么、调整有没有用、下 4 周的重点；数照事实里的写。'
+MAX_TURNS = 6  # 和模型最多往返几次（含调工具）；到了就不再给工具，请它作答
+# 总结里说到要调（按几成练、休息、减量、调热量）：没调用工具就提醒一次；前面几个字是否定的不算
+_SAYS_ADJUST = re.compile(
+    r"按\s*[一二三四五六七八九\d到至~～—–-]+\s*成|[降减]到\s*[一二三四五六七八九\d]+\s*成|[五六七八九]成练"
+    r"|练\s*\d{2}\s*%|按\s*0\.\d|休息一天|今天休息(?!日)|减量|少吃|多吃|[上下]调\s*\d+|减\s*\d+\s*千卡|调到|调整为"
+)
+# 只认紧贴在前面的明确否定："不用减量""先不调"；"睡眠不足今天按七成练"里的"不"是在说原因，不算（复核 11-03）
+_NEGATED = re.compile(
+    r"(?:不用|不必|不要|无需|不需要|没必要|暂时不|先不|别|不)\s*$|(?:不用|不必|不要|无需|不需要|没必要|暂时不|先不).{0,2}$"
+)
+
+
+def says_adjust(text: str) -> bool:
+    """总结里是不是说了要调（"不用减量""暂时不需要调整为"这类否定的不算）。"""
+    return any(
+        not _NEGATED.search(text[max(0, m.start() - 6) : m.start()])
+        for m in _SAYS_ADJUST.finditer(text)
+    )
+
+
+NUDGE = (
+    "（系统核对）你的总结里说到要调整，但这一轮没有调用工具，所以什么都没生效。要调就调用对应的工具"
+    "（今天按几成练或休息、调热量……）；本来就不打算调的，照原样输出 JSON。"
+)
+DIET_DAYS = 14  # 距上次调热量满几天才复查饮食（同 §18）
+
+_WHY = {"type": "string", "description": "一句话原因，像当面对他说，不写编号"}
+_BASIS = {
+    "type": "array",
+    "items": {"type": "string"},
+    "description": "用到的事实和资料编号，至少一个 F",
+}
+_EXPECT = {"type": "string", "description": '给人看的预期，带时间，如"两周后静息心率回到 62 以下"'}
+_CHECK = {
+    "type": "object",
+    "description": "系统到期能核对的预期 {metric, op, value, days, exercise?}",
+}
+
+
+def _tool(
+    name: str, description: str, props: dict[str, Any], required: list[str]
+) -> dict[str, Any]:
+    return {"type": "function", "function": {"name": name, "description": description, "parameters": {
+        "type": "object", "additionalProperties": False,
+        "properties": {**props, "why": _WHY, "basis": _BASIS, "expect": _EXPECT, "check": _CHECK},
+        "required": [*required, "why", "basis"]}}}  # fmt: skip
+
+
+NOTE = "coach_note"
+CHECKUP = "checkup"  # 复查存的计划预览在草稿里的来源标记
+TOOLS: dict[str, dict[str, Any]] = {
+    ADJUST_TODAY: _tool(ADJUST_TODAY, "只改今天这一次：按几成练（ratio 0.5–0.9）或休息（rest）。原计划不变，他能说不用这样调。",
+                        {"ratio": {"type": "number"}, "rest": {"type": "boolean"}}, []),
+    KCAL_CHANGE: _tool(KCAL_CHANGE, "调每日热量目标：每天多吃（正数）或少吃（负数）多少千卡。不低于基础代谢和安全下限。",
+                       {"delta": {"type": "integer"}}, ["delta"]),
+    PLAN_EDIT: _tool(PLAN_EDIT, "提改计划：交操作（swap/move/add/edit/remove/reduce，同对话里改计划）。系统套用、检查后存成预览，他同意才保存。",
+                     {"ops": {"type": "array", "items": {"type": "object"}}}, ["ops"]),
+    NOTE: _tool(NOTE, "只提醒他一句（kind 写 note），或者拿不准时问他一句（kind 写 ask）。",
+                {"kind": {"type": "string", "enum": ["note", "ask"]}, "text": {"type": "string"}}, ["kind", "text"]),
+}  # fmt: skip
+_TYPE = {ADJUST_TODAY: "today", KCAL_CHANGE: "kcal", PLAN_EDIT: "plan"}
+_LOCKS: dict[str, asyncio.Lock] = {}  # 每个人一把：同一天的复查不并发跑两次
 
 
 def facts(
@@ -136,46 +193,151 @@ async def run(
 ) -> Review:
     """跑一次复盘（今天已经做过就直接用；force 时重做）。结果存进管家的方案，再重新评估一次。"""
     today = today or date.today()
+    async with _LOCKS.setdefault(
+        user_id, asyncio.Lock()
+    ):  # 打开对话和第一次提问同时触发：只跑一次（审查 11-03）。只在单进程里有效，多进程要换数据库锁
+        return await _run(user_id, deps, llm, today=today, force=force)
+
+
+async def _run(user_id: str, deps: Deps, llm: LLM, *, today: date, force: bool) -> Review:
     state = await deps.store.get(user_id)
     if not force and state is not None and state.review is not None and state.review.day == today:
         return state.review
     inp = await _gather(user_id, deps, today)
+    stored = await deps.training.plan(user_id)  # 提改计划的底稿：和 inp.plan 同时取（复核 11-03）
+    base = stored.id if stored is not None else ""
     checked, extra, hist = await _outcomes(user_id, deps, inp, today)
     staging = stage_due(state.stage_day if state is not None else None, inp.since, inp.logs, today)
     if staging:
         extra += [f"阶段：{x}" for x in _stage(inp, hist, today)]
     fs, refs = facts(inp, today, extra)
     blocked = any(r.block for r in risks(inp.snapshot.readings, inp.memory, today))
+    skills = _due_skills(inp, today, staging)
+    allowed = {NOTE, *(t for x in skills for t in x.toolset if t in TOOLS)}
+    schemas = [TOOLS[n] for n in TOOLS if n in allowed]
+    system = _PROMPT.format(
+        tools="、".join(n for n in TOOLS if n in allowed),
+        stage=_STAGE if staging else "",
+        stage_field=', "stage": "阶段小结"' if staging else "",
+        skills="\n\n".join(x.section("到期复查") or x.text() for x in skills),
+    )
     user = "\n".join(
         ["事实：", *(f"[{k}] {v}" for k, v in fs.items()), "", "可以引用的资料：", *_kb_lines(refs)]
     )
+    review = Review(day=today, checked=checked)
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
+    raw: dict[str, Any] | None = None
+    nudged = False
     try:
-        reply = await asyncio.wait_for(
-            llm.chat(
-                "expert",
-                [{"role": "system", "content": _PROMPT}, {"role": "user", "content": user}],
-            ),
-            TIMEOUT_S,
-        )
-        raw = parse_json(reply.content) or {}
-    except Exception as e:  # 模型不可用：不调整，不退回规则（§85 需求 5）
+        for turn in range(MAX_TURNS + 1):
+            offer = schemas if turn < MAX_TURNS else None  # 到了往返上限：不再给工具，请它作答
+            reply = await asyncio.wait_for(
+                llm.chat("expert", messages, tools=offer or None, json_mode=not offer), TIMEOUT_S
+            )
+            if not reply.tool_calls or not offer:  # 没给工具的那一轮还要调：不执行，按它写的作答
+                raw = parse_json(reply.content) or {}
+                said = str(raw.get("summary") or "")
+                if (
+                    offer
+                    and turn < MAX_TURNS - 1
+                    and not nudged
+                    and not review.done
+                    and says_adjust(said)
+                ):
+                    nudged = True  # 总结里说了要调、却没调用工具：提醒一次（真实模型 11-03）
+                    messages.append({"role": "assistant", "content": reply.content})
+                    messages.append({"role": "user", "content": NUDGE})
+                    continue
+                break
+            messages.append(reply.as_message())
+            for call in reply.tool_calls:
+                said = await _call(
+                    base,
+                    user_id,
+                    deps,
+                    inp,
+                    call.name,
+                    call.arguments,
+                    allowed,
+                    fs,
+                    blocked,
+                    today,
+                    review,
+                )
+                messages.append({"role": "tool", "tool_call_id": call.id, "content": said})
+    except Exception as e:  # 模型不可用：不调整，不退回规则（§85 需求 5）；已经生效的照记，能撤销
         _log.warning("review failed: error_type=%s", type(e).__name__)
-        raw = None
-    review = Review(day=today, failed=raw is None, checked=checked)
+        review.failed = not any(
+            d.type == "today" for d in review.done
+        )  # 没就今天做出决定：今天照规则兜底
     if raw is not None:
         review.summary = str(raw.get("summary") or "")[:120]
         if staging:
             review.stage = str(raw.get("stage") or "").strip()[:400]
-        adjust = raw.get("adjust")
-        for a in adjust if isinstance(adjust, list) else []:
-            if not isinstance(a, dict):
-                continue
-            done = await _apply(user_id, deps, inp, a, fs, blocked, today)
-            if done is not None:
-                review.done.append(done)
     await _save(user_id, deps, review, today)
     _log.info("review done %s", json.dumps({"adjust": len(review.done), "failed": review.failed}))
     return review
+
+
+def _due_skills(inp: Inputs, today: date, staging: bool) -> list[Any]:
+    """今天该复查哪几份规程（§129 需求 1）：今天练不练每次都查；满 14 天没调热量查饮食；满 4 周查计划。"""
+    from ironm_agent.skills import by_id
+
+    want = ["readiness-adjust"]
+    if inp.diet is None or (today - inp.diet.since).days >= DIET_DAYS:
+        want.append("diet-plan")
+    if staging and inp.plan is not None:
+        want.append("plan-build")
+    return [x for x in (by_id(i) for i in want) if x is not None]
+
+
+async def _call(
+    base: str,
+    user_id: str, deps: Deps, inp: Inputs, name: str, args: dict[str, Any], allowed: set[str],
+    fs: dict[str, str], blocked: bool, today: date, review: Review,
+) -> str:  # fmt: skip
+    """执行一次复查里的工具调用：校验沿用 §85 的 _apply；同一项调两次以后一次为准。日志只记工具名和结果。"""
+    if name not in allowed:
+        _log.info("review tool: tool=%s result=locked", name)
+        return f"今天的复查没有 {name}（没到复查它的时候），不调这一项。"
+    kind = str(args.get("kind") or "note") if name == NOTE else _TYPE[name]
+    a = {**args, "type": kind, "_base": base}
+    first = (
+        next((d for d in review.done if d.key == "review:kcal"), None) if kind == "kcal" else None
+    )
+    if first is not None:  # 同一轮第二次调热量：先撤掉第一次，撤销时才回得到原样（审查 11-03）
+        await deps.diet.undo(user_id)
+    try:
+        done = await _apply(user_id, deps, inp, a, fs, blocked, today)
+    except Exception:
+        done = None
+        if first is not None:  # 写库出错：第一次补回去，记录和库保持一致（复核 11-03）
+            await deps.diet.apply(
+                user_id,
+                KcalAdjust(int(first.value.get("after") or 0), today, first.why or "管家复盘"),
+            )
+        raise
+    if done is None and first is not None:  # 第二次没通过：第一次照旧
+        await deps.diet.apply(
+            user_id, KcalAdjust(int(first.value.get("after") or 0), today, first.why or "管家复盘")
+        )
+    if done is None:
+        _log.info("review tool: tool=%s result=rejected", name)
+        return ("没执行：依据要写事实编号（至少一个 F，资料编号要存在）；危急情况不调训练；"
+                "改计划的操作要套得上、检查要过；热量要写多少千卡。按原因改了再调，或者不调。")  # fmt: skip
+    old = next((d for d in review.done if d.key == done.key), None)
+    if old is not None:  # 同一项以后一次为准；前一次提的计划预览作废
+        review.done.remove(old)
+        if old.type == "propose":
+            await deps.training.cancel(user_id, str(old.value.get("draft")))
+    review.done.append(done)
+    _log.info("review tool: tool=%s result=ok", name)
+    if done.type == "propose":
+        return f"已存成计划预览，等他确认：{done.title}"
+    return f"已生效：{done.title}"
 
 
 def _short(d: date) -> str:
@@ -190,7 +352,7 @@ async def _outcomes(
     hist = await deps.store.history(user_id, 200)
     declined = {(c.key, c.day) for c in hist if c.kind == "review" and c.change == "declined"}
     live = [c for c in hist if c.kind == "review" and c.change == "added" and c.check
-            and (c.key, c.day) not in declined]  # fmt: skip
+            and c.status != "confirm" and (c.key, c.day) not in declined]  # fmt: skip  # 提的改计划没执行，不核对
     checked: list[str] = []
     for i, c in enumerate(hist):
         chk = parse_check(c.check)
@@ -204,7 +366,8 @@ async def _outcomes(
         checked.append(f"{_short(c.day)}{c.after}：预期{c.expect or chk.line()}，{new.outcome}")
     lines: list[str] = []
     for c in hist:
-        if c.kind != "review" or c.change != "added" or not c.check or (c.key, c.day) in declined:
+        if (c.kind != "review" or c.change != "added" or not c.check or c.status == "confirm"
+                or (c.key, c.day) in declined):  # fmt: skip
             continue
         if c.result and c.due is not None and (today - c.due).days <= 56:
             lines.append(f"以前调整的效果：{_short(c.day)}{c.after}（原因：{c.why}）；"
@@ -320,10 +483,15 @@ async def _plan(
     content = plan_content(
         got.plan, why or "管家复盘", ops=[o.model_dump(mode="json") for o in got.done]
     )
-    draft = await deps.training.add_draft(user_id, "plan", content)
-    if await deps.training.confirm(user_id, draft.id) is None:
-        return None
-    return Done(key="review:plan", type="plan", title="计划已调整：" + "；".join(got.lines)[:100],
+    content = {
+        **content,
+        "source": CHECKUP,
+        "base": str(a.get("_base") or ""),
+    }  # 计划后来改过就不再给这份预览
+    draft = await deps.training.add_draft(
+        user_id, "plan", content
+    )  # 存成预览，他同意才保存（§129）
+    return Done(key="review:propose", type="propose", title="建议这样改计划：" + "；".join(got.lines)[:100],
                 why=why, basis=basis, expect=expect, value={"draft": draft.id})  # fmt: skip
 
 
@@ -370,7 +538,7 @@ async def _save(user_id: str, deps: Deps, review: Review, today: date) -> None:
     at = datetime.now(UTC)
     changes = [Change(id=uuid.uuid4().hex[:16], at=at, day=today, version=state.version, key=d.key,
                       kind="review", change="added", after=d.title, why=d.why, basis=d.basis,
-                      status="info" if d.type in ("note", "ask") else "auto",
+                      status="info" if d.type in ("note", "ask") else "confirm" if d.type == "propose" else "auto",
                       expect=d.expect, check=d.check, due=d.due)
                for d in review.done]  # fmt: skip
     update: dict[str, Any] = {"review": review}
@@ -410,6 +578,14 @@ async def undo(user_id: str, deps: Deps, key: str, today: date | None = None) ->
         return None
     if done.type == "plan":
         await deps.training.undo(user_id, str(done.value.get("draft")))
+    if done.type == "propose":  # 还没确认的作废；他已经确认了的恢复上一版（审查 11-03）
+        draft = await deps.training.draft(user_id, str(done.value.get("draft")))
+        if draft is None or draft.state not in ("pending", "confirmed"):
+            return None
+        if draft.state == "pending":
+            await deps.training.cancel(user_id, draft.id)
+        elif await deps.training.undo(user_id, draft.id) is None:
+            return None
     if done.type == "kcal":
         await deps.diet.undo(user_id)
     new = review.model_copy(update={"done": [d.model_copy(update={"undone": True}) if d is done else d
