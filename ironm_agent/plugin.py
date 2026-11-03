@@ -2168,8 +2168,10 @@ class IronMAgent:
         found, insight_lines = await self._insights(user_id, snapshot, logs, ill, recall)
         if run is not None:
             run["_found"] = found
+        coach = await self._coach_state(user_id)  # 管家练完后定的下次目标（§132）
+        decided = coach.decided() if coach is not None else None
         case = build_case(
-            snapshot, recall, text, plan=lines + target_lines(plan, steady, snapshot.today),
+            snapshot, recall, text, plan=lines + target_lines(plan, steady, snapshot.today, decided),
             illness=signal, day=today_lines, earlier=day_signals(day, before=at),
             insights=insight_lines,
         )  # fmt: skip

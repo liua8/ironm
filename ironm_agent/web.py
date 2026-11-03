@@ -364,6 +364,12 @@ def refresh_later(user_id: str, memory: MemoryStore, training: TrainingStore) ->
     task.add_done_callback(_BACKGROUND.discard)
 
 
+def _targets_later(user_id: str, log: WorkoutLog) -> None:
+    from ironm_agent import web_more
+
+    web_more.targets_later(user_id, log)
+
+
 @router.post("/iron/api/drafts/{draft_id}/confirm")
 async def confirm_draft(
     draft_id: str,
@@ -380,6 +386,10 @@ async def confirm_draft(
             await illness_trained(
                 illness, user_id, date.fromisoformat(str(log.get("day") or date.today()))
             )
+        try:  # 对话里记的训练确认后也叫醒管家定下次（§132）
+            _targets_later(user_id, WorkoutLog.model_validate(log))
+        except ValueError:
+            _log.warning("next targets skipped: error_type=ValueError")
     plan_change_later(user_id, out.get("draft") or {})  # 按操作改的计划：记进调整经历（§45）
     coach_later(user_id, "确认方案")  # 计划或记录变了：管家重新评估（spec [2026-10-23] §23）
     return out
@@ -476,6 +486,7 @@ async def after_workout(
             _log.warning("pain record failed: error_type=%s", type(e).__name__)
     refresh_later(user_id, memory, store)  # 后台更新训练记录得出的偏好（spec [2026-10-23] §17）
     coach_later(user_id, "打卡")  # 管家重新评估当前方案（spec [2026-10-23] §23）
+    _targets_later(user_id, log)  # 叫醒管家定下次怎么练（§132）
 
 
 @router.delete("/iron/api/workouts/{workout_id}")
@@ -494,6 +505,12 @@ async def delete_workout(
     return {"deleted": workout_id}
 
 
+async def _decided(user_id: str) -> dict[str, Any]:
+    from ironm_agent import web_more
+
+    return await web_more.decided_targets(user_id)
+
+
 @router.get("/iron/api/training")
 async def get_training(
     user_id: str = Depends(_verify()), store: TrainingStore = TRAINING, photos: Any = PHOTOS
@@ -501,7 +518,7 @@ async def get_training(
     today = date.today()
     plan = await store.plan(user_id)
     logs = await store.workouts(user_id, today - timedelta(days=42))
-    found = targets(plan.plan if plan else None, [x.log for x in logs])
+    found = targets(plan.plan if plan else None, [x.log for x in logs], await _decided(user_id))
     shown = [x for x in reversed(logs) if (today - x.log.day).days <= 30]
     try:  # 哪些打卡带了照片（§117）；读不到当作都没有
         with_photo = await photos.having(user_id, [x.id for x in shown])
@@ -519,6 +536,7 @@ async def get_training(
                 "weight_kg": t.weight_kg,
                 "reps": t.reps,
                 "sets": t.sets,
+                "by": t.by,  # coach：管家练完后定的；rule：按规则算的（§132）
             }
             for k, t in found.items()
         },

@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import uuid
+import weakref
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -66,6 +67,20 @@ class State(BaseModel):
     review: Review | None = None  # 今天的管家复盘（§85）
     stage_day: date | None = None  # 上次 4 周阶段小结是哪天（§89）
     stage_text: str = ""  # 那次的小结（对话里追问时讲）
+    targets: dict[str, Any] = Field(
+        default_factory=dict
+    )  # 管家练完后定的下次目标（§132）：动作 → Decided
+
+    def decided(self) -> dict[str, Any]:
+        from ironm_agent.progression import Decided
+
+        out = {}
+        for k, v in self.targets.items():
+            try:
+                out[k] = Decided.model_validate(v)
+            except ValueError:
+                continue
+        return out
 
     def item(self, key: str) -> Item | None:
         return next((x for x in self.items if x.key == key), None)
@@ -143,6 +158,7 @@ class Inputs:
     review: Review | None = None  # 今天的管家复盘（§85），模型决定的今天怎么练
     memory: list[Any] = field(default_factory=list)  # 记忆条目（§95 认特殊情况）
     seen: Any = None  # diet_adjust.Observed：按记的吃和体重变化估的实际消耗（§118）
+    decided: dict[str, Any] = field(default_factory=dict)  # 管家练完后定的下次目标（§132）
 
 
 @dataclass(frozen=True)
@@ -294,12 +310,14 @@ def _target_items(inp: Inputs) -> list[Item]:
     from ironm_agent.illness import recovering_days
 
     recovering = recovering_days(inp.illness, date.today())
-    for name, t in targets(inp.plan, [x for x in inp.logs if x.day not in recovering]).items():
-        basis = {"up": "加重 2–10%〔K03〕", "down": "减重约 10%（经验）"}.get(t.action, "进阶规则")
+    steady = [x for x in inp.logs if x.day not in recovering]
+    for name, t in targets(inp.plan, steady, inp.decided).items():
+        basis = ("管家按这次的记录定的（规则作参考）" if t.by == "coach"
+                 else {"up": "加重 2–10%〔K03〕", "down": "减重约 10%（经验）"}.get(t.action, "进阶规则"))  # fmt: skip
         out.append(Item(key=f"target:{name}", kind="target", title=f"{name} 下次 {t.text()}",
                         why=t.why, basis=basis, action="auto",
                         value={"exercise": name, "weight_kg": t.weight_kg, "reps": t.reps,
-                               "sets": t.sets, "move": t.action}))  # fmt: skip
+                               "sets": t.sets, "move": t.action, "by": t.by}))  # fmt: skip
     return out
 
 
@@ -671,7 +689,33 @@ async def evaluate(
     user_id: str, deps: Deps, *, reason: str, today: date | None = None, force: bool = True
 ) -> tuple[State, list[Change]]:
     """重新评估当前方案。force=False（每天第一次）时，今天已经评估过就直接用上一版。"""
-    today = today or date.today()
+    async with state_lock(user_id):
+        return await _evaluate(
+            user_id, deps, reason=reason, today=today or date.today(), force=force
+        )
+
+
+_STATE_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Lock]] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def loop_lock(
+    table: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Lock]], key: str
+) -> asyncio.Lock:
+    """按事件循环分开的每人一把锁（锁只能在建它的循环里等）。"""
+    return table.setdefault(asyncio.get_running_loop(), {}).setdefault(key, asyncio.Lock())
+
+
+def state_lock(user_id: str) -> asyncio.Lock:
+    """每人一把：读出管家的方案、改、再存回去的都要拿着它，免得并发的两次互相覆盖（§132 审查）。
+    只在单进程里有效，多进程要换数据库锁。"""
+    return loop_lock(_STATE_LOCKS, user_id)
+
+
+async def _evaluate(
+    user_id: str, deps: Deps, *, reason: str, today: date, force: bool
+) -> tuple[State, list[Change]]:
     old = await deps.store.get(user_id)
     if not force and old is not None and old.day == today:
         return old, []
@@ -682,15 +726,23 @@ async def evaluate(
         else None
     )
     inp.review = review
+    inp.decided = old.decided() if old is not None else {}
     items = compute(inp, today)
     version = (old.version + 1) if old else 1
     changes = diff(old, items, today, version)
     if old is not None and old.day == today and not changes:
+        if (
+            items != old.items
+        ):  # 只是说明变了（比如管家定的下次目标和规则一样，§132）：照存、不加版本、不记经历
+            fresh = old.model_copy(update={"items": items})
+            await deps.store.save(user_id, fresh, [])
+            return fresh, []
         return old, []
     state = State(version=version, day=today, at=datetime.now(UTC), reason=reason, items=items,
                   seen=old.seen if old else 0, choices=old.choices if old else {},
                   review=review, stage_day=old.stage_day if old else None,
-                  stage_text=old.stage_text if old else "")  # fmt: skip
+                  stage_text=old.stage_text if old else "",
+                  targets=old.targets if old else {})  # fmt: skip
     await deps.store.save(user_id, state, changes)
     _log.info("coach evaluated %s", json.dumps({"version": version, "items": len(items),
                                                 "changes": len(changes)}))  # fmt: skip
@@ -759,11 +811,12 @@ def unseen(state: State, history: Sequence[Change]) -> list[Change]:
 
 
 async def mark_seen(store: CoachStore, user_id: str, version: int) -> None:
-    state = await store.get(user_id)
-    if state is not None and version > state.seen:
-        await store.save(
-            user_id, state.model_copy(update={"seen": min(version, state.version)}), []
-        )
+    async with state_lock(user_id):
+        state = await store.get(user_id)
+        if state is not None and version > state.seen:
+            await store.save(
+                user_id, state.model_copy(update={"seen": min(version, state.version)}), []
+            )
 
 
 async def record_plan(
@@ -792,7 +845,13 @@ async def decide(
     today: date | None = None,
 ) -> Item | None:
     """记下用户对一条待确认调整的选择，并写进调整经历；没有这条时返回 None。"""
-    today = today or date.today()
+    async with state_lock(user_id):
+        return await _decide(store, user_id, key, decision, today or date.today())
+
+
+async def _decide(
+    store: CoachStore, user_id: str, key: str, decision: Literal["accept", "later"], today: date
+) -> Item | None:
     state = await store.get(user_id)
     item = state.item(key) if state is not None else None
     if state is None or item is None:

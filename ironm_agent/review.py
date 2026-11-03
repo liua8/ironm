@@ -31,6 +31,7 @@ from ironm_agent.coach_state import (
     State,
     _gather,
     evaluate,
+    state_lock,
 )
 from ironm_agent.expect import RESULT_WORDS, judge, measure, parse_check, stage_due, stage_facts
 from ironm_agent.insights import compare, situations
@@ -532,9 +533,17 @@ async def _kcal(
 
 async def _save(user_id: str, deps: Deps, review: Review, today: date) -> None:
     """复盘结果存进管家的方案，每条调整记进调整经历；再重新评估，今天的版本按复盘改。"""
+    if await deps.store.get(user_id) is None:
+        await evaluate(user_id, deps, reason="管家复盘", today=today)
+    async with state_lock(user_id):  # 读改存之间不让别的写进来（§132 审查）
+        await _save_locked(user_id, deps, review, today)
+    await evaluate(user_id, deps, reason="管家复盘", today=today)
+
+
+async def _save_locked(user_id: str, deps: Deps, review: Review, today: date) -> None:
     state = await deps.store.get(user_id)
     if state is None:
-        state, _ = await evaluate(user_id, deps, reason="管家复盘", today=today)
+        return
     at = datetime.now(UTC)
     changes = [Change(id=uuid.uuid4().hex[:16], at=at, day=today, version=state.version, key=d.key,
                       kind="review", change="added", after=d.title, why=d.why, basis=d.basis,
@@ -545,7 +554,6 @@ async def _save(user_id: str, deps: Deps, review: Review, today: date) -> None:
     if review.stage:  # 阶段小结写成了：下一次从今天起算 28 天（§89）
         update.update(stage_day=today, stage_text=review.stage)
     await deps.store.save(user_id, state.model_copy(update=update), changes)
-    await evaluate(user_id, deps, reason="管家复盘", today=today)
 
 
 async def daily(user_id: str, deps: Deps) -> None:
@@ -569,6 +577,14 @@ def daily_later(user_id: str, deps: Deps) -> None:
 async def undo(user_id: str, deps: Deps, key: str, today: date | None = None) -> Done | None:
     """ "不用这样调"：计划恢复上一版、热量恢复原来的、今天回到原计划；记进调整经历。"""
     today = today or date.today()
+    async with state_lock(user_id):
+        done = await _undo(user_id, deps, key, today)
+    if done is not None:
+        await evaluate(user_id, deps, reason="不用这样调", today=today)
+    return done
+
+
+async def _undo(user_id: str, deps: Deps, key: str, today: date) -> Done | None:
     state = await deps.store.get(user_id)
     review = state.review if state is not None else None
     if state is None or review is None or review.day != today:
@@ -595,5 +611,4 @@ async def undo(user_id: str, deps: Deps, key: str, today: date | None = None) ->
                     basis=done.basis, status="auto")  # fmt: skip
     await deps.store.save(user_id, State.model_validate({**state.model_dump(), "review": new.model_dump()}),
                           [change])  # fmt: skip
-    await evaluate(user_id, deps, reason="不用这样调", today=today)
     return done

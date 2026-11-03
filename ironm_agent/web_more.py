@@ -1259,6 +1259,26 @@ def plan_change_later(user_id: str, draft: dict[str, Any], *, undone: bool = Fal
         _log.warning("plan change schedule failed: error_type=%s", type(e).__name__)
 
 
+async def decided_targets(user_id: str) -> dict[str, Any]:
+    """管家练完后定的下次目标（§132）；读不到当作没有，照规则。"""
+    try:
+        state = await coach_deps().store.get(user_id)
+    except Exception as e:
+        _log.info("coach state unavailable: error_type=%s", type(e).__name__)
+        return {}
+    return state.decided() if state is not None else {}
+
+
+def targets_later(user_id: str, log: Any) -> None:
+    """记下一次训练后在后台叫醒管家定下次怎么练（§132）；不耽误这次请求。"""
+    from ironm_agent.next_targets import later
+
+    try:
+        later(user_id, coach_deps(), log)
+    except Exception as e:
+        _log.warning("next targets schedule failed: error_type=%s", type(e).__name__)
+
+
 def coach_later(user_id: str, reason: str) -> None:
     """有新情况时在后台重新评估当前方案（打卡、记饮食、说疼、改目标、确认或撤销方案）。"""
     from ironm_agent.coach_state import evaluate_later
