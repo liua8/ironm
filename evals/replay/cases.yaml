@@ -226,3 +226,84 @@ cases:
         must_not: [146 公斤]
         card: none
 
+
+# 后台用例（§138 需求 1）：到期复查（kind: checkup，§129）、练完定下次（kind: next，§132）。
+# 本进程内存存储 + 真实模型，不登录、不碰账号和数据库。setup：
+#   readings  每项 {recent: 最近几天的值, usual: 平时, days: 共几天, recent_days: 最近算几天（默认 7）, wiggle: 平时的波动幅度}
+#             或 {recent: 今天的值, trend: 每周变多少, days}（按趋势线性变化）
+#   plan      每次训练 {day: today / other / 1–7, name, items: [{exercise, sets, reps}]}
+#   logs      {back: 几天前, session, rpe, note, items: [{exercise, sets, reps, weight}]}；next 用最后一条当"刚记下的这次"
+# expect（checkup）：done / not_done 调整种类（today kcal propose note ask）、any、summary_must、summary_must_not
+# expect（next）：targets 每个动作 up / down / more / hold / rule / not_up（可写几个，任一即可）、why_must、why_must_not、rejected
+# 模型调用出错、复查算失败，一律不符合（不会因为"没调"被当成判断对了）
+agent:
+  - id: checkup-tired
+    from: §129 这周睡得少、静息心率高、心率变异性低，今天有下肢训练
+    kind: checkup
+    setup:
+      readings:
+        sleep_hours: {recent: 5.3, usual: 7.4, days: 30, wiggle: 0.2}
+        resting_hr: {recent: 67, usual: 58, days: 40, wiggle: 1}
+        hrv_sdnn: {recent: 37, usual: 52, days: 40, wiggle: 2}
+        weight: {recent: 79.6, usual: 80, days: 28}
+      plan: &lower
+        - {day: today, name: 下肢, items: [{exercise: 杠铃深蹲, sets: 4, reps: "6–8"}, {exercise: 罗马尼亚硬拉, sets: 3, reps: "8–10"}]}
+        - {day: other, name: 上肢, items: [{exercise: 哑铃卧推, sets: 3, reps: "8–10"}]}
+      logs:
+        - {back: 2, session: 上肢, items: [{exercise: 哑铃卧推, sets: 3, reps: 9, weight: 22}]}
+        - {back: 4, session: 下肢, items: [{exercise: 杠铃深蹲, sets: 4, reps: 7, weight: 60}]}
+    expect: {done: [today], not_done: [propose]}
+
+  - id: checkup-normal
+    from: §129 各项都和平时一样，体重按减脂的速度在降（每周约 0.6 公斤）
+    kind: checkup
+    setup:
+      readings:
+        sleep_hours: {recent: 7.4, usual: 7.4, days: 30, wiggle: 0.2}
+        resting_hr: {recent: 58, usual: 58, days: 40, wiggle: 1}
+        hrv_sdnn: {recent: 52, usual: 52, days: 40, wiggle: 2}
+        weight: {recent: 78.2, trend: -0.6, days: 28}
+      plan: *lower
+      logs:
+        - {back: 2, session: 上肢, items: [{exercise: 哑铃卧推, sets: 3, reps: 9, weight: 22}]}
+        - {back: 4, session: 下肢, items: [{exercise: 杠铃深蹲, sets: 4, reps: 7, weight: 60}]}
+    expect: {not_done: [today, propose]}
+
+  - id: checkup-one-signal
+    from: §129 只有静息心率比平时高，睡眠、心率变异性正常：只看到一样不调今天
+    kind: checkup
+    setup:
+      readings:
+        sleep_hours: {recent: 7.4, usual: 7.4, days: 30, wiggle: 0.2}
+        resting_hr: {recent: 64, usual: 58, days: 40, wiggle: 1}
+        hrv_sdnn: {recent: 52, usual: 52, days: 40, wiggle: 2}
+        weight: {recent: 78.2, trend: -0.6, days: 28}
+      plan: *lower
+      logs:
+        - {back: 4, session: 下肢, items: [{exercise: 杠铃深蹲, sets: 4, reps: 7, weight: 60}]}
+    expect: {not_done: [today, propose]}
+
+  - id: next-hard-knee
+    from: §132 深蹲连续两次超过上限（规则说加重），这次练到力竭、膝盖不舒服
+    kind: next
+    setup:
+      plan: *lower
+      logs:
+        - {back: 4, session: 下肢, items: [{exercise: 杠铃深蹲, sets: 4, reps: 9, weight: 60}, {exercise: 罗马尼亚硬拉, sets: 3, reps: 11, weight: 50}]}
+        - {back: 0, session: 下肢, rpe: 10, note: 最后一组练到力竭，膝盖有点不舒服, items: [{exercise: 杠铃深蹲, sets: 4, reps: 9, weight: 60}, {exercise: 罗马尼亚硬拉, sets: 3, reps: 11, weight: 50}]}
+    expect:
+      targets: {杠铃深蹲: [hold, down]}
+      why_must: {杠铃深蹲: [[膝]]}
+      rejected: 0
+
+  - id: next-easy
+    from: §132 深蹲连续两次超过上限，这次挺轻松：照规则加重（定或不定都行），不能减
+    kind: next
+    setup:
+      plan: *lower
+      logs:
+        - {back: 4, session: 下肢, items: [{exercise: 杠铃深蹲, sets: 4, reps: 9, weight: 60}]}
+        - {back: 0, session: 下肢, rpe: 6, note: 挺轻松, items: [{exercise: 杠铃深蹲, sets: 4, reps: 9, weight: 60}]}
+    expect:
+      targets: {杠铃深蹲: [up, more, rule]}
+      rejected: 0

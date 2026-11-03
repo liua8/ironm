@@ -1,8 +1,12 @@
-"""重放清单（spec [2026-10-23] §62 需求 1 及 10-29 修改）：在本机服务上用重放账号逐条跑真实模型，
+"""重放清单（spec [2026-10-23] §62 需求 1 及 10-29 修改、§138）：在本机服务上用重放账号逐条跑真实模型，
 打印每一轮的回答和是否符合期望；跑完删掉这次建的会话、取消留下的预览，并清空重放账号的 iron-m 数据。
+清单里的后台用例（到期复查、练完定下次）在本进程里用内存存储跑，不登录、不碰账号和数据库。
+每次跑完在 evals/replay/reports/ 留一份报告，并和以前的结果比（每轮取最近一次跑过它的）：
+有变差的退出码为 1，对话用例中途出错为 2，没变差但有不符合的为 3。
 
-用法：.venv/bin/python scripts/replay.py [--only 条目编号 ...] [--wait 秒]
-需要 .env 里的 REPLAY_EMAIL、REPLAY_CODE（重放账号的预设验证码）、DEEPSEEK_API_KEY、PG_PASSWORD。
+用法：.venv/bin/python scripts/replay.py [--only 条目编号 ...] [--wait 秒] [--label 标签]
+      [--against 报告文件] [--agent-only | --no-agent]
+需要 .env 里的 DEEPSEEK_API_KEY；跑对话用例还要 REPLAY_EMAIL、REPLAY_CODE（重放账号的预设验证码）、PG_PASSWORD。
 只碰重放账号：登录成了别的账号、或账号是演示账号时直接停下。花真实模型的钱，不进每次提交的标准检查。
 """
 
@@ -16,12 +20,17 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from evals.replay.report import Row, baseline, compare, exit_code, load, render, save  # noqa: E402
+
 BASE = os.environ.get("REPLAY_BASE", "http://127.0.0.1:18090")  # 自测另起的端口可以用环境变量指定
 CASES = ROOT / "evals" / "replay" / "cases.yaml"
 NOT_REPLAY = {"you@mirobody.ai", "mom@mirobody.ai"}  # 演示账号：重放绝不用
@@ -59,12 +68,13 @@ def call(
     raise RuntimeError("unreachable")
 
 
-def preflight() -> str | None:
-    """开头检查：服务起没起、模型余额够不够。返回停下的原因。"""
-    try:
-        call("GET", "/iron/", timeout=5)
-    except (urllib.error.URLError, OSError):
-        return f"本机服务没起（{BASE}）：先运行 scripts/run_mirobody.sh"
+def preflight(server: bool = True) -> str | None:
+    """开头检查：服务起没起（只跑后台用例时不用）、模型余额够不够。返回停下的原因。"""
+    if server:
+        try:
+            call("GET", "/iron/", timeout=5)
+        except (urllib.error.URLError, OSError):
+            return f"本机服务没起（{BASE}）：先运行 scripts/run_mirobody.sh"
     key = os.environ.get("DEEPSEEK_API_KEY", "")
     if not key:
         return ".env 里没有 DEEPSEEK_API_KEY"
@@ -127,13 +137,15 @@ def illness_rows(user_id: str) -> int:
         )
 
 
-def ask(token: str, session_id: str, text: str) -> tuple[str, list[dict[str, str]], float]:
-    """问一句：返回回答正文、这一轮的预览卡片（种类、编号）、耗时。"""
+def ask(
+    token: str, session_id: str, text: str
+) -> tuple[str, list[dict[str, str]], list[str], float]:
+    """问一句：返回回答正文、这一轮的预览卡片（种类、编号）、过程里显示的步骤、耗时。"""
     start = time.perf_counter()
     resp = call(
         "POST", "/api/chat", {"question": text, "session_id": session_id}, token, timeout=300
     )
-    answer, cards = "", []
+    answer, cards, steps = "", [], []
     for raw in resp:
         line = raw.decode().strip()
         if not line.startswith("data:"):
@@ -144,7 +156,9 @@ def ask(token: str, session_id: str, text: str) -> tuple[str, list[dict[str, str
         elif b.get("type") == "tool_call" and str(b.get("id", "")).startswith("card-"):
             args = b.get("args") or {}
             cards.append({"kind": str(args.get("kind", "")), "draft": str(args.get("draft", ""))})
-    return answer.strip(), cards, time.perf_counter() - start
+        elif b.get("type") == "tool_call" and b.get("name"):
+            steps.append(str(b["name"]))
+    return answer.strip(), cards, steps, time.perf_counter() - start
 
 
 def active_events(user_id: str) -> int:
@@ -186,7 +200,7 @@ def judge(
 
 
 def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id: str,
-             made: dict[str, Any]) -> tuple[int, int]:  # fmt: skip
+             made: dict[str, Any]) -> list[Row]:  # fmt: skip
     print(f"\n{'=' * 72}\n【{case['id']}】{case['from']}")
     print(f"  清空重放账号的 iron-m 数据：{reset(user_id)} 行")
     call("PUT", "/iron/api/profile", profile, token)
@@ -196,8 +210,8 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
         print("  准备：今天已打卡")
     session_id = str(json.load(call("POST", "/api/session", {}, token))["data"]["session_id"])
     made["sessions"].append(session_id)
-    ok = 0
-    for turn in case["turns"]:
+    rows: list[Row] = []
+    for n, turn in enumerate(case["turns"], 1):
         if turn.get("new_session"):  # 换一个会话接着聊（§73 会话摘要）：先等后台写完摘要
             time.sleep(int(turn.get("pause", 20)))
             session_id = str(
@@ -205,7 +219,7 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
             )
             made["sessions"].append(session_id)
             print(f"{'-' * 72}\n（换了一个新会话）")
-        answer, cards, secs = ask(token, session_id, turn["say"])
+        answer, cards, steps, secs = ask(token, session_id, turn["say"])
         made["drafts"] += [c["draft"] for c in cards if c["draft"]]
         if turn.get("confirm"):  # 确认这一轮的计划预览，后面几轮在它上面改（§120 回放）
             for c in cards:
@@ -216,7 +230,8 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
             time.sleep(3)  # 当场写的记忆在回答之后
         events = active_events(user_id) if "events" in turn else None
         bad = judge(turn, answer, cards, ill, events)
-        ok += not bad
+        rows.append(Row(case=case["id"], turn=n, say=turn["say"], ok=not bad, bad=bad, secs=round(secs, 1),
+                        answer=answer, cards=[c["kind"] for c in cards], tools=steps))  # fmt: skip
         print(f"{'-' * 72}\n问：{turn['say']}（{secs:.1f} 秒）")
         print("答：" + answer.replace("\n", "\n    "))
         if cards:
@@ -226,7 +241,7 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
         token, made["drafts"]
     )  # 下一条开始前会清空数据：这条的预览现在就取消
     made["drafts"] = []
-    return ok, len(case["turns"])
+    return rows
 
 
 def cancel(token: str, drafts: list[str]) -> int:
@@ -252,34 +267,107 @@ def cleanup(token: str, user_id: str, made: dict[str, Any]) -> None:
           f"清空重放账号的 iron-m 数据 {rows} 行")  # fmt: skip
 
 
+def run_agent(cases: list[dict[str, Any]], profile: dict[str, Any]) -> list[Row]:
+    """后台用例：本进程内存存储 + 真实模型（§138 需求 1）。"""
+    import asyncio
+
+    from evals.replay.agent import run_case as run_agent_case
+    from ironm_agent.llm import TurnLLM, load_models
+    from ironm_agent.metrics import Profile
+
+    me = Profile(**{**profile, "birth": date.fromisoformat(str(profile["birth"]))})
+    rows = []
+    for case in cases:
+        print(f"\n{'=' * 72}\n【{case['id']}】{case.get('from', '')}（后台）")
+        res = asyncio.run(run_agent_case(case, me, TurnLLM(load_models(), os.environ)))
+        print(f"工具：{'、'.join(res.tools) or '没调'}（{res.secs:.1f} 秒）")
+        print("结果：" + json.dumps(res.detail, ensure_ascii=False)[:400])
+        print("说明：" + (res.answer or "（无）"))
+        print("→ 符合" if not res.bad else "→ 不符合：" + "；".join(res.bad))
+        rows.append(Row(case=res.id, turn=1, say=res.say, kind="agent", ok=not res.bad, bad=res.bad,
+                        secs=round(res.secs, 1), answer=res.answer, tools=res.tools, detail=res.detail))  # fmt: skip
+    return rows
+
+
+def finish(rows: list[Row], label: str, against: str | None) -> int:
+    """存报告、和以前的结果比、打印汇总；返回退出码。"""
+    path = save(rows, label)
+    if against:
+        old, names = load(Path(against)), [Path(against).name]
+    else:
+        old, names = baseline(before=path)
+    print(f"\n{'=' * 72}\n汇总（报告：{path.relative_to(ROOT)}）")
+    by_case: dict[str, list[Row]] = {}
+    for r in rows:
+        by_case.setdefault(r.case, []).append(r)
+    for cid, rs in by_case.items():
+        ok = sum(r.ok for r in rs)
+        print(f"  {'✓' if ok == len(rs) else '✗'} {cid}：{ok}/{len(rs)} 轮符合")
+    diff = None
+    if not old:
+        print("\n还没有以前的报告，这次作为以后对比的起点")
+    else:
+        diff = compare(old, rows)
+        where = (
+            names[0]
+            if len(names) == 1
+            else f"每轮最近一次，来自 {len(names)} 份报告，最新 {names[0]}"
+        )
+        print("\n" + render(diff, where))
+    return exit_code(rows, diff)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--only", nargs="*", default=None, help="只跑这几条（条目编号）")
     p.add_argument("--wait", type=int, default=WAIT, help="每条之间等后台写完的秒数")
+    p.add_argument("--label", default="", help="报告文件名里的标签")
+    p.add_argument("--against", default=None, help="只和这一份报告比（默认每轮取最近一次跑过它的）")
+    side = p.add_mutually_exclusive_group()
+    side.add_argument(
+        "--agent-only", action="store_true", help="只跑后台用例（不用重放账号和本机服务）"
+    )
+    side.add_argument("--no-agent", action="store_true", help="不跑后台用例")
     args = p.parse_args()
     load_env()
     spec = yaml.safe_load(CASES.read_text())
-    cases = [c for c in spec["cases"] if not args.only or c["id"] in args.only]
-    if not cases:
+    ids = [c["id"] for c in [*spec["cases"], *(spec.get("agent") or [])]]
+    if len(ids) != len(set(ids)):
+        sys.exit("停下：清单里有重复的条目编号（对话和后台用例也不能重名）")
+    if args.against and not Path(args.against).exists():
+        sys.exit(f"停下：找不到要对比的报告 {args.against}")
+
+    def pick(c: dict[str, Any]) -> bool:
+        return not args.only or c["id"] in args.only
+
+    cases = [] if args.agent_only else [c for c in spec["cases"] if pick(c)]
+    agent = [] if args.no_agent else [c for c in spec.get("agent") or [] if pick(c)]
+    if not cases and not agent:
         sys.exit("停下：没有要跑的条目")
-    why = preflight()
+    why = preflight(server=bool(cases))
+    if cases and not (os.environ.get("REPLAY_EMAIL") and os.environ.get("REPLAY_CODE")):
+        why = why or ".env 里没有 REPLAY_EMAIL / REPLAY_CODE（对话用例要用重放账号）"
     if why:
         sys.exit("停下：" + why)
-    token, user_id = login()
-    made: dict[str, Any] = {"sessions": [], "drafts": [], "cancelled": 0}
-    totals = []
-    try:
-        for i, case in enumerate(cases):
-            if i:
-                time.sleep(args.wait)
-            totals.append((case["id"], *run_case(case, spec["profile"], token, user_id, made)))
-    finally:
-        time.sleep(min(args.wait, 10))
-        cleanup(token, user_id, made)
-    print(f"\n{'=' * 72}\n汇总")
-    for cid, ok, n in totals:
-        print(f"  {'✓' if ok == n else '✗'} {cid}：{ok}/{n} 轮符合")
-    sys.exit(0 if all(ok == n for _, ok, n in totals) else 1)
+    login_as = login() if cases else None  # 先登录：登不上就停在花钱之前（复核 11-03）
+    rows: list[Row] = run_agent(agent, spec["profile"]) if agent else []
+    crashed = False
+    if login_as is not None:
+        token, user_id = login_as
+        made: dict[str, Any] = {"sessions": [], "drafts": [], "cancelled": 0}
+        try:
+            for i, case in enumerate(cases):
+                if i:
+                    time.sleep(args.wait)
+                rows += run_case(case, spec["profile"], token, user_id, made)
+        except Exception as e:  # 中途出错：已经跑完的照样存报告
+            print(f"\n对话用例中途出错：{type(e).__name__}，已跑完的照样存报告")
+            crashed = True
+        finally:
+            time.sleep(min(args.wait, 10))
+            cleanup(token, user_id, made)
+    code = finish(rows, args.label, args.against)
+    sys.exit(code if code == 1 or not crashed else 2)
 
 
 if __name__ == "__main__":

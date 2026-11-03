@@ -1,4 +1,4 @@
-.PHONY: setup pg-install pg-init pg-start pg-stop pg-check run stop health
+.PHONY: setup pg-install pg-init pg-start pg-stop pg-check run stop health replay replay-agent
 
 setup:            ## 安装 Python 环境（mirobody 以可编辑方式安装自 vendor/mirobody）
 	uv sync
@@ -26,3 +26,9 @@ stop:             ## 停止后台运行的 mirobody
 
 health:
 	curl -fsS http://127.0.0.1:18090/api/health
+
+replay:           ## 回归回放（§138）：对话用例用重放账号在本机服务上跑、后台用例在本进程跑，留报告并和以前的结果比（每轮取最近一次）；花真实模型的钱
+	.venv/bin/python scripts/replay.py $(ARGS)
+
+replay-agent:     ## 只跑后台用例（到期复查、练完定下次）：不用重放账号和本机服务
+	.venv/bin/python scripts/replay.py --agent-only $(ARGS)
