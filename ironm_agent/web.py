@@ -44,7 +44,7 @@ from ironm_agent.training import (
     default_training,
 )
 from ironm_agent.triggers import pain_parts
-from ironm_agent.web_more import FEEL, ILLNESS, PAIN, PHOTOS, coach_later, plan_change_later
+from ironm_agent.web_more import FEEL, GOAL, ILLNESS, PAIN, PHOTOS, coach_later, plan_change_later
 
 _log = logging.getLogger("ironm_agent.web")
 
@@ -140,7 +140,10 @@ async def get_profile(user_id: str = Depends(_verify())) -> dict[str, Any]:
 async def put_profile(
     body: profiles.ProfileIn, user_id: str = Depends(_verify())
 ) -> dict[str, Any]:
+    old = (await profiles.load(user_id))[0].goal if "goal" in body.model_fields_set else None
     await profiles.save(user_id, body)
+    if "goal" in body.model_fields_set and body.goal and body.goal != old:  # 目标类型真改了才叫醒管家（§151）
+        coach_later(user_id, "改档案目标")
     return await get_profile(user_id)
 
 
@@ -377,7 +380,25 @@ async def confirm_draft(
     store: TrainingStore = TRAINING,
     memory: MemoryStore = STORE,
     illness: Any = ILLNESS,
+    goals: Any = GOAL,
 ) -> dict[str, Any]:
+    was = await store.draft(user_id, draft_id)
+    if was is not None and was.kind == "goal" and not (was.state == "pending" and was.expired()):
+        # 改目标：确认了才写档案和目标表（§151）。这一次真把它从待确认改成已确认的才写，
+        # 点两次、两个请求同时到都只写一次；写失败时已写的恢复、卡片作废，不留半截（复核 11-03）
+        from ironm_agent import web_more
+
+        done = await store.confirm(user_id, draft_id)
+        if done is None:
+            return await _draft_action(store, user_id, draft_id, "confirm")
+        try:
+            await web_more.apply_goal(user_id, done.json(), goals, store, memory)
+        except Exception as e:
+            _log.warning("goal apply failed: error_type=%s", type(e).__name__)
+            await store.undo(user_id, draft_id)
+            raise HTTPException(503, "这次没改成，目标还是原来的；请让教练重新出一张卡片") from e
+        fresh = await store.draft(user_id, draft_id)
+        return {"draft": (fresh or done).json()}
     out = await _draft_action(store, user_id, draft_id, "confirm")
     if out.get("draft", {}).get("kind") == "log":  # 记下了一次训练：后台更新训练记录得出的偏好
         refresh_later(user_id, memory, store)
@@ -404,8 +425,22 @@ async def cancel_draft(
 
 @router.post("/iron/api/drafts/{draft_id}/undo")
 async def undo_draft(
-    draft_id: str, user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
+    draft_id: str,
+    user_id: str = Depends(_verify()),
+    store: TrainingStore = TRAINING,
+    memory: MemoryStore = STORE,
+    goals: Any = GOAL,
 ) -> dict[str, Any]:
+    d = await store.draft(user_id, draft_id)
+    if d is not None and d.kind == "goal" and d.state == "confirmed":  # §151
+        from ironm_agent import web_more
+
+        if not await web_more.goal_unchanged(user_id, d.json(), goals):
+            raise HTTPException(409, "之后又改过目标，不能撤销这一次")
+        out = await _draft_action(store, user_id, draft_id, "undo")
+        fresh = await store.draft(user_id, draft_id)  # 确认时记下的"确认前"
+        await web_more.restore_goal(user_id, fresh.json() if fresh is not None else out["draft"], goals, memory)
+        return out
     out = await _draft_action(store, user_id, draft_id, "undo")
     plan_change_later(user_id, out.get("draft") or {}, undone=True)
     coach_later(user_id, "撤销方案")

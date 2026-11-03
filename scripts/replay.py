@@ -190,6 +190,13 @@ def memories(user_id: str) -> dict[str, int]:
     return {str(k): int(n) for k, n in rows}
 
 
+def official_of(token: str) -> dict[str, Any]:
+    """正式目标：档案里的目标类型、目标表的目标体重（§151）。"""
+    prof = json.load(call("GET", "/iron/api/profile", token=token)).get("profile") or {}
+    goal = json.load(call("GET", "/iron/api/goal", token=token)).get("goal") or {}
+    return {"type": prof.get("goal"), "weight": goal.get("value")}
+
+
 def judge(
     turn: dict[str, Any],
     answer: str,
@@ -199,6 +206,8 @@ def judge(
     mem: dict[str, int] | None = None,
     keys: set[str] | None = None,
     gear: set[str] | None = None,
+    official: dict[str, Any] | None = None,
+    undone: dict[str, Any] | None = None,
 ) -> list[str]:
     """不符合的地方；空列表就是符合。"""
     bad = []
@@ -210,7 +219,7 @@ def judge(
     kinds = [c["kind"] for c in cards]
     if want == "none" and kinds:
         bad.append(f"不该出卡片，出了 {kinds}")
-    elif want in ("plan", "log") and want not in kinds:
+    elif want in ("plan", "log", "goal") and want not in kinds:
         bad.append(f"该出{want}卡片，没出")
     if "illness" in turn and ill != turn["illness"]:
         bad.append(f"生病记录应有 {turn['illness']} 条，实际 {ill} 条")
@@ -223,6 +232,16 @@ def judge(
     bad += [
         f"应有记忆键 {k}，没有" for k in turn.get("memory_keys") or [] if k not in (keys or set())
     ]
+    for name, want_v in (
+        turn.get("official") or {}
+    ).items():  # 正式目标（§151）：档案的类型、目标表的体重
+        got_v = (official or {}).get(name)
+        if got_v != want_v:
+            bad.append(f"正式目标的 {name} 应是 {want_v}，实际 {got_v}")
+    for name, want_v in (turn.get("undone") or {}).items():
+        got_v = (undone or {}).get(name)
+        if got_v != want_v:
+            bad.append(f"撤销后正式目标的 {name} 应是 {want_v}，实际 {got_v}")
     lack = [g for g in turn.get("gear") or [] if g not in (gear or set())]
     if lack:
         bad.append("器械页少了 " + "、".join(lack))
@@ -255,9 +274,11 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
             print(f"{'-' * 72}\n（换了一个新会话）")
         answer, cards, steps, secs = ask(token, session_id, turn["say"])
         made["drafts"] += [c["draft"] for c in cards if c["draft"]]
-        if turn.get("confirm"):  # 确认这一轮的计划预览，后面几轮在它上面改（§120 回放）
+        if turn.get(
+            "confirm"
+        ):  # 确认这一轮的计划、改目标预览，后面几轮在它上面接着说（§120、§151）
             for c in cards:
-                if c["kind"] == "plan" and c["draft"]:
+                if c["kind"] in ("plan", "goal") and c["draft"]:
                     call("POST", f"/iron/api/drafts/{c['draft']}/confirm", {}, token)
         ill = illness_rows(user_id) if "illness" in turn else None
         if "events" in turn or "memory" in turn or "memory_keys" in turn or "gear" in turn:
@@ -269,7 +290,14 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
         if "gear" in turn:  # 器械页看到的（§150：读字段，和他在页面上看到的一样）
             got = json.load(call("GET", "/iron/api/gear", token=token))
             gear = {*got.get("gear", []), *got.get("custom", [])}
-        bad = judge(turn, answer, cards, ill, events, mem, keys, gear)
+        official = official_of(token) if "official" in turn else None
+        undone = None
+        if "undone" in turn:  # 撤销这一轮确认的改目标，看是否恢复成原来的（§151）
+            for c in cards:
+                if c["kind"] == "goal" and c["draft"]:
+                    call("POST", f"/iron/api/drafts/{c['draft']}/undo", {}, token)
+            undone = official_of(token)
+        bad = judge(turn, answer, cards, ill, events, mem, keys, gear, official, undone)
         rows.append(Row(case=case["id"], turn=n, say=turn["say"], ok=not bad, bad=bad, secs=round(secs, 1),
                         answer=answer, cards=[c["kind"] for c in cards], tools=steps))  # fmt: skip
         print(f"{'-' * 72}\n问：{turn['say']}（{secs:.1f} 秒）")

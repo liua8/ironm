@@ -10,6 +10,8 @@
 #   memory    这一轮之后重放账号各类有效记忆的条数，如 {injury: 1}（§145）；不写就不检查
 #   memory_keys 这一轮之后应有的记忆键，如 [injury:joint.knee:左]（§148 伤病、特殊情况结构化）
 #   gear      这一轮之后器械页应有的器械（§150），如 [哑铃, 壶铃]
+#   official  这一轮之后的正式目标（§151）：{type: 档案的目标类型, weight: 目标表的目标体重}
+#   undone    撤销这一轮确认的改目标之后应恢复成的正式目标（§151），写法同 official
 # 只用规则判断，不打分。
 
 profile: {height_cm: 175, birth: "1995-06-01", sex: male, goal: fat_loss, activity: moderate}
@@ -262,6 +264,15 @@ cases:
         gear: [哑铃, 弹力带, 壶铃]  # 另记一条或更新那一条都行：原来的不能被顶掉
       - say: 我每周能练 3 次，每次 40 分钟
         memory_keys: [equipment, schedule]
+  - id: goal-change
+    from: §151 目标三处合一：减脂改增肌出改目标卡片，确认后档案和目标表都改
+    turns:
+      - say: 我不减脂了，现在想增肌，半年增到 73 公斤
+        card: goal
+        confirm: true
+        official: {type: muscle, weight: 73.0}
+        undone: {type: fat_loss, weight: null}
+      # 说法选的是合理的速度：定得太快（三个月增 5 公斤以上）时，管家会先给现实的版本让他选、这一轮不出卡片（建档规程），那是该有的行为，所以不用那种说法
 
 # 后台用例（§138 需求 1）：到期复查（kind: checkup，§129）、练完定下次（kind: next，§132）。
 # 本进程内存存储 + 真实模型，不登录、不碰账号和数据库。setup：

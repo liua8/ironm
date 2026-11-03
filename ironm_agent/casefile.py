@@ -409,7 +409,7 @@ class CaseFile:
         return "\n".join(lines)
 
 
-def _basics(p: Profile, metrics: Sequence[Metric], today: date) -> str:
+def _basics(p: Profile, metrics: Sequence[Metric], today: date, target: str = "") -> str:
     parts = []
     if p.sex:
         parts.append("男" if p.sex == "male" else "女")
@@ -421,7 +421,8 @@ def _basics(p: Profile, metrics: Sequence[Metric], today: date) -> str:
     weight = next((m for m in metrics if m.key == "weight" and m.value is not None), None)
     if weight is not None and weight.value is not None:
         parts.append(f"最新体重 {_f(weight.value)} 公斤")
-    parts.append(f"目标{GOALS[p.goal]}" if p.goal else "目标未填写")
+    goal = f"目标{GOALS[p.goal]}" if p.goal else "目标未填写"
+    parts.append(goal + (f"；目标体重：{target}" if target else ""))  # 正式的两处拼成一行（§151）
     if p.activity:
         parts.append(f"日常活动：{ACTIVITY[p.activity][0]}")
     return "，".join(parts) if parts else "档案还没有填写"
@@ -437,6 +438,7 @@ def build(
     day: Sequence[str] = (),
     earlier: Sequence[tuple[Level, str]] = (),
     insights: Sequence[tuple[str, str]] = (),
+    target: str = "",
 ) -> CaseFile:
     """insights：指标解读（§84），每条是 (给角色看的一句话, 追问依据时讲的详细说法)。"""
     p, today = snapshot.profile, snapshot.today
@@ -450,7 +452,7 @@ def build(
         cid = f"C{i}"
         calcs[cid] = f"{m.name}：{m.text}。计算：{m.how}。数据：{m.data}。依据：{m.source}"
         lines.append(f"[{cid}] {m.name}：{m.text}")
-    basics = _basics(p, metrics, today) + (
+    basics = _basics(p, metrics, today, target) + (
         "（这次没读到你的档案和健康数据）" if snapshot.failed else ""
     )
     calcs["C0"] = f"档案：{basics}"

@@ -36,7 +36,9 @@ _log = logging.getLogger("ironm_agent.training")
 DRAFT_HOURS = 24
 MERGE_MINUTES = 30  # 这么久之内没确认的计划预览，再改一下时在它上面接着改（§45）
 WEEKDAYS = "一二三四五六日"
-type Kind = Literal["plan", "log"]
+type Kind = Literal[
+    "plan", "log", "goal"
+]  # goal：改目标的预览（§151），确认后由网页那层写档案和目标表
 type DraftState = Literal["pending", "confirmed", "cancelled", "undone"]
 
 
@@ -477,11 +479,12 @@ class TrainingStore(Protocol):
     async def add_draft(self, user_id: str, kind: Kind, content: dict[str, Any]) -> Draft: ...
     async def draft(self, user_id: str, draft_id: str) -> Draft | None: ...
     async def pending_plan(
-        self, user_id: str, minutes: int = MERGE_MINUTES, *, skip_source: str = ""
-    ) -> Draft | None: ...
+        self, user_id: str, minutes: int = MERGE_MINUTES, *, skip_source: str = "", kind: Kind = "plan"
+    ) -> Draft | None: ...  # 最近一份没处理的预览（默认计划；kind="goal" 取改目标的，§151）
     async def confirm(self, user_id: str, draft_id: str) -> Draft | None: ...
     async def cancel(self, user_id: str, draft_id: str) -> Draft | None: ...
     async def undo(self, user_id: str, draft_id: str) -> Draft | None: ...
+    async def amend(self, user_id: str, draft_id: str, content: dict[str, Any]) -> None: ...
     async def log(self, user_id: str, log: WorkoutLog) -> StoredLog: ...
     async def delete_workout(self, user_id: str, workout_id: str) -> bool: ...
 
@@ -527,11 +530,11 @@ class TrainingBook:
         return self._drafts.get(user_id, {}).get(draft_id)
 
     async def pending_plan(
-        self, user_id: str, minutes: int = MERGE_MINUTES, *, skip_source: str = ""
+        self, user_id: str, minutes: int = MERGE_MINUTES, *, skip_source: str = "", kind: Kind = "plan"
     ) -> Draft | None:
         since = now() - timedelta(minutes=minutes)
         rows = [d for d in self._drafts.get(user_id, {}).values()
-                if d.kind == "plan" and d.state == "pending" and d.created >= since
+                if d.kind == kind and d.state == "pending" and d.created >= since
                 and not (skip_source and d.content.get("source") == skip_source)]  # fmt: skip
         return max(rows, key=lambda d: d.created, default=None)
 
@@ -552,6 +555,8 @@ class TrainingBook:
             return self._put(
                 user_id, replace(d, state="confirmed", applied=new.id, previous=previous)
             )
+        if d.kind == "goal":
+            return self._put(user_id, replace(d, state="confirmed"))
         row = StoredLog(new_id(), _log_of(d.content), now())
         self._logs.setdefault(user_id, []).append(row)
         return self._put(user_id, replace(d, state="confirmed", applied=row.id))
@@ -562,6 +567,12 @@ class TrainingBook:
             return None
         return self._put(user_id, replace(d, state="cancelled"))
 
+    async def amend(self, user_id: str, draft_id: str, content: dict[str, Any]) -> None:
+        """改一份预览的内容（改目标确认时记下确认前的目标，§151）。"""
+        d = await self.draft(user_id, draft_id)
+        if d is not None:
+            self._put(user_id, replace(d, content=content))
+
     async def undo(self, user_id: str, draft_id: str) -> Draft | None:
         d = await self.draft(user_id, draft_id)
         if d is None or d.state != "confirmed":
@@ -571,7 +582,7 @@ class TrainingBook:
             if not any(p.id == d.applied and active for p, active in plans):
                 return None  # 之后又换过计划：不能再撤销这一次
             self._plans[user_id] = [(p, p.id == d.previous) for p, _ in plans if p.id != d.applied]
-        else:
+        elif d.kind == "log":
             self._logs[user_id] = [x for x in self._logs.get(user_id, []) if x.id != d.applied]
         return self._put(user_id, replace(d, state="undone"))
 
@@ -725,15 +736,15 @@ class PgTraining:
         return _draft_row(rows[0]) if rows else None
 
     async def pending_plan(
-        self, user_id: str, minutes: int = MERGE_MINUTES, *, skip_source: str = ""
+        self, user_id: str, minutes: int = MERGE_MINUTES, *, skip_source: str = "", kind: Kind = "plan"
     ) -> Draft | None:
         # 内容是加密的，来源只能取出来再看：取最近几份，跳过 skip_source 那种（每日复查存的预览，§129）
         rows = await self._q(
             "SELECT id, kind, decrypt_content(content) AS content, state, applied, previous, created_at"
-            " FROM ironm_draft WHERE user_id = :uid AND kind = 'plan' AND state = 'pending'"
+            " FROM ironm_draft WHERE user_id = :uid AND kind = :kind AND state = 'pending'"
             f" AND created_at > now() - interval '{int(minutes)} minutes'"
             " ORDER BY created_at DESC LIMIT 5",
-            {"uid": user_id},
+            {"uid": user_id, "kind": kind},
         )
         found = (_draft_row(r) for r in rows)
         return next(
@@ -776,6 +787,15 @@ class PgTraining:
                     {"target": target, "uid": user_id, "content": rows[0]["content"],
                      "previous": rows[0]["previous"]},
                 )  # fmt: skip
+            elif d.kind == "goal":  # 改目标：这里只改状态，写档案和目标表在网页那层（§151）
+                rows = await tx.execute(
+                    "UPDATE ironm_draft SET state = 'confirmed', updated_at = now()"
+                    f" WHERE id = :id AND user_id = :uid AND kind = 'goal' AND state = 'pending' AND {_FRESH}"
+                    " RETURNING id",
+                    {"id": draft_id, "uid": user_id},
+                )
+                if not rows:
+                    return None
             else:
                 rows = await tx.execute(
                     "UPDATE ironm_draft SET state = 'confirmed', applied = :target, updated_at = now()"
@@ -791,6 +811,14 @@ class PgTraining:
                      "content": rows[0]["content"]},
                 )  # fmt: skip
         return await self.draft(user_id, draft_id)
+
+    async def amend(self, user_id: str, draft_id: str, content: dict[str, Any]) -> None:
+        """改一份预览的内容（改目标确认时记下确认前的目标，§151）。"""
+        await self._q(
+            "UPDATE ironm_draft SET content = encrypt_content(:content), updated_at = now()"
+            " WHERE id = :id AND user_id = :uid",
+            {"id": draft_id, "uid": user_id, "content": _dumps(content)},
+        )
 
     async def cancel(self, user_id: str, draft_id: str) -> Draft | None:
         rows = await self._q(
@@ -809,7 +837,7 @@ class PgTraining:
             await tx.execute(_LOCK, {"uid": user_id})
             rows = await tx.execute(
                 "UPDATE ironm_draft SET state = 'undone', updated_at = now()"
-                " WHERE id = :id AND user_id = :uid AND state = 'confirmed' AND (kind = 'log' OR EXISTS ("
+                " WHERE id = :id AND user_id = :uid AND state = 'confirmed' AND (kind IN ('log', 'goal') OR EXISTS ("
                 " SELECT 1 FROM ironm_plan p WHERE p.id = ironm_draft.applied AND p.user_id = :uid AND p.active))"
                 " RETURNING kind, applied, previous",
                 {"id": draft_id, "uid": user_id},
@@ -828,7 +856,7 @@ class PgTraining:
                         " WHERE id = :previous AND user_id = :uid",
                         {"previous": previous, "uid": user_id},
                     )
-            else:
+            elif kind == "log":
                 await tx.execute(
                     "DELETE FROM ironm_workout WHERE id = :applied AND user_id = :uid",
                     {"applied": applied, "uid": user_id},

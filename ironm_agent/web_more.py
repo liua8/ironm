@@ -1157,6 +1157,96 @@ class GoalIn(BaseModel):
     by: date
 
 
+def _old_goal_memories(items: Any, kind: str) -> list[list[str]]:
+    """记忆里说目标方向、和新方向不一样的"目标"条和它原来的状态（确认改目标后作废，免得管家同时看到两个方向）。"""
+    from ironm_agent.plugin import _GOAL_WORDS, _said_goal
+
+    return [[x.id, x.status] for x in items if x.category == "goal" and x.status in ("active", "pending")
+            and not _said_goal(kind, x.content)
+            and any(_said_goal(k, x.content) for k in _GOAL_WORDS if k != kind)]  # fmt: skip
+
+
+async def apply_goal(
+    user_id: str, draft: dict[str, Any], goals: Any, store: Any = None, memory: Any = None
+) -> None:
+    """改目标的预览确认了（§151）：改档案的目标类型、目标表，管家重新评估。
+    先记下确认这一刻的目标（出卡片到确认之间他可能在目标页又改过），撤销时恢复到这个。
+    要读的都先读完再写；写到一半出错，把已写的恢复回去再报错（复核 11-03）。"""
+    from ironm_agent import profile as profiles
+    from ironm_agent.goal import Goal
+    from ironm_agent.memory_store import Change
+
+    after = draft.get("goal") or {}
+    old_goal = await goals.get(user_id)
+    before: dict[str, Any] = {
+        "type": (await profiles.load(user_id))[0].goal,
+        "goal": old_goal.json() if old_goal else None,
+    }
+    new_goal = None
+    if after.get("value") is not None and after.get("by"):
+        snap = await _web().snapshot_for(user_id)
+        weights = sorted(snap.readings.weight)
+        start = weights[-1][1] if weights else None
+        new_goal = Goal(float(after["value"]), date.fromisoformat(after["by"]), date.today(),
+                        start, old_goal.retest_day if old_goal is not None else None)  # fmt: skip
+    if memory is not None and after.get("type"):
+        before["memory"] = _old_goal_memories(await memory.items(user_id), str(after["type"]))
+    if store is not None and draft.get("id"):
+        content = {k: v for k, v in draft.items()
+                   if k not in ("id", "kind", "state", "expired", "created", "expires")}  # fmt: skip
+        await store.amend(user_id, str(draft["id"]), {**content, "before": before})
+    try:
+        if after.get("type"):
+            await profiles.set_goal(user_id, str(after["type"]))
+        if new_goal is not None:
+            await goals.set(user_id, new_goal)
+        if memory is not None and before.get("memory"):
+            await memory.apply(user_id, [Change("status", id=x, status="superseded") for x, _ in before["memory"]])
+    except Exception:
+        try:
+            await restore_goal(user_id, {"goal": after, "before": before}, goals, memory, wake=False)
+        except Exception as e:
+            _log.warning("goal restore failed: error_type=%s", type(e).__name__)
+        raise
+    coach_later(user_id, "改目标")
+
+
+async def goal_unchanged(user_id: str, draft: dict[str, Any], goals: Any) -> bool:
+    """确认之后目标没再被改过（撤销前看，之后又改过就不能撤销这一次）。"""
+    from ironm_agent import profile as profiles
+
+    after = draft.get("goal") or {}
+    if after.get("type") and (await profiles.load(user_id))[0].goal != after["type"]:
+        return False
+    if after.get("value") is not None:
+        g = await goals.get(user_id)
+        if g is None or g.value != float(after["value"]) or g.by.isoformat() != after.get("by"):
+            return False
+    return True
+
+
+async def restore_goal(
+    user_id: str, draft: dict[str, Any], goals: Any, memory: Any = None, *, wake: bool = True
+) -> None:
+    """撤销改目标：档案的目标类型、目标表、作废的旧"目标"记忆恢复成确认前的样子，管家重新评估。"""
+    from ironm_agent import profile as profiles
+    from ironm_agent.goal import Goal
+    from ironm_agent.memory_store import Change
+
+    after, before = draft.get("goal") or {}, draft.get("before") or {}
+    if after.get("type"):
+        await profiles.set_goal(user_id, before.get("type"))
+    if after.get("value") is not None:
+        if before.get("goal"):
+            await goals.set(user_id, Goal.of(before["goal"]))
+        else:
+            await goals.clear(user_id)
+    if memory is not None and before.get("memory"):
+        await memory.apply(user_id, [Change("status", id=x, status=was) for x, was in before["memory"]])
+    if wake:
+        coach_later(user_id, "撤销改目标")
+
+
 async def _goal_state(user_id: str, goals: Any) -> dict[str, Any]:
     from ironm_agent.goal import progress
 

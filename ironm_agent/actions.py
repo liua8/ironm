@@ -31,11 +31,18 @@ LOG_MEAL = "log_meal"  # 对话里记一餐（§122）
 ADJUST_TODAY = "adjust_today"  # 只改今天这一次训练（§122）
 KCAL_CHANGE = "propose_kcal_change"  # 调每日热量目标（§122）
 REMEMBER = "remember"  # 记忆（§145，取代回答 JSON 里的 memory）
+SET_GOAL = "propose_goal"  # 改正式目标：目标类型和目标体重，出卡片确认（§151）
 ACTION_TOOLS = (
     PLAN_EDIT, NEW_PLAN, LOG_WORKOUT, ASK_TERMS, RECORD_STATE, LOG_BODY, LOG_MEAL, ADJUST_TODAY,
-    KCAL_CHANGE, REMEMBER,
+    KCAL_CHANGE, REMEMBER, SET_GOAL,
 )  # fmt: skip
-ALWAYS = (RECORD_STATE, LOG_BODY, LOG_MEAL, REMEMBER)  # 他随时可能说到：每一轮都给（§122、§145）
+ALWAYS = (
+    RECORD_STATE,
+    LOG_BODY,
+    LOG_MEAL,
+    REMEMBER,
+    SET_GOAL,
+)  # 他随时可能说到：每一轮都给（§122、§145）
 UNCOUNTED = (RECORD_STATE, REMEMBER)  # 不占动作次数
 MAX_ACTIONS = 6  # 每轮最多调用几次动作工具（不占查询次数；记今天的状态、记忆不算）
 
@@ -223,6 +230,7 @@ REMEMBER_SCHEMA: dict[str, Any] = {
             "圆肩驼背是体态不是 injury。一顿饭、一次训练不记（那是 log_meal、log_workout）。"
             "伤病（injury）写 parts、side（他说了左右才写）、哪些动作会疼 triggers、不能做的 avoid；"
             "孕期、心脏病、糖尿病、高血压、近期手术记成 special，写 codes（几种都写）。器械（equipment）说了在哪练写 place、有什么写 gear；可练时间（schedule）写 per_week、days、minutes。系统按原话核对部位，对不上会退回。"
+            "目标方向（减脂、增肌……）和目标体重用 propose_goal，goal 记忆只记力量、动作、比赛这类目标和为什么。"
             "short 的（今天累、这周出差）系统记成近期的事，until：\"这周\"写周日、\"这两天\"写明天，看不出写 7 天后。"
             "长期的情况变了 update 那一条；他说好了、结束了、取消了，resolve 还在生效的近况和跟进，不新增\"已结束\"。"
             "答应回访、他要你提醒的记 followup；\"该问的、到期的跟进\"里你提了或他答了，用编号 resolve。"
@@ -276,6 +284,30 @@ REMEMBER_SCHEMA: dict[str, Any] = {
                 },
             },
             "required": ["items"],
+        },
+    },
+}  # fmt: skip
+
+SET_GOAL_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": SET_GOAL,
+        "description": (
+            "他说要换目标方向（减脂、增肌、增力、耐力、健康）或定目标体重和日期时调用：交了出一张改目标的预览卡片，"
+            "写明热量会怎么变，他点确认才改个人中心的目标和目标体重。只交他说了的；问句、假设不交；"
+            "力量、动作、比赛这类目标和为什么用 remember 记。他没说日期就先问一句，不要替他定。"
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "type": {"type": "string", "enum": ["fat_loss", "muscle", "strength", "endurance", "health"],
+                         "description": "目标方向：减脂、增肌、增力、耐力、健康"},
+                "value": {"type": "number", "description": "目标体重，他说的数（说斤写斤的数，unit 写斤）"},
+                "unit": {"type": "string", "enum": ["公斤", "斤"]},
+                "by": {"type": "string", "description": "目标日期 YYYY-MM-DD（按他说的几个月、哪天算）"},
+                "why": {"type": "string", "description": "一句话：为什么改，像当面对他说"},
+            },
         },
     },
 }  # fmt: skip
@@ -457,6 +489,7 @@ SCHEMAS = {
     ADJUST_TODAY: ADJUST_TODAY_SCHEMA,
     KCAL_CHANGE: KCAL_CHANGE_SCHEMA,
     REMEMBER: REMEMBER_SCHEMA,
+    SET_GOAL: SET_GOAL_SCHEMA,
 }
 _CONFIRMED = (
     f"他刚回应了你列的条件清单，算确认，不要再问一遍：调用 {NEW_PLAN}（kind 写 new）交计划，他改了哪几项就按改了的排；"
@@ -511,7 +544,7 @@ def claimed(text: str) -> set[str]:
 # 细分到哪一样容易把常见回答判错、整段删掉（复核 11-03："记下了……今天的训练减到七成"被当成记训练）
 _MET_BY = {
     "log": {"workout", "meal", "body", "state", "memory"},
-    "change": {"plan", "today", "kcal"},
+    "change": {"plan", "today", "kcal"},  # 改目标只出了卡片、还没改，不算"改好了"（复核 11-03）
 }
 
 
@@ -560,6 +593,7 @@ class Desk:
     calls: int = 0
     rejected: Counter[str] = field(default_factory=Counter)  # 原因类别 → 次数
     plan: Outcome | None = None  # 这一轮最后一张计划预览
+    goal: Outcome | None = None  # 这一轮最后一张改目标预览（§151）
     logs: list[Outcome] = field(default_factory=list)
     saved: list[Outcome] = field(default_factory=list)  # 直接记下的：一餐、读数（§122）
     changed: list[Outcome] = field(default_factory=list)  # 直接改了的：今天、热量（§122）
@@ -602,7 +636,8 @@ class Desk:
     @property
     def kinds(self) -> list[str]:
         """出了哪几种预览卡片（各配一句确认说明）。"""
-        return (["plan"] if self.plan is not None else []) + (["log"] if self.logs else [])
+        return ((["plan"] if self.plan is not None else []) + (["log"] if self.logs else [])
+                + (["goal"] if self.goal is not None else []))  # fmt: skip
 
     @property
     def done_kinds(self) -> set[str]:
@@ -610,6 +645,7 @@ class Desk:
         out = {"plan"} if self.plan is not None else set()
         out |= {"workout"} if self.logs else set()
         out |= {"state"} if self.said else set()
+        out |= {"goal"} if self.goal is not None else set()
         return out | {x.what for x in (*self.saved, *self.changed) if x.what}
 
     def done_note(self) -> str:
@@ -622,7 +658,7 @@ class Desk:
         out = list(self.plan.cards) if self.plan is not None else []
         for x in self.logs:
             out += x.cards
-        return out
+        return out + (list(self.goal.cards) if self.goal is not None else [])
 
     @property
     def tried_plan(self) -> bool:
@@ -632,6 +668,7 @@ class Desk:
     @property
     def drafts(self) -> list[str]:
         out = [self.plan.draft] if self.plan is not None and self.plan.draft else []
+        out += [self.goal.draft] if self.goal is not None and self.goal.draft else []
         return out + [x.draft for x in self.logs if x.draft]
 
     async def run(self, name: str, args: Mapping[str, Any]) -> str:
@@ -678,6 +715,10 @@ class Desk:
             self.plan = out
         elif out.kind == "log":
             self.logs.append(out)
+        elif out.kind == "goal":  # 同一轮后一张改目标换掉前一张
+            if self.goal is not None and self.goal.draft and self.goal.draft != out.draft:
+                self.stale.append(self.goal.draft)
+            self.goal = out
         elif out.kind == "saved":
             self.saved.append(out)
         elif out.kind == "changed":

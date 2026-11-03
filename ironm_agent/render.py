@@ -168,6 +168,12 @@ def plan_card(draft: Draft, plan: Plan, current: Plan | None) -> list[dict[str, 
     return _card(draft, "计划预览", body)
 
 
+def goal_card(draft: Draft, content: dict[str, Any]) -> list[dict[str, Any]]:
+    """改目标的预览（§151）：网页沿用训练记录那种卡片（标题、一句说明、几行）。"""
+    body = {"headline": content.get("headline", ""), "items": list(content.get("items") or [])}
+    return _card(draft, "改目标预览", body)
+
+
 def log_card(draft: Draft, log: WorkoutLog) -> list[dict[str, Any]]:
     body = {
         "headline": log.line(),

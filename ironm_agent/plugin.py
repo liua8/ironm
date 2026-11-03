@@ -17,7 +17,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Coroutine, Mapp
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from functools import cache, partial
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from ironm_agent.actions import (
     ADJUST_TODAY,
@@ -29,6 +29,7 @@ from ironm_agent.actions import (
     PLAN_EDIT,
     RECORD_STATE,
     REMEMBER,
+    SET_GOAL,
     Desk,
     Handler,
     Outcome,
@@ -82,7 +83,16 @@ from ironm_agent.illness import summary_line as illness_line
 from ironm_agent.indicators import named_indicators, record_kinds
 from ironm_agent.kb import KnowledgeBase, default_kb
 from ironm_agent.llm import ModelsConfig, TurnLLM, load_models
-from ironm_agent.memory import USER, earlier, last_sources, recent, split_thread, user_lines, whole
+from ironm_agent.memory import (
+    COACH,
+    USER,
+    earlier,
+    last_sources,
+    recent,
+    split_thread,
+    user_lines,
+    whole,
+)
 from ironm_agent.memory_extract import (
     changes_of,
     extract,
@@ -125,6 +135,7 @@ from ironm_agent.render import (
     answer_text,
     consultation_summary,
     finished,
+    goal_card,
     log_card,
     notice,
     plan_card,
@@ -155,6 +166,7 @@ from ironm_agent.special import rules_text as special_rules
 from ironm_agent.spoken import HELP, REFUSAL_NEEDS, RISK_NEEDS, URGENT, missing, say, urgent_needs
 from ironm_agent.tools import Evidence, Toolbox
 from ironm_agent.training import (
+    DRAFT_HOURS,
     Plan,
     TrainingStore,
     WorkoutLog,
@@ -206,10 +218,33 @@ MEAL_KINDS = ("早餐", "午餐", "晚餐", "加餐", "夜宵", "练前", "练�
 MAX_FOODS = 12  # 一餐最多几样（同饮食页）
 
 
+_NOT_GOAL = re.compile(r"(?:不想|不再|不要|不是|别|不用|不打算|放弃)[^，。！？,.!?\n]{0,4}$|不$")
+_NOT_AFTER = re.compile(r"^[^，。！？,.!?\n]{0,3}(?:不想|不要|不练|不干|不搞|算了|放弃)")
+
+
+def _said_goal(kind: str, text: str) -> bool:
+    """他说了这个目标方向（"不想再继续减脂""我不减脂了""减脂我不想了"里的减脂不算）。"""
+    return any(
+        not _NOT_GOAL.search(text[max(0, m.start() - 8) : m.start()])
+        and not _NOT_AFTER.search(text[m.end() : m.end() + 8])
+        for m in _GOAL_WORDS[kind].finditer(text)
+    )
+
+
+# 目标方向的说法（§151：交的类型要和他这句话对得上）
+_GOAL_WORDS: dict[str, re.Pattern[str]] = {
+    "fat_loss": re.compile(r"减脂|减肥|减重|瘦|掉秤|降体脂|刷脂|减到|降到"),
+    "muscle": re.compile(r"增肌|长肌肉|练大|增重|变壮|围度|增到|长到"),
+    "strength": re.compile(r"力量|增力|变强|大重量|极限|1RM", re.I),
+    "endurance": re.compile(r"耐力|马拉松|跑得更久|长跑|有氧能力|体能"),
+    "health": re.compile(r"健康|身体好|保持|维持"),
+}
+
+
 def _in_jin(raw: str, unit: Any, text: str) -> bool | None:
     """体重他说的是不是斤：原话里这个数后面跟着"斤"或"公斤"按原话；否则看单位参数；没写单位时，
     原话只出现"斤"（含"一百四十斤"这类中文数字）算斤、只出现"公斤"或都没有算公斤，两样都有说不清（None）。"""
-    after = re.search(re.escape(raw) + r"\s*(公斤|斤)", text)
+    after = re.search(r"(?<![\d.])" + re.escape(raw) + r"\s*(公斤|斤)", text)  # "170 斤"里的"70"不算（复核 11-03）
     if after:
         return after.group(1) == "斤"
     if unit in ("斤", "公斤"):
@@ -301,6 +336,7 @@ RISK_BLOCK = "这一轮先不给训练安排。饮食、睡眠或者你的数据
 CONFIRM_NOTE = {
     "plan": "下面是计划预览，点「确认」才会保存，保存后也能撤销。",
     "log": "下面是这次训练的记录预览，点「确认」才会记下。",
+    "goal": "下面是改目标的预览，点「确认」才会改，改了也能撤销。",  # §151
 }
 # 本会话里这些回答给全文、不压成要点（列给他确认的条件、给出过的预览，spec [2026-10-23] §68）
 KEEP_WHOLE = (HEAD, *CONFIRM_NOTE.values())
@@ -670,6 +706,109 @@ class IronMAgent:
         if self._goals is None:
             self._goals = default_goal()
         return self._goals
+
+    async def _goal_preview(
+        self, user_id: str, text: str, today: date, snapshot: Snapshot | None,
+        args: Mapping[str, Any], store: Any,
+    ) -> Outcome:  # fmt: skip
+        from ironm_agent.goal import Goal, progress
+        from ironm_agent.memory_extract import digits
+        from ironm_agent.metrics import GOALS, compute_all
+
+        if snapshot is None or snapshot.failed:  # 读不到档案：原来的目标不知道，撤销会清掉真实的（复核 11-03）
+            return Outcome(False, "这次读不到他的档案，改不了目标；请他稍后再说一次。", "error")
+        kind = str(args.get("type") or "")
+        value, by_raw = args.get("value"), str(args.get("by") or "")
+        if not kind and value is None:
+            return Outcome(False, "要交目标方向（type）或目标体重和日期（value、by）。", "format")
+        if value is None and by_raw:  # 只交日期：目标表要体重和日期一起，不能悄悄丢掉
+            return Outcome(False, "目标日期要和目标体重（value）一起交；他没说体重就先问他。", "format")
+        if kind and (kind not in GOALS or not _said_goal(kind, text)):
+            return Outcome(
+                False,
+                "目标方向和他这句话的说法对不上：他说了减脂、增肌、增力、耐力或健康才交。",
+                "goal",
+            )
+        kg: float | None = None
+        by: date | None = None
+        if value is not None:
+            if isinstance(value, bool) or not isinstance(value, int | float):
+                return Outcome(False, "目标体重写他说的数。", "format")
+            raw = f"{float(value):g}"
+            if raw not in digits(text, chinese=True):
+                return Outcome(
+                    False,
+                    "这个目标体重不在他这句话里：写他说的数，说斤写斤的数、unit 写斤。",
+                    "number",
+                )
+            jin = _in_jin(raw, args.get("unit"), text)
+            if jin is None:
+                return Outcome(False, "说不清是斤还是公斤：先问他一句。", "number")
+            kg = round(float(value) / 2, 1) if jin else float(value)
+            if not 30 <= kg <= 250:
+                return Outcome(False, "目标体重要在 30–250 公斤之间。", "number")
+            try:
+                by = date.fromisoformat(by_raw)
+            except ValueError:
+                return Outcome(
+                    False, "目标体重要配一个日期（by，YYYY-MM-DD）；他没说哪天就先问他。", "format"
+                )
+            if not today < by <= today + timedelta(days=730):
+                return Outcome(False, "目标日期要在今天之后、两年以内（和目标页一样）。", "format")
+        before = snapshot.profile.goal
+        try:
+            old = await self._goal_store().get(user_id)
+        except Exception as e:  # 读不到目标表：当作没有
+            _log.info("goal unavailable: error_type=%s", type(e).__name__)
+            old = None
+        after = cast("Any", kind) if kind else before
+        if after == before and kg is None:
+            return Outcome(False, f"目标已经是{GOALS.get(str(before), '')}，不用改。", "same")
+
+        def kcal(goal: Any) -> float | None:
+            p = replace(snapshot.profile, goal=goal)
+            got = next(
+                (m for m in compute_all(snapshot.readings, p, today) if m.key == "kcal_target"),
+                None,
+            )
+            return float(got.value) if got is not None and got.value else None
+
+        now_kcal = _metric_value(snapshot, "kcal_target")  # 首页现在的目标（带着两周复盘的调整量）
+        items = []
+        if kind and after != before:
+            items.append(
+                f"目标：{GOALS.get(str(before), '没填') if before else '没填'} → {GOALS[kind]}"
+            )
+        k0, k1 = kcal(before), kcal(after)
+        if now_kcal and k0 and k1:  # 和首页同一个数起算，只加目标类型带来的变化
+            k0, k1 = now_kcal, now_kcal + (k1 - k0)
+        if k1 and k0 != k1:
+            items.append(
+                f"每日热量：约 {round(k0)} → {round(k1)} 千卡"
+                if k0
+                else f"每日热量：约 {round(k1)} 千卡"
+            )
+        if kg is not None and by is not None:
+            was = f"（原来 {old.value:g} 公斤）" if old is not None else ""
+            items.append(f"目标体重：{kg:g} 公斤，{by.year}年{by.month}月{by.day}日前{was}")
+            trend = next((m for m in snapshot.metrics if m.key == "weight_trend"), None)
+            pace = progress(Goal(kg, by, today), snapshot.readings.weight, trend, today).get("pace")
+            if pace:
+                items.append(str(pace))
+        content = {"title": "改目标", "headline": str(args.get("why") or "")[:60] or "确认后才改",
+                   "items": items,
+                   "goal": {"type": kind or None, "value": kg, "by": by.isoformat() if by else None},
+                   "before": {"type": before, "goal": old.json() if old is not None else None}}  # fmt: skip
+        try:  # 上一轮出的改目标卡片还没处理：作废，免得他点了旧的（复核 11-03）
+            prior = await store.pending_plan(user_id, DRAFT_HOURS * 60, kind="goal")
+        except Exception as e:
+            _log.info("goal draft lookup failed: error_type=%s", type(e).__name__)
+            prior = None
+        draft = await store.add_draft(user_id, "goal", content)
+        if prior is not None:
+            await self._drop_drafts(user_id, [prior.id])
+        return Outcome(True, "已出改目标预览卡片，等他确认（确认前目标没改）。", kind="goal",
+                       cards=tuple(goal_card(draft, content)), draft=draft.id, what="goal")  # fmt: skip
 
     async def _target(self, user_id: str, snapshot: Snapshot) -> str:
         """目标体重和日期的一句话（排新计划前确认时带上，spec [2026-10-23] §55 需求 2）；读不到时当作没有。"""
@@ -1447,7 +1586,8 @@ class IronMAgent:
         desk = Desk(
             self._action_handlers(user_id, text, plan, ctx, snapshot.today, run, tools_ctx,
                                   confirmed=confirmed, merge=bool(history), blocked=blocked is not None,
-                                  snapshot=snapshot, known=known, remembering=remembering),
+                                  snapshot=snapshot, known=known, remembering=remembering,
+                                  history=history),
             has_plan=plan is not None, must_plan=confirmed_now and replying and blocked is None,
         )  # fmt: skip
         if remembering:  # "记下了"算不算做了：回答写完后核对，通过的长期记忆才算（复核 11-03）
@@ -1513,13 +1653,19 @@ class IronMAgent:
         if action == "new_plan":
             # 要新计划、本会话还没确认条件：由它用自己的话列出条件请他确认（§55、§86），不出预览；
             # 开头那段没有"排新计划前先确认一下"（下一轮靠它认出问过了）时，退回系统列的五项
-            await self._drop_drafts(user_id, desk.drafts)
+            # 改目标的卡片照出（§151：他说了新目标，同一轮又要先确认排计划的条件，两件事都要给他）
+            goal_draft = desk.goal.draft if desk.goal is not None else ""
+            await self._drop_drafts(user_id, [d for d in desk.drafts if d != goal_draft])
             ask = own if asks_terms else confirm_ask(terms)
             run.update(
                 path="clarify", missing=["confirm"], clarify_by="model" if asks_terms else "fixed"
             )
             said["answer"] = ask
-            yield text_block("\n\n".join(x for x in (refusal_fixed, ask) if x))
+            note = CONFIRM_NOTE["goal"] if desk.goal is not None else ""
+            yield text_block("\n\n".join(x for x in (refusal_fixed, ask, note) if x))
+            for block in desk.goal.cards if desk.goal is not None else ():
+                yield block
+            run.pop("_desk", None)  # 卡片发出去了：后面再出什么事也不作废它
             return
         run["task"] = "plan" if desk.plan is not None else "log" if desk.logs else None
         run["_tail"] = ""  # 风险提醒、生病追问已经作为要求交给它（§86），不再拼在末尾
@@ -1645,6 +1791,7 @@ class IronMAgent:
         snapshot: Snapshot | None = None,
         known: Mapping[str, Any] | None = None,
         remembering: bool = False,
+        history: Sequence[str] = (),
     ) -> dict[str, Handler]:
         """动作工具的处理（spec [2026-10-23] §120）：校验、套用、检查、存成预览，结果当场交还给管家。
 
@@ -2044,9 +2191,16 @@ class IronMAgent:
                 what="memory",
             )
 
+        async def set_goal(desk: Desk, args: Mapping[str, Any]) -> Outcome:
+            """改正式目标（§151）：类型、目标体重和日期要是他说的；出改目标的预览卡片，他确认才改。"""
+            # 分几轮说的（"想减到 65 公斤"→"哪天？"→"半年吧"）、答应管家给的方案（"可以"）：
+            # 他前几句和管家上一句也算原话（复核 11-03）；确认卡片前他还能看清
+            said = "\n".join([text, *user_lines(list(history))[-3:], *[x for x in history if x.startswith(COACH)][-1:]])
+            return await self._goal_preview(user_id, said, today, snapshot, args, store)
+
         handlers: dict[str, Handler] = {
             LOG_WORKOUT: log_workout, RECORD_STATE: record_state, LOG_BODY: log_body,
-            LOG_MEAL: log_meal, KCAL_CHANGE: kcal_change,
+            LOG_MEAL: log_meal, KCAL_CHANGE: kcal_change, SET_GOAL: set_goal,
         }  # fmt: skip
         if remembering:  # 暂停记忆、系统拼出来的问法：不给（§145）
             handlers[REMEMBER] = remember
@@ -2234,10 +2388,11 @@ class IronMAgent:
             run["_found"] = found
         coach = await self._coach_state(user_id)  # 管家练完后定的下次目标（§132）
         decided = coach.decided() if coach is not None else None
+        target = await self._target(user_id, snapshot)  # 目标体重和日期：档案里目标一行带上（§151）
         case = build_case(
             snapshot, recall, text, plan=lines + target_lines(plan, steady, snapshot.today, decided),
             illness=signal, day=today_lines, earlier=day_signals(day, before=at),
-            insights=insight_lines,
+            insights=insight_lines, target=target,
         )  # fmt: skip
         current = await wx if wx is not None else None
         if current is not None:

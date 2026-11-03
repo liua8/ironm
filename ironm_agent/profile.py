@@ -106,6 +106,16 @@ async def load(user_id: str) -> tuple[Profile, dict[str, str]]:
     return profile, sources
 
 
+async def set_goal(user_id: str, goal: str | None) -> None:
+    """只改目标类型（改目标的卡片确认或撤销时，§151）；None 是恢复成没填。"""
+    await _ensure()
+    await _q(
+        "INSERT INTO ironm_profile (user_id, goal) VALUES (:uid, :goal)"
+        " ON CONFLICT (user_id) DO UPDATE SET goal = EXCLUDED.goal, updated_at = now()",
+        {"uid": user_id, "goal": goal},
+    )
+
+
 async def save(user_id: str, data: ProfileIn) -> None:
     await _ensure()
     fields = data.model_dump(exclude_unset=True)

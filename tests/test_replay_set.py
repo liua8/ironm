@@ -307,3 +307,28 @@ def test_chat_judge_checks_the_gear_page() -> None:
     want = {"gear": ["哑铃", "壶铃"]}
     assert mod.judge(want, "好", [], None, None, None, None, {"哑铃", "壶铃", "弹力带"}) == []
     assert mod.judge(want, "好", [], None, None, None, None, {"哑铃"}) == ["器械页少了 壶铃"]
+
+
+def test_chat_judge_checks_the_official_goal() -> None:
+    """对话用例能查正式目标（§151：档案的目标类型、目标表的目标体重）。"""
+    spec = importlib.util.spec_from_file_location("replay_script", ROOT / "scripts" / "replay.py")
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    want = {"official": {"type": "muscle", "weight": 75.0}, "card": "goal"}
+    ok = {"type": "muscle", "weight": 75.0}
+    assert (
+        mod.judge(want, "好", [{"kind": "goal", "draft": "d"}], None, None, None, None, None, ok)
+        == []
+    )
+    bad = mod.judge(
+        want, "好", [], None, None, None, None, None, {"type": "fat_loss", "weight": None}
+    )
+    assert "该出goal卡片，没出" in bad and "正式目标的 type 应是 muscle，实际 fat_loss" in bad
+    back = {"type": "fat_loss", "weight": None}
+    undo = {"undone": back}
+    assert mod.judge(undo, "好", [], None, None, None, None, None, None, back) == []
+    assert mod.judge(undo, "好", [], None, None, None, None, None, None, ok) == [
+        "撤销后正式目标的 type 应是 fat_loss，实际 muscle",
+        "撤销后正式目标的 weight 应是 None，实际 75.0",
+    ]
