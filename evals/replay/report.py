@@ -37,18 +37,19 @@ class Row:
 
 
 def save(
-    rows: Sequence[Row], label: str = "", where: Path = REPORTS, now: datetime | None = None
+    rows: Sequence[Row],
+    label: str = "",
+    where: Path = REPORTS,
+    now: datetime | None = None,
+    meta: dict[str, Any] | None = None,
 ) -> Path:
-    """存一份报告，文件名带时间和标签。"""
+    """存一份报告，文件名带时间和标签；meta 是这次跑的设置（如各环节用的模型，§142）。"""
     now = now or datetime.now()
     where.mkdir(parents=True, exist_ok=True)
     tag = "".join(c for c in label if c.isalnum() or c in "-_")[:40]
     path = where / (now.strftime("%Y-%m-%d-%H%M%S") + (f"-{tag}" if tag else "") + ".json")
-    body = {
-        "at": now.isoformat(timespec="seconds"),
-        "label": label,
-        "rows": [asdict(r) for r in rows],
-    }
+    body = {"at": now.isoformat(timespec="seconds"), "label": label, "meta": meta or {},
+            "rows": [asdict(r) for r in rows]}  # fmt: skip
     path.write_text(json.dumps(body, ensure_ascii=False, indent=1))
     return path
 

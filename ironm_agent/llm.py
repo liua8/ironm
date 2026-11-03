@@ -14,7 +14,9 @@ from pydantic import Field
 from ironm_agent.common import ContractModel
 from ironm_agent.yamlfile import load_yaml
 
-type Stage = Literal["route", "expert", "compose", "memory"]
+type Stage = Literal["route", "expert", "compose", "memory", "coach"]
+# 配置里没写这个环节时沿用哪个（§142：管家的后台决策默认和作答同一个模型，旧配置不用改）
+FALLBACK: dict[Stage, Stage] = {"coach": "expert"}
 
 MODELS_PATH = Path(__file__).resolve().parent.parent / "config" / "models.yaml"
 
@@ -31,6 +33,12 @@ class StageModel(ContractModel):
 class ModelsConfig(ContractModel):
     turn_budget: int = Field(ge=1)
     stages: dict[Stage, StageModel]
+
+    def route(self, stage: Stage) -> StageModel:
+        """这个环节用的模型；没配时按 FALLBACK 沿用别的环节。"""
+        if stage in self.stages:
+            return self.stages[stage]
+        return self.stages[FALLBACK[stage]]
 
 
 def load_models(path: Path = MODELS_PATH) -> ModelsConfig:
@@ -109,7 +117,7 @@ class TurnLLM:
         tools: Sequence[Mapping[str, Any]] | None = None,
         json_mode: bool = False,
     ) -> Reply:
-        route = self.config.stages[stage]
+        route = self.config.route(stage)
         key = self.environ.get(route.api_key_env, "")
         if not key:
             raise ModelUnavailable("missing_key")

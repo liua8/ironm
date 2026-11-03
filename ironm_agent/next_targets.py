@@ -163,7 +163,7 @@ async def _run(
     rejected = 0
     try:
         for _ in range(MAX_TURNS):
-            reply = await asyncio.wait_for(llm.chat("expert", messages, tools=[SCHEMA]), TIMEOUT_S)
+            reply = await asyncio.wait_for(llm.chat("coach", messages, tools=[SCHEMA]), TIMEOUT_S)
             if not reply.tool_calls:
                 break
             messages.append(reply.as_message())

@@ -236,7 +236,7 @@ async def _run(user_id: str, deps: Deps, llm: LLM, *, today: date, force: bool) 
         for turn in range(MAX_TURNS + 1):
             offer = schemas if turn < MAX_TURNS else None  # 到了往返上限：不再给工具，请它作答
             reply = await asyncio.wait_for(
-                llm.chat("expert", messages, tools=offer or None, json_mode=not offer), TIMEOUT_S
+                llm.chat("coach", messages, tools=offer or None, json_mode=not offer), TIMEOUT_S
             )
             if not reply.tool_calls or not offer:  # 没给工具的那一轮还要调：不执行，按它写的作答
                 raw = parse_json(reply.content) or {}

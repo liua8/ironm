@@ -267,19 +267,29 @@ def cleanup(token: str, user_id: str, made: dict[str, Any]) -> None:
           f"清空重放账号的 iron-m 数据 {rows} 行")  # fmt: skip
 
 
-def run_agent(cases: list[dict[str, Any]], profile: dict[str, Any]) -> list[Row]:
-    """后台用例：本进程内存存储 + 真实模型（§138 需求 1）。"""
+def models_used(config: Any) -> dict[str, str]:
+    """报告里记的：每个环节用的模型（开没开思考），不含密钥（§142）。"""
+    out = {}
+    for stage in ("route", "expert", "compose", "memory", "coach"):
+        r = config.route(stage)
+        think = (r.extra_body.get("thinking") or {}).get("type", "")
+        out[stage] = r.model + ("（思考）" if think == "enabled" else "")
+    return out
+
+
+def run_agent(cases: list[dict[str, Any]], profile: dict[str, Any], config: Any) -> list[Row]:
+    """后台用例：本进程内存存储 + 真实模型（§138 需求 1）；config 是这次用的模型配置（§142）。"""
     import asyncio
 
     from evals.replay.agent import run_case as run_agent_case
-    from ironm_agent.llm import TurnLLM, load_models
+    from ironm_agent.llm import TurnLLM
     from ironm_agent.metrics import Profile
 
     me = Profile(**{**profile, "birth": date.fromisoformat(str(profile["birth"]))})
     rows = []
     for case in cases:
         print(f"\n{'=' * 72}\n【{case['id']}】{case.get('from', '')}（后台）")
-        res = asyncio.run(run_agent_case(case, me, TurnLLM(load_models(), os.environ)))
+        res = asyncio.run(run_agent_case(case, me, TurnLLM(config, os.environ)))
         print(f"工具：{'、'.join(res.tools) or '没调'}（{res.secs:.1f} 秒）")
         print("结果：" + json.dumps(res.detail, ensure_ascii=False)[:400])
         print("说明：" + (res.answer or "（无）"))
@@ -289,9 +299,11 @@ def run_agent(cases: list[dict[str, Any]], profile: dict[str, Any]) -> list[Row]
     return rows
 
 
-def finish(rows: list[Row], label: str, against: str | None) -> int:
+def finish(
+    rows: list[Row], label: str, against: str | None, meta: dict[str, Any] | None = None
+) -> int:
     """存报告、和以前的结果比、打印汇总；返回退出码。"""
-    path = save(rows, label)
+    path = save(rows, label, meta=meta)
     if against:
         old, names = load(Path(against)), [Path(against).name]
     else:
@@ -322,6 +334,9 @@ def main() -> None:
     p.add_argument("--only", nargs="*", default=None, help="只跑这几条（条目编号）")
     p.add_argument("--wait", type=int, default=WAIT, help="每条之间等后台写完的秒数")
     p.add_argument("--label", default="", help="报告文件名里的标签")
+    p.add_argument(
+        "--models", default=None, help="后台用例换这份模型配置跑（默认 config/models.yaml，§142）"
+    )
     p.add_argument("--against", default=None, help="只和这一份报告比（默认每轮取最近一次跑过它的）")
     side = p.add_mutually_exclusive_group()
     side.add_argument(
@@ -334,6 +349,13 @@ def main() -> None:
     ids = [c["id"] for c in [*spec["cases"], *(spec.get("agent") or [])]]
     if len(ids) != len(set(ids)):
         sys.exit("停下：清单里有重复的条目编号（对话和后台用例也不能重名）")
+    from ironm_agent.llm import MODELS_PATH, load_models
+
+    if args.models and not args.agent_only:
+        sys.exit(
+            "停下：--models 只换后台用例的模型，要和 --agent-only 一起用（对话用例走本机服务的配置）"
+        )
+    config = load_models(Path(args.models) if args.models else MODELS_PATH)
     if args.against and not Path(args.against).exists():
         sys.exit(f"停下：找不到要对比的报告 {args.against}")
 
@@ -350,7 +372,7 @@ def main() -> None:
     if why:
         sys.exit("停下：" + why)
     login_as = login() if cases else None  # 先登录：登不上就停在花钱之前（复核 11-03）
-    rows: list[Row] = run_agent(agent, spec["profile"]) if agent else []
+    rows: list[Row] = run_agent(agent, spec["profile"], config) if agent else []
     crashed = False
     if login_as is not None:
         token, user_id = login_as
@@ -366,7 +388,7 @@ def main() -> None:
         finally:
             time.sleep(min(args.wait, 10))
             cleanup(token, user_id, made)
-    code = finish(rows, args.label, args.against)
+    code = finish(rows, args.label, args.against, {"models": models_used(config)})
     sys.exit(code if code == 1 or not crashed else 2)
 
 
