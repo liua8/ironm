@@ -129,31 +129,23 @@ def test_review_proposal_warns_and_handles_no_tips(monkeypatch: pytest.MonkeyPat
 
 
 def test_chain_sends_back_a_review_plan_that_changes_too_much() -> None:
-    from types import SimpleNamespace
-
-    from ironm_agent.constraints import Context
-    from ironm_agent.experts import Opinion
-    from ironm_agent.plugin import REVIEW_ASK, IronMAgent
+    from ironm_agent.actions import NEW_PLAN
+    from ironm_agent.plugin import REVIEW_ASK
     from ironm_agent.protools.registry import ToolContext
-    from ironm_agent.roles import Role
-    from tests.fakes import FakeLLM, jsonr
+    from tests.test_protools_wiring import new_plan_desk
 
-    too_much = plan_of((2, "a"), (4, "b"), (6, "c"))
+    too_much = plan_of((2, "a"), (4, "b"), (6, "c")).model_dump(mode="json")
     ok = plan_of((1, "全身A"), (3, "上肢"), (5, "全身C"))
-    llm = FakeLLM(lambda *_: jsonr({"plan": ok.model_dump(mode="json")}))
-    lead = SimpleNamespace(opinion=Opinion(role=Role.TRAINER, speak=True, answer="改好了"))
-    run: dict[str, Any] = {}
     tools = ToolContext.build(
         TODAY, goal="muscle", weight_kg=70, readings=None, injured=[], equipment_said=[]
     )
-    new, _ = asyncio.run(
-        IronMAgent._check_plan(
-            IronMAgent(), too_much, {}, REVIEW_ASK + "：……", lead, OLD, tools, Context(), llm,
-            SimpleNamespace(text=lambda **_: "档案"), run,  # type: ignore[arg-type]
-        )
-    )  # fmt: skip
-    assert run["plan_check"] == "fixed" and changed_days(new, OLD) == 1
-    assert "最多改 2 天" in str(llm.seen[0][1][-1]["content"])
+    desk, run = new_plan_desk(OLD, REVIEW_ASK + "：……", tools)
+    said = asyncio.run(desk.run(NEW_PLAN, {"plan": too_much, "changes": "", "kind": "rewrite"}))
+    assert "最多改 2 天" in said and desk.plan is None  # 退回给它改（§120）
+    said = asyncio.run(
+        desk.run(NEW_PLAN, {"plan": ok.model_dump(mode="json"), "changes": "", "kind": "rewrite"})
+    )
+    assert "最多改 2 天" not in said and run["plan_check"] == "fixed"  # 改了再交，检查通过
 
 
 # ---- 需求 2：饮食目标能真正调整 ------------------------------------------------------------------
@@ -596,8 +588,8 @@ def test_trigger_endpoints_and_pain_records(monkeypatch: pytest.MonkeyPatch) -> 
 def test_chat_pain_is_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
     from tests.test_turn_flow import Coach, agent
 
-    a = agent(Coach(), monkeypatch=monkeypatch, memory=MemoryBook())
-    a._pain = book = trig.PainBook()
+    a = agent(Coach(said={"pain": ["左膝"]}), monkeypatch=monkeypatch, memory=MemoryBook())
+    a._pain = book = trig.PainBook()  # 管家判断他说了左膝疼（§114），按它记
 
     async def go() -> None:
         msgs = [{"role": "user", "content": "我左膝最近又疼了，深蹲要注意什么"}]

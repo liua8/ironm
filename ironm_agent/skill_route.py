@@ -36,8 +36,9 @@ _PROMPT = """你给健身管家挑这一轮要用的规程（做事步骤）。�
 - 和健身、饮食、恢复都无关（写文章、理财、编程）：skills、domains 都留空，fit 写 outside。
 - 打招呼、道谢、闲聊：都留空，fit 写 chat。
 - intent：这句话的意图，不超过 10 个字，不写人名、数字和具体病情（如"增肌训练""深蹲动作""孕期训练"）。
+- sources：他在问上一条回答里的数、说法是哪来的（"这个数哪来的""依据是什么"）写 true，否则 false。
 
-只输出 JSON：{{"skills": ["编号"], "domains": ["train|food|rest"], "intent": "…", "fit": "skill|core|outside|chat"}}"""
+只输出 JSON：{{"skills": ["编号"], "domains": ["train|food|rest"], "intent": "…", "fit": "skill|core|outside|chat", "sources": false}}"""
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,7 @@ class Routed:
     fit: str = "skill"
     dropped: int = 0  # 选了但不在目录里（或是基础、讲法规程）的编号个数
     extra: dict[str, str] = field(default_factory=dict)
+    sources: bool = False  # 他在追问上一条回答的来源（§114：路由判断优先，出错才按关键词）
 
 
 def catalog() -> str:
@@ -82,7 +84,8 @@ def parse(raw: object) -> Routed | None:
     if fit in ("outside", "chat"):
         picked, roles = [], ()
     intent = " ".join(str(raw.get("intent") or "").split())[:10]
-    return Routed(tuple(picked[:MAX_PICK]), roles, intent, fit, dropped)
+    return Routed(tuple(picked[:MAX_PICK]), roles, intent, fit, dropped,
+                  sources=raw.get("sources") is True)  # fmt: skip
 
 
 async def route(llm: LLM, text: str, recent: Sequence[str] = ()) -> Routed | None:

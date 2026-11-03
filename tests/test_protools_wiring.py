@@ -10,7 +10,6 @@ from ironm_agent.metrics import Readings
 from ironm_agent.protools.registry import ToolContext
 from ironm_agent.roles import EXPERTS, SPECS, Role
 from ironm_agent.tools import Toolbox
-from tests.fakes import FakeLLM, jsonr
 
 TODAY = date(2026, 10, 23)
 
@@ -68,19 +67,11 @@ def test_other_roles_tool_is_refused() -> None:
     assert "不能使用这个工具" in out and tb.evidence.pro_queries == 0
 
 
-
-
-
-
 def test_substitutes_adopt_library_entries_for_citation() -> None:
     tb = box(Role.RECOVERY, ctx(injured=["joint.knee"], equipment_said=["家里有哑铃"]))
     out = asyncio.run(tb.run(ToolCall("x", "find_substitutes", {"exercise": "杠铃深蹲"})))
     assert "箱式深蹲" in out
     assert any(e.title == "箱式深蹲" for e in tb.evidence.entries.values())
-
-
-
-
 
 
 def _plan_json(minutes: int, moves: list[tuple[str, int]]) -> dict[str, Any]:
@@ -98,68 +89,43 @@ def _plan_json(minutes: int, moves: list[tuple[str, int]]) -> dict[str, Any]:
     }
 
 
-def test_plan_that_fails_check_is_sent_back_once() -> None:
-    from types import SimpleNamespace
-
+def new_plan_desk(
+    current: Any = None, text: str = "帮我排计划", tools: Any = None
+) -> tuple[Any, dict[str, Any]]:
+    """交新计划的工具（§120），用内存里的训练存储。"""
+    from ironm_agent.actions import Desk
     from ironm_agent.constraints import Context
-    from ironm_agent.experts import Opinion
     from ironm_agent.plugin import IronMAgent
-    from ironm_agent.training import parse_plan
+    from ironm_agent.training import TrainingBook
+
+    a = IronMAgent()
+    a._training = TrainingBook()
+    run: dict[str, Any] = {}
+    handlers = a._action_handlers("42", text, current, Context(), TODAY, run, tools or ctx(),
+                                  confirmed=True, merge=False, blocked=False)  # fmt: skip
+    desk = Desk(handlers, has_plan=current is not None)
+    desk.unlock(handlers)
+    return desk, run
+
+
+def test_plan_that_fails_check_is_sent_back_once() -> None:
+    from ironm_agent.actions import NEW_PLAN
 
     too_long = _plan_json(
         45, [("高脚杯深蹲", 4), ("哑铃卧推", 4), ("单臂哑铃划船", 4), ("哑铃推举", 4)]
     )
     fits = _plan_json(45, [("高脚杯深蹲", 3), ("哑铃卧推", 3), ("单臂哑铃划船", 3)])
-    plan = parse_plan(too_long)[0]
-    assert plan is not None
-    llm = FakeLLM(scripted(jsonr({"plan": fits})))
-    lead = SimpleNamespace(opinion=Opinion(role=Role.TRAINER, speak=True, answer="三练全身"))
-    case = SimpleNamespace(text=lambda **_: "档案")
-    run: dict[str, Any] = {}
-    new, _ = asyncio.run(
-        IronMAgent._check_plan(
-            IronMAgent(),
-            plan,
-            too_long,
-            "帮我排计划",
-            lead,
-            None,
-            ctx(),
-            Context(),
-            llm,
-            case,
-            run,  # type: ignore[arg-type]
-        )
-    )
-    assert run["plan_check"] == "fixed" and len(new.sessions[0].items) == 3
-    asked = str(llm.seen[0][1][-1]["content"])
-    assert "没有通过检查" in asked and "超过了 45 分钟" in asked
+    desk, run = new_plan_desk()
+    said = asyncio.run(desk.run(NEW_PLAN, {"plan": too_long, "changes": "", "kind": "new"}))
+    assert "计划检查没过" in said and "超过了 45 分钟" in said and desk.plan is None  # 退回给它改
+    said = asyncio.run(desk.run(NEW_PLAN, {"plan": fits, "changes": "", "kind": "new"}))
+    assert said.startswith("已出") and run["plan_check"] == "fixed" and desk.plan is not None
 
 
 def test_plan_that_passes_check_is_kept() -> None:
-    from types import SimpleNamespace
-
-    from ironm_agent.constraints import Context
-    from ironm_agent.plugin import IronMAgent
-    from ironm_agent.training import parse_plan
+    from ironm_agent.actions import NEW_PLAN
 
     fits = _plan_json(45, [("高脚杯深蹲", 3), ("哑铃卧推", 3)])
-    plan = parse_plan(fits)[0]
-    llm = FakeLLM(scripted())
-    run: dict[str, Any] = {}
-    new, _ = asyncio.run(
-        IronMAgent._check_plan(
-            IronMAgent(),
-            plan,
-            fits,
-            "x",
-            SimpleNamespace(),
-            None,
-            ctx(),
-            Context(),
-            llm,
-            SimpleNamespace(),
-            run,  # type: ignore[arg-type]
-        )
-    )
-    assert run["plan_check"] == "pass" and new is plan and not llm.calls
+    desk, run = new_plan_desk()
+    said = asyncio.run(desk.run(NEW_PLAN, {"plan": fits, "changes": "", "kind": "new"}))
+    assert said.startswith("已出") and run["plan_check"] == "pass" and run["preview"] == "plan"

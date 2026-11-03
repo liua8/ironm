@@ -6,13 +6,14 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import timedelta
 from typing import Any
 
+from ironm_agent.actions import LOG_WORKOUT, NEW_PLAN, NUDGE_PLAN, PLAN_EDIT
 from ironm_agent.agent import APP_HELP, LOAD_SKILL
 from ironm_agent.clarify import HEAD
 from ironm_agent.llm import Reply, Stage
 from ironm_agent.metrics import Readings
 from ironm_agent.session_summary import SummaryBook
 from ironm_agent.training import TrainingBook
-from tests.fakes import call, jsonr, system_of, tool_results
+from tests.fakes import acting, call, jsonr, system_of, tool_results
 from tests.test_plan_ops import plan
 from tests.test_plugin import agent, text_of
 from tests.test_turn_flow import TODAY, run, snapshot_of
@@ -39,6 +40,7 @@ class Solo:
         assert stage == "expert", stage  # 单 Agent 没有路由、整合
         self.system = system_of(messages)
         self.user = str(messages[1]["content"])
+        self.last = str(messages[-1].get("content") or "")  # 最后一条（系统提醒也在这里，§120）
         return self.answer(self.system, self.user, tool_results(messages))
 
 
@@ -119,7 +121,7 @@ def test_app_question_uses_the_guide_tool(monkeypatch: Any) -> None:
 
 def test_edit_written_by_the_agent_is_applied_as_a_preview(monkeypatch: Any) -> None:
     ops = [{"kind": "swap", "day": 3, "exercise": "侧平举", "to": "俯卧撑", "why": "你要求的"}]
-    a, _ = single(lambda *_: jsonr({"answer": "周三的侧平举换成俯卧撑了。", "ops": ops}), monkeypatch,
+    a, _ = single(acting(PLAN_EDIT, {"ops": ops}, {"answer": "周三的侧平举换成俯卧撑了。"}), monkeypatch,
                   seeded=True)  # fmt: skip
     blocks, seen = run(a, "把周三的侧平举换成俯卧撑")
     assert seen["action"] == "edit" and seen["plan_ops"]["by"] == "model" and cards(blocks)
@@ -144,9 +146,11 @@ NEW = {"title": "居家减脂三练", "goal": "减脂", "days_per_week": 3, "ses
 
 def test_new_plan_is_confirmed_first_then_built(monkeypatch: Any) -> None:
     def answer(system: str, user: str, results: list[str]) -> Reply:
-        if '"action": "new_plan"' in system:  # 还没确认：只说要排新计划
-            return jsonr({"answer": "好，先确认一下条件。", "action": "new_plan"})
-        return jsonr({"answer": "为了减脂：每周 3 次全身力量〔经验〕。", "plan": NEW})
+        if not results:  # 先交计划；还没确认条件时系统退回（§120）
+            return call(NEW_PLAN, plan=NEW, changes="三练全身")
+        if results[-1].startswith("已出"):
+            return jsonr({"answer": "为了减脂：每周 3 次全身力量〔经验〕。"})
+        return jsonr({"answer": "好，先确认一下条件。"})
 
     a, s = single(answer, monkeypatch)
     first, seen = run(a, "给我一份训练计划")
@@ -158,12 +162,12 @@ def test_new_plan_is_confirmed_first_then_built(monkeypatch: Any) -> None:
     a._history = asked
     blocks, seen = run(a, "按这个排")
     assert seen["action"] == "plan" and cards(blocks)
-    assert "用户刚回答了排计划前的确认" in s.user  # 确认过的条件按回答来排
-    assert "上一轮你列了排新计划要用的条件" in s.system  # 这一轮要把计划写进 plan
+    assert "先看他这句是不是在回应那张清单" in s.user  # 他在回应才按确认的条件排（§108）
+    assert "上一轮你列了排新计划要用的条件" in s.system  # 这一轮要调用工具交计划
 
 
 def test_plan_written_before_confirming_is_held_back(monkeypatch: Any) -> None:
-    a, _ = single(lambda *_: jsonr({"answer": "给你排好了。", "plan": NEW}), monkeypatch)
+    a, _ = single(acting(NEW_PLAN, {"plan": NEW, "changes": ""}, {"answer": "给你排好了。"}), monkeypatch)
     blocks, seen = run(a, "帮我做个计划")
     assert seen["path"] == "clarify" and HEAD in text_of(blocks) and not cards(blocks)
 
@@ -171,7 +175,7 @@ def test_plan_written_before_confirming_is_held_back(monkeypatch: Any) -> None:
 def test_logging_a_workout_gives_a_record_preview(monkeypatch: Any) -> None:
     log = {"day": TODAY.isoformat(), "session": "", "done": True, "rpe": None, "minutes": None,
            "note": "", "items": [{"exercise": "深蹲", "sets": 5, "reps": "5", "weight_kg": 60, "done_sets": []}]}  # fmt: skip
-    a, _ = single(lambda *_: jsonr({"answer": "记下了，下次试 62.5 公斤〔经验〕。", "log": log}),
+    a, _ = single(acting(LOG_WORKOUT, log, {"answer": "记下了，下次试 62.5 公斤〔经验〕。"}),
                   monkeypatch)  # fmt: skip
     blocks, seen = run(a, "今天练了深蹲 5 组 5 次 60 公斤")
     assert seen["action"] == "log" and cards(blocks)
@@ -225,7 +229,7 @@ def test_tool_loop_is_capped_and_answers_from_what_it_has(monkeypatch: Any) -> N
     a, s = single(answer, monkeypatch)
     blocks, seen = run(a, "我想长点肉")
     assert "10 组以上" in text_of(blocks) and seen["_experts"][0]["forced"]
-    assert len(s.stages) <= 7  # 不会无限循环
+    assert len(s.stages) <= 9  # 不会无限循环（装了带动作工具的规程，往返上限 5 → 7，§120）
 
 
 BP = Readings(systolic=((TODAY - timedelta(days=2), 186.0),),
@@ -241,34 +245,35 @@ def test_data_risk_blocks_a_plan_request_even_if_the_model_asks_for_one(monkeypa
 
 def test_data_risk_drops_an_edit_without_claiming_it_was_done(monkeypatch: Any) -> None:
     ops = [{"kind": "move", "day": 3, "to_day": 4, "why": "你要求的"}]
-    a, s = single(lambda *_: jsonr({"answer": "已经把周三挪到周四了。", "ops": ops}), monkeypatch,
+    a, _s = single(acting(PLAN_EDIT, {"ops": ops}, {"answer": "已经把周三挪到周四了。"}), monkeypatch,
                   seeded=True, snapshot=snapshot_of(BP))  # fmt: skip
     blocks, seen = run(a, "周三那次挪到周四")  # 规则认不出是训练问题：模型给了改动
-    assert s.stages == ["expert"] and seen["action_dropped"] == "risk" and seen["path"] == "risk"
+    assert seen["action_dropped"] == "risk" and seen["path"] == "risk"
+    assert {x["result"] for x in seen["actions"]} == {"locked"}  # 危急情况这一轮没有改计划工具（§120）
     assert "已经把" not in text_of(blocks) and "186/114" in text_of(blocks) and not cards(blocks)
 
 
 def test_whole_plan_written_as_an_edit_is_previewed_when_a_plan_exists(monkeypatch: Any) -> None:
-    a, _ = single(lambda *_: jsonr({"answer": "改成三练全身了〔经验〕。", "plan": NEW}), monkeypatch,
-                  seeded=True)  # fmt: skip
+    a, _ = single(acting(NEW_PLAN, {"plan": NEW, "changes": "改成三练全身"}, {"answer": "改成三练全身了〔经验〕。"}),
+                  monkeypatch, seeded=True)  # fmt: skip
     blocks, seen = run(a, "把训练改成三练全身")  # 换分化：完整写出 plan，不是要重排
     assert seen["action"] == "edit" and seen.get("path") != "clarify" and cards(blocks)
 
 
-def test_plan_after_confirming_is_written_by_the_fallback_when_missing(monkeypatch: Any) -> None:
+def test_plan_after_confirming_is_asked_for_again_when_missing(monkeypatch: Any) -> None:
     def answer(system: str, user: str, results: list[str]) -> Reply:
-        if "不用写给用户的文字" in system:  # 补写计划（只要 JSON）
-            return jsonr({"plan": NEW})
+        if s.last == NUDGE_PLAN:  # 同一轮提醒它交计划（§120，取代补写一次）
+            return call(NEW_PLAN, plan=NEW, changes="三练全身")
         return jsonr({"answer": "为了减脂：每周 3 次全身力量〔经验〕。"})  # 只写了文字
 
-    a, _ = single(answer, monkeypatch)
+    a, s = single(answer, monkeypatch)
 
     async def asked(*_: str) -> list[str]:
         return ["用户：给我一份训练计划", f"教练（要点）：{HEAD}目标、场景、器械、时间、伤病……"]
 
     a._history = asked
     blocks, seen = run(a, "按这个排")
-    assert seen["action_forced"] == "confirmed" and seen["preview_retry"] and cards(blocks)
+    assert seen["_experts"][0]["nudged"] and seen["action"] == "plan" and cards(blocks)
 
 
 def test_reply_right_after_a_plan_preview_is_read_as_about_the_preview(monkeypatch: Any) -> None:
@@ -281,7 +286,7 @@ def test_reply_right_after_a_plan_preview_is_read_as_about_the_preview(monkeypat
 
     a._history = previewed
     run(a, "都不好")
-    assert "他这句先当成对这份预览的回应" in s.user
+    assert "他这句如果是在回应这份预览" in s.user and "他问的是别的事，就只答他问的" in s.user  # §108
     a._history = lambda *_: _empty()
     run(a, "都不好")
     assert "他这句先当成对这份预览的回应" not in s.user  # 上一轮没给预览时不加

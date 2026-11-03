@@ -13,15 +13,13 @@ def size(text: str) -> int:
     return len("".join(text.split()))
 
 
-def test_question_kinds_set_the_length() -> None:
-    assert kind_of("我的 BMI 是多少") == "fact" and kind_of("我的血糖正常吗") == "fact"
-    assert kind_of("早餐吃什么比较好") == "howto" and kind_of("膝盖疼还能练腿吗") == "howto"
-    assert kind_of("我最近睡得怎么样") == "fact"
-    assert kind_of("我训练完成了，这算加练吗") == "fact" and kind_of("这算练过了吗") == "fact"
-    assert kind_of("帮我排个计划", "plan") == "card" and kind_of("今天练了深蹲", "log") == "card"
-    assert kind_of("减脂怎么吃，详细说说") == "detail"
-    assert LIMITS["fact"] < LIMITS["howto"] < LIMITS["detail"] and LIMITS["card"] < LIMITS["fact"]
-    assert "不超过 120 字" in slots_prompt("我的 BMI 是多少")
+def test_length_and_steps_are_the_agents_call() -> None:
+    """§114：不再按关键词把问题分成问数、问怎么做、要详细去定长度和做法条数；交给管家判断，只留总上限。"""
+    texts = ("我的 BMI 是多少", "今天有点不舒服", "早餐吃什么比较好", "减脂怎么吃，详细说说")
+    assert len({slots_prompt(x) for x in texts}) == 1  # 不管问什么，给管家的写法说明一样
+    assert f"不超过 {LIMITS['detail']} 字" in slots_prompt("我的 BMI 是多少")
+    assert f"不超过 {LIMITS['card']} 字" in slots_prompt("帮我排个计划", "plan")  # 有卡片的照旧短
+    assert kind_of("我的 BMI 是多少") == "fact"  # 关键词分类还在，只是不再用来改管家的输出
 
 
 def test_answer_first_reason_after_steps_numbered() -> None:
@@ -68,7 +66,7 @@ def test_next_step_that_repeats_is_dropped_and_single_step_is_not_numbered() -> 
 
 
 def test_too_long_drops_later_steps_but_keeps_answer_and_alert() -> None:
-    long_step = "每组之间休息两分钟，动作慢一点，下放三秒，起身一秒，组数按计划做完再加重" * 2
+    long_step = "每组之间休息两分钟，动作慢一点，下放三秒，起身一秒，组数按计划做完再加重" * 6
     raw = {
         "answer": "能练，今天避开压膝盖的动作。",
         "steps": [long_step, long_step, long_step],
@@ -76,7 +74,7 @@ def test_too_long_drops_later_steps_but_keeps_answer_and_alert() -> None:
         "next": "今晚先试一组箱式深蹲。",
     }
     out = assemble(raw, "膝盖疼还能练腿吗")
-    assert size(out) <= LIMITS["howto"]
+    assert size(out) <= LIMITS["detail"]
     assert out.startswith("能练") and "打软腿" in out and out.count(long_step) < 3
 
 
@@ -115,15 +113,16 @@ def test_risk_note_is_not_repeated_when_the_answer_already_sends_him_to_a_doctor
     assert drop_said(note, "血压高的人早餐少放盐。") == note  # 提到血压但没让他看医生，提醒照留
 
 
-def test_stop_reminder_only_when_the_question_is_about_pain() -> None:
+def test_stop_reminder_is_the_agents_call() -> None:
+    """§114：写不写"疼就停"由管家按情况判断（写法说明里有），代码不再按关键词删。"""
     raw = {
         "answer": "屁股往后坐，膝盖跟着脚尖。",
         "steps": [],
         "alert": "膝盖疼就停下。",
         "next": "",
     }
-    assert "疼就停" not in assemble(raw, "深蹲怎么做")
-    assert "疼就停" in assemble(raw, "膝盖疼还能练腿吗")
+    assert "疼就停" in assemble(raw, "深蹲怎么做")
+    assert "只在他说的情况本身有风险时写" in slots_prompt("深蹲怎么做")
 
 
 def test_repair_keeps_line_breaks() -> None:
@@ -137,7 +136,7 @@ def test_long_reason_is_cut_before_listed_items() -> None:
     raw = {
         "answer": "给你 3 个：箱式深蹲、罗马尼亚硬拉、臀桥。",
         "reason": "这三个对膝盖压力小，适合你左膝蹲深会疼。"
-        + "罗马尼亚硬拉主要练大腿后侧和臀部，能补上深蹲练不到的部分，" * 4
+        + "罗马尼亚硬拉主要练大腿后侧和臀部，能补上深蹲练不到的部分，" * 14
         + "所以一起练。",
         "steps": [
             "箱式深蹲：身后放椅子，高度定在蹲下不疼的位置，3 组 × 10 次。",
@@ -149,25 +148,19 @@ def test_long_reason_is_cut_before_listed_items() -> None:
     assert "3. 臀桥" in out and "补上深蹲" not in out
 
 
-def test_body_state_questions_are_short_sentences_not_lists() -> None:
+def test_body_state_is_the_agents_call() -> None:
+    """§114：问身体状态写几条、写不写成句子由管家判断；代码照它写的拼，不按关键词删做法。"""
     raw = {"answer": "可以，今天轻松动一动。",
            "steps": ["慢走或慢骑 20 分钟，能说话不喘。", "拉伸 10 分钟。", "多喝水，早点睡。"],
            "alert": "发烧、胸闷就别练了。"}  # fmt: skip
-    for text in ("今天有点不舒服，给我安排一个轻松的锻炼", "今天好累还练吗", "膝盖有点疼能不能练"):
-        out = assemble(raw, text)
-        assert not any(x.startswith(("1. ", "2. ")) for x in out.split("\n")), text
-        assert "拉伸 10 分钟" in out and "多喝水" not in out, text  # 最多 2 条，写成句子
-    assert "不分条" in slots_prompt("今天有点不舒服，给我安排一个轻松的锻炼")
-    listed = assemble(raw, "增肌怎么安排训练")  # 别的问题照旧：3 条以上编号
-    assert any(x.startswith("1. ") for x in listed.split("\n"))
+    out = assemble(raw, "今天有点不舒服，给我安排一个轻松的锻炼")
+    assert "多喝水" in out and any(x.startswith("1. ") for x in out.split("\n"))
 
 
-def test_just_saying_unwell_gets_care_not_a_to_do_list() -> None:
-    raw = {"answer": "怎么了，是哪里不舒服？", "steps": ["慢走 20 分钟。", "拉伸 10 分钟。"],
-           "next": "今晚早点睡。"}  # fmt: skip
-    for text in ("今天有点不舒服", "好累", "今天身体有点难受"):
-        out = assemble(raw, text)
-        assert out == "怎么了，是哪里不舒服？", text  # 只说了状况：不给做法和下一步
-        assert "不给做法和安排" in slots_prompt(text), text
-    asked = assemble(raw, "今天有点不舒服，能练吗")  # 问了才给，两三句话
-    assert "慢走 20 分钟" in asked and "1. " not in asked
+def test_just_saying_unwell_is_guided_for_every_question() -> None:
+    """§114：只说状况、没问怎么办时怎么回，写在管家每轮都看的说明里，由它判断这句是不是这种。"""
+    from ironm_agent import agent
+
+    assert "没问怎么办时，关心一句、问怎么了，不主动给做法和安排" in agent._PROMPT
+    raw = {"answer": "怎么了，是哪里不舒服？", "steps": [], "next": ""}
+    assert assemble(raw, "今天有点不舒服") == "怎么了，是哪里不舒服？"

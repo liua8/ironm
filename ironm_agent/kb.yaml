@@ -2368,3 +2368,23 @@ entries:
     keywords: ["睡眠", "多睡", "午睡", "小睡", "补觉", "睡不够", "恢复"]
     url: https://doi.org/10.1186/s40798-023-00599-z
     review: claude_draft
+
+  - id: K117
+    domains: [training, nutrition]
+    title: "力量训练消耗多少：代谢当量"
+    source: "2024 Adult Compendium of Physical Activities: A third update of the energy costs of human activities（J Sport Health Sci 13(1):6–12）"
+    publisher: "Herrmann、Willis、Ainsworth 等"
+    year: 2024
+    level: review
+    population: "19–59 岁成年人（各项活动的能量消耗按已发表的测量整理）"
+    summary: "力量训练的代谢当量（MET）：多个动作、每组 8–15 次、重量不一为 3.5；大重量、健美、用力程度高为 6.0。消耗约等于代谢当量 × 体重（公斤）× 小时；是按一般人整理的平均值，个人差异大，只能当估算。"
+    points:
+      - text: "02054 力量训练，多个动作、每组 8–15 次、重量不一：3.5 MET。"
+        where: "Conditioning exercise（02054）"
+      - text: "02050 力量训练（自由重量或器械）、力量举或健美，用力程度高：6.0 MET。"
+        where: "Conditioning exercise（02050）"
+      - text: "代谢当量是按成年人平均整理的，用来估算个人消耗时有误差。"
+        where: "Introduction"
+    keywords: ["消耗", "热量消耗", "千卡", "卡路里", "代谢当量", "MET", "练一次消耗多少"]
+    url: https://doi.org/10.1016/j.jshs.2023.10.010
+    review: claude_draft

@@ -24,9 +24,9 @@ from ironm_agent.live import (
     to_log,
 )
 from ironm_agent.memory_store import MemoryStore
-from ironm_agent.training import TrainingStore
-from ironm_agent.web import _verify, after_workout, memory_store, training_store
-from ironm_agent.web_more import ILLNESS, PAIN
+from ironm_agent.training import SORE_PARTS, Feeling, TrainingStore, WorkoutLog
+from ironm_agent.web import _verify, after_workout, memory_store, record_sore, training_store
+from ironm_agent.web_more import DAY, FEEL, ILLNESS, PAIN, today_edits
 
 _log = logging.getLogger("ironm_agent.live")
 router = APIRouter()
@@ -67,6 +67,16 @@ class FinishIn(BaseModel):
 
     rpe: int | None = Field(default=None, ge=1, le=10)
     note: str = Field(default="", max_length=80)
+    energy: Feeling | None = None  # 打卡多记的状态（§105）
+    slept: Feeling | None = None
+    sore: list[str] = Field(default_factory=list, max_length=len(SORE_PARTS))
+
+
+def ui_step(exercise: str) -> float:
+    """训练中自己调的一档（§104）：哑铃每只 1 公斤，下肢 5 公斤，其余 2.5 公斤。"""
+    from ironm_agent.live_adjust import step_of
+
+    return 1.0 if "哑铃" in exercise else step_of(exercise)
 
 
 def _out(live: Live | None, now: datetime) -> dict[str, Any]:
@@ -76,7 +86,23 @@ def _out(live: Live | None, now: datetime) -> dict[str, Any]:
         "live": live.model_dump(mode="json"),
         "summary": summary(live, now),
         "now": now.isoformat(),
+        "steps": {x.exercise: ui_step(x.exercise) for x in live.items},
     }
+
+
+async def _special(user_id: str, memory: MemoryStore) -> frozenset[str]:
+    """这个人的特殊情况（§95）；读不到当作没有。"""
+    from ironm_agent.casefile import risks
+    from ironm_agent.special import flags
+    from ironm_agent.web_more import _web
+
+    try:
+        items = await memory.items(user_id)
+        snap = await _web().snapshot_for(user_id)
+        return flags(snap.profile, risks(snap.readings, items, date.today()), date.today())
+    except Exception as e:
+        _log.info("live special unavailable: error_type=%s", type(e).__name__)
+        return frozenset()
 
 
 async def _context(user_id: str, store: TrainingStore) -> tuple[Any, list[Any]]:
@@ -88,14 +114,22 @@ async def _context(user_id: str, store: TrainingStore) -> tuple[Any, list[Any]]:
 async def _finish(
     user_id: str, live: Live, now: datetime, rpe: int | None, note: str,
     store: TrainingStore, memory: MemoryStore, pain: Any, illness: Any, lives: LiveStore,
+    state: dict[str, Any] | None = None, feel: Any = None,
 ) -> dict[str, Any] | None:  # fmt: skip
     log = to_log(live, live.started.date(), now, rpe, note)
     await lives.clear(user_id)
     if log is None:
         return None
+    if state:  # 精力、睡眠、哪里酸（§105）
+        try:
+            log = WorkoutLog.model_validate({**log.model_dump(), **state})
+        except ValueError:
+            _log.info("live finish state dropped")
     plan, before = await _context(user_id, store)
     row = await store.log(user_id, log)
     await after_workout(user_id, row.log, store, memory, pain, illness)
+    if feel is not None:
+        await record_sore(feel, user_id, row.log)
     _log.info(
         "live finished: exercises=%d sets=%d",
         len(log.items),
@@ -155,12 +189,19 @@ async def start_live(
     user_id: str = Depends(_verify()),
     lives: LiveStore = LIVE,
     store: TrainingStore = TRAINING,
+    memory: MemoryStore = STORE,
+    day: Any = DAY,
 ) -> dict[str, Any]:
+    from ironm_agent.plan_edit import with_today
+    from ironm_agent.special import no_heavier
+
     now = datetime.now()
     live = await lives.get(user_id)
     if live is not None and not stale(live, now):  # 已有进行中的：接着练，不另开
         return _out(live, now)
     plan, logs = await _context(user_id, store)
+    if body.today_plan and plan is not None:  # 计划页"只改今天"的按改过的（§106）
+        plan = with_today(plan, await today_edits(day, user_id, date.today()), date.today())
     rests = await lives.rests(user_id)
     session = ""
     names: list[str] = []
@@ -172,7 +213,9 @@ async def start_live(
         session = s.name
         names = [x.exercise for x in s.items if _in_library(x.exercise)] + names
     items = [new_item(n, plan, logs, rests) for n in dict.fromkeys(names)][:15]
-    live = fresh(session, items, now)
+    live = fresh(session, items, now).model_copy(
+        update={"no_heavier": no_heavier(await _special(user_id, memory))}
+    )
     await lives.save(user_id, live)
     _log.info("live started: exercises=%d", len(items))
     return _out(live, now)
@@ -242,14 +285,16 @@ async def finish_live(
     memory: MemoryStore = STORE,
     pain: Any = PAIN,
     illness: Any = ILLNESS,
+    feel: Any = FEEL,
 ) -> dict[str, Any]:
     now = datetime.now()
     live = await lives.get(user_id)
     if live is None:
         raise HTTPException(409, "没有进行中的训练")
     done = summary(live, now)
+    state = body.model_dump(include={"energy", "slept", "sore"}, exclude_defaults=True)
     saved = await _finish(
-        user_id, live, now, body.rpe, body.note, store, memory, pain, illness, lives
+        user_id, live, now, body.rpe, body.note, store, memory, pain, illness, lives, state, feel
     )
     return {"summary": done, "workout": saved}
 
@@ -359,6 +404,10 @@ async def adjust_live(
         live = got.live.model_copy(update={"updated": now})
         await lives.save(user_id, live)
     if parts := pain_parts(body.said):  # 说疼的部位记进疼痛记录，和对话里一样（§90 需求 5）
+        live = live.model_copy(
+            update={"no_heavier": True, "updated": now}
+        )  # 这次说过疼：后面不加重（§104）
+        await lives.save(user_id, live)
         try:
             if not await memory.paused(user_id):
                 for part in parts:

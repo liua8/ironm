@@ -34,9 +34,17 @@ from ironm_agent.memory_store import CATEGORIES, ORIGINS, Item, MemoryStore, def
 from ironm_agent.memory_view import expired
 from ironm_agent.metrics import ACTIVITY, GOALS, KcalAdjust, Metric, compute_all
 from ironm_agent.progression import targets
-from ironm_agent.training import LogItem, TrainingStore, WorkoutLog, default_training
+from ironm_agent.training import (
+    SORE_PARTS,
+    Feeling,
+    LogItem,
+    RestWhy,
+    TrainingStore,
+    WorkoutLog,
+    default_training,
+)
 from ironm_agent.triggers import pain_parts
-from ironm_agent.web_more import ILLNESS, PAIN, coach_later, plan_change_later
+from ironm_agent.web_more import FEEL, ILLNESS, PAIN, PHOTOS, coach_later, plan_change_later
 
 _log = logging.getLogger("ironm_agent.web")
 
@@ -405,6 +413,10 @@ class WorkoutIn(BaseModel):
     rpe: int | None = Field(default=None, ge=1, le=10)
     minutes: int | None = Field(default=None, ge=1, le=300)
     note: str = Field(default="", max_length=80)
+    energy: Feeling | None = None  # 打卡多记的状态（§105）
+    slept: Feeling | None = None
+    sore: list[str] = Field(default_factory=list, max_length=len(SORE_PARTS))
+    rest: RestWhy | None = None  # 今天没练：休息、生病、出差、太忙（不算练了）
 
 
 @router.post("/iron/api/workouts")
@@ -415,10 +427,31 @@ async def add_workout(
     memory: MemoryStore = STORE,
     pain: Any = PAIN,
     illness: Any = ILLNESS,
+    feel: Any = FEEL,
 ) -> dict[str, Any]:
-    row = await store.log(user_id, WorkoutLog(day=date.today(), **body.model_dump()))
+    data = body.model_dump()
+    if body.rest is not None:  # 没练的那条：不算练了（§105）
+        data.update(done=False, items=[])
+    try:
+        log = WorkoutLog(day=date.today(), **data)
+    except ValueError as err:
+        raise HTTPException(422, "打卡的内容不对") from err
+    row = await store.log(user_id, log)
     await after_workout(user_id, row.log, store, memory, pain, illness)
+    await record_sore(feel, user_id, row.log)
     return {"workout": {"id": row.id, **row.log.model_dump(mode="json"), "line": row.log.line()}}
+
+
+async def record_sore(feel: Any, user_id: str, log: WorkoutLog) -> None:
+    """打卡说酸的部位记进肌肉酸痛（人体图上点"酸"的那份，§105）；记不下不影响打卡。"""
+    from ironm_agent.muscle_feel import SORE_MUSCLES
+
+    try:
+        for part in log.sore:
+            for code in SORE_MUSCLES.get(part, ()):
+                await feel.add(user_id, code, "sore", log.day)
+    except Exception as e:
+        _log.warning("checkin sore record failed: error_type=%s", type(e).__name__)
 
 
 async def after_workout(
@@ -447,21 +480,34 @@ async def after_workout(
 
 @router.delete("/iron/api/workouts/{workout_id}")
 async def delete_workout(
-    workout_id: str, user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
+    workout_id: str,
+    user_id: str = Depends(_verify()),
+    store: TrainingStore = TRAINING,
+    photos: Any = PHOTOS,
 ) -> dict[str, Any]:
     if not await store.delete_workout(user_id, workout_id):
         raise HTTPException(404, "这条记录不存在")
+    try:  # 打卡照片跟着记录一起删（§117）
+        await photos.drop(user_id, workout_id)
+    except Exception as e:
+        _log.warning("checkin photo delete failed: error_type=%s", type(e).__name__)
     return {"deleted": workout_id}
 
 
 @router.get("/iron/api/training")
 async def get_training(
-    user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
+    user_id: str = Depends(_verify()), store: TrainingStore = TRAINING, photos: Any = PHOTOS
 ) -> dict[str, Any]:
     today = date.today()
     plan = await store.plan(user_id)
     logs = await store.workouts(user_id, today - timedelta(days=42))
     found = targets(plan.plan if plan else None, [x.log for x in logs])
+    shown = [x for x in reversed(logs) if (today - x.log.day).days <= 30]
+    try:  # 哪些打卡带了照片（§117）；读不到当作都没有
+        with_photo = await photos.having(user_id, [x.id for x in shown])
+    except Exception as e:
+        _log.warning("checkin photos unavailable: error_type=%s", type(e).__name__)
+        with_photo = set()
     return {
         "plan": plan.plan.model_dump(mode="json") if plan else None,
         "plan_lines": plan.plan.lines() if plan else [],
@@ -477,9 +523,13 @@ async def get_training(
             for k, t in found.items()
         },
         "workouts": [
-            {"id": x.id, **x.log.model_dump(mode="json"), "line": x.log.line()}
-            for x in reversed(logs)
-            if (today - x.log.day).days <= 30
+            {
+                "id": x.id,
+                **x.log.model_dump(mode="json"),
+                "line": x.log.line(),
+                "photo": x.id in with_photo,
+            }
+            for x in shown
         ],
     }
 
@@ -587,3 +637,18 @@ router.include_router(_rank)
 from ironm_agent.web_live import router as _live  # noqa: E402
 
 router.include_router(_live)
+
+# 计划页直接改（spec [2026-10-23] §106）
+from ironm_agent.web_plan import router as _plan  # noqa: E402
+
+router.include_router(_plan)
+
+# 打卡照片（spec [2026-10-23] §117）
+from ironm_agent.web_photo import router as _photo  # noqa: E402
+
+router.include_router(_photo)
+
+# 饮食：食物库、改份量、常吃的、食谱、饮食计划（spec [2026-10-23] §118）
+from ironm_agent.web_diet import router as _diet  # noqa: E402
+
+router.include_router(_diet)

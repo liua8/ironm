@@ -60,6 +60,11 @@ def build(
 ) -> list[str]:
     """按日期排好的时间线（新的在后）。"""
     start = today - timedelta(days=days - 1)
+    from ironm_agent.latest import shadowed
+
+    gone = shadowed(
+        memory
+    )  # 被同一件事更近的说法替换的：照样列出当时说过，但不写到哪天为止（§113）
     rows: list[tuple[date, int, str]] = []
     for ep in illness:
         if start <= ep.started <= today:
@@ -71,8 +76,9 @@ def build(
             continue
         said = x.created.astimezone().date()
         if start <= said <= today:
-            until = f"，到{_md(x.until)}" if x.until is not None else ""
-            rows.append((said, 1, f"{_KINDS[x.category]}：{x.content}{until}"))
+            until = f"，到{_md(x.until)}" if x.until is not None and x.id not in gone else ""
+            later = "（后来说法变了）" if x.id in gone and x.status == "active" else ""
+            rows.append((said, 1, f"{_KINDS[x.category]}：{x.content}{until}{later}"))
         ended = x.updated.astimezone().date()
         if x.status != "active" and start <= ended <= today:
             rows.append((ended, 1, f"{_KINDS[x.category]}不再适用：{x.content}"))

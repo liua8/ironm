@@ -40,7 +40,7 @@ ANSWER_CHARS = 600  # 给提取看的回答最多几个字
 _PROMPT = """你负责替健身教练团队记住"这个用户本人"的情况，供以后回答时参考。根据这一轮对话，决定要新增、更新或标为已解决的记忆。
 
 类别（category 用英文代号）：
-- injury 伤病与身体状况：伤病的部位和左右、怎么引起、什么动作会疼、医生的诊断与限制（如不建议跳）、慢性病
+- injury 伤病与身体状况：伤病的部位和左右、怎么引起、什么动作会疼、医生的诊断与限制（如不建议跳）、慢性病。体态问题（圆肩、驼背、骨盆前倾）不是伤病：他说想改善的记成 goal，只是问怎么改善（「久坐圆肩怎么改善」）不记
 - equipment 器械与场地：有哪些器械（几公斤）、在家还是健身房、场地条件。不同的器械各记一条
 - schedule 可练时间与作息：哪几天能练、几点、每次多久，几点睡、几点起
 - diet 饮食限制与习惯：素食、过敏、不耐受、忌口、正在吃的补剂和剂量、饮食习惯
@@ -53,10 +53,10 @@ _PROMPT = """你负责替健身教练团队记住"这个用户本人"的情况�
 - advice 给过的关键建议：教练这一轮针对这个人的情况做出的最关键的那个决定（如把全蹲换成箱式深蹲、练 4 周再看）。每轮最多 1 条；一般的训练原则（组数次数、休息多久、加重规则、热身放松、疼到几分就停、建议就医）不记，只是讲解知识时也不记
 
 规则：
-1. 只记用户明确说的、关于他本人的情况。不记：打招呼和闲聊；一般知识提问（问"肌酸怎么吃"不代表他在吃）；别人的情况（"我爸有高血压"是他爸的事）；假设（"如果我膝盖疼怎么办"不代表他膝盖疼）；否定的说法不能记成有（"没有伤病"不能记出任何伤病）。
-2. content 是一句简短的陈述，不超过 40 字，保留原话里的具体信息：部位和左右、重量、时间、次数、程度、原因；不加原话里没有的推测和判断（如"未痊愈""没有就医""需要注意"）。数字照原话写，不换算。
+1. 只记用户明确说的、关于他本人的情况。不记：打招呼和闲聊；一般知识提问（问"肌酸怎么吃"不代表他在吃）；别人的情况（"我爸有高血压"是他爸的事）；假设（"如果我膝盖疼怎么办"不代表他膝盖疼）；否定的说法不能记成有（"没有伤病"不能记出任何伤病）；问句里带出的事不等于他有这件事（"肌酐含量高了怎么办""今天不是周一吗"不能记成他肌酐高、今天练什么），问句里顺带说了自己的近况（"我吃了布洛芬能练吗"）可以记那部分。
+2. content 是一句简短的陈述，不超过 40 字，保留原话里的具体信息：部位和左右、重量、时间、次数、程度、原因；不加原话里没有的推测和判断（如"未痊愈""没有就医""需要注意"）。数字照原话写，不换算。只写他说了的：教练这一轮怎么安排、建议了什么不写进他的记忆（关键决定记成 advice），也不写"还没说""没问"这类旁白。一句话里说了几类事（目标和器械）分开记。
 3. quote 是从用户这一轮的话里一字不差摘出的一段，能支撑这条记忆；advice 的 quote 从教练这一轮的回答里一字不差地摘。
-4. 和已有记忆是同一件事的新情况，用 update，target 写那条记忆的编号，content 写合并后的完整新说法（如原来"家里有一对哑铃"，现在说"最重的是 15 公斤"，更新成"家里有一对哑铃，最重 15 公斤"；目标、可练时间、伤病情况变了也用 update）。已经好了、不再适用的，用 resolve，target 写编号，content 写现在的情况。新的、不同的事用 add（新买的器械是另一件器械，用 add，原来的保留）。
+4. 和已有记忆是同一件事的新情况，用 update，target 写那条记忆的编号，content 写合并后的完整新说法（如原来"家里有一对哑铃"，现在说"最重的是 15 公斤"，更新成"家里有一对哑铃，最重 15 公斤"；目标、可练时间、伤病情况变了也用 update）。已经好了、不再适用的，用 resolve，target 写编号，content 写现在的情况；他说好了、结束了、取消了（"身体好了""不出差了"），把还在生效的那几条近况和待跟进都 resolve，不新增"已结束"。改了以前给过的建议（同一件事给了新的量），用 update 指向那条建议。新的、不同的事用 add（新买的器械是另一件器械，用 add，原来的保留）。
 5. inferred 只在内容是你根据他的话推测出来、他并没有直接说的时候写 true。能不推测就不推测。
 6. 每条写 lasting：long（以后一直要照顾到：习惯、伤病、器械、目标、水平）或 short（只关于某一天、这几天：这顿吃了什么、今天练了什么、今天累、这周出差）；short 的系统记成 event。一顿饭吃了什么、一次训练练了什么不记（饮食记录、训练记录里有）。明显是临时的变化（"这两周出差""下周旅游""最近加班"）记成 event，不要 update 或 resolve 原来的器械、时间和目标；长期的变化（"我换健身房了""现在每天只有半小时"）才 update 原来那条。
 7. 没有要记的，输出空列表。
@@ -201,23 +201,48 @@ def _problem(
     )
     if not digits(content) <= allowed:
         return None, "内容里有原话里没有的数字"
+    # 某一次的训练、某一顿饭不进训练水平和饮食习惯，最多是当天的近况（§109 需求 5，和 §103 一致）
+    once = (
+        category in _ONE_OFF_KINDS
+        and kind == "add"
+        and bool(_ONE_OFF.search(quote))
+        and not _HABIT.search(quote)
+    )
+    if category not in ("advice", "followup"):
+        said = f"{user_text}\n{held}\n{target.content if target else ''}"
+        content = own_part(content, said, answer)
+        if not content:
+            return None, "内容是教练说的，不是他说的"
     inferred = raw.get("inferred") is True and category not in ("advice", "followup")
     if category == "injury" and not inferred and _unsaid(content, quote):
         inferred = True  # 左右、诊断词原话里没有：是推测的，先放着等他确认
-    short = raw.get("lasting") == "short" and category in _PROFILE  # 模型判断只关于某一天、这几天
+    if category in _PROFILE_FACTS and kind == "add" and asked_in(quote, f"{user_text}\n{held}"):
+        inferred = True  # 问句里带出的（"肌酐高了怎么办"）不等于他有这件事：待确认（§109 需求 2）
+    short = (raw.get("lasting") == "short" and category in _PROFILE) or once  # 只关于某一天、这几天
     if short or (
         category in _LONG_TERM
         and (_TEMPORARY.search(quote) if target is not None else _SURELY_TEMPORARY.search(quote))
     ):
         kind, category, target = "add", "event", None  # 临时的变化不覆盖长期记忆
     until = None
+    if category == "advice":  # 说今天、明天、这周的建议到那天为止（§109 需求 4）；在写成日期之前看
+        until = advice_until(content, today or date.today())
     if category in ("event", "followup"):
         until = until_of(raw.get("until"), today) or (target.until if target else None)
         if until is None and short:  # 只关于这一天：到说的那天为止
             until = today or date.today()
         if until is None and category == "followup":  # 待跟进没写哪天：一周后（§73）
             until = (today or date.today()) + timedelta(days=7)
-    if kind == "add" and category == "event" and target is None:
+    if kind == "add" and category == "advice":
+        older = same_advice(content, items.values())
+        if older is not None:  # 同一件事（蛋白质每天多少）的新建议：取代旧的那条
+            kind, target = "update", older
+    ended = category == "event" and bool(_ENDED.search(content))
+    if kind == "update" and ended:
+        kind = "resolve"  # 更新成"已经结束"就是已解决
+    if (
+        kind == "add" and category == "event" and target is None and not ended
+    ):  # 说结束的交给 validate
         same = same_event(content, items.values(), today or date.today())
         if same is not None:  # 同一件事又说了一遍：改原来那条，不新增（§73 需求 3）
             kind, target = "update", same
@@ -228,9 +253,91 @@ def _problem(
     return op, ""
 
 
+# ---- 只记他说了的（spec [2026-10-23] §109）--------------------------------------------------
+
+_CLAUSE = re.compile(r"[，,；;。]")
+_ASIDE = re.compile(r"还没说|没有说|还没问|没问过")  # 记录者的旁白，不是他的情况
+_CHAR = re.compile(r"[\u4e00-\u9fffA-Za-z0-9]")
+_ONE_OFF_KINDS: frozenset[str] = frozenset({"level", "diet"})
+_ONE_OFF = re.compile(
+    r"今天|今早|今晚|昨天|昨晚|刚才|刚刚|这顿|这次|早上|中午|晚上|早餐|午餐|晚餐|早饭|午饭|晚饭"
+)
+_HABIT = re.compile(r"每天|每周|每次|一直|平时|经常|习惯|通常|总是|开始")
+_PROFILE_FACTS: frozenset[str] = frozenset({"injury", "goal", "level", "diet"})
+_ASKING = re.compile(
+    r"[？?]|吗$|呢$|怎么办|怎么改善|怎么|如何|能不能|可不可以|要不要|是不是|为什么|有没有|行不行|会不会"
+)
+
+
+def _cover(text: str, source: str) -> float:
+    chars = _CHAR.findall(text)
+    return sum(c in source for c in chars) / len(chars) if chars else 1.0
+
+
+def own_part(content: str, said: str, answer: str) -> str:
+    """只留他说了的部分：哪一小句大半不在他的话里、却在教练的回答里，是把教练的话记成了他说的，去掉；
+    "还没说"这类旁白也去掉。都去掉了返回空。"""
+    keep = []
+    for clause in (c.strip() for c in _CLAUSE.split(content)):
+        if not clause or _ASIDE.search(clause):
+            continue
+        coach = _cover(clause, said) < 0.5 and _cover(clause, answer) >= 0.7
+        if len(_CHAR.findall(clause)) >= 3 and coach:
+            continue
+        keep.append(clause)
+    return "，".join(keep)
+
+
+def asked_in(quote: str, text: str) -> bool:
+    """原话片段所在的那句话是不是在问（"肌酐含量高了怎么办""今天不是周一吗"）。"""
+    key = norm(quote)
+    for sentence in re.split(r"(?<=[。！!？?\n])", text):
+        if key and key in norm(sentence):
+            return bool(_ASKING.search(sentence.strip()))
+    return False
+
+
+_TODAY_WORDS = re.compile(r"今天|今晚|今早|今日|这次|这一次|本次|当天")
+_TOMORROW_WORDS = re.compile(r"明天|明早|明晚")
+_WEEK_WORDS = re.compile(r"这周|本周|这一周")
+
+
+def advice_until(content: str, today: date) -> date | None:
+    """建议说的是今天、明天、这周：到那天为止；别的不写（按 14 天过期）。"""
+    if _TODAY_WORDS.search(content):
+        return today
+    if _TOMORROW_WORDS.search(content):
+        return today + timedelta(days=1)
+    if _WEEK_WORDS.search(content):
+        return today + timedelta(days=6 - today.weekday())
+    return None
+
+
+# 同一件事的建议：新的取代旧的（§109 需求 4）；只认说了具体量的几件事
+_ADVICE_TOPICS = tuple(
+    re.compile(p) for p in (r"蛋白", r"千卡|热量|卡路里", r"碳水", r"脂肪", r"喝水|饮水")
+)
+
+
+def same_advice(content: str, items: Iterable[Item]) -> Item | None:
+    if not _DIGITS.search(content):
+        return None
+    topics = [t for t in _ADVICE_TOPICS if t.search(content)]
+    for x in sorted(items, key=lambda x: x.created, reverse=True):
+        if (
+            x.category == "advice"
+            and x.status == "active"
+            and _DIGITS.search(x.content)
+            and any(t.search(x.content) for t in topics)
+        ):
+            return x
+    return None
+
+
 # 近期事件的种类：同一种、还在有效期里的，算同一件事（§73：出差说 3 遍只有一条）
 _EVENT_KINDS = tuple(re.compile(p) for p in (
-    r"出差|酒店|外地|回老家", r"旅游|旅行|度假", r"感冒|发烧|咳嗽|生病|病了|拉肚子|嗓子",
+    r"出差|酒店|外地|回老家", r"旅游|旅行|度假",
+    r"感冒|发烧|咳嗽|生病|病了|拉肚子|嗓子|不舒服|难受|肚子|身体",
     r"加班|很忙|太忙|没空|没时间", r"失眠|没睡好|睡不好|熬夜", r"经期|月经|生理期",
 ))  # fmt: skip
 
@@ -321,8 +428,21 @@ def validate(
         if op.category == "advice" and sum(o.category == "advice" for o in ops) >= MAX_ADVICE:
             rejected.append("给过的建议超过每轮上限")
             continue
+        if op.op == "add" and op.category == "event" and _ENDED.search(op.content):
+            # 说的是结束、好了、取消了：关掉同一类还在生效的近况和待跟进，不新增"已结束"（§109 需求 3）
+            for x in items.values():
+                if (x.category in ("event", "followup") and x.status == "active"
+                        and x.id not in touched and _same_kind(x.content, op.content)):  # fmt: skip
+                    touched.add(x.id)
+                    ops.append(Op("resolve", x.category, op.content, op.quote, x))
+            continue
         ops.append(op)
     return ops[:MAX_OPS], rejected
+
+
+_ENDED = re.compile(
+    r"结束|取消|好了|已好|痊愈|不疼了|不痛了|没事了|恢复了|身体恢复|已恢复|恢复正常|不出差|回来了|不再"
+)
 
 
 def changes_of(ops: Sequence[Op], at: datetime | None = None) -> list[Change]:

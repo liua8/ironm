@@ -24,6 +24,70 @@ FAST_LOSS = 0.01  # 每周掉体重的 1% 以上算太快（K37 建议每周 0.5
 FAST_GAIN = 0.005  # 增肌每周涨体重的 0.5% 以上算太快（经验）
 
 
+# 按实际估消耗（spec [2026-10-23] §118 需求 7）
+OBSERVE_DAYS = 14
+MIN_LOGGED_DAYS = 10  # 至少这么多天记了
+MIN_MEALS = 2  # 每天至少记了几餐才算这天记了
+MIN_WEIGHINS = 6
+MIN_SPAN = 10  # 称重的跨度至少几天
+KCAL_PER_KG = 7700  # 每公斤体重约 7700 千卡，粗算（经验）
+GAP = 300  # 和公式算的差这么多才提议
+
+
+@dataclass(frozen=True)
+class Observed:
+    """按记的吃和体重变化估的每天实际消耗。"""
+
+    tdee: int
+    intake: int  # 记了的那些天平均每天吃的
+    kg_per_week: float
+    days: int  # 记了几天
+    weighins: int
+
+
+def by_day(rows: Sequence[Any]) -> dict[date, tuple[int, float]]:
+    """饮食记录（meals.StoredMeal）→ 每天记了几餐、一共多少千卡。"""
+    days: dict[date, tuple[int, float]] = {}
+    for r in rows:
+        n, k = days.get(r.day, (0, 0.0))
+        days[r.day] = (n + 1, k + r.meal.macros.kcal)
+    return days
+
+
+def observed(
+    day_kcal: dict[date, tuple[int, float]], weights: Sequence[tuple[date, float]], today: date
+) -> tuple[Observed | None, str]:
+    """day_kcal：每天记了几餐、一共多少千卡。条件不够时返回还差什么。"""
+    start = today.toordinal() - OBSERVE_DAYS + 1
+    logged = [
+        k
+        for d, (n, k) in day_kcal.items()
+        if start <= d.toordinal() <= today.toordinal() and n >= MIN_MEALS
+    ]
+    pts = sorted((d, w) for d, w in weights if start <= d.toordinal() <= today.toordinal())
+    span = (pts[-1][0] - pts[0][0]).days if pts else 0
+    lack = []
+    if len(logged) < MIN_LOGGED_DAYS:
+        lack.append(
+            f"最近 {OBSERVE_DAYS} 天里每天记 {MIN_MEALS} 餐以上的有 {len(logged)} 天，要 {MIN_LOGGED_DAYS} 天"
+        )
+    if len(pts) < MIN_WEIGHINS or span < MIN_SPAN:
+        lack.append(
+            f"同期称了 {len(pts)} 次体重、跨 {span} 天，要 {MIN_WEIGHINS} 次、跨 {MIN_SPAN} 天以上"
+        )
+    if lack:
+        return None, "；".join(lack)
+    xs = [d.toordinal() for d, _ in pts]
+    ys = [w for _, w in pts]
+    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True)) / sum(
+        (x - mx) ** 2 for x in xs
+    )
+    intake = sum(logged) / len(logged)
+    tdee = round(intake - slope * KCAL_PER_KG)
+    return Observed(tdee, round(intake), round(slope * 7, 2), len(logged), len(pts)), ""
+
+
 @dataclass(frozen=True)
 class Proposal:
     delta: int  # 这次在现有调整量上再加多少
@@ -39,9 +103,13 @@ def _metric(metrics: Sequence[Metric], key: str) -> Metric | None:
 
 
 def propose(
-    metrics: Sequence[Metric], profile: Profile, current: KcalAdjust | None, today: date
+    metrics: Sequence[Metric],
+    profile: Profile,
+    current: KcalAdjust | None,
+    today: date,
+    seen: Observed | None = None,
 ) -> tuple[Proposal | None, str]:
-    """返回调整方案，或者为什么这次不调整。"""
+    """返回调整方案，或者为什么这次不调整。有按实际估的消耗、和公式差得多时先按它（§118）。"""
     if profile.goal not in ("fat_loss", "muscle"):
         return None, "目标是减脂或增肌时，才按体重趋势调整热量。"
     target, bmr, trend, weight = (
@@ -49,14 +117,24 @@ def propose(
     )
     if target is None or target.value is None or bmr is None or bmr.value is None:
         return None, "还算不出每日热量目标：先在个人中心填好身高、出生日期、性别和活动水平。"
-    if trend is None or trend.value is None or weight is None or weight.value is None:
-        why = "；".join(trend.missing) if trend is not None and trend.missing else "体重记录"
-        return None, f"体重记录还不够，看不出趋势（还缺：{why}）。"
     if current is not None and (today - current.since).days < COOLDOWN_DAYS:
         return (
             None,
             f"上次调整在 {current.since.month}月{current.since.day}日，两周后再看体重趋势。",
         )
+    total_burn = _metric(metrics, "tdee")
+    if seen is not None and total_burn is not None and total_burn.value:
+        diff = seen.tdee - round(total_burn.value)
+        if abs(diff) >= GAP:
+            delta = min(ADD, diff) if diff > 0 else -min(CUT, -diff)
+            reason = (f"按你记的吃和体重变化，每天实际消耗约 {seen.tdee} 千卡，"
+                      f"比公式算的 {round(total_burn.value)} 千卡{'高' if diff > 0 else '低'} {abs(diff)} 千卡")  # fmt: skip
+            basis = (f"最近 {seen.days} 天平均每天吃 {seen.intake} 千卡；体重每周 {seen.kg_per_week:+.2f} 公斤"
+                     f"（称了 {seen.weighins} 次）；每公斤约 {KCAL_PER_KG} 千卡粗算")  # fmt: skip
+            return _apply(delta, reason, basis, target.value, bmr.value, profile, current)
+    if trend is None or trend.value is None or weight is None or weight.value is None:
+        why = "；".join(trend.missing) if trend is not None and trend.missing else "体重记录"
+        return None, f"体重记录还不够，看不出趋势（还缺：{why}）。"
     w, wk = weight.value, trend.value
     basis = f"{trend.text}；最新体重 {w:g} 公斤"
     delta = 0
@@ -75,13 +153,21 @@ def propose(
         )
     if not delta:
         return None, "体重变化在合适的范围内，这两周不用调整热量。"
+    return _apply(delta, reason, basis, target.value, bmr.value, profile, current)
+
+
+def _apply(
+    delta: int, reason: str, basis: str, target_now: float, bmr: float, profile: Profile,
+    current: KcalAdjust | None,
+) -> tuple[Proposal | None, str]:  # fmt: skip
+    """在现有调整量上加 delta：累计不超过 ±500，不低于基础代谢和安全下限。"""
     now_total = current.kcal if current else 0
     total = max(-MAX_TOTAL, min(MAX_TOTAL, now_total + delta))
     if total == now_total:
         return None, f"累计调整已经到了 ±{MAX_TOTAL} 千卡的上限，建议先找营养师看看。"
-    before = round(target.value)
+    before = round(target_now)
     formula = before - now_total  # 公式算出的目标（不含调整量）
-    after = round(max(formula + total, safe_floor(bmr.value, profile)))
+    after = round(max(formula + total, safe_floor(bmr, profile)))
     if after == before:
         return None, "热量目标已经到了基础代谢和安全下限，不能再减；可以多活动或找营养师看看。"
     return Proposal(after - before, after - formula, before, after, reason, basis), ""

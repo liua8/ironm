@@ -73,13 +73,24 @@ TURN_ID = "turn"  # 这一轮的编号（页面评价时带回，spec [2026-10-2
 SOURCES_NAME = "依据与来源"
 
 
+PLAN_ROW = "计划与训练记录："
+
+
+def shown(detail: str) -> str:
+    """来源区给他看的那一句（§112）：计划这条在档案里写给模型的是整份计划和要照着说的话，
+    这里只留第一句（计划名、每周几练），不展开每天的动作，也不带给模型的指令。"""
+    if detail.startswith(PLAN_ROW):
+        return PLAN_ROW + detail.removeprefix(PLAN_ROW).split("；", 1)[0]
+    return detail
+
+
 def sources_text(composed: Composed) -> str:
     """这条回答用到的资料、计算、个人数据和经验部分；放在可展开的“依据与来源”里。"""
     parts: list[str] = []
     if composed.rows:
         parts.append("你的数据：\n" + "\n".join(f"- {desc}" for _, desc in composed.rows))
     if composed.calcs:
-        parts.append("计算：\n" + "\n".join(f"- {detail}" for _, detail in composed.calcs))
+        parts.append("计算：\n" + "\n".join(f"- {shown(detail)}" for _, detail in composed.calcs))
     if composed.entries:
         parts.append(
             "资料：\n"

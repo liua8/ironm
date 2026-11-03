@@ -22,7 +22,7 @@ from typing import Any
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = "http://127.0.0.1:18090"
+BASE = os.environ.get("REPLAY_BASE", "http://127.0.0.1:18090")  # 自测另起的端口可以用环境变量指定
 CASES = ROOT / "evals" / "replay" / "cases.yaml"
 NOT_REPLAY = {"you@mirobody.ai", "mom@mirobody.ai"}  # 演示账号：重放绝不用
 KEEP_TABLES = {"ironm_turn_trace"}  # 运行轨迹保留，方便事后看
@@ -207,6 +207,10 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
             print(f"{'-' * 72}\n（换了一个新会话）")
         answer, cards, secs = ask(token, session_id, turn["say"])
         made["drafts"] += [c["draft"] for c in cards if c["draft"]]
+        if turn.get("confirm"):  # 确认这一轮的计划预览，后面几轮在它上面改（§120 回放）
+            for c in cards:
+                if c["kind"] == "plan" and c["draft"]:
+                    call("POST", f"/iron/api/drafts/{c['draft']}/confirm", {}, token)
         ill = illness_rows(user_id) if "illness" in turn else None
         if "events" in turn:
             time.sleep(3)  # 当场写的记忆在回答之后

@@ -70,9 +70,10 @@ DEFAULT_PLAN = "每周 3 天、每次 45 分钟、徒手加哑铃"
 DEFAULT_NOTE = f"用户让你来定：按默认值（{DEFAULT_PLAN}，目标按综合健康）来排，并在回答里说明用了默认值、以后可以随时改。"
 ANSWERED_NOTE = f"用户刚回答了教练的追问（见前几轮对话）：按他说的来排，没说到的按默认值（{DEFAULT_PLAN}），并说明哪些用了默认值。"
 CONFIRMED_NOTE = (
-    "用户刚回答了排计划前的确认（见前几轮对话）：上一轮列出的条件里，他说变了的按新的排，其余照列出的排。"
-    "他只说「你定」时，有旧答案的照旧，没有的按默认值（" + DEFAULT_PLAN + "）。"
-    "计划说明第一句写这份计划按他的目标怎么排；他说了的变化在回答里复述一句。"
+    "上一轮你列了排新计划要用的条件请他确认（见前几轮对话）。先看他这句是不是在回应那张清单（确认、改了几项、「你定」）："
+    "是的话，列出的条件里他说变了的按新的排，其余照列出的排；只说「你定」时，有旧答案的照旧，没有的按默认值（"
+    + DEFAULT_PLAN + "）；计划说明第一句写这份计划按他的目标怎么排，他说了的变化在回答里复述一句。"
+    "他问的是别的事（比如问身体、问吃什么），就只答他问的，这一轮不写计划（§108）。"
 )
 
 _QUESTIONS = {
@@ -121,6 +122,11 @@ def wants_new(text: str, *, has_plan: bool) -> bool:
     if not has_plan or REPLAN.search(text):
         return True
     return not (_SPECIFIC.search(text) or _WHICH_DAY.search(text))
+
+
+def replies(text: str) -> bool:
+    """路由不可用时的兜底：这句话像是在回答追问（模型可用时由路由判断，§108）。"""
+    return _answers(text)
 
 
 def _answers(text: str) -> bool:

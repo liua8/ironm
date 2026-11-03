@@ -197,8 +197,8 @@ def test_chat_triggers_daily_and_pain_reevaluation(
     from ironm_agent.memory_store import MemoryBook
     from tests.test_turn_flow import Coach, agent
 
-    a = agent(Coach(), monkeypatch=monkeypatch, memory=MemoryBook())
-    a._pain = PainBook()
+    a = agent(Coach(said={"pain": ["左膝"]}), monkeypatch=monkeypatch, memory=MemoryBook())
+    a._pain = PainBook()  # 管家判断他说了左膝疼（§114）
 
     async def go(text: str) -> None:
         [

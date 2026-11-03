@@ -21,6 +21,14 @@ Feather 部分（MIT License）：Copyright (c) 2013-2022 Cole Bemis
 - CC BY-SA 3.0：https://creativecommons.org/licenses/by-sa/3.0/
 - CC BY-SA 4.0：https://creativecommons.org/licenses/by-sa/4.0/
 
+## 饮食配图（Wikimedia Commons）
+
+食物库里的原料和菜品、推荐食谱、减脂餐的配图来自 Wikimedia Commons（https://commons.wikimedia.org），只收允许再用的许可（CC0、CC BY、CC BY-SA、公有领域）。每张图的作者、许可和来源记在 `ironm_agent/food_images.yaml`，食谱页和饮食记录里署名。图片按原样显示（缩略图），未做修改。图片文件由 `scripts/fetch_food_images.py` 下载到服务器的数据目录，不放进仓库。
+
+## 食物营养数据（USDA FoodData Central）
+
+食物库（`ironm_agent/foods.yaml`）里原料每 100 克的营养，主要按美国农业部 USDA FoodData Central（https://fdc.nal.usda.gov，公有领域）等公开资料整理并取整，个别中式食物参考常见公开数据；内容待审定。
+
 ## 动作数据参考（free-exercise-db）
 
 第二批动作的名称和主次肌肉参考了 free-exercise-db（https://github.com/yuhonas/free-exercise-db，The Unlicense，公有领域）。中文的做法、要点等内容是自己写的，没有使用它的文字和图片（图片来源不明）。

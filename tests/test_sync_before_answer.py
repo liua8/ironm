@@ -55,19 +55,21 @@ def test_illness_ended_in_the_background_is_seen_by_the_next_turn(monkeypatch: A
     today = date.today()
     ep = Episode(symptoms=["肚子疼"], level="below", started=today)
     seen: list[int] = []
-    track = a._track_illness
+    from ironm_agent import plugin
+
+    read = plugin.recent_illness
 
     async def slow_remember(*_: Any) -> None:  # 后台提取记忆时记下"好了"
         await asyncio.sleep(0.2)
         await book.save("42", ep.model_copy(update={"status": "resolved", "ended": today}))
 
-    async def spy_track(user_id: str, text: str, run: dict[str, Any]) -> Any:
-        eps = await track(user_id, text, run)
+    async def spy_read(store: Any, user_id: str, day: Any) -> Any:  # 作答前只读（§114）
+        eps = await read(store, user_id, day)
         seen.append(sum(1 for x in eps if x.active))
         return eps
 
     monkeypatch.setattr(a, "_remember", slow_remember)
-    monkeypatch.setattr(a, "_track_illness", spy_track)
+    monkeypatch.setattr(plugin, "recent_illness", spy_read)
 
     async def go() -> None:
         await book.save("42", ep)

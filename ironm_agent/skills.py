@@ -33,6 +33,8 @@ class Example(ContractModel):
 _REF = re.compile(r"〔(K\d{2,4})〕")
 CARD_MAX = 650  # 决策卡最多几个字（§99）
 ALL = "全部"
+BRIEF_MAX = 18  # 目录里那一句"什么时候用"最多几个字（§110）
+REF_HEAD = "参考："  # 第 2 层参考段的节名开头（§110）
 
 
 class Skill(ContractModel):
@@ -41,6 +43,9 @@ class Skill(ContractModel):
     shared: bool = False  # 三个专业 Agent 都能装载（如数据解读，spec [2026-10-23] §20）
     name: str = Field(min_length=1, max_length=12)
     use: str = Field(min_length=4, max_length=60)  # 什么时候用（spec [2026-10-23] §22）
+    brief: str = Field(
+        default="", max_length=BRIEF_MAX
+    )  # 第 0 层：目录里那一句"什么时候用"（§110）
     not_for: str = Field(default="", max_length=90)  # 什么时候不用、该用哪个
     when: tuple[str, ...] = ()
     on: tuple[Trigger, ...] = ()
@@ -61,8 +66,11 @@ class Skill(ContractModel):
     # 文件夹规程（§76）：SKILL.md 的正文（完整流程）和它用到的工具、MCP
     body: str = ""
     toolset: tuple[str, ...] = ()
-    # 决策卡（§99）：正文最前面"## 决策卡"那一段；装载时只放它和分节目录，细节按节取
+    # 决策卡（§99）或步骤卡（§110）：正文最前面那一段；装载时只放它和分节目录，细节按节取
     card: str = Field(default="", max_length=CARD_MAX)
+    card_kind: str = "决策卡"
+    # 第 2 层的参考段（§110）：基础规程写在 YAML 里；文件夹规程是正文里"## 参考：…"那几节
+    reference: tuple[tuple[str, str], ...] = ()  # (段名, 内容)，按 YAML 里的顺序
 
     def extras(self, flags: Collection[str] = ()) -> list[str]:
         """这个人有的少见情况对应的规则（按 special 里的顺序）。"""
@@ -79,12 +87,17 @@ class Skill(ContractModel):
         )
 
     def sections(self) -> list[tuple[str, str]]:
-        """正文按"## "分的节：(节名, 内容)。"""
+        """分节：(节名, 内容)。文件夹规程按正文的"## "分；基础规程是参考段加示例（§110）。"""
         out: list[tuple[str, str]] = []
         for part in re.split(r"^## ", self.body, flags=re.M):
             name, _, rest = part.partition("\n")
             if name.strip() and rest.strip():
                 out.append((name.strip(), rest.strip()))
+        out += [(f"{REF_HEAD}{k}", v.strip()) for k, v in self.reference]
+        if self.core and self.examples:
+            out.append(
+                (f"{REF_HEAD}示例", "\n".join(f"问：{e.q}\n答：{e.a}" for e in self.examples))
+            )
         return out
 
     def section(self, which: str) -> str | None:
@@ -104,25 +117,43 @@ class Skill(ContractModel):
         return None
 
     def index(self) -> str:
-        return "｜".join(f"{i} {n}" for i, (n, _) in enumerate(self.sections(), 1))
+        """分节目录：步骤和参考分开列（§110），编号是 load_skill 用的。"""
+        rows = list(enumerate(self.sections(), 1))
+        steps = "｜".join(f"{i} {n}" for i, (n, _) in rows if not n.startswith(REF_HEAD))
+        refs = "｜".join(
+            f"{i} {n.removeprefix(REF_HEAD)}" for i, (n, _) in rows if n.startswith(REF_HEAD)
+        )
+        return "；".join(
+            x for x in (f"步骤 {steps}" if steps else "", f"参考 {refs}" if refs else "") if x
+        )
 
     def text(self, flags: Collection[str] = (), *, full: bool = False) -> str:
         if self.body:
-            uses = f"\n（这份规程用到的工具：{'、'.join(self.toolset)}）" if self.toolset else ""
+            # 步骤卡每一步写明了调哪个工具（§111），不再另列一行
+            uses = (f"\n（这份规程用到的工具：{'、'.join(self.toolset)}）"
+                    if self.toolset and self.card_kind != "步骤卡" else "")  # fmt: skip
             if self.card and not full:
                 return (
-                    f"【{self.name}】（决策卡）\n{self.card.strip()}\n"
+                    f"【{self.name}】（{self.card_kind}）\n{self.card.strip()}\n"
                     f"（细节分节：{self.index()}。要用时 load_skill 带 id={self.id} 和 section 取那一节，"
                     f"section 写「{ALL}」取整份）{uses}"
                 )
             return f"【{self.name}】\n{self.body.strip()}{uses}"
         parts = [f"【{self.name}】"]
-        if self.core:
+        if self.core:  # 每轮只带思考顺序、原则、工具（§110）；参考段和示例按需取，取整份时都带
             parts.append(f"- 思考顺序：{self.order}")
             parts += [f"- 判断：{x}" for x in self.rules]
-            parts += [f"- 示例：问：{e.q} 答：{e.a}" for e in self.examples]
             parts.append(f"- 工具：{self.tools}")
             parts += [f"- 这个人的特殊情况：{x}" for x in self.extras(flags)]
+            if full:
+                parts += [
+                    f"【{self.name} · {n.removeprefix(REF_HEAD)}】\n{v}" for n, v in self.sections()
+                ]
+            elif self.sections():  # 参考段目录：问到这些先取来再答（§110）
+                names = "、".join(n.removeprefix(REF_HEAD) for n, _ in self.sections())
+                parts.append(
+                    f"（参考段：{names}；问到这些先 load_skill 带 id={self.id} 和 section 取来再答）"
+                )
             return "\n".join(parts)
         for label, lines in (("做法", self.steps), ("判断", self.rules), ("输出", self.output),
                              ("禁忌", self.avoid)):  # fmt: skip
@@ -151,19 +182,20 @@ def folder_skills(root: Path = SKILLS_DIR) -> list[dict[str, object]]:
             raise ValueError(f"{md.parent.name}/SKILL.md 的 id 要和文件夹名一样")
         if "tools" in meta:
             meta["toolset"] = meta.pop("tools")
-        card, rest = _split_card(body.strip())
-        meta["body"], meta["card"] = rest, card
+        card, rest, kind = _split_card(body.strip())
+        meta["body"], meta["card"], meta["card_kind"] = rest, card, kind
         out.append(meta)
     return out
 
 
-def _split_card(body: str) -> tuple[str, str]:
-    """正文开头的"## 决策卡"一段单独拿出来（§99）；没有就是空。"""
-    head = "## 决策卡\n"
-    if not body.startswith(head):
-        return "", body
-    card, sep, rest = body[len(head) :].partition("\n## ")
-    return card.strip(), (sep.lstrip("\n") + rest).strip()
+def _split_card(body: str) -> tuple[str, str, str]:
+    """正文开头的"## 决策卡"（§99）或"## 步骤卡"（§110）一段单独拿出来；没有就是空。"""
+    for kind in ("步骤卡", "决策卡"):
+        head = f"## {kind}\n"
+        if body.startswith(head):
+            card, sep, rest = body[len(head) :].partition("\n## ")
+            return card.strip(), (sep.lstrip("\n") + rest).strip(), kind
+    return "", body, "决策卡"
 
 
 @cache
@@ -177,8 +209,9 @@ def skills(path: Path = SKILLS_PATH, root: Path = SKILLS_DIR) -> tuple[Skill, ..
             continue
         if "domain" in x:  # YAML 里叫 domain（训练 / 饮食 / 恢复，§74），代码里沿用 role
             x["role"] = x.pop("domain")
-        if isinstance(x.get("special"), dict):  # 规程要能当集合的元素：special 存成有序的二元组
-            x["special"] = [[k, v] for k, v in x["special"].items()]
+        for key in ("special", "reference"):  # 规程要能当集合的元素：存成有序的二元组
+            if isinstance(x.get(key), dict):
+                x[key] = [[k, v] for k, v in x[key].items()]
     data = SkillFile.model_validate(raw, strict=False)
     ids = [x.id for x in data.skills]
     if len(ids) != len(set(ids)):
@@ -190,7 +223,9 @@ def skills(path: Path = SKILLS_PATH, root: Path = SKILLS_DIR) -> tuple[Skill, ..
     if any(not x.core and not x.steps and not x.body for x in data.skills):
         raise ValueError("规程要有做事步骤或正文（基础规程除外）")
     if any(x.body and not x.card for x in data.skills):
-        raise ValueError("文件夹规程正文要以「## 决策卡」开头（§99）")
+        raise ValueError("文件夹规程正文要以「## 决策卡」或「## 步骤卡」开头（§99、§110）")
+    if any(not x.style and not x.brief for x in data.skills):
+        raise ValueError("规程要写 brief：目录里那一句什么时候用（§110）")
     if any(x.core and (x.role is None or not x.order or not x.rules) for x in data.skills):
         raise ValueError("基础规程要属于一个领域，并写明思考顺序和判断规则")
     names = {x.name for x in data.skills}
@@ -234,6 +269,7 @@ RULE_TRIGGERS: frozenset[str] = frozenset(
 # ---- 单 Agent（spec [2026-10-23] §67 需求 2）：不按角色分，按这句话和情况跨领域选 ---------------------
 
 MAX_ANY = 3
+SAID_TRIGGERS: frozenset[str] = frozenset({"lab", "metric"})  # 他这句话点到的；其余是系统看到的情况
 
 
 def by_id(skill_id: str) -> Skill | None:
@@ -260,9 +296,9 @@ def pick_any(
 
 
 def catalog_any() -> str:
-    """单 Agent 看的规程目录：只列编号和名字（§96 瘦身）。"什么时候用"已经由选规程那一步看过，
-    这里装漏了时按名字补装就够；基础规程也列上（什么都没装上时可以自己装）。"""
-    return "、".join(f"{x.id}（{x.name}）" for x in skills() if not x.style)
+    """单 Agent 看的规程目录（第 0 层，§110）：编号和一句什么时候用，装漏了时据此自己补装；
+    基础规程也列上（什么都没装上时可以自己装、取它的参考段）。"""
+    return "；".join(f"{x.id}：{x.brief}" for x in skills() if not x.style)
 
 
 def pick_routed(
@@ -273,11 +309,17 @@ def pick_routed(
     drop: Collection[str] = (),
     k: int = MAX_ANY,
 ) -> list[Skill]:
-    """按意图路由选的（§75）：先放这一轮情况要求的，再放路由选的，最多 k 份；带上涉及领域的基础规程；
-    讲法规程对得上就一起装。drop：这一轮不装的情况。"""
+    """按意图路由选的（§75）：先放他话里点到的（化验、指标，§37），再放路由按他问的选的第一份，再放这一轮
+    系统情况要求的，最后路由选的其余，最多 k 份（§108：情况要求的曾占满名额，把他问的挤掉）；
+    带上涉及领域的基础规程；讲法规程对得上就一起装。drop：这一轮不装的情况。"""
     content = [x for x in skills() if not x.style and not x.core and not set(x.on) & set(drop)]
-    required = [x for x in content if any(t in RULE_TRIGGERS and t in triggers for t in x.on)]
+
+    def by(kinds: Collection[str]) -> list[Skill]:
+        return [x for x in content if any(t in kinds and t in triggers for t in x.on)]
+
+    said, situation = by(SAID_TRIGGERS), by(RULE_TRIGGERS - SAID_TRIGGERS)
     allowed = set(content)
-    chosen = list(dict.fromkeys([*required, *(x for x in routed if x in allowed)]))[:k]
+    asked = [x for x in routed if x in allowed]
+    chosen = list(dict.fromkeys([*said, *asked[:1], *situation, *asked[1:]]))[:k]
     style = [x for x in skills() if x.style and x.score(text, triggers) > 0]
     return with_cores(chosen, domains) + style

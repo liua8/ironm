@@ -25,9 +25,12 @@ def _all(x: Skill) -> str:
 
 def test_fourteen_skills_and_no_pointer_to_the_old_ones() -> None:
     folder = [x for x in skills() if x.body]
-    assert len(folder) == 14 and not {"sick-days", "recovery-sleep"} & {x.id for x in skills()}
+    gone = {"sick-days", "recovery-sleep", "cardio-fitness", "supplements-meds", "special-groups",
+            "goal-set", "comeback", "progress-plateau"}  # fmt: skip
+    assert len(folder) == 8 and not gone & {x.id for x in skills()}  # §110 拿出三份，§111 收成 8 个
     for x in skills():
-        for old in ("「生病期间」", "「恢复与睡眠」", "「按状态调整」"):
+        for old in ("「生病期间」", "「恢复与睡眠」", "「按状态调整」", "用「有氧与体能」", "用「补剂与用药」",
+                    "按「特殊人群」"):  # fmt: skip
             assert old not in _all(x), (x.id, old)
 
 

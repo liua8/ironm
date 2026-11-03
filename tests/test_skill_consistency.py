@@ -16,7 +16,7 @@ def _text(skill_id: str) -> str:
 
 
 def _examples(skill_id: str) -> str:
-    return _text(skill_id).split("## 示例", 1)[1]
+    return re.split(r"## (?:参考：)?示例\n", _text(skill_id), maxsplit=1)[1]  # §111 示例是参考段
 
 
 def test_pain_limit_matches_the_pain_check_tool() -> None:
@@ -62,11 +62,11 @@ GONE = [
     ("intake-assess", "那可以从低到中等强度开始"),  # 没问症状就下结论
     ("data-read", "停练一周后复查"),  # 不定复查方案
     ("pain-injury", "3–5 天就好"),  # K08：5–7 天内消退
-    ("progress-plateau", "67.5"),  # 减量后按原来的重量
+    ("log-review", "67.5"),  # 减量后按原来的重量（§111 进展与平台期并进记训练与复盘）
     ("readiness-adjust", "不做到力竭〔K28〕"),  # 力竭是 K29
-    ("special-groups", "低冲击的开始〔K66〕"),  # K66 讲的是间歇和持续有氧
+    ("train-core", "低冲击的开始〔K66〕"),  # K66 讲的是间歇和持续有氧（§110 特殊人群并进训练基础的参考段）
     ("diet-plan", "0.4 公斤上下就是对的〔K16〕"),  # K16 是 0.5–0.9 公斤
-    ("comeback", "能练 2 次更好〔K85〕"),  # K85 没有这个结论
+    ("plan-build", "能练 2 次更好〔K85〕"),  # K85 没有这个结论（§111 中断后回归并进排训练计划）
 ]
 
 

@@ -63,8 +63,11 @@ def test_situation_skills_go_first_and_total_is_capped(monkeypatch: Any) -> None
     s.route = routed(["plan-build", "diet-plan", "move-coach"], ["train", "food"])
     _, seen = run(a, "增肌怎么练腿")
     content = [x for x in ids(seen) if not x.endswith("-core") and x != "move-feel"]
-    assert content[0] == "pain-injury" and len(content) == 3  # 有伤病的排前面，合起来 3 份
-    assert {"train-core", "food-core", "rest-core"} <= set(ids(seen))
+    assert content == ["plan-build", "diet-plan", "move-coach"]  # 路由选的，合起来 3 份
+    # §111：有伤病不再强装伤痛处理（伤病的处理写在排计划、动作教学的步骤里，训练基础带伤病规则）
+    assert "按伤病部位" in s.system or "伤处受力的换掉" in s.system
+    assert {"train-core", "food-core"} <= set(ids(seen)) and "rest-core" not in ids(seen)
+    assert "有伤病的部位换动作" in s.system  # 有伤病：训练基础带着伤病规则（不靠强装伤痛处理）
 
 
 def test_no_matching_skill_brings_only_the_core(monkeypatch: Any) -> None:

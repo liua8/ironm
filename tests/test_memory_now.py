@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -22,11 +23,23 @@ def run(a: Any, text: str, session: str = "42:s1") -> tuple[list[dict[str, Any]]
     """当场写记忆的测试要打开写记忆（公共的 run 关着，相当于复盘等系统拼的问法）；后台提取不跑。"""
     seen: dict[str, Any] = {}
     a._observe, a._remember_on = seen.update, True
-    a._later = lambda _u, work: work.close()
+    later: list[Any] = []
+
+    def keep(_u: str, work: Any) -> None:  # 后台提取不跑；作答后写状态（§114）照常跑完
+        if work.cr_code.co_name == "_remember":
+            work.close()
+        else:
+            later.append(work)
+
+    a._later = keep
 
     async def go() -> list[dict[str, Any]]:
         msgs = [{"role": "user", "content": text}]
-        return shown([b async for b in a.generate_response("42", msgs, session_id=session)])
+        out = shown([b async for b in a.generate_response("42", msgs, session_id=session)])
+        for work in later:  # 管家评估、摘要这类不连数据库会失败，不影响这里要测的
+            with contextlib.suppress(Exception):
+                await work
+        return out
 
     return asyncio.run(go()), seen
 
@@ -42,10 +55,14 @@ def items(a: Any) -> list[Item]:
 def test_agent_writes_a_recent_event_on_the_spot_and_sees_it_next_turn(monkeypatch: Any) -> None:
     def answer(system: str, user: str, results: list[str]) -> Any:
         if "我感冒了" in user.split("\n", 1)[0]:
-            return jsonr({"answer": "好，这几天先休息，好了再练〔经验〕。", "memory": [COLD]})
+            return jsonr({"answer": "好，这几天先休息，好了再练〔经验〕。", "memory": [COLD],
+                          "said": {"sick": "感冒"}})  # 生病记录由 said 写（§114）
         return jsonr({"answer": "先别练，等感冒好了再说〔经验〕。"})
 
     a, s = single(answer, monkeypatch)
+    from ironm_agent.illness import IllnessBook
+
+    a._illness = IllnessBook()  # 不连数据库：said 写的生病记录记在这里
     sick: list[str] = []
 
     async def illness(_: str, changes: Any) -> None:  # 当场写的也交给生病记录（§46）
@@ -53,7 +70,7 @@ def test_agent_writes_a_recent_event_on_the_spot_and_sees_it_next_turn(monkeypat
 
     a._illness_from_memory = illness
     blocks, seen = run(a, "我感冒了，这周别练太狠")
-    assert sick == ["感冒了，这周别练太狠"]
+    assert sick == []  # 生病记录由管家的 said 写（§114），当场记的记忆不再另开一次
     [cold] = items(a)
     assert cold.category == "event" and cold.until == TODAY + timedelta(days=30)
     assert cold.evidence == "我感冒了" and seen["memory_now"] == 1 and "休息" in text_of(blocks)

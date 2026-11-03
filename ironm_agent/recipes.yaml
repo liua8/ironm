@@ -1,0 +1,166 @@
+# 推荐食谱（spec [2026-10-23] §118 需求 5）：原料和克数（名字都在食物库里，肉写生重）、油、几份、做法三四步。
+# 营养由代码按食物库算，每份 = 全部原料加油 ÷ 份数。tags：减脂、增肌、早餐、带饭。
+# 内容由 Claude 按常见家常做法整理，待审定。
+version: "0.1"
+review: claude_draft
+
+recipes:
+  - id: oat-egg-breakfast
+    name: 燕麦牛奶配鸡蛋
+    tags: [早餐, 减脂, 增肌]
+    servings: 1
+    parts: {燕麦片（干）: 40, 牛奶（全脂）: 250, 鸡蛋: 100, 香蕉: 60}
+    oil: 0
+    steps: [燕麦片加牛奶，微波 2 分钟或小火煮开, 鸡蛋水煮 8 分钟, 香蕉切片放在燕麦上]
+
+  - id: greek-yogurt-bowl
+    name: 希腊酸奶水果碗
+    tags: [早餐, 减脂]
+    servings: 1
+    parts: {希腊酸奶（无糖脱脂）: 200, 蓝莓: 80, 燕麦片（干）: 20, 杏仁: 10}
+    oil: 0
+    steps: [酸奶倒进碗里, 铺上蓝莓和燕麦片, 撒上杏仁]
+
+  - id: wholewheat-egg-sandwich
+    name: 全麦鸡蛋三明治
+    tags: [早餐, 带饭]
+    servings: 1
+    parts: {全麦面包: 60, 鸡蛋: 100, 生菜: 30, 番茄: 50, 奶酪: 20}
+    oil: 3
+    steps: [鸡蛋少油煎熟, 面包夹上生菜、番茄片、鸡蛋和奶酪, 对半切开]
+
+  - id: protein-shake
+    name: 香蕉蛋白奶昔
+    tags: [早餐, 增肌]
+    servings: 1
+    parts: {乳清蛋白粉: 30, 牛奶（全脂）: 300, 香蕉: 120, 燕麦片（干）: 30}
+    oil: 0
+    steps: [全部放进料理机, 打 30 秒到顺滑]
+
+  - id: chicken-brown-rice
+    name: 鸡胸肉西兰花糙米饭
+    tags: [减脂, 增肌, 带饭]
+    servings: 2
+    parts: {鸡胸肉（生）: 300, 西兰花: 300, 糙米饭: 300, 胡萝卜: 100}
+    oil: 10
+    steps: [鸡胸肉切块，加少许盐和黑胡椒腌 10 分钟, 平底锅少油把鸡肉煎到两面金黄、中间熟透, 西兰花和胡萝卜焯水 2 分钟, 和糙米饭一起分成两盒]
+
+  - id: beef-broccoli
+    name: 西兰花炒牛肉配米饭
+    tags: [增肌, 带饭]
+    servings: 2
+    parts: {瘦牛肉（生）: 300, 西兰花: 300, 米饭: 400}
+    oil: 15
+    steps: [牛肉切薄片，加少许酱油和淀粉抓匀, 大火快炒牛肉到变色盛出, 西兰花炒软后倒回牛肉，加酱油翻匀, 配米饭分两份]
+
+  - id: salmon-sweet-potato
+    name: 香煎三文鱼配红薯
+    tags: [增肌, 减脂]
+    servings: 1
+    parts: {三文鱼（生）: 150, 红薯（蒸）: 200, 芦笋: 100}
+    oil: 5
+    steps: [三文鱼两面撒盐和黑胡椒, 不粘锅少油，皮朝下中火煎 4 分钟再翻面 2 分钟, 芦笋同锅煎软, 红薯蒸 20 分钟]
+
+  - id: shrimp-zucchini
+    name: 虾仁炒西葫芦
+    tags: [减脂, 带饭]
+    servings: 2
+    parts: {虾仁（生）: 300, 西葫芦: 400, 鸡蛋: 100}
+    oil: 10
+    steps: [鸡蛋炒散盛出, 虾仁炒到变红, 加西葫芦片炒软，倒回鸡蛋，加盐出锅]
+
+  - id: tomato-egg-noodles
+    name: 番茄鸡蛋面
+    tags: [增肌]
+    servings: 1
+    parts: {面条（煮熟）: 300, 鸡蛋: 100, 番茄: 200, 青菜: 100}
+    oil: 8
+    steps: [番茄切块炒出汁，加水煮开, 下面条煮熟，打入鸡蛋, 最后放青菜煮 1 分钟]
+
+  - id: tofu-mushroom
+    name: 香菇豆腐煲
+    tags: [减脂]
+    servings: 2
+    parts: {老豆腐: 400, 香菇: 200, 青菜: 200, 猪肉末（生）: 50}
+    oil: 10
+    steps: [豆腐切块煎到两面微黄, 肉末和香菇炒香, 加豆腐和半碗水焖 5 分钟, 放青菜煮软]
+
+  - id: chicken-salad-bowl
+    name: 鸡胸肉藜麦沙拉
+    tags: [减脂, 带饭]
+    servings: 1
+    parts: {鸡胸肉（熟）: 120, 藜麦（煮熟）: 100, 生菜: 100, 番茄: 80, 黄瓜: 80, 牛油果: 40}
+    oil: 5
+    steps: [鸡胸肉切片, 生菜、番茄、黄瓜切好放进碗里, 铺上藜麦、鸡胸肉和牛油果, 淋少许橄榄油和醋]
+
+  - id: tuna-rice-bowl
+    name: 金枪鱼饭团碗
+    tags: [减脂, 带饭]
+    servings: 1
+    parts: {金枪鱼罐头（水浸）: 120, 米饭: 150, 黄瓜: 80, 玉米（煮）: 50}
+    oil: 0
+    steps: [金枪鱼沥干水, 米饭盛碗，铺上金枪鱼、黄瓜丁和玉米粒, 加少许酱油拌匀]
+
+  - id: steamed-fish-meal
+    name: 清蒸鳕鱼配米饭青菜
+    tags: [减脂, 增肌]
+    servings: 1
+    parts: {鳕鱼（生）: 200, 米饭: 150, 青菜: 200}
+    oil: 5
+    steps: [鳕鱼放姜片蒸 8 分钟, 倒掉盘里的水，淋少许蒸鱼豉油和热油, 青菜焯水，配米饭]
+
+  - id: lean-pork-pepper
+    name: 青椒里脊配米饭
+    tags: [增肌, 带饭]
+    servings: 2
+    parts: {猪里脊（生）: 250, 青椒: 300, 米饭: 400}
+    oil: 15
+    steps: [里脊切丝，加淀粉抓匀, 大火炒肉丝到变色盛出, 青椒炒到断生，倒回肉丝加酱油, 配米饭分两份]
+
+  - id: chicken-thigh-potato
+    name: 鸡腿肉土豆胡萝卜焖
+    tags: [增肌, 带饭]
+    servings: 2
+    parts: {鸡腿肉（生、去皮）: 300, 土豆: 300, 胡萝卜: 150, 洋葱: 100}
+    oil: 10
+    steps: [鸡腿肉切块煎到表面金黄, 加洋葱、土豆、胡萝卜翻炒, 加酱油和没过一半的水，焖 15 分钟]
+
+  - id: egg-veg-congee
+    name: 鸡蛋青菜粥
+    tags: [早餐, 减脂]
+    servings: 1
+    parts: {白粥: 300, 鸡蛋: 50, 青菜: 100}
+    oil: 0
+    steps: [粥煮开后放切碎的青菜, 打入鸡蛋搅散, 加少许盐]
+
+  - id: beef-noodle-soup
+    name: 牛肉汤面
+    tags: [增肌]
+    servings: 1
+    parts: {面条（煮熟）: 300, 瘦牛肉（熟）: 100, 青菜: 100}
+    oil: 5
+    steps: [面条煮熟捞出, 牛肉切片，和青菜一起放进汤里煮开, 倒在面上]
+
+  - id: edamame-snack
+    name: 盐水毛豆加牛奶
+    tags: [增肌, 减脂]
+    servings: 1
+    parts: {毛豆（煮）: 100, 牛奶（全脂）: 250}
+    oil: 0
+    steps: [毛豆加盐煮 8 分钟, 配一盒牛奶，当练后加餐]
+
+  - id: yogurt-banana-snack
+    name: 酸奶香蕉加餐
+    tags: [减脂, 增肌]
+    servings: 1
+    parts: {无糖酸奶: 150, 香蕉: 120, 核桃: 10}
+    oil: 0
+    steps: [酸奶配一根香蕉, 撒几粒核桃]
+
+  - id: shrimp-egg-fried-rice
+    name: 虾仁蛋炒饭
+    tags: [增肌]
+    servings: 1
+    parts: {米饭: 250, 虾仁（生）: 100, 鸡蛋: 100, 青菜: 50, 胡萝卜: 30}
+    oil: 10
+    steps: [鸡蛋炒散盛出, 虾仁和胡萝卜丁炒熟, 下米饭炒散，倒回鸡蛋和青菜，加盐]

@@ -8,14 +8,15 @@ from datetime import timedelta
 from typing import Any
 
 from ironm_agent import spoken
+from ironm_agent.actions import NEW_PLAN
 from ironm_agent.clarify import HEAD
 from ironm_agent.llm import Reply
 from ironm_agent.metrics import Readings
 from ironm_agent.plugin import HELP_ASK
 from ironm_agent.spoken import NO_TRAINING, missing, say, urgent_needs
-from tests.fakes import FakeLLM, jsonr
+from tests.fakes import FakeLLM, acting, jsonr
 from tests.test_plugin import text_of
-from tests.test_single_agent import single
+from tests.test_single_agent import NEW, single
 from tests.test_turn_flow import TODAY, run, snapshot_of
 
 CHEST = "跑步的时候胸口突然很痛，现在还在疼"
@@ -120,12 +121,12 @@ def test_provenance_question_goes_to_the_model_with_the_sources(monkeypatch: Any
 
 def test_new_plan_conditions_are_asked_by_the_model(monkeypatch: Any) -> None:
     ask = f"{HEAD}：目标还是减脂吧？每周能练几天、在哪练？膝盖还疼吗？哪项变了跟我说。"
-    a, _ = single(lambda *_: jsonr({"answer": ask, "action": "new_plan"}), monkeypatch, old=True)
+    a, _ = single(lambda *_: jsonr({"answer": ask}), monkeypatch, old=True)  # 它决定先列条件
     blocks, seen = run(a, "帮我排个新计划")
     assert seen["path"] == "clarify" and seen["clarify_by"] == "model" and text_of(blocks) == ask
-    # 开头没有那句（下一轮认不出问过了）：退回系统列的条件
-    a, _ = single(lambda *_: jsonr({"answer": "好，先确认一下条件。", "action": "new_plan"}),
-                  monkeypatch, old=True)  # fmt: skip
+    # 交了新计划被退回、开头没有那句（下一轮认不出问过了）：退回系统列的条件（§120）
+    a, _ = single(acting(NEW_PLAN, {"plan": NEW, "changes": "", "kind": "new"},
+                         {"answer": "好，先确认一下条件。"}), monkeypatch, old=True)  # fmt: skip
     blocks, seen = run(a, "帮我排个新计划")
     assert seen["clarify_by"] == "fixed" and text_of(blocks).startswith(HEAD)
 

@@ -16,6 +16,7 @@ from typing import Any, Literal, Protocol
 from pydantic import BaseModel, Field
 
 from ironm_agent.casefile import Level, said
+from ironm_agent.training import PlanEdit
 
 _log = logging.getLogger("ironm_agent.day_state")
 
@@ -82,6 +83,7 @@ class Entry(BaseModel):
 class DayState(BaseModel):
     day: date
     entries: list[Entry] = Field(default_factory=list)
+    edits: list[PlanEdit] = Field(default_factory=list)  # 计划页"只改今天"的改动，按先后（§106）
 
     def latest(self, kind: Kind) -> Entry | None:
         return next((e for e in reversed(self.entries) if e.kind == kind), None)
@@ -157,8 +159,13 @@ def lines(
             f"感受 {c.log.rpe} 分" if c.log.rpe else "",
             f"{c.log.minutes} 分钟" if c.log.minutes else "",
         ]
+        if c.log.state():  # 打卡记的精力、睡眠、哪里酸（§105）
+            bits.append(c.log.state())
         extra = "，".join(b for b in bits if b)
         out.append(f"已打卡：{c.log.session or '训练'}（{at}{'，' + extra if extra else ''}）")
+    for c in checkins:
+        if c.log.day == today and getattr(c.log, "rest", None):  # 今天记了没练（§105）
+            out.append(f"今天记了没练：{c.log.line().split(' ', 1)[-1]}")
     if not done and plan_name is not None:
         out.append("还没打卡")
     if state is not None:
@@ -166,6 +173,10 @@ def lines(
             e = state.latest(kind)
             if e is not None:
                 out.append(e.text())
+        if state.edits:  # 计划页"只改今天"（§106）
+            out.append(
+                "今天在计划页改过（只改今天）：" + "；".join(e.line for e in state.edits if e.line)
+            )
     if illness:
         out.append(illness)
     if pains:
@@ -180,6 +191,7 @@ def lines(
 class DayStore(Protocol):
     async def get(self, user_id: str, day: date) -> DayState | None: ...
     async def add(self, user_id: str, day: date, entries: Sequence[Entry]) -> DayState: ...
+    async def set_edits(self, user_id: str, day: date, edits: Sequence[PlanEdit]) -> DayState: ...
 
 
 class DayBook:
@@ -194,6 +206,12 @@ class DayBook:
     async def add(self, user_id: str, day: date, entries: Sequence[Entry]) -> DayState:
         state = self.rows.get((user_id, day)) or DayState(day=day)
         state = state.model_copy(update={"entries": [*state.entries, *entries]})
+        self.rows[(user_id, day)] = state
+        return state
+
+    async def set_edits(self, user_id: str, day: date, edits: Sequence[PlanEdit]) -> DayState:
+        state = self.rows.get((user_id, day)) or DayState(day=day)
+        state = state.model_copy(update={"edits": list(edits)})
         self.rows[(user_id, day)] = state
         return state
 
@@ -234,13 +252,21 @@ class PgDay:
 
     async def add(self, user_id: str, day: date, entries: Sequence[Entry]) -> DayState:
         state = await self.get(user_id, day) or DayState(day=day)
-        state = state.model_copy(update={"entries": [*state.entries, *entries]})
+        return await self._save(
+            user_id, state.model_copy(update={"entries": [*state.entries, *entries]})
+        )
+
+    async def set_edits(self, user_id: str, day: date, edits: Sequence[PlanEdit]) -> DayState:
+        state = await self.get(user_id, day) or DayState(day=day)
+        return await self._save(user_id, state.model_copy(update={"edits": list(edits)}))
+
+    async def _save(self, user_id: str, state: DayState) -> DayState:
         await self._q(
             "INSERT INTO ironm_day_state (user_id, day, content) VALUES (:uid, :day, encrypt_content(:c))"
             " ON CONFLICT (user_id, day) DO UPDATE SET content = EXCLUDED.content, updated_at = now()",
-            {"uid": user_id, "day": day, "c": state.model_dump_json()},
+            {"uid": user_id, "day": state.day, "c": state.model_dump_json()},
         )
-        _log.info("day state saved: entries=%d", len(state.entries))
+        _log.info("day state saved: entries=%d edits=%d", len(state.entries), len(state.edits))
         return state
 
 

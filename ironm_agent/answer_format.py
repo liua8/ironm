@@ -47,12 +47,12 @@ _FACT = re.compile(
 SLOTS_PROMPT = """按下面几段写，最后只输出 JSON：
 {"answer": "第一句直接回答用户问的那件事（问什么答什么），不超过 40 字",
  "reason": "一句话说为什么，最好用这个人自己的数据；不需要就留空",
- "steps": ["0–%(steps)d 条，只写和问题直接有关、能照做的，每条带具体的量，每条不超过 50 字；两三句话能说清的就写进答案，这里留空"],
+ "steps": ["只在他问怎么做、要安排或推荐时写，0–%(steps)d 条，带具体的量，每条不超过 50 字；问怎么样、好不好时留空，不足在答案里点一句；其余留空，两三句能说清的写进答案"],
  "alert": "只在他说的情况本身有风险时写一句什么情况要停下或就医；答案里已经说了就留空；其余留空",
  "next": "一般留空；只在他问怎么做、今天还有一件该做的事前面没写到时写一句"}
-每一段里带数字的句子照样在句末写出处标记，答案也不例外，例如 "你的 BMI 是 24.5〔C3〕，属于超重"。
+每一段里带数字的句子照样在句末写出处标记，例如 "你的 BMI 是 24.5〔C3〕，属于超重"。
 推荐几个动作或几种吃法时最多 %(steps)d 个，每个占一条做法、写怎么做和具体的量；答案里说几个，做法就列几条。
-写法：像教练当面说话，先答案、后理由，不铺垫；他提了要求（比如要一个轻松的安排）先接住，能做就给，不能做再说为什么；问"正常吗、高吗、是不是"时，答案以判断开头（正常 / 偏高 / 偏低 / 没有记录），再给数；没问到的不说（问 BMI 不讲饮食，问早餐不讲训练），用户追问再展开；不预防性地加"如果……就医"；数据风险提醒由系统放在最后，你不用写；全文不超过 %(limit)d 字。"""
+写法：像教练当面说话，不铺垫；他提了要求（比如要一个轻松的安排）先接住，能做就给，不能做再说为什么；问"正常吗、高吗、是不是"时，答案以判断开头（正常 / 偏高 / 偏低 / 没有记录），再给数；没问到的不说（问 BMI 不讲饮食，问早餐不讲训练）；不预防性地加"如果……就医"；数据风险提醒由系统放在最后，你不用写；全文不超过 %(limit)d 字。"""
 
 
 _TOPICS = ("血压", "血糖", "孕", "心率", "体温")
@@ -80,18 +80,15 @@ def kind_of(text: str, task: str | None = None) -> Kind:
     return "howto"
 
 
+def judged_kind(task: str | None) -> Kind:
+    """篇幅档：要写计划或记录的有卡片；其余由管家按问题自己判断长短（§114），这里只给总上限。"""
+    return "card" if task in ("plan", "edit", "log") else "detail"
+
+
 def slots_prompt(text: str, task: str | None = None) -> str:
-    k = kind_of(text, task)
-    if k != "detail" and _BODY_STATE.search(text) and not _ASKING.search(text):  # 只说了状况（§82）
-        return SLOTS_PROMPT % {"steps": 0, "limit": LIMITS[k]} + (
-            "\n他只说了自己的状况、没问怎么办：answer 写一句关心、问他怎么了（哪里不舒服），"
-            "不给做法和安排，steps、next、alert 都留空。"
-        )
-    if k != "detail" and _BODY_STATE.search(text):  # 问身体状态：最多 2 条，写进答案里也行（§82）
-        return SLOTS_PROMPT % {"steps": BODY_STEPS, "limit": LIMITS[k]} + (
-            "\n他问的是身体状态（不舒服、累、疼、能不能练）：像当面说话一样两三句说完，不分条列清单。"
-        )
-    return SLOTS_PROMPT % {"steps": MAX_STEPS[k], "limit": LIMITS[k]}
+    """怎么分段写。问的是什么、该多长、给不给做法由管家判断（§114），不再按关键词分类。"""
+    k = judged_kind(task)
+    return SLOTS_PROMPT % {"steps": MAX_STEPS["howto"], "limit": LIMITS[k]}
 
 
 def is_slots(raw: Mapping[str, Any]) -> bool:
@@ -118,22 +115,17 @@ def _end(text: str) -> str:
 
 
 def assemble(raw: Mapping[str, Any], text: str = "", task: str | None = None) -> str:
-    """把分段拼成正文：答案和理由一段，做法编号，下一步和提醒各一行；按问题类型截长。"""
-    k = kind_of(text, task)
+    """把分段拼成正文：答案和理由一段，做法编号，下一步和提醒各一行。写几条做法、加不加提醒由管家
+    判断（§114），这里只去重、按总上限截长。"""
+    k = judged_kind(task)
     answer = str(raw.get("answer") or "").strip()
     reason = str(raw.get("reason") or "").strip()
     steps_raw = raw.get("steps") or []
     if isinstance(steps_raw, str):
         steps_raw = [steps_raw]
-    body_state = bool(text) and bool(_BODY_STATE.search(text)) and k != "detail"
-    cap = min(MAX_STEPS[k], BODY_STEPS) if body_state else MAX_STEPS[k]
-    if body_state and not _ASKING.search(text):
-        cap = 0  # 只说了"今天有点不舒服"：关心一句、问怎么了，不主动给做法（§82）
-        raw = {**raw, "next": ""}
-    steps = [str(x).strip() for x in steps_raw if str(x).strip()][:cap]
+    body_state = False  # 只说状况不给做法、问身体状态写成句子：都交给管家（§114）
+    steps = [str(x).strip() for x in steps_raw if str(x).strip()][: MAX_STEPS[k]]
     alert = str(raw.get("alert") or "").strip()
-    if alert and text and not _RISKY.search(text):
-        alert = ""  # 没问到疼痛、伤病、身体不适，就不加"疼就停""就医"（§42）
     nxt = str(raw.get("next") or "").strip()
     if alert and _TOLD.search(plain(answer + reason)):
         alert = ""  # 答案或理由里已经让他就医、别运动了，不再说一遍（§82）

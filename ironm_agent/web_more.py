@@ -9,6 +9,7 @@ import asyncio
 import logging
 import os
 import re
+from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
@@ -39,6 +40,7 @@ from ironm_agent.meals import (
 )
 from ironm_agent.memory_store import MemoryStore
 from ironm_agent.metrics import GOALS
+from ironm_agent.plan_edit import apply_today, with_today
 from ironm_agent.protools.muscle_map import muscle_map
 from ironm_agent.training import TrainingStore, week_start
 
@@ -74,6 +76,12 @@ def meal_store() -> MealStore:
     return default_meals()
 
 
+def photo_store() -> Any:
+    from ironm_agent.checkin_photo import default_photos
+
+    return default_photos()
+
+
 def video_dir() -> Path:
     """动作视频放在本机的数据目录（不进仓库）。"""
     return Path(os.environ.get("IRONM_DATA_DIR") or ROOT / "data") / "videos"
@@ -82,6 +90,7 @@ def video_dir() -> Path:
 TRAINING = Depends(training_store)
 MEMORY = Depends(memory_store)
 MEALS = Depends(meal_store)  # 测试时用 dependency_overrides 换成内存版
+PHOTOS = Depends(photo_store)  # 打卡照片（§117），测试时换成内存版
 UPLOAD = File(...)
 PHOTO = File(None)
 
@@ -208,6 +217,16 @@ def illness_store() -> Any:
 ILLNESS = Depends(illness_store)  # 生病记录（spec [2026-10-23] §46）；测试时换成内存版
 
 
+def checkin_streak(days: set[date], today: date) -> int:
+    """连续打卡天数（§105）：从今天往前数；今天还没打卡从昨天数。"""
+    d = today if today in days else today - timedelta(days=1)
+    n = 0
+    while d in days:
+        n += 1
+        d -= timedelta(days=1)
+    return n
+
+
 @router.get("/iron/api/calendar")
 async def get_calendar(
     month: str = "",
@@ -243,13 +262,30 @@ async def get_calendar(
                 "session": x.log.session,
                 "rpe": x.log.rpe,
                 "line": x.log.line(),
+                "rest": x.log.rest,
             }
         )
+    # 轨迹（§105）：每天做的组数（月历分深浅；没填每组的按计划组数算）、本月一共练了多久、
+    # 连续打卡天数（练了或记了没练都算）
+    count: Counter[date] = Counter()
+    for x in rows:
+        if x.log.done and first <= x.log.day < nxt:
+            count[x.log.day] += sum(len(it.done_sets) or it.sets or 0 for it in x.log.items)
+    sets = {d.isoformat(): n for d, n in count.items() if n}
+    month_minutes = sum(x.log.minutes or 0 for x in rows if x.log.done and first <= x.log.day < nxt)
     return {
         "month": first.strftime("%Y-%m"),
         "today": today.isoformat(),
         "days": days,
         "done_days": sorted(d for d, v in days.items() if any(e["done"] for e in v)),
+        "rest_days": sorted(
+            d
+            for d, v in days.items()
+            if any(e["rest"] for e in v) and not any(e["done"] for e in v)
+        ),
+        "sets": sets,
+        "month_minutes": month_minutes,
+        "streak_days": checkin_streak({x.log.day for x in rows if x.log.done or x.log.rest}, today),
         **stats,
     }
 
@@ -502,8 +538,10 @@ class PresetIn(BaseModel):
 
 @router.get("/iron/api/meals/presets")
 async def get_presets(user_id: str = Depends(_verify())) -> dict[str, Any]:
+    from ironm_agent.food_images import image_for
+
     return {
-        "presets": [p.model_dump() for p in presets()],
+        "presets": [{**p.model_dump(), "image": image_for(f"preset:{p.id}")} for p in presets()],
         "note": "按常见分量估算，实际随做法和分量变化（内容待审定）",
     }
 
@@ -859,14 +897,41 @@ def diet_store() -> Any:
 DIET = Depends(diet_store)  # 测试时用 dependency_overrides 换成内存版
 
 
-async def _diet_state(user_id: str, diet: Any) -> dict[str, Any]:
+async def _seen(user_id: str, snap: Any, meals: MealStore) -> tuple[Any, str]:
+    """按记的吃和体重变化估的每天实际消耗（§118 需求 7）；读不到饮食记录当作条件不够。"""
+    from ironm_agent.diet_adjust import OBSERVE_DAYS, by_day, observed
+
+    try:
+        rows = await meals.since(user_id, snap.today - timedelta(days=OBSERVE_DAYS - 1))
+    except Exception as e:
+        _log.warning("meals unavailable: error_type=%s", type(e).__name__)
+        return None, "饮食记录这次没读到"
+    return observed(by_day(rows), snap.readings.weight, snap.today)
+
+
+async def _diet_state(user_id: str, diet: Any, meals: MealStore) -> dict[str, Any]:
     from ironm_agent.diet_adjust import propose
 
     snap = await _web().snapshot_for(user_id)
     current = await diet.current(user_id)
-    proposal, why = propose(snap.metrics, snap.profile, current, snap.today)
+    seen, lack = await _seen(user_id, snap, meals)
+    proposal, why = propose(snap.metrics, snap.profile, current, snap.today, seen)
     target = next((m for m in snap.metrics if m.key == "kcal_target"), None)
+    formula = next((m for m in snap.metrics if m.key == "tdee"), None)
     return {
+        "observed": {
+            "tdee": seen.tdee,
+            "intake": seen.intake,
+            "kg_per_week": seen.kg_per_week,
+            "days": seen.days,
+            "weighins": seen.weighins,
+            "formula": round(formula.value) if formula and formula.value else None,
+            "how": "最近两周记了的那些天平均每天吃的 − 体重每天的变化 × 7700 千卡（每公斤约 7700 千卡是粗算）；"
+            "有的餐没记，算出来会偏低",
+        }
+        if seen
+        else None,
+        "observed_lack": lack,
         "target": target.value if target else None,
         "current": (
             {"kcal": current.kcal, "since": current.since.isoformat(), "reason": current.reason}
@@ -890,33 +955,42 @@ async def _diet_state(user_id: str, diet: Any) -> dict[str, Any]:
 
 
 @router.get("/iron/api/diet/review")
-async def diet_review(user_id: str = Depends(_verify()), diet: Any = DIET) -> dict[str, Any]:
-    return await _diet_state(user_id, diet)
+async def diet_review(
+    user_id: str = Depends(_verify()), diet: Any = DIET, meals: MealStore = MEALS
+) -> dict[str, Any]:
+    return await _diet_state(user_id, diet, meals)
 
 
 @router.post("/iron/api/diet/adjust")
-async def diet_apply(user_id: str = Depends(_verify()), diet: Any = DIET) -> dict[str, Any]:
+async def diet_apply(
+    user_id: str = Depends(_verify()), diet: Any = DIET, meals: MealStore = MEALS
+) -> dict[str, Any]:
     """确认调整：服务端按当前数据重新算一遍方案再保存（不信任页面传来的数字）。"""
     from ironm_agent.diet_adjust import propose
     from ironm_agent.metrics import KcalAdjust
 
     snap = await _web().snapshot_for(user_id)
-    proposal, why = propose(snap.metrics, snap.profile, await diet.current(user_id), snap.today)
+    seen, _ = await _seen(user_id, snap, meals)
+    proposal, why = propose(
+        snap.metrics, snap.profile, await diet.current(user_id), snap.today, seen
+    )
     if proposal is None:
         raise HTTPException(409, why or "这次不需要调整")
     await diet.apply(user_id, KcalAdjust(proposal.total, snap.today, proposal.reason))
     _log.info("diet adjusted: delta=%d", proposal.delta)
     coach_later(user_id, "确认方案")
-    return await _diet_state(user_id, diet)
+    return await _diet_state(user_id, diet, meals)
 
 
 @router.post("/iron/api/diet/adjust/undo")
-async def diet_undo(user_id: str = Depends(_verify()), diet: Any = DIET) -> dict[str, Any]:
+async def diet_undo(
+    user_id: str = Depends(_verify()), diet: Any = DIET, meals: MealStore = MEALS
+) -> dict[str, Any]:
     if await diet.current(user_id) is None:
         raise HTTPException(404, "现在没有热量调整")
     await diet.undo(user_id)
     coach_later(user_id, "撤销方案")
-    return await _diet_state(user_id, diet)
+    return await _diet_state(user_id, diet, meals)
 
 
 # ---- 生病追问（spec [2026-10-23] §46）-----------------------------------------------------------
@@ -1136,6 +1210,7 @@ def coach_deps() -> Any:
         illness=illness_store(),
         day=day_store(),
         memory=_web().memory_store(),
+        meals=meal_store(),
     )
 
 
@@ -1453,7 +1528,10 @@ async def harness_turns(
 
 @router.get("/iron/api/week")
 async def get_week(
-    user_id: str = Depends(_verify()), training: TrainingStore = TRAINING, illness: Any = ILLNESS
+    user_id: str = Depends(_verify()),
+    training: TrainingStore = TRAINING,
+    illness: Any = ILLNESS,
+    day: Any = DAY,
 ) -> dict[str, Any]:
     """本周一到周日：每天练什么、练过没有、天气和对训练的影响、按天气改出的版本（原计划不变）；
     今天生病时按症状改（spec [2026-10-23] §46）。"""
@@ -1477,7 +1555,12 @@ async def get_week(
         _log.warning("week weather unavailable: error_type=%s", type(e).__name__)
         status = "unavailable"
     now = weather.assess(wx) if wx is not None else None
-    days = week_plan(stored.plan if stored else None, wx.days if wx else (), today, now)
+    edits = await today_edits(day, user_id, today)
+    plan = with_today(stored.plan, edits, today) if stored else None  # 今天改过的按改过的（§106）
+    first = stored.plan.session_on(today) if stored else None
+    edits = apply_today(first, edits)[1] if first is not None else []  # 只列还套得上的
+    days = week_plan(plan, wx.days if wx else (), today, now)
+    weight = await _weight_now(user_id) if plan is not None else None
 
     def wx_json(p: Any) -> dict[str, Any] | None:
         if p.day == today and wx is not None and now is not None:
@@ -1510,7 +1593,42 @@ async def get_week(
                 "outdoor": list(p.outdoor),
                 "better": weekday(p.better) if p.better else "",
                 "weather": wx_json(p),
+                "edited": [e.line for e in edits] if p.day == today else [],
+                **_extras(p.version or p.session, weight),
             }
             for p in days
         ],
     }
+
+
+async def _weight_now(user_id: str) -> float | None:
+    """最近一次体重（估算消耗用，§116）；读不到当作没有。"""
+    try:
+        snap = await _web().snapshot_for(user_id)
+    except Exception as e:
+        _log.warning("weight unavailable: error_type=%s", type(e).__name__)
+        return None
+    return max(snap.readings.weight)[1] if snap.readings.weight else None
+
+
+def _extras(session: Any, weight: float | None) -> dict[str, Any]:
+    """训练日的热身和估算消耗（§116）；休息日没有。"""
+    from ironm_agent.warmup import burn, warmup
+
+    if session is None:
+        return {"warmup": None, "burn": None}
+    w, b = warmup(session), burn(session.minutes, weight)
+    return {
+        "warmup": {"minutes": w.minutes, "steps": list(w.steps), "basis": w.basis},
+        "burn": {"low": b.low, "high": b.high, "how": b.how} if b else None,
+    }
+
+
+async def today_edits(day: Any, user_id: str, today: date) -> list[Any]:
+    """计划页"只改今天"的改动（§106）；读不到当作没改。"""
+    try:
+        state = await day.get(user_id, today)
+    except Exception as e:
+        _log.warning("day state unavailable: error_type=%s", type(e).__name__)
+        return []
+    return list(state.edits) if state is not None else []

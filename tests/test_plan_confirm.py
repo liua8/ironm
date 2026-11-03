@@ -4,11 +4,13 @@ import asyncio
 from datetime import date
 from typing import Any
 
+from ironm_agent.actions import ASK_TERMS, NEW_PLAN
 from ironm_agent.clarify import CONFIRM, CONFIRMED_NOTE, HEAD
 from ironm_agent.goal import Goal, GoalBook
 from ironm_agent.metrics import Profile
 from tests.test_plan_ops import Editor, _seeded
 from tests.test_plugin import agent, text_of
+from tests.test_single_agent import NEW
 from tests.test_turn_flow import Coach, book, run, snapshot_of
 
 
@@ -23,7 +25,8 @@ def _card(blocks: list[dict[str, Any]]) -> bool:
     return any(str(b.get("id", "")).startswith("card-") for b in blocks)
 
 
-ASK = {"answer": "好，先确认一下条件。", "action": "new_plan"}  # 只说要排新计划，没列出五项
+# 标记要先确认条件、却没把五项列出来（§120：调用 ask_plan_terms，只说了一句）
+ASK = {"answer": "好，先确认一下条件。", "act": (ASK_TERMS, {})}
 
 
 def test_asking_for_a_plan_with_a_plan_confirms_first(monkeypatch: Any) -> None:
@@ -36,7 +39,7 @@ def test_asking_for_a_plan_with_a_plan_confirms_first(monkeypatch: Any) -> None:
     blocks, seen = run(a, "我想要更好的减重，给我一份计划吗")
     text = text_of(blocks)
     assert seen["path"] == "clarify" and seen["clarify_by"] == "fixed" and not _card(blocks)
-    assert t.stages.count("expert") == 1  # 只问不排：不补写计划
+    assert t.stages.count("expert") == 2  # 标记确认条件、作答；只问不排
     assert HEAD in text and CONFIRM in text
     for item in ("①目标", "②场景", "③器械", "④时间", "⑤伤病"):
         assert item in text
@@ -56,10 +59,10 @@ def test_confirmed_conditions_build_a_new_plan_with_the_goal(monkeypatch: Any) -
         return ["用户：我要重新定计划", "教练（要点）：" + text_of(first)[:120]]
 
     a._history = asked
-    t.extra = {}
+    t.act = (NEW_PLAN, {"plan": NEW, "changes": "新排", "kind": "new"})
     _, seen = run(a, "按这个排")
     assert seen["path"] == "answer" and seen["task"] == "plan" and "plan_ops" not in seen
-    said = t.seen[1]  # 这一轮作答时收到的（之后补写计划那次另算）
+    said = t.seen[-2]  # 这一轮交计划时收到的
     assert CONFIRMED_NOTE[:20] in said and "65 公斤" in said and "目标的数和日期照写" in said
 
 

@@ -99,6 +99,15 @@ def changed_days(new: Plan, old: Plan) -> int:
     )
 
 
+def same_training(new: Plan, old: Plan) -> bool:
+    """天、动作、组数、次数都一样（说明、重量写法不算）：写出来的就是现在的计划（§108）。"""
+
+    def key(p: Plan) -> list[tuple[int, tuple[tuple[str, int, str], ...]]]:
+        return sorted((s.day, tuple((x.exercise, x.sets, x.reps) for x in s.items)) for s in p.sessions)
+
+    return key(new) == key(old)
+
+
 def _diff(new: Plan, old: Plan) -> list[str]:
     out = []
     old_by = {s.day: s for s in old.sessions}

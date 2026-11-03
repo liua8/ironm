@@ -64,7 +64,7 @@ def test_old_items_are_shown_with_the_day_they_were_said() -> None:
 
 
 def test_prompts_say_how_to_mark_and_what_not_to_keep() -> None:
-    assert '"lasting": "long' in agent._PROMPT and "一顿饭、一次训练不记" in agent._PROMPT
+    assert '"lasting":"long' in agent._PROMPT and "一顿饭、一次训练不记" in agent._PROMPT
     assert (
         "lasting：long" in memory_extract._PROMPT
         and "一次训练练了什么不记" in memory_extract._PROMPT

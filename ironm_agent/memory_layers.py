@@ -21,6 +21,7 @@ from typing import Any
 
 from ironm_agent.memory_extract import norm
 from ironm_agent.memory_store import CATEGORIES, Category, Change, Item, absolute, new_id, now
+from ironm_agent.memory_view import advice_expired
 from ironm_agent.protools.movement import JOINT_NAMES
 from ironm_agent.training import Plan, WorkoutLog
 
@@ -119,7 +120,10 @@ def layers(items: Sequence[Item], today: date, focus: Collection[str] | None = N
         out.handles[h] = x
         return h
 
-    live = [x for x in items if x.status != "superseded"]
+    from ironm_agent.latest import shadowed
+
+    gone = shadowed(items)  # 同一件事以最近的为准（§113）
+    live = [x for x in items if x.status != "superseded" and x.id not in gone]
     cats = (
         set(PROFILE)
         if focus is None
@@ -144,7 +148,8 @@ def layers(items: Sequence[Item], today: date, focus: Collection[str] | None = N
             out.asks.append(
                 f"{handle(x)}｜「{said(x)}」说到{_md(end)}为止，没听他说结束：可以问一句是不是结束了"
             )
-    advice = [x for x in live if x.category == "advice" and x.status == "active"]
+    advice = [x for x in live if x.category == "advice" and x.status == "active"
+              and not advice_expired(x, today)]  # 过期的建议不再带（§109）  # fmt: skip
     for x in sorted(advice, key=_day)[-ADVICE_KEEP:]:
         out.episodes.append(f"{handle(x)}｜给过的建议：{said(x)}（{_md(_day(x))}）")
 

@@ -69,10 +69,13 @@ def test_one_meal_per_kind_per_day(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_page_has_two_entries_and_picks_kind_after() -> None:
     page = APP[APP.index("async function food(view)") : APP.index("function meter(")]
     entry = page[page.index("function mealEntry") : page.index("function logMealSheet")]
-    assert "拍" in entry and "填" in entry and "pills(" not in entry  # 入口里不先选餐次
+    assert "拍照记" in entry and "写一句" in entry and "从库里选" in entry  # §119：一行三个小按钮
+    assert "pills(" not in entry  # 入口里不先选餐次
     assert "capture" not in entry  # 不限只能用相机：手机弹出拍照或从相册选
     sheet = page[page.index("function logMealSheet") : page.index("function mealRecord")]
     assert "pills(MEAL_KINDS" in sheet and "mealKindNow()" in sheet and "记下后会替换" in sheet
     record = page[page.index("function mealRecord") :]
-    assert "/iron/api/diet/review" in record and "还没记" in record
+    assert (
+        "/iron/api/diet/review" in record and "还没吃" in record and "照计划记" in record
+    )  # §119：按顿一行
     assert "dietReviewCard()" not in page and 'section("记一餐"' not in page

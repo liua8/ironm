@@ -45,6 +45,24 @@ def call(name: str, **args: Any) -> Reply:
     return Reply("", (ToolCall(f"c-{name}", name, dict(args)),))
 
 
+def again(result: str) -> bool:
+    """被退回了、值得照原样再交一次：没出预览，也不是让（或已在）先确认条件。"""
+    return not result.startswith("已出") and "排新计划" not in result
+
+
+def acting(
+    name: str, args: Mapping[str, Any], answer: Mapping[str, Any], tries: int = 2
+) -> Callable[[str, str, list[str]], Reply]:
+    """单 Agent 的假模型（§120）：先调用动作工具；被退回就照原样再交（最多 tries 次），出了预览或交够了再作答。"""
+
+    def reply(system: str, user: str, results: list[str]) -> Reply:
+        if not results or (len(results) < tries and again(results[-1])):
+            return call(name, **args)
+        return jsonr(answer)
+
+    return reply
+
+
 def system_of(messages: Sequence[Mapping[str, Any]]) -> str:
     return str(messages[0]["content"]) if messages else ""
 

@@ -45,6 +45,9 @@ class LiveItem(BaseModel):
     best: float | None = Field(
         default=None, ge=0, le=1000
     )  # 以前最好的一组的估算最大重量（§92 破纪录）
+    plan_kg: float | None = Field(
+        default=None, ge=0, le=1000
+    )  # 开始时预填的重量（计划目标或上次的），训练中自己调的上下限按它算（§104）
     sets: list[LiveSet] = Field(default_factory=list, max_length=20)
 
 
@@ -56,6 +59,7 @@ class Live(BaseModel):
     updated: datetime
     session: str = Field(default="", max_length=16)  # 按计划的哪一次（从首页开始时）
     items: list[LiveItem] = Field(default_factory=list, max_length=15)
+    no_heavier: bool = False  # 不能比计划重：特殊人群（§95）或这次训练说过疼（§104）
 
 
 class LiveError(ValueError):
@@ -220,7 +224,7 @@ def new_item(
         sets = [LiveSet(weight_kg=x.weight_kg, reps=None if timed else (x.reps or None),
                         seconds=x.seconds if timed else None) for x in last[0][1][:20]]  # fmt: skip
     return LiveItem(exercise=name, timed=timed, rest=rest_of(name, rests), target=target[:40],
-                    best=best_e1rm(name, logs), sets=sets)  # fmt: skip
+                    best=best_e1rm(name, logs), plan_kg=sets[0].weight_kg, sets=sets)  # fmt: skip
 
 
 def _e1rm(weight: float | None, reps: int | None) -> float | None:

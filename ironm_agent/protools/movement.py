@@ -166,7 +166,7 @@ def equipment_of(texts: Iterable[str]) -> frozenset[Equipment] | None:
     found: set[Equipment] = {"自重"}
     words: dict[Equipment, str] = {
         "哑铃": r"哑铃", "壶铃": r"壶铃", "弹力带": r"弹力带|拉力带|阻力带", "杠铃": r"杠铃",
-        "单杠": r"单杠|引体|门框杆", "器械": r"器械|动感单车|单车|跑步机|龙门架|史密斯",
+        "单杠": r"单杠|引体|门框杆", "器械": r"器械|动感单车|单车|跑步机|划船机|椭圆机|龙门架|史密斯",
     }  # fmt: skip
     for equipment, pattern in words.items():
         if re.search(pattern, joined):

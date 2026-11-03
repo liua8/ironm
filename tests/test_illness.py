@@ -150,13 +150,21 @@ def _agent(
 
 def test_saying_sick_in_chat_starts_an_episode(monkeypatch: Any) -> None:
     ill = IllnessBook()
-    _, seen = run(_agent(Coach(), monkeypatch, ill), "我今天肚子疼，还能练吗")
+    run(_agent(Coach(said={"sick": "肚子疼"}), monkeypatch, ill), "我今天肚子疼，还能练吗")
     eps = list(ill.rows["42"].values())
-    assert (
-        seen["illness"] == "noted:below"
-        and eps[0].symptoms == ["肚子疼"]
-        and eps[0].started == TODAY
-    )
+    assert eps[0].symptoms == ["肚子疼"] and eps[0].level == "below" and eps[0].started == TODAY
+
+
+def test_model_judgment_first_keywords_only_as_fallback(monkeypatch: Any) -> None:
+    """§114：管家作答了就按它的判断——没写 said 就是没说，"我的生病记录""如果发烧了能练吗"不开记录；
+    管家这一轮失败了才按关键词兜底。"""
+    ill = IllnessBook()
+    for asked in ("如果发烧了能练吗", "生病期间吃什么"):
+        run(_agent(Coach(), monkeypatch, ill), asked)
+    assert "42" not in ill.rows or not ill.rows["42"]
+    down = IllnessBook()
+    run(_agent(Coach(down=True), monkeypatch, down), "我今天发烧了")
+    assert [e.symptoms for e in down.rows["42"].values()] == [["发烧"]]  # 管家失败：关键词兜底
 
 
 def test_chat_asks_once_a_day_and_text_replies_count(monkeypatch: Any) -> None:
@@ -169,9 +177,10 @@ def test_chat_asks_once_a_day_and_text_replies_count(monkeypatch: Any) -> None:
     assert seen.get("illness_asked") and "今天还没问过他：昨天说肚子疼，今天好些了吗？" in t.input
     _, seen = run(a, "卧推怎么做")
     assert "好些了吗" not in t.input and not seen.get("illness_asked")  # 每天只问一次
-    _, seen = run(a, "好多了")
+    t.extra = {"said": {"better": "好些"}}  # 管家判断他在回答好些了（§114）
+    run(a, "好多了")
     e = next(iter(ill.rows["42"].values()))
-    assert seen["illness"] == "answered:better" and e.status == "better"
+    assert e.status == "better"
 
 
 STALE = (
@@ -198,9 +207,12 @@ def test_two_day_story_sick_then_better(monkeypatch: Any) -> None:
     """第一天说肚子疼，第二天说好了再问今天练什么：回答前的档案里不再当成还在疼。"""
     ill = IllnessBook()
     asyncio.run(ill.save("42", ep()))  # 昨天记下的
-    t = Coach()
-    _, seen = run(_agent(t, monkeypatch, ill), "肚子已经不疼了，深蹲怎么做")
-    assert seen["illness"] == "answered:resolved"
+    t = Coach(said={"better": "好了"})  # 管家判断他说好了（§114）：作答后写
+    a = _agent(t, monkeypatch, ill)
+    run(a, "肚子已经不疼了，深蹲怎么做")
+    assert "他这一句刚说的更新，冲突时按他这一句" in t.input  # 这一轮档案还没改：以他刚说的为准
+    t.extra = {}
+    run(a, "深蹲怎么做")  # 下一轮：档案里已经是好了
     assert "还没好" not in t.input
     assert "病后第一次训练按平时的七成" in t.input  # 刚好：告诉角色按约七成练
 
@@ -323,7 +335,11 @@ def test_vague_unwell_is_light_not_rest_and_upgrades_when_symptoms_come() -> Non
 def test_vague_unwell_reaches_the_model_as_a_light_day_without_dates(monkeypatch: Any) -> None:
     from tests.test_single_agent import single
 
-    a, s = single(lambda *_: jsonr({"answer": "可以，今天慢走 20 分钟。"}), monkeypatch, old=True)
+    def answer(system: str, user: str, results: list[str]) -> Any:
+        said = {"sick": "不舒服"} if "今天有点不舒服" in user.split("\n", 1)[0] else None
+        return jsonr({"answer": "可以，今天慢走 20 分钟。", **({"said": said} if said else {})})
+
+    a, s = single(answer, monkeypatch, old=True)
     a._illness = IllnessBook()
     run(a, "今天有点不舒服，给我安排一个轻松的锻炼")
     run(a, "给我安排一个轻松的锻炼")

@@ -1,0 +1,200 @@
+# 饮食配图的检索词（spec [2026-10-23] §119）：scripts/fetch_food_images.py 按这里到 Wikimedia Commons 找图。
+# 键：food:<食物库编号>、recipe:<推荐食谱编号>、preset:<减脂餐编号>；值是英文检索词（Commons 上英文图多），
+# 第一张许可合格的位图不合适时，直接写 Commons 的文件名（File:…），只取这一张。
+# 写空的（挑过、没有合适的图）和找不到的，页面用"分类颜色色块 + 名字首字"。
+queries:
+  # 主食
+  food:rice: steamed white rice bowl
+  food:brown-rice: brown rice cooked bowl
+  food:congee: "File:Cantonese rice porridge.JPG"
+  food:millet-congee: millet porridge bowl
+  food:oats: rolled oats
+  food:noodles: ""  # 没找到合适的图：用色块
+  food:rice-noodles: "File:Boiled rice noodles, vermicelli.jpg"
+  food:pasta: spaghetti plate
+  food:mantou: mantou steamed bun
+  food:pork-bun: baozi steamed pork bun
+  food:dumplings: jiaozi boiled dumplings
+  food:youtiao: youtiao
+  food:white-bread: "File:White bread 800.jpg"
+  food:wholewheat-bread: whole wheat bread slices
+  food:flour: wheat flour bowl
+  food:corn: boiled corn on the cob
+  food:sweet-potato: "File:Sweet Potato.jpg"
+  food:potato: "File:Boiled potatoes with salt - Massachusetts.jpg"
+  food:yam: chinese yam dioscorea
+  food:rice-cake: nian gao rice cake slices
+  food:quinoa: "File:Quinoa 2.jpg"
+  # 肉蛋
+  food:egg: "File:Hard boiled egg 2.jpg"
+  food:egg-white: egg whites
+  food:chicken-breast: grilled chicken breast sliced
+  food:chicken-breast-raw: raw chicken breast
+  food:chicken-thigh: "File:Roast Chicken Legs and Thighs (31196736704).jpg"
+  food:chicken-thigh-raw: "File:Raw chicken thighs.jpg"
+  food:pork-lean-raw: "File:Chef holding a wooden board with two raw seasoned pork chops.jpg"
+  food:pork-belly-raw: "File:Freshly prepared raw pork belly with red onions and chili peppers.jpg"
+  food:pork-mince-raw: ""  # 没找到合适的图：用色块
+  food:beef-lean-raw: "File:Raw beef.jpg"
+  food:beef-lean: "File:Beef slices 1 2017-01-22.jpg"
+  food:beef-brisket-raw: "File:Bowl of Beef Brisket in Clear Broth.jpg"
+  food:beef-mince-raw: "File:Ground beef USDA.jpg"
+  food:lamb-lean-raw: raw lamb meat
+  # 水产
+  food:salmon-raw: salmon fillet raw
+  food:cod-raw: cod fillet raw
+  food:grass-carp-raw: "File:Liat Portal for Foodie Disorder - Raw Tilapia Prepared for Baking.jpg"
+  food:shrimp-raw: "File:Raw shrimp.jpg"
+  food:shrimp: cooked shrimp plate
+  food:tuna-can: ""  # 没找到合适的图：用色块
+  food:squid: "File:Sauted Squid with Leek (3).jpg"
+  # 奶豆
+  food:milk: "File:Plastic bottle of milk.jpg"
+  food:skim-milk: "File:Milk-bottle.jpg"
+  food:yogurt-plain: ""  # 没找到合适的图：用色块
+  food:yogurt-sweet: ""  # 没找到合适的图：用色块
+  food:greek-yogurt: "File:Turkish strained yogurt.jpg"
+  food:cheese: cheddar cheese slices
+  food:whey: "File:Protein Powder Mix (44547187900).jpg"
+  food:tofu-firm: ""  # 没找到合适的图：用色块
+  food:tofu-soft: "File:Fresh silken tofu (cropped).jpg"
+  food:tofu-dry: ""  # 没找到合适的图：用色块
+  food:soymilk: soy milk glass
+  food:edamame: edamame
+  # 蔬菜
+  food:broccoli: "File:Stir-fried broccoli.jpg"
+  food:spinach: spinach leaves
+  food:lettuce: "File:Lettuce Leaves, Mar 2026.jpg"
+  food:bok-choy: "File:Stir Fried Bok Choy, Aug 2025.jpg"
+  food:napa-cabbage: "File:Napa Cabbage.jpg"
+  food:cabbage: green cabbage
+  food:tomato: "File:Round Red Tomato.jpg"
+  food:cucumber: cucumber
+  food:carrot: carrots
+  food:green-pepper: "File:Green bell peppers.jpg"
+  food:eggplant: chinese eggplant
+  food:onion: onions
+  food:mushroom: "File:2016-01 Agaricus bisporus 01.jpg"
+  food:shiitake: "File:Fresh shiitake mushrooms.jpg"
+  food:enoki: ""  # 没找到合适的图：用色块
+  food:bean-sprouts: mung bean sprouts
+  food:celery: ""  # 没找到合适的图：用色块
+  food:zucchini: zucchini
+  food:winter-melon: "File:Cut wax gourd for sale in Tokyo - Sep 15 2020.jpeg"
+  food:pumpkin: pumpkin cut
+  food:okra: okra
+  food:asparagus: "File:Asparagus-Bundle.jpg"
+  food:green-beans: green beans
+  food:lotus-root: lotus root sliced
+  food:kelp: kelp seaweed
+  food:wood-ear: ""  # 没找到合适的图：用色块
+  # 水果
+  food:apple: red apple
+  food:banana: bananas
+  food:orange: "File:Oranges - whole-halved-segment.jpg"
+  food:grapes: "File:Green Grape 3.jpg"
+  food:watermelon: watermelon slice
+  food:strawberry: strawberries
+  food:blueberry: blueberries
+  food:kiwi: kiwifruit halved
+  food:pear: pear fruit
+  food:peach: peach fruit
+  food:mango: mango fruit
+  food:pineapple: "File:Pineapple Chunks.jpg"
+  food:pomelo: pomelo
+  food:melon: cantaloupe melon
+  food:cherry: cherries
+  food:avocado: avocado halved
+  # 坚果和油
+  food:peanuts: roasted peanuts
+  food:walnut: "File:Walnut kernels.jpg"
+  food:almond: almonds
+  food:cashew: "File:CASHEW NUTS.jpg"
+  food:sunflower-seeds: "File:Sunflowers seeds food.jpg"
+  food:peanut-butter: "File:Peanut butter glass.jpg"
+  food:sesame-paste: sesame paste tahini
+  food:oil: "File:Cooking Oil.jpg"
+  food:butter: butter block
+  food:sugar: "File:Sugar on a blue plate (close up).jpg"
+  # 饮品
+  food:cola: "File:Glass of Cola.jpg"
+  food:zero-drink: sparkling water glass
+  food:black-coffee: black coffee cup
+  food:tea: cup of green tea
+  food:latte: "File:Latte art.jpg"
+  food:milk-tea: bubble tea
+  food:orange-juice: orange juice glass
+  food:sports-drink: ""  # 没找到合适的图：用色块
+  food:beer: ""  # 没找到合适的图：用色块
+  food:wine: glass of red wine
+  # 零食
+  food:chips: potato chips bowl
+  food:crackers: saltine crackers
+  food:dark-chocolate: "File:Chocolate pistoles.jpg"
+  food:cake: cream cake slice
+  food:ice-cream: ice cream cone
+  food:protein-bar: protein bar
+  # 菜品
+  food:tomato-egg: tomato and egg stir fry
+  food:pepper-pork: "File:Pork stir-fried with black pepper (37000148695).jpg"
+  food:kungpao-chicken: kung pao chicken
+  food:yuxiang-pork: "File:鱼香肉丝.jpg"
+  food:mapo-tofu: mapo tofu
+  food:home-tofu: "File:Fried Tofu (炸豆腐) (cropped).jpg"
+  food:braised-pork: hong shao rou braised pork belly
+  food:twice-cooked-pork: twice cooked pork
+  food:stir-broccoli: "File:Stir-fried broccoli.jpg"
+  food:stir-greens: stir fried bok choy
+  food:potato-shreds: ""  # 没找到合适的图：用色块
+  food:disanxian: di san xian
+  food:yuxiang-eggplant: yuxiang eggplant
+  food:tomato-brisket: ""  # 没找到合适的图：用色块
+  food:beef-potato: beef and potato stew
+  food:boiled-fish: "File:酸菜魚.jpg"
+  food:steamed-fish: ""  # 没找到合适的图：用色块
+  food:boiled-shrimp: boiled shrimp plate
+  food:cucumber-salad: smashed cucumber salad
+  food:braised-chicken: huangmenji braised chicken
+  food:beef-noodles: lanzhou beef noodles
+  food:malatang: malatang
+  food:egg-fried-rice: egg fried rice
+  food:fried-noodles: "File:Fried noodles of Northeast China.png"
+  food:chicken-salad: "File:Caesar Salad & Grilled Chicken (30548011308).jpg"
+  food:burger: beef burger
+  food:jianbing: jianbing
+  food:egg-pancake: jidan guanbing
+  food:pork-congee: century egg and pork congee
+  # 推荐食谱
+  recipe:oat-egg-breakfast: "File:Banana oatmeal.jpg"
+  recipe:greek-yogurt-bowl: "File:Yogurt fruit bowl.jpg"
+  recipe:wholewheat-egg-sandwich: egg sandwich whole wheat
+  recipe:protein-shake: "File:Banana Smoothie.jpg"
+  recipe:chicken-brown-rice: "File:Liat Portal for Foodie Disorder - Healthy low-fat chicken, rice, broccoli, and sweet potato plate.jpg"
+  recipe:beef-broccoli: beef and broccoli stir fry
+  recipe:salmon-sweet-potato: salmon with sweet potato
+  recipe:shrimp-zucchini: ""  # 没找到合适的图：用色块
+  recipe:tomato-egg-noodles: "File:Tomato and egg noodles.jpg"
+  recipe:tofu-mushroom: tofu mushroom stew
+  recipe:chicken-salad-bowl: chicken quinoa salad
+  recipe:tuna-rice-bowl: tuna rice bowl
+  recipe:steamed-fish-meal: ""  # 没找到合适的图：用色块
+  recipe:lean-pork-pepper: "File:Pork stir-fried with black pepper (37000148695).jpg"
+  recipe:chicken-thigh-potato: chicken potato carrot stew
+  recipe:egg-veg-congee: "File:Korean rice porridge Vegetable juk.jpg"
+  recipe:beef-noodle-soup: beef noodle soup
+  recipe:edamame-snack: boiled edamame bowl
+  recipe:yogurt-banana-snack: "File:BananaYogurt.jpg"
+  recipe:shrimp-egg-fried-rice: shrimp fried rice
+  # 减脂餐
+  preset:takeout-chicken-rice: "File:Lemongrass chicken rice bowl with kimchi.jpg"
+  preset:takeout-beef-noodle: beef noodle soup bowl
+  preset:takeout-wrap: chicken wrap
+  preset:takeout-poke: "File:Ahi tuna Poke.jpeg"
+  preset:canteen-fish-two-veg: ""  # 没找到合适的图：用色块
+  preset:canteen-tomato-egg: tomato egg stir fry with rice
+  preset:store-oden: oden
+  preset:store-sandwich: chicken sandwich
+  preset:store-sweet-potato: roasted sweet potato
+  preset:home-oats: "File:Cooked oatmeal in bowl.jpg"
+  preset:home-salmon: "File:Grilled salmon and asparagus on rice - Boston, Massachusetts.jpg"
+  preset:home-tofu: mapo tofu with rice

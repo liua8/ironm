@@ -6,6 +6,7 @@
 #   card      plan / log / none：这一轮出不出预览卡片、是哪种；不写就不检查
 #   illness   这一轮之后重放账号有几条生病记录；不写就不检查
 #   asks      这一轮最多问几个问题（按问号数）；不写就不检查
+#   confirm   true：这一轮出的计划预览当场确认，后面几轮在这份计划上改（§120）
 # 只用规则判断，不打分。
 
 profile: {height_cm: 175, birth: "1995-06-01", sex: male, goal: fat_loss, activity: moderate}
@@ -189,3 +190,18 @@ cases:
       - say: 为什么这么调，依据是什么
         must_not: [〔]
         card: none
+
+  - id: action-tools
+    from: §120 动作改成工具：排计划（确认后保存）→ 整体减量 → 记一次训练，回答和卡片说的是同一件事
+    turns:
+      - say: 给我一份训练计划，我在家练，有一对哑铃，每周 3 次，每次 40 分钟，没有伤病
+        card: none
+      - say: 按这个排
+        card: plan
+        confirm: true
+      - say: 这周起整体练轻一点，以后都这样
+        must_not: [这次没改成]
+        card: plan
+      - say: 今天练了高脚杯深蹲 3 组，每组 12 次，哑铃 16 公斤
+        must_not: [这次没改成]
+        card: log

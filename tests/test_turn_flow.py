@@ -5,12 +5,13 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+from ironm_agent.actions import NEW_PLAN, NUDGE_PLAN
 from ironm_agent.casefile import Snapshot
 from ironm_agent.clarify import HEAD, MARK
 from ironm_agent.llm import ModelUnavailable, Reply, Stage
 from ironm_agent.memory_store import Change, Item, MemoryBook
 from ironm_agent.metrics import Profile, Readings
-from tests.fakes import jsonr, system_of
+from tests.fakes import again, call, jsonr, system_of, tool_results
 from tests.test_plugin import agent, shown, text_of
 
 TODAY = date(2026, 10, 23)
@@ -19,12 +20,17 @@ T0 = datetime(2026, 10, 20, tzinfo=UTC)
 
 class Coach:
     """假模型（单 Agent）：作答环节回答一句（extra 是 JSON 里另加的字段），记下收到的系统提示和输入；
+    act 给了时先调用那个动作工具（§120），被退回照原样再交一次，之后作答；
     选规程环节给不出合格的结果，退回按关键词选（§75）；约束改写环节照原样再说一遍。"""
 
     def __init__(
-        self, answer: str = "管家的回答〔经验〕", down: bool = False, **extra: Any
+        self,
+        answer: str = "管家的回答〔经验〕",
+        down: bool = False,
+        act: tuple[str, Mapping[str, Any]] | None = None,
+        **extra: Any,
     ) -> None:
-        self.answer, self.down, self.extra = answer, down, extra
+        self.answer, self.down, self.extra, self.act = answer, down, extra, act
         self.stages: list[str] = []
         self.system = ""
         self.input = ""
@@ -43,6 +49,9 @@ class Coach:
         self.system = system_of(messages)
         self.input = str(messages[1]["content"]) if len(messages) > 1 else ""
         self.seen.append(self.system + "\n" + self.input)
+        results = tool_results(messages)
+        if self.act and (not results or (len(results) < 2 and again(results[-1]))):
+            return call(self.act[0], **self.act[1])
         return jsonr({"answer": self.answer, **self.extra})
 
 
@@ -154,11 +163,11 @@ def test_risk_note_shows_once_per_session(monkeypatch: Any) -> None:
 
 
 def test_new_user_asking_for_a_plan_is_asked_first(monkeypatch: Any) -> None:
-    t = Coach("好，先确认一下条件。", action="new_plan")
+    t = Coach(f"{HEAD}：目标、场景、器械、时间、伤病，还是这样吗？")  # 它决定先列条件（§120 不再写 action）
     a = agent(t, monkeypatch=monkeypatch, snapshot=snapshot_of(profile=Profile()))
     blocks, seen = run(a, "帮我做个训练计划")
     assert seen["path"] == "clarify" and HEAD in text_of(blocks) and not cards(blocks)
-    assert t.stages.count("expert") == 1  # 只问不排：不出预览、不补写计划
+    assert t.stages.count("expert") == 1  # 只问不排：不出预览、不提醒交计划
 
 
 def test_poor_readiness_constrains_the_answer(monkeypatch: Any) -> None:
@@ -217,7 +226,7 @@ def test_cited_case_file_numbers_show_up_in_sources(monkeypatch: Any) -> None:
     assert "计算" in sources and "BMI" in sources and f"BMI 是 {value}" in text_of(blocks)
 
 
-def test_missing_plan_json_is_written_in_a_second_call(monkeypatch: Any) -> None:
+def test_missing_plan_is_asked_for_again_in_the_same_turn(monkeypatch: Any) -> None:
     from ironm_agent.training import TrainingBook
 
     plan = {"title": "一练", "days_per_week": 1, "sessions": [{"day": 1, "name": "全身", "items": [{"exercise": "臀桥", "sets": 3, "reps": "12"}]}]}  # fmt: skip
@@ -226,10 +235,12 @@ def test_missing_plan_json_is_written_in_a_second_call(monkeypatch: Any) -> None
         def __call__(
             self, stage: Stage, messages: Sequence[Mapping[str, Any]], tools: bool
         ) -> Reply:
-            if stage == "expert" and "不用写给用户的文字" in system_of(messages):
-                self.stages.append("write")
-                return jsonr({"plan": plan, "changes": "新排的"})
-            return super().__call__(stage, messages, tools)  # 只写了文字，忘了写 plan
+            if stage == "expert" and messages[-1].get("content") == NUDGE_PLAN:  # 同一轮提醒（§120）
+                self.stages.append("nudge")
+                return call(NEW_PLAN, plan=plan, changes="新排的")
+            if stage == "expert" and tool_results(messages):
+                self.act = None
+            return super().__call__(stage, messages, tools)  # 只写了文字，忘了交计划
 
     t = Forgetful("给你排了每周一练的全身计划〔经验〕。")
     a = agent(
@@ -245,8 +256,8 @@ def test_missing_plan_json_is_written_in_a_second_call(monkeypatch: Any) -> None
 
     a._history = asked
     blocks, seen = run(a, "按这个排")
-    assert seen["task"] == "plan" and seen["preview"] == "plan" and seen.get("preview_retry")
-    assert "write" in t.stages and cards(blocks)
+    assert seen["task"] == "plan" and seen["preview"] == "plan" and seen["_experts"][0]["nudged"]
+    assert "nudge" in t.stages and cards(blocks)
     assert "点「确认」才会保存" in text_of(blocks)
 
 
@@ -277,7 +288,7 @@ def test_how_to_question_teaches_with_feel_cues(monkeypatch: Any) -> None:
     )
     assert "动作教学" in tasks_of(blocks)["管家"] and "move-coach" in seen["skills"]["general"]
     assert (
-        "【动作教学】（决策卡）" in t.system and "取「怎么讲」一节的对照" in t.system
+        "【动作教学】（步骤卡）" in t.system and "取「怎么讲」一节的对照" in t.system
     )  # 对照表按节取（§99）
     assert "体感提示：" in t.input
     # 换动作也是同一份

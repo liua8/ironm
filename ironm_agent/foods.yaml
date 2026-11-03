@@ -1,0 +1,184 @@
+# 常见食物库（spec [2026-10-23] §118 需求 1）：记一餐、改份量、食谱、饮食计划都按这里算。
+# 原料：每 100 克可食部分的 [热量 千卡, 蛋白质 克, 碳水 克, 脂肪 克]；肉和水产标明生重还是熟重。
+#   数值按 USDA FoodData Central（公有领域）等公开资料整理并取整，个别中式食物参考常见公开数据；
+#   有版权的成分表原文不进仓库。
+#   碳水按公开数据含膳食纤维，纤维多的蔬菜按"碳水 × 4"算热量会比这里写的高一些，热量以这里写的为准。
+# 菜品：只写原料各多少克（生重）和多少油，每 100 克的营养由代码按原料算；按原料总重算每 100 克，
+#   没算烹调中水分的变化，是估算。油量少油 ×0.5、多油 ×1.5（经验）。
+# unit：常见的一份叫什么、大约多少克（菜品默认一份 = 原料加油的总重）。
+# 内容由 Claude 整理，待审定。
+version: "0.1"
+review: claude_draft
+
+foods:
+  # ---- 主食（熟重，另注明的除外）----
+  - {id: rice, name: 米饭, aka: [白米饭, 大米饭, 白饭], cat: 主食, per100: [130, 2.7, 28.2, 0.3], unit: [碗, 150]}
+  - {id: brown-rice, name: 糙米饭, aka: [糙米], cat: 主食, per100: [123, 2.7, 25.6, 1.0], unit: [碗, 150]}
+  - {id: congee, name: 白粥, aka: [大米粥, 稀饭, 粥], cat: 主食, per100: [46, 1.1, 9.9, 0.1], unit: [碗, 250]}
+  - {id: millet-congee, name: 小米粥, aka: [小米稀饭], cat: 主食, per100: [46, 1.4, 8.4, 0.7], unit: [碗, 250]}
+  - {id: oats, name: 燕麦片（干）, aka: [燕麦, 燕麦片, 麦片], cat: 主食, per100: [379, 13.2, 67.7, 6.5], unit: [份, 40]}
+  - {id: noodles, name: 面条（煮熟）, aka: [面条, 面, 挂面, 拉面], cat: 主食, per100: [140, 4.6, 29.0, 0.7], unit: [碗, 300]}
+  - {id: rice-noodles, name: 米粉（煮熟）, aka: [米粉, 米线, 河粉], cat: 主食, per100: [108, 1.8, 24.0, 0.2], unit: [碗, 300]}
+  - {id: pasta, name: 意面（煮熟）, aka: [意大利面, 意面], cat: 主食, per100: [158, 5.8, 30.9, 0.9], unit: [盘, 200]}
+  - {id: mantou, name: 馒头, aka: [白馒头], cat: 主食, per100: [223, 7.0, 47.0, 1.1], unit: [个, 100]}
+  - {id: pork-bun, name: 肉包, aka: [肉包子, 包子, 猪肉包], cat: 主食, per100: [228, 8.0, 30.0, 8.5], unit: [个, 80]}
+  - {id: dumplings, name: 饺子（猪肉白菜）, aka: [饺子, 水饺], cat: 主食, per100: [217, 9.0, 25.0, 9.0], unit: [个, 25]}
+  - {id: youtiao, name: 油条, aka: [], cat: 主食, per100: [388, 6.9, 51.0, 17.6], unit: [根, 60]}
+  - {id: white-bread, name: 白吐司, aka: [吐司, 白面包, 面包], cat: 主食, per100: [266, 7.6, 50.6, 3.3], unit: [片, 30]}
+  - {id: wholewheat-bread, name: 全麦面包, aka: [全麦吐司], cat: 主食, per100: [252, 12.4, 42.7, 3.5], unit: [片, 30]}
+  - {id: flour, name: 小麦粉（干）, aka: [面粉], cat: 主食, per100: [364, 10.3, 76.3, 1.0], unit: [克, 1]}
+  - {id: corn, name: 玉米（煮）, aka: [玉米, 甜玉米, 玉米棒], cat: 主食, per100: [96, 3.4, 21.0, 1.5], unit: [根, 150]}
+  - {id: sweet-potato, name: 红薯（蒸）, aka: [红薯, 地瓜, 番薯, 紫薯], cat: 主食, per100: [90, 2.0, 20.7, 0.2], unit: [个, 200]}
+  - {id: potato, name: 土豆, aka: [马铃薯, 土豆（蒸）], cat: 主食, per100: [87, 1.9, 20.0, 0.1], unit: [个, 150]}
+  - {id: yam, name: 山药, aka: [铁棍山药], cat: 主食, per100: [57, 1.9, 12.4, 0.2], unit: [根, 200]}
+  - {id: rice-cake, name: 年糕, aka: [], cat: 主食, per100: [154, 3.3, 34.7, 0.6], unit: [份, 100]}
+  - {id: quinoa, name: 藜麦（煮熟）, aka: [藜麦], cat: 主食, per100: [120, 4.4, 21.3, 1.9], unit: [碗, 150]}
+
+  # ---- 肉蛋（生重 / 熟重分开写）----
+  - {id: egg, name: 鸡蛋, aka: [煮鸡蛋, 水煮蛋, 茶叶蛋, 蛋], cat: 肉蛋, per100: [143, 12.6, 0.7, 9.5], unit: [个, 50]}
+  - {id: egg-white, name: 鸡蛋白, aka: [蛋白, 蛋清], cat: 肉蛋, per100: [52, 10.9, 0.7, 0.2], unit: [个, 33]}
+  - {id: chicken-breast, name: 鸡胸肉（熟）, aka: [鸡胸肉, 鸡胸, 鸡肉], cat: 肉蛋, per100: [165, 31.0, 0, 3.6], unit: [块, 150]}
+  - {id: chicken-breast-raw, name: 鸡胸肉（生）, aka: [生鸡胸肉], cat: 肉蛋, per100: [120, 22.5, 0, 2.6], unit: [块, 200]}
+  - {id: chicken-thigh, name: 鸡腿肉（熟、去皮）, aka: [鸡腿肉, 鸡腿], cat: 肉蛋, per100: [209, 26.0, 0, 10.9], unit: [个, 100]}
+  - {id: chicken-thigh-raw, name: 鸡腿肉（生、去皮）, aka: [生鸡腿肉], cat: 肉蛋, per100: [121, 19.7, 0, 4.1], unit: [个, 130]}
+  - {id: pork-lean-raw, name: 猪里脊（生）, aka: [猪里脊, 瘦猪肉, 猪瘦肉], cat: 肉蛋, per100: [120, 21.0, 0, 3.5], unit: [份, 100]}
+  - {id: pork-belly-raw, name: 五花肉（生）, aka: [五花肉], cat: 肉蛋, per100: [518, 9.3, 0, 53.0], unit: [份, 100]}
+  - {id: pork-mince-raw, name: 猪肉末（生）, aka: [猪肉馅, 肉末, 肉馅], cat: 肉蛋, per100: [263, 16.9, 0, 21.2], unit: [份, 100]}
+  - {id: beef-lean-raw, name: 瘦牛肉（生）, aka: [牛里脊, 牛肉], cat: 肉蛋, per100: [125, 21.5, 0, 4.4], unit: [份, 150]}
+  - {id: beef-lean, name: 瘦牛肉（熟）, aka: [熟牛肉, 卤牛肉, 酱牛肉], cat: 肉蛋, per100: [178, 30.0, 0, 6.5], unit: [份, 100]}
+  - {id: beef-brisket-raw, name: 牛腩（生）, aka: [牛腩], cat: 肉蛋, per100: [250, 17.4, 0, 19.6], unit: [份, 150]}
+  - {id: beef-mince-raw, name: 牛肉末（生）, aka: [牛肉馅, 牛肉饼], cat: 肉蛋, per100: [254, 17.2, 0, 20.0], unit: [份, 100]}
+  - {id: lamb-lean-raw, name: 瘦羊肉（生）, aka: [羊肉], cat: 肉蛋, per100: [140, 20.0, 0, 6.5], unit: [份, 150]}
+
+  # ---- 水产 ----
+  - {id: salmon-raw, name: 三文鱼（生）, aka: [三文鱼, 鲑鱼], cat: 水产, per100: [208, 20.4, 0, 13.4], unit: [块, 120]}
+  - {id: cod-raw, name: 鳕鱼（生）, aka: [鳕鱼], cat: 水产, per100: [82, 17.8, 0, 0.7], unit: [块, 150]}
+  - {id: grass-carp-raw, name: 草鱼（生）, aka: [草鱼, 鱼肉, 鲈鱼, 鱼], cat: 水产, per100: [113, 16.6, 0, 5.2], unit: [份, 200]}
+  - {id: shrimp-raw, name: 虾仁（生）, aka: [虾仁, 生虾], cat: 水产, per100: [85, 20.1, 0, 0.5], unit: [份, 150]}
+  - {id: shrimp, name: 虾（熟）, aka: [虾, 白灼虾肉, 熟虾仁], cat: 水产, per100: [99, 24.0, 0.2, 0.3], unit: [份, 150]}
+  - {id: tuna-can, name: 金枪鱼罐头（水浸）, aka: [金枪鱼, 吞拿鱼], cat: 水产, per100: [116, 25.5, 0, 0.8], unit: [罐, 120]}
+  - {id: squid, name: 鱿鱼, aka: [], cat: 水产, per100: [92, 15.6, 3.1, 1.4], unit: [份, 150]}
+
+  # ---- 奶和豆制品 ----
+  - {id: milk, name: 牛奶（全脂）, aka: [牛奶, 纯牛奶, 鲜奶], cat: 奶豆, per100: [61, 3.2, 4.8, 3.3], unit: [盒, 250]}
+  - {id: skim-milk, name: 脱脂牛奶, aka: [脱脂奶], cat: 奶豆, per100: [34, 3.4, 5.0, 0.1], unit: [盒, 250]}
+  - {id: yogurt-plain, name: 无糖酸奶, aka: [原味无糖酸奶], cat: 奶豆, per100: [61, 3.5, 4.7, 3.3], unit: [杯, 150]}
+  - {id: yogurt-sweet, name: 酸奶（含糖）, aka: [酸奶], cat: 奶豆, per100: [90, 2.9, 14.0, 2.7], unit: [杯, 150]}
+  - {id: greek-yogurt, name: 希腊酸奶（无糖脱脂）, aka: [希腊酸奶], cat: 奶豆, per100: [59, 10.2, 3.6, 0.4], unit: [杯, 150]}
+  - {id: cheese, name: 奶酪, aka: [芝士, 奶酪片], cat: 奶豆, per100: [403, 24.9, 1.3, 33.1], unit: [片, 20]}
+  - {id: whey, name: 乳清蛋白粉, aka: [蛋白粉, 乳清], cat: 奶豆, per100: [389, 78.0, 8.0, 5.0], unit: [勺, 30]}
+  - {id: tofu-firm, name: 老豆腐, aka: [北豆腐, 豆腐], cat: 奶豆, per100: [98, 12.2, 1.5, 4.8], unit: [块, 200]}
+  - {id: tofu-soft, name: 嫩豆腐, aka: [南豆腐, 内酯豆腐], cat: 奶豆, per100: [57, 6.2, 2.0, 2.5], unit: [盒, 300]}
+  - {id: tofu-dry, name: 豆干, aka: [豆腐干, 香干], cat: 奶豆, per100: [140, 16.2, 11.5, 3.6], unit: [块, 50]}
+  - {id: soymilk, name: 豆浆（无糖）, aka: [豆浆, 无糖豆浆], cat: 奶豆, per100: [33, 2.9, 1.7, 1.6], unit: [杯, 250]}
+  - {id: edamame, name: 毛豆（煮）, aka: [毛豆], cat: 奶豆, per100: [121, 11.9, 8.9, 5.2], unit: [份, 100]}
+
+  # ---- 蔬菜（生重）----
+  - {id: broccoli, name: 西兰花, aka: [西蓝花, 绿花菜], cat: 蔬菜, per100: [34, 2.8, 6.6, 0.4], unit: [份, 200]}
+  - {id: spinach, name: 菠菜, aka: [], cat: 蔬菜, per100: [23, 2.9, 3.6, 0.4], unit: [份, 200]}
+  - {id: lettuce, name: 生菜, aka: [油麦菜, 罗马生菜], cat: 蔬菜, per100: [15, 1.4, 2.9, 0.2], unit: [份, 100]}
+  - {id: bok-choy, name: 青菜, aka: [小白菜, 上海青, 油菜, 菜心, 绿叶菜], cat: 蔬菜, per100: [13, 1.5, 2.2, 0.2], unit: [份, 200]}
+  - {id: napa-cabbage, name: 大白菜, aka: [白菜], cat: 蔬菜, per100: [16, 1.2, 3.2, 0.2], unit: [份, 200]}
+  - {id: cabbage, name: 卷心菜, aka: [包菜, 圆白菜, 洋白菜], cat: 蔬菜, per100: [25, 1.3, 5.8, 0.1], unit: [份, 200]}
+  - {id: tomato, name: 番茄, aka: [西红柿], cat: 蔬菜, per100: [18, 0.9, 3.9, 0.2], unit: [个, 150]}
+  - {id: cucumber, name: 黄瓜, aka: [青瓜], cat: 蔬菜, per100: [15, 0.7, 3.6, 0.1], unit: [根, 200]}
+  - {id: carrot, name: 胡萝卜, aka: [], cat: 蔬菜, per100: [41, 0.9, 9.6, 0.2], unit: [根, 100]}
+  - {id: green-pepper, name: 青椒, aka: [甜椒, 彩椒, 尖椒], cat: 蔬菜, per100: [20, 0.9, 4.6, 0.2], unit: [个, 100]}
+  - {id: eggplant, name: 茄子, aka: [], cat: 蔬菜, per100: [25, 1.0, 5.9, 0.2], unit: [根, 250]}
+  - {id: onion, name: 洋葱, aka: [], cat: 蔬菜, per100: [40, 1.1, 9.3, 0.1], unit: [个, 150]}
+  - {id: mushroom, name: 白蘑菇, aka: [蘑菇, 口蘑], cat: 蔬菜, per100: [22, 3.1, 3.3, 0.3], unit: [份, 100]}
+  - {id: shiitake, name: 香菇, aka: [鲜香菇], cat: 蔬菜, per100: [34, 2.2, 6.8, 0.5], unit: [份, 100]}
+  - {id: enoki, name: 金针菇, aka: [], cat: 蔬菜, per100: [37, 2.7, 7.8, 0.3], unit: [把, 100]}
+  - {id: bean-sprouts, name: 豆芽, aka: [绿豆芽, 黄豆芽], cat: 蔬菜, per100: [30, 3.0, 5.9, 0.2], unit: [份, 150]}
+  - {id: celery, name: 芹菜, aka: [西芹], cat: 蔬菜, per100: [16, 0.7, 3.0, 0.2], unit: [份, 150]}
+  - {id: zucchini, name: 西葫芦, aka: [], cat: 蔬菜, per100: [17, 1.2, 3.1, 0.3], unit: [根, 250]}
+  - {id: winter-melon, name: 冬瓜, aka: [], cat: 蔬菜, per100: [13, 0.4, 3.0, 0.2], unit: [份, 200]}
+  - {id: pumpkin, name: 南瓜, aka: [], cat: 蔬菜, per100: [26, 1.0, 6.5, 0.1], unit: [份, 200]}
+  - {id: okra, name: 秋葵, aka: [], cat: 蔬菜, per100: [33, 1.9, 7.5, 0.2], unit: [份, 100]}
+  - {id: asparagus, name: 芦笋, aka: [], cat: 蔬菜, per100: [20, 2.2, 3.9, 0.1], unit: [份, 100]}
+  - {id: green-beans, name: 四季豆, aka: [豆角, 扁豆], cat: 蔬菜, per100: [31, 1.8, 7.0, 0.2], unit: [份, 150]}
+  - {id: lotus-root, name: 莲藕, aka: [藕], cat: 蔬菜, per100: [74, 2.6, 17.2, 0.1], unit: [份, 150]}
+  - {id: kelp, name: 海带（鲜）, aka: [海带], cat: 蔬菜, per100: [43, 1.7, 9.6, 0.6], unit: [份, 100]}
+  - {id: wood-ear, name: 木耳（泡发）, aka: [木耳, 黑木耳], cat: 蔬菜, per100: [27, 1.5, 6.0, 0.2], unit: [份, 50]}
+
+  # ---- 水果（可食部分）----
+  - {id: apple, name: 苹果, aka: [], cat: 水果, per100: [52, 0.3, 13.8, 0.2], unit: [个, 200]}
+  - {id: banana, name: 香蕉, aka: [], cat: 水果, per100: [89, 1.1, 22.8, 0.3], unit: [根, 120]}
+  - {id: orange, name: 橙子, aka: [橙, 橘子, 柑橘], cat: 水果, per100: [47, 0.9, 11.8, 0.1], unit: [个, 150]}
+  - {id: grapes, name: 葡萄, aka: [提子], cat: 水果, per100: [69, 0.7, 18.1, 0.2], unit: [份, 150]}
+  - {id: watermelon, name: 西瓜, aka: [], cat: 水果, per100: [30, 0.6, 7.6, 0.2], unit: [块, 300]}
+  - {id: strawberry, name: 草莓, aka: [], cat: 水果, per100: [32, 0.7, 7.7, 0.3], unit: [份, 150]}
+  - {id: blueberry, name: 蓝莓, aka: [], cat: 水果, per100: [57, 0.7, 14.5, 0.3], unit: [盒, 125]}
+  - {id: kiwi, name: 猕猴桃, aka: [奇异果], cat: 水果, per100: [61, 1.1, 14.7, 0.5], unit: [个, 75]}
+  - {id: pear, name: 梨, aka: [], cat: 水果, per100: [57, 0.4, 15.2, 0.1], unit: [个, 200]}
+  - {id: peach, name: 桃, aka: [桃子], cat: 水果, per100: [39, 0.9, 9.5, 0.3], unit: [个, 150]}
+  - {id: mango, name: 芒果, aka: [], cat: 水果, per100: [60, 0.8, 15.0, 0.4], unit: [个, 200]}
+  - {id: pineapple, name: 菠萝, aka: [凤梨], cat: 水果, per100: [50, 0.5, 13.1, 0.1], unit: [份, 150]}
+  - {id: pomelo, name: 柚子, aka: [西柚], cat: 水果, per100: [38, 0.8, 9.6, 0.0], unit: [份, 200]}
+  - {id: melon, name: 哈密瓜, aka: [甜瓜], cat: 水果, per100: [34, 0.8, 8.2, 0.2], unit: [块, 200]}
+  - {id: cherry, name: 樱桃, aka: [车厘子], cat: 水果, per100: [63, 1.1, 16.0, 0.2], unit: [份, 100]}
+  - {id: avocado, name: 牛油果, aka: [鳄梨], cat: 水果, per100: [160, 2.0, 8.5, 14.7], unit: [个, 140]}
+
+  # ---- 坚果和油、调料 ----
+  - {id: peanuts, name: 花生（炒）, aka: [花生, 花生米], cat: 坚果油, per100: [585, 23.7, 21.5, 49.7], unit: [把, 20]}
+  - {id: walnut, name: 核桃, aka: [核桃仁], cat: 坚果油, per100: [654, 15.2, 13.7, 65.2], unit: [把, 20]}
+  - {id: almond, name: 杏仁, aka: [巴旦木, 扁桃仁], cat: 坚果油, per100: [579, 21.2, 21.6, 49.9], unit: [把, 20]}
+  - {id: cashew, name: 腰果, aka: [], cat: 坚果油, per100: [553, 18.2, 30.2, 43.9], unit: [把, 20]}
+  - {id: sunflower-seeds, name: 瓜子（葵花子）, aka: [瓜子, 葵花子], cat: 坚果油, per100: [582, 19.3, 24.0, 49.8], unit: [把, 20]}
+  - {id: peanut-butter, name: 花生酱, aka: [], cat: 坚果油, per100: [588, 25.1, 20.0, 50.4], unit: [勺, 15]}
+  - {id: sesame-paste, name: 芝麻酱, aka: [麻酱], cat: 坚果油, per100: [595, 17.0, 21.0, 54.0], unit: [勺, 15]}
+  - {id: oil, name: 食用油, aka: [油, 植物油, 花生油, 橄榄油, 香油, 麻油], cat: 坚果油, per100: [884, 0, 0, 100], unit: [勺, 10]}
+  - {id: butter, name: 黄油, aka: [], cat: 坚果油, per100: [717, 0.9, 0.1, 81.0], unit: [块, 10]}
+  - {id: sugar, name: 白砂糖, aka: [糖, 白糖, 冰糖], cat: 坚果油, per100: [387, 0, 100, 0], unit: [勺, 10]}
+
+  # ---- 饮品 ----
+  - {id: cola, name: 可乐, aka: [含糖可乐, 汽水, 雪碧], cat: 饮品, per100: [42, 0, 10.6, 0], unit: [罐, 330]}
+  - {id: zero-drink, name: 无糖饮料, aka: [无糖可乐, 零度可乐, 苏打水, 气泡水], cat: 饮品, per100: [0, 0, 0, 0], unit: [罐, 330]}
+  - {id: black-coffee, name: 美式咖啡, aka: [黑咖啡, 咖啡, 美式], cat: 饮品, per100: [1, 0.1, 0, 0], unit: [杯, 350]}
+  - {id: tea, name: 茶（不加糖）, aka: [茶, 绿茶, 红茶, 乌龙茶], cat: 饮品, per100: [1, 0, 0.2, 0], unit: [杯, 350]}
+  - {id: latte, name: 拿铁（全脂奶）, aka: [拿铁, 拿铁咖啡], cat: 饮品, per100: [46, 2.4, 3.6, 2.5], unit: [杯, 400]}
+  - {id: milk-tea, name: 奶茶（全糖）, aka: [奶茶, 珍珠奶茶], cat: 饮品, per100: [71, 0.8, 12.0, 2.2], unit: [杯, 500]}
+  - {id: orange-juice, name: 橙汁, aka: [果汁], cat: 饮品, per100: [45, 0.7, 10.4, 0.2], unit: [杯, 250]}
+  - {id: sports-drink, name: 运动饮料, aka: [宝矿力, 佳得乐], cat: 饮品, per100: [26, 0, 6.4, 0], unit: [瓶, 500]}
+  - {id: beer, name: 啤酒, aka: [], cat: 饮品, per100: [43, 0.5, 3.6, 0], unit: [罐, 330], alcohol: true}
+  - {id: wine, name: 红酒, aka: [葡萄酒], cat: 饮品, per100: [85, 0.1, 2.6, 0], unit: [杯, 150], alcohol: true}
+
+  # ---- 零食 ----
+  - {id: chips, name: 薯片, aka: [], cat: 零食, per100: [536, 6.6, 53.0, 34.6], unit: [包, 50]}
+  - {id: crackers, name: 苏打饼干, aka: [饼干], cat: 零食, per100: [414, 9.5, 74.0, 8.9], unit: [片, 8]}
+  - {id: dark-chocolate, name: 黑巧克力（70%）, aka: [黑巧克力, 巧克力], cat: 零食, per100: [598, 7.8, 45.9, 42.6], unit: [块, 10]}
+  - {id: cake, name: 奶油蛋糕, aka: [蛋糕], cat: 零食, per100: [353, 5.0, 45.0, 17.0], unit: [块, 100]}
+  - {id: ice-cream, name: 冰淇淋, aka: [雪糕], cat: 零食, per100: [207, 3.5, 23.6, 11.0], unit: [个, 70]}
+  - {id: protein-bar, name: 蛋白棒, aka: [能量棒], cat: 零食, per100: [388, 30.0, 40.0, 12.0], unit: [根, 60]}
+
+# 常见菜品、外卖、早餐：原料（生重，克）+ 油（克，正常油量）；营养由代码按原料算
+dishes:
+  - {id: tomato-egg, name: 番茄炒蛋, aka: [西红柿炒鸡蛋, 西红柿炒蛋, 番茄炒鸡蛋], cat: 家常菜, parts: {鸡蛋: 100, 番茄: 200}, oil: 10, unit: 盘}
+  - {id: pepper-pork, name: 青椒肉丝, aka: [青椒炒肉], cat: 家常菜, parts: {猪里脊（生）: 100, 青椒: 150}, oil: 12, unit: 盘}
+  - {id: kungpao-chicken, name: 宫保鸡丁, aka: [宫爆鸡丁], cat: 家常菜, parts: {鸡胸肉（生）: 150, 花生（炒）: 20, 黄瓜: 50, 白砂糖: 8}, oil: 15, unit: 盘}
+  - {id: yuxiang-pork, name: 鱼香肉丝, aka: [], cat: 家常菜, parts: {猪里脊（生）: 100, 胡萝卜: 50, 木耳（泡发）: 50, 青椒: 50, 白砂糖: 10}, oil: 15, unit: 盘}
+  - {id: mapo-tofu, name: 麻婆豆腐, aka: [], cat: 家常菜, parts: {嫩豆腐: 300, 猪肉末（生）: 50}, oil: 15, unit: 盘}
+  - {id: home-tofu, name: 家常豆腐, aka: [], cat: 家常菜, parts: {老豆腐: 250, 青椒: 50, 猪肉末（生）: 30}, oil: 20, unit: 盘}
+  - {id: braised-pork, name: 红烧肉, aka: [], cat: 家常菜, parts: {五花肉（生）: 200, 白砂糖: 10}, oil: 5, unit: 份}
+  - {id: twice-cooked-pork, name: 回锅肉, aka: [], cat: 家常菜, parts: {五花肉（生）: 150, 青椒: 100}, oil: 10, unit: 盘}
+  - {id: stir-broccoli, name: 清炒西兰花, aka: [蒜蓉西兰花, 炒西兰花], cat: 家常菜, parts: {西兰花: 250}, oil: 10, unit: 盘}
+  - {id: stir-greens, name: 清炒青菜, aka: [炒青菜, 蒜蓉青菜, 炒时蔬], cat: 家常菜, parts: {青菜: 300}, oil: 10, unit: 盘}
+  - {id: potato-shreds, name: 酸辣土豆丝, aka: [土豆丝, 炒土豆丝], cat: 家常菜, parts: {土豆: 250}, oil: 12, unit: 盘}
+  - {id: disanxian, name: 地三鲜, aka: [], cat: 家常菜, parts: {茄子: 150, 土豆: 100, 青椒: 50}, oil: 30, unit: 盘}
+  - {id: yuxiang-eggplant, name: 鱼香茄子, aka: [红烧茄子], cat: 家常菜, parts: {茄子: 300, 猪肉末（生）: 30, 白砂糖: 10}, oil: 30, unit: 盘}
+  - {id: tomato-brisket, name: 番茄牛腩, aka: [西红柿牛腩], cat: 家常菜, parts: {牛腩（生）: 200, 番茄: 300}, oil: 10, unit: 份}
+  - {id: beef-potato, name: 土豆炖牛肉, aka: [土豆烧牛肉], cat: 家常菜, parts: {瘦牛肉（生）: 200, 土豆: 200, 胡萝卜: 50}, oil: 10, unit: 份}
+  - {id: boiled-fish, name: 水煮鱼, aka: [酸菜鱼], cat: 家常菜, parts: {草鱼（生）: 250, 豆芽: 150}, oil: 40, unit: 份}
+  - {id: steamed-fish, name: 清蒸鱼, aka: [清蒸鲈鱼], cat: 家常菜, parts: {草鱼（生）: 300}, oil: 10, unit: 份}
+  - {id: boiled-shrimp, name: 白灼虾, aka: [], cat: 家常菜, parts: {虾仁（生）: 200}, oil: 0, unit: 份}
+  - {id: cucumber-salad, name: 拍黄瓜, aka: [凉拌黄瓜], cat: 家常菜, parts: {黄瓜: 200}, oil: 5, unit: 盘}
+  - {id: braised-chicken, name: 黄焖鸡, aka: [黄焖鸡米饭的菜], cat: 外卖, parts: {鸡腿肉（生、去皮）: 200, 香菇: 50, 青椒: 50, 土豆: 100}, oil: 15, unit: 份}
+  - {id: beef-noodles, name: 牛肉面, aka: [兰州拉面, 牛肉拉面], cat: 外卖, parts: {面条（煮熟）: 300, 瘦牛肉（熟）: 50, 青菜: 50}, oil: 10, unit: 碗}
+  - {id: malatang, name: 麻辣烫, aka: [麻辣香锅], cat: 外卖, parts: {青菜: 100, 土豆: 50, 老豆腐: 50, 金针菇: 50, 面条（煮熟）: 100}, oil: 20, unit: 份}
+  - {id: egg-fried-rice, name: 蛋炒饭, aka: [炒饭], cat: 外卖, parts: {米饭: 300, 鸡蛋: 50}, oil: 15, unit: 盘}
+  - {id: fried-noodles, name: 炒面, aka: [], cat: 外卖, parts: {面条（煮熟）: 300, 青菜: 50, 猪里脊（生）: 30}, oil: 20, unit: 盘}
+  - {id: chicken-salad, name: 鸡胸肉沙拉, aka: [沙拉, 轻食沙拉], cat: 外卖, parts: {鸡胸肉（熟）: 100, 生菜: 100, 番茄: 50, 黄瓜: 50, 玉米（煮）: 30}, oil: 5, unit: 份}
+  - {id: burger, name: 牛肉汉堡, aka: [汉堡], cat: 外卖, parts: {白吐司: 80, 牛肉末（生）: 100, 生菜: 20, 番茄: 20, 奶酪: 20}, oil: 5, unit: 个}
+  - {id: jianbing, name: 煎饼果子, aka: [煎饼], cat: 早餐, parts: {小麦粉（干）: 80, 鸡蛋: 50, 油条: 30, 生菜: 10}, oil: 5, unit: 个}
+  - {id: egg-pancake, name: 鸡蛋灌饼, aka: [], cat: 早餐, parts: {小麦粉（干）: 80, 鸡蛋: 50, 生菜: 10}, oil: 10, unit: 个}
+  - {id: pork-congee, name: 皮蛋瘦肉粥, aka: [], cat: 早餐, parts: {白粥: 400, 猪里脊（生）: 30, 鸡蛋: 30}, oil: 0, unit: 碗}

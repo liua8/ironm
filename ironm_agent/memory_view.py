@@ -7,9 +7,10 @@ EVENT_DAYS 天、训练记录得出的偏好 DATA_DAYS 天没再被数据支持�
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from ironm_agent.memory_store import CATEGORIES, Category, Item, absolute, now
 
@@ -18,6 +19,7 @@ EVENT_DAYS = (
 )
 ADVICE_KEEP = 5  # 给过的建议只带最近几条
 DATA_DAYS = 56  # 训练记录得出的偏好多少天没再被数据支持就不用
+ADVICE_DAYS = 14  # 给过的建议多少天后不再给管家看（spec [2026-10-23] §109）
 MAX_FACTS = 60  # 超过这么多条有效记忆时按类别和优先级读取
 CATEGORY_CAP: dict[str, int] = {
     "injury": 15, "goal": 5, "style": 5, "equipment": 10, "schedule": 8, "diet": 10,
@@ -32,10 +34,39 @@ EVERYONE: tuple[Category, ...] = ("preference", "style")
 ORDER = tuple(CATEGORIES)
 
 
+_ONE_DAY = re.compile(r"今天|今晚|今早|今日|这次|当天")
+_ON_DAY = re.compile(r"(\d{1,2})月(\d{1,2})日")
+
+
+def advice_expired(item: Item, today: date) -> bool:
+    """给过的建议（§109）：写了到哪天的过了那天；以前存的、写着"今天、今晚"的过了说的那天；
+    写着日期的过了最后那个日期；其余 ADVICE_DAYS 天后不再用。"""
+    said = item.created.astimezone().date()
+    if item.until is not None:
+        return today > item.until
+    if _ONE_DAY.search(item.content) and today > said:
+        return True
+    days = [_date_in(said, int(m), int(d)) for m, d in _ON_DAY.findall(item.content)]
+    if days and today > max(x for x in days if x is not None):
+        return True
+    return (today - said).days > ADVICE_DAYS
+
+
+def _date_in(said: date, month: int, day: int) -> date | None:
+    """内容里的"11月2日"按说的那年算（跨年的往后算一年）。"""
+    try:
+        got = date(said.year, month, day)
+    except ValueError:
+        return said
+    return got if got >= said - timedelta(days=31) else date(said.year + 1, month, day)
+
+
 def expired(item: Item, at: datetime | None = None) -> bool:
     at = at or now()
     if item.origin == "data":  # 训练记录得出的偏好：每次还被数据支持时会刷新 updated
         return at - item.updated > timedelta(days=DATA_DAYS)
+    if item.category == "advice":
+        return advice_expired(item, at.astimezone().date())
     if item.category != "event":
         return False
     if item.until is not None:  # 写了到哪天为止的近况，过了那天不再用（spec [2026-10-23] §68）
@@ -84,8 +115,11 @@ class Recall:
 
     @classmethod
     def of(cls, items: Sequence[Item], at: datetime | None = None) -> Recall:
+        from ironm_agent.latest import shadowed
+
+        gone = shadowed(items)  # 同一件事以最近的为准（§113）
         usable = [x for x in items if x.status in ("active", "resolved") and not expired(x, at)
-                  and x.category != "followup"]  # 待跟进只在单 Agent 的四层记忆里用（§73）  # fmt: skip
+                  and x.category != "followup" and x.id not in gone]  # 待跟进只在四层记忆里用（§73）  # fmt: skip
         advice = [x for x in usable if x.category == "advice"][-ADVICE_KEEP:]
         facts = [x for x in usable if x.category != "advice"]
         kept = _trim(facts)

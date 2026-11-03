@@ -301,6 +301,7 @@ PARTS: dict[str, re.Pattern[str]] = {
 }
 _PAIN = re.compile(r"疼|痛|伤|不舒服|酸|肿|弹响|咔咔响|响了一下|卡住|打软")
 NEAR_PAIN = 8  # 部位和疼痛的说法相隔几个字以内才算一起说的
+_POSTURE = re.compile(r"圆肩|驼背|含胸|头前伸|探颈|富贵包|骨盆前倾|骨盆后倾|高低肩|翼状肩|X型腿|O型腿|扁平足")
 
 
 def _hurts(part: re.Pattern[str], text: str) -> bool:
@@ -322,6 +323,8 @@ def injured_parts(memory: Sequence[Item], text: str) -> tuple[str, ...]:
     found = []
     for item in memory:
         if item.category == "injury" and item.status == "active":
+            if _POSTURE.search(item.content) and not _PAIN.search(item.content):
+                continue  # 只说了体态（"久坐导致圆肩"），没说疼和伤：不当成那个部位有伤（§108）
             found += [k for k, p in PARTS.items() if p.search(item.content)]
     found += [k for k, p in PARTS.items() if _hurts(p, text)]
     return tuple(dict.fromkeys(found))
@@ -357,7 +360,7 @@ class CaseFile:
         if self.today is not None:
             head = f"- 今天：{self.today.isoformat()}（周{'一二三四五六日'[self.today.weekday()]}）"
             if self.day:  # 今天的状态以这里为准（spec [2026-10-23] §54）
-                lines.append(head + "，今天的状态以这里为准（比对话里更早的说法新）：")
+                lines.append(head + "，今天的状态以这里为准（比对话里更早的说法新；他这一句刚说的更新，冲突时按他这一句）：")
                 lines += [f"  {x}" for x in self.day]
             else:
                 lines.append(head)

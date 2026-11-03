@@ -319,7 +319,7 @@ def test_skill_and_app_guide_explain_how_many_plans() -> None:
     from pathlib import Path
 
     body = next(x for x in skills() if x.id == "plan-build").body
-    assert "## 问有多少计划、有哪些计划" in body and "什么都不填" in body
+    assert "## 问有多少计划\n" in body and "什么都不填" in body
     guide = (Path(__file__).parents[1] / "ironm_agent" / "app_guide.md").read_text(encoding="utf-8")
     assert "训练计划榜" in guide and "按我的情况用这个计划" in guide
     assert "社区榜" not in guide and "我排的" not in guide

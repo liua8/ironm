@@ -149,8 +149,10 @@ def test_review_actions_become_at_most_two_days_of_change() -> None:
 from collections.abc import Mapping, Sequence  # noqa: E402
 from typing import Any  # noqa: E402
 
+from ironm_agent.actions import PLAN_EDIT  # noqa: E402
 from ironm_agent.llm import Reply, Stage  # noqa: E402
 from ironm_agent.training import TrainingBook  # noqa: E402
+from tests.fakes import call, tool_results  # noqa: E402
 from tests.test_turn_flow import Coach, agent, jsonr, run, snapshot_of, system_of  # noqa: E402
 
 
@@ -191,7 +193,9 @@ def test_second_edit_in_the_same_chat_builds_on_the_first(monkeypatch: Any) -> N
             if stage == "expert":
                 asked = str(messages[1]["content"]).split("\n")[0]  # 用户的问题：……
                 ops = next(v for k, v in by_question.items() if k in asked)
-                return jsonr({"answer": "按你说的改了〔经验〕。", "ops": ops})
+                if not tool_results(messages):  # 调用工具交改动（§120）
+                    return call(PLAN_EDIT, ops=ops)
+                return jsonr({"answer": "按你说的改了〔经验〕。"})
             return super().__call__(stage, messages, tools)
 
     a, store = _seeded(Asked(), monkeypatch)
@@ -213,17 +217,22 @@ def test_second_edit_in_the_same_chat_builds_on_the_first(monkeypatch: Any) -> N
 
 
 class Editor(Coach):
-    """管家只写操作（§45），系统套用。"""
+    """管家只交操作（§45），系统套用：调用改计划的工具（§120），出了预览说改了；被退回就照退回的原因跟他说。"""
 
-    def __init__(self, ops: list[dict[str, Any]]) -> None:
+    def __init__(self, ops: list[dict[str, Any]], **args: Any) -> None:
         super().__init__()
-        self.ops = ops
+        self.ops, self.args = ops, args  # args：另交的没空日子、改动范围（§114）
 
     def __call__(self, stage: Stage, messages: Sequence[Mapping[str, Any]], tools: bool) -> Reply:
         if stage == "expert":
             self.stages.append("expert")
-            assert '"ops"' in system_of(messages)
-            return jsonr({"answer": "按你说的改了〔经验〕。", "ops": self.ops})
+            assert PLAN_EDIT in system_of(messages)
+            results = tool_results(messages)
+            if not results:
+                return call(PLAN_EDIT, ops=self.ops, **self.args)
+            if results[-1].startswith("已出"):
+                return jsonr({"answer": "按你说的改了〔经验〕。"})
+            return jsonr({"answer": results[-1].split("（这次没出预览")[0]})
         return super().__call__(stage, messages, tools)
 
 
@@ -233,7 +242,7 @@ def test_trainer_writes_operations_and_code_applies_them(monkeypatch: Any) -> No
     )
     a, store = _seeded(t, monkeypatch)
     blocks, seen = run(a, "把周三的侧平举换成俯卧撑")
-    assert seen["plan_ops"]["by"] == "model" and t.stages.count("expert") == 1
+    assert seen["plan_ops"]["by"] == "model" and t.stages.count("expert") == 2  # 交改动、作答
     d = _card_draft(blocks, store)
     names = [x["exercise"] for x in d.content["plan"]["sessions"][1]["items"]]
     assert names == ["哑铃卧推", "哑铃推举", "俯卧撑"]

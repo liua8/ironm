@@ -61,7 +61,9 @@ _CLAUSE = re.compile(r"[^，,。！？?；;\n]+")
 _ASK_BEFORE = re.compile(
     r"是不是|有没有|多久|什么时候|哪天|几号|说了|说过|提到|讲过|上次说|之前说|昨天说|前天说"
 )
-_ASK_AFTER = re.compile(r"^(?:不(?:疼|痛|舒服|烧)|没(?:有)?(?:疼|痛)|[吗么嘛])")
+_ASK_AFTER = re.compile(
+    r"^(?:不(?:疼|痛|舒服|烧)|没(?:有)?(?:疼|痛)|[吗么嘛]|的?记录|的?历史|史)"
+)  # "我的生病记录""病史"是在问（§113）
 
 
 def _asking(pattern: re.Pattern[str], clause: str) -> bool:

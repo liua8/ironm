@@ -13,7 +13,7 @@ from tests.test_single_agent import single
 from tests.test_turn_flow import run
 
 PREFETCH = "系统按问题先查好的资料"
-ACTIONS = '"action": "new_plan"'  # 计划和记录写法里才有的字样
+ACTIONS = "调用后系统会告诉你结果"  # 计划和记录做法里才有的字样（§120 改成调用工具）
 
 
 def first_call(q: str, monkeypatch: Any) -> tuple[str, str, dict[str, Any]]:
@@ -35,8 +35,8 @@ def test_precedence_compact_memory_and_catalog(monkeypatch: Any) -> None:
     memory = re.search(r"记忆（他这句话说了.*?(?=\n\n)", system, re.S)
     assert memory is not None and len(memory.group(0)) < 700  # 原来约 1000 字
     assert (
-        "plan-build（排训练计划）" in catalog_any() and "：" not in catalog_any()
-    )  # 目录只列编号和名字
+        "plan-build：要每周计划、改计划、停练回来" in catalog_any() and "（" not in catalog_any()
+    )  # 目录列编号和一句什么时候用（§110 第 0 层），不再重复名字
     assert len(system) < 3500 and PREFETCH not in user  # 闲聊：系统提示 3500 字以内、不预取
     assert "今天是" not in user  # 日期只在档案里写
 
@@ -68,4 +68,5 @@ def test_loading_a_training_skill_brings_the_actions_back(monkeypatch: Any) -> N
 
     a, _ = single(answer, monkeypatch, old=True)
     run(a, "早餐吃什么")
-    assert "【排训练计划】" in results[0] and "计划和训练记录（只在需要时写）" in results[0]
+    assert "【排训练计划】" in results[0] and "计划和训练记录（只在需要时做）" in results[0]
+    assert "装上后多了这些工具：propose_new_plan" in results[0]  # 动作工具跟着规程一起装（§120）

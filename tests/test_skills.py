@@ -9,16 +9,17 @@ from ironm_agent.compose import _REVISE
 from ironm_agent.exercises import feel_cues, library, library_entries, named_in
 from ironm_agent.kb import default_kb
 from ironm_agent.roles import EXPERTS, SPECS, Role
-from ironm_agent.skills import pick_any, prompt_of, skills
+from ironm_agent.skills import catalog_any, pick_any, prompt_of, skills
 from ironm_agent.tools import EXERCISES, Toolbox
 
 # §88 起讲内容的规程是 16 份文件夹规程（热身拉伸、坚持删掉，动作教学和体感讲解合成一份）；
 # §101 起 14 份：按状态调整和生病期间合成今天练不练，恢复与睡眠并进恢复基础
+# §110 起 11 份：有氧与体能、特殊人群并进训练基础的参考段，补剂与用药并进饮食基础的参考段
+# §111 起 8 个工作流：目标设定、中断后回归、进展与平台期分别并进建档与目标、排训练计划、记训练与复盘
 FIRST_BATCH = {
-    Role.TRAINER: {"初次评估", "目标设定", "排训练计划", "有氧与体能", "动作教学",
-                   "记训练与单次复盘", "今天练不练", "进展与平台期", "中断后回归"},
-    Role.NUTRITION: {"饮食方案", "补剂与用药"},
-    Role.RECOVERY: {"伤痛处理", "特殊人群"},
+    Role.TRAINER: {"建档与目标", "排训练计划", "动作教学", "记训练与复盘", "今天练不练"},
+    Role.NUTRITION: {"饮食方案"},
+    Role.RECOVERY: {"伤痛处理"},
 }  # fmt: skip
 SHARED = {"数据与化验解读"}
 
@@ -58,14 +59,16 @@ def test_the_right_skills_are_loaded() -> None:
     assert "伤痛处理" in names("膝盖疼还能练腿吗")
     assert names("今天练什么", frozenset({"poor"}))[1] == "今天练不练"  # 训练基础排最前
     assert "饮食方案" in names("这顿多少热量", frozenset({"image"}))
-    assert "有氧与体能" in names("跑步一周跑几次")
-    assert "中断后回归" in names("停了一个月，好久没练了")
+    assert "训练基础" in names("跑步一周跑几次")  # 有氧在训练基础的参考段里（§110）
+    assert "排训练计划" in names("停了一个月，好久没练了")  # §111 回归并进排计划
     assert "数据与化验解读" in names("我最近体重的趋势")
     assert "动作教学" in names("卧推时肩胛骨怎么收紧") and "动作教学" in names(
         "没有杠铃深蹲换成什么"
     )
-    assert "饮食方案" in names("最近体重不降怎么办") and "特殊人群" in names("我两百斤能跑步吗")
-    assert "记训练与单次复盘" in names("今天跑了5公里，35分钟")
+    assert "饮食方案" in names("最近体重不降怎么办") and names("我两百斤能跑步吗") == []
+    # 路由出错、关键词又对不上时不硬装：管家看目录（"train-core：训练原则、有氧、特殊人群"）自己装（§110）
+    assert "train-core：训练原则、有氧、特殊人群" in catalog_any()
+    assert "记训练与复盘" in names("今天跑了5公里，35分钟")
     assert not {"坚持与动力", "柔韧、热身与体态"} & {x.name for x in skills()}  # 模型直接答（§88）
     assert names("嗯") == []  # 都对不上不硬装，由它看目录自己装
     assert "本次装载的规程" in prompt_of(pick_any("增肌")) and prompt_of([]) == ""

@@ -60,12 +60,12 @@ def test_today_block_has_time_or_source_on_every_line() -> None:
 
 
 def test_said_state_is_kept_for_the_next_turn(monkeypatch: Any) -> None:
-    t = Coach()
+    t = Coach(said={"tired": True})  # 管家判断他说了累（§114）
     a = agent(t, monkeypatch=monkeypatch, memory=MemoryBook(), snapshot=snapshot_of())
     book = DayBook()
     a._day = book
-    _, seen = run(a, "今天有点累，深蹲怎么做")
-    assert seen["day_noted"] == 1
+    run(a, "今天有点累，深蹲怎么做")
+    assert len(book.rows[("42", date.today())].entries) == 1
     t2 = Coach()
     a2 = agent(t2, monkeypatch=monkeypatch, memory=MemoryBook(), snapshot=snapshot_of())
     a2._day = book

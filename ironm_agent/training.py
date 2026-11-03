@@ -85,6 +85,28 @@ class PlanItem(_Model):
         return f"{self.exercise} {self.sets}×{self.reps}" + (f"（{extra}）" if extra else "")
 
 
+type EditKind = Literal["swap", "edit", "remove", "order"]
+
+
+class PlanEdit(_Model):
+    """计划页上的一处改动（spec [2026-10-23] §106）：只改今天时存在今天的状态里，按先后套到今天那一次上。"""
+
+    kind: EditKind
+    exercise: str = Field(default="", max_length=30)  # 换、改、去掉的是哪个动作
+    to: str = Field(default="", max_length=30)  # 换成什么
+    sets: int | None = Field(default=None, ge=1, le=10)
+    reps: str | None = Field(default=None, max_length=20)
+    names: list[str] = Field(default_factory=list, max_length=10)  # 排顺序：排好后的动作名
+    line: str = Field(
+        default="", max_length=120
+    )  # 改了什么（存的时候写上，给管家看的"今天"一段用）
+
+    @field_validator("reps", mode="before")
+    @classmethod
+    def _reps(cls, v: Any) -> Any:
+        return str(v) if isinstance(v, int | float) and not isinstance(v, bool) else v
+
+
 class Session(_Model):
     day: int = Field(ge=1, le=7)  # 1 = 周一 … 7 = 周日
     name: str = Field(min_length=1, max_length=16)
@@ -202,6 +224,13 @@ def rpe_word(rpe: int) -> str:
     return f"（{word}）"
 
 
+type Feeling = Literal["good", "ok", "poor"]
+type RestWhy = Literal["rest", "sick", "travel", "busy"]
+FEELING_WORDS: dict[str, str] = {"good": "好", "ok": "一般", "poor": "差"}
+REST_WORDS: dict[str, str] = {"rest": "休息", "sick": "生病", "travel": "出差", "busy": "太忙"}
+SORE_PARTS: tuple[str, ...] = ("胸", "背", "肩", "手臂", "大腿前", "大腿后", "臀", "小腿", "核心")
+
+
 class WorkoutLog(_Model):
     day: date
     session: str = Field(default="", max_length=16)  # 按计划的哪一次（如"下肢"），没有计划时为空
@@ -210,9 +239,35 @@ class WorkoutLog(_Model):
     rpe: int | None = Field(default=None, ge=1, le=10)  # 感受（1 很轻松 … 10 到极限）
     minutes: int | None = Field(default=None, ge=1, le=300)
     note: str = Field(default="", max_length=80)
+    # 打卡多记的（§105，都可以不填）：精力、昨晚睡得、哪里酸；没练的那天记原因（不算练了，done 为 False）
+    energy: Feeling | None = None
+    slept: Feeling | None = None
+    sore: list[str] = Field(default_factory=list, max_length=len(SORE_PARTS))
+    rest: RestWhy | None = None
+
+    @model_validator(mode="after")
+    def _rest_is_not_a_workout(self) -> WorkoutLog:
+        if self.rest is not None and (self.done or self.items):
+            raise ValueError("记没练的那条不能同时写练了什么")
+        if any(x not in SORE_PARTS for x in self.sore):
+            raise ValueError("酸的部位不认识")
+        return self
+
+    def state(self) -> str:
+        """这次打卡记的状态（§105）：精力、睡眠、哪里酸。"""
+        bits = [
+            f"精力{FEELING_WORDS[self.energy]}" if self.energy else "",
+            f"昨晚睡得{FEELING_WORDS[self.slept]}" if self.slept else "",
+            f"{'、'.join(self.sore)}酸" if self.sore else "",
+        ]
+        return "，".join(b for b in bits if b)
 
     def line(self) -> str:
         head = f"{self.day.month}月{self.day.day}日（{weekday_name(self.day.isoweekday())}）"
+        if self.rest is not None:  # 没练的那天（§105）
+            return f"{head} 没练（{REST_WORDS[self.rest]}）" + "".join(
+                f"，{x}" for x in (self.state(), self.note) if x
+            )
         what = self.session or "训练"
         parts = [f"{head} {what}{'' if self.done else '（没练完）'}"]
         if self.items:
@@ -221,6 +276,8 @@ class WorkoutLog(_Model):
             parts.append(f"{self.minutes} 分钟")
         if self.rpe:
             parts.append(f"感受 {self.rpe} 分{rpe_word(self.rpe)}")
+        if self.state():
+            parts.append(self.state())
         if self.note:
             parts.append(self.note)
         return "：".join(parts[:2]) + ("，" + "，".join(parts[2:]) if len(parts) > 2 else "")

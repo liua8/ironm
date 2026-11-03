@@ -6,6 +6,7 @@ import asyncio
 from datetime import date, timedelta
 from typing import Any
 
+from ironm_agent.actions import NEW_PLAN
 from ironm_agent.casefile import risks
 from ironm_agent.live import Live, LiveItem, LiveSet
 from ironm_agent.live_adjust import adjust
@@ -15,7 +16,7 @@ from ironm_agent.metrics import Profile, Readings
 from ironm_agent.protools.plan_check import check_plan
 from ironm_agent.special import flags, is_special, no_heavier, plan_problems, rules_text
 from ironm_agent.training import Plan
-from tests.fakes import FakeLLM, jsonr
+from tests.fakes import FakeLLM, call, jsonr
 from tests.test_plugin import text_of
 from tests.test_single_agent import NEW, cards, single
 from tests.test_turn_flow import run
@@ -81,14 +82,11 @@ def test_plan_preview_is_blocked_when_the_fix_still_breaks_the_rule(monkeypatch:
 
     def answer(system: str, user: str, results: list[str]) -> Reply:
         seen_all.append(system + user)
-        if '"action": "new_plan"' in system:
-            return jsonr(
-                {
-                    "answer": "排新计划前先确认一下：目标减脂、每周 3 练，对吗？",
-                    "action": "new_plan",
-                }
-            )
-        return jsonr({"answer": "每周 3 次全身力量。", "plan": bad})
+        if "上一轮你列了排新计划要用的条件" not in system:  # 还没确认：它先列条件
+            return jsonr({"answer": "排新计划前先确认一下：目标减脂、每周 3 练，对吗？"})
+        if len(results) < 2:  # 交计划；被硬规则退回后改不掉、照原样再交（§120）
+            return call(NEW_PLAN, plan=bad, changes="三练全身", kind="new")
+        return jsonr({"answer": "每周 3 次全身力量。"})
 
     a, _ = single(answer, monkeypatch, old=True)
     asyncio.run(a._memory.apply("42", [Change("insert", item=mem("怀孕 20 周"))]))

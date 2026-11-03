@@ -66,6 +66,59 @@ class Macros(BaseModel):
         )
 
 
+class FoodLine(BaseModel):
+    """一餐里的一样食物（§118）：库里有的按库算；库里没有的按模型给的每 100 克估值（est100）算。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str = Field(min_length=1, max_length=30)
+    grams: float = Field(gt=0, le=3000)
+    oil: Literal["少油", "正常", "多油"] = "正常"
+    food_id: str | None = None
+    est100: Macros | None = None  # 库里没有时模型估的每 100 克
+    dish: bool = False  # 菜品（有油量可改）
+    macros: Macros
+
+
+def food_line(
+    name: str,
+    grams: float,
+    oil: str = "正常",
+    food_id: str | None = None,
+    est100: Macros | None = None,
+) -> FoodLine:
+    """按食物库算一样食物；库里找不到又没有估值时报 KeyError。"""
+    from ironm_agent.foods import by_id, find
+
+    food = by_id().get(food_id) if food_id else find(name)
+    oil = oil if oil in ("少油", "正常", "多油") else "正常"
+    grams = round(float(grams))
+    if food is not None:
+        n = food.nutrition(grams, oil)
+        m = Macros(kcal=n.kcal, protein_g=n.protein_g, carbs_g=n.carbs_g, fat_g=n.fat_g).rounded()
+        return FoodLine(name=food.name, grams=grams, oil=oil if food.dish else "正常",
+                        food_id=food.id, dish=food.dish, macros=m)  # fmt: skip
+    if est100 is None:
+        raise KeyError(name)
+    k = grams / 100
+    m = Macros(kcal=est100.kcal * k, protein_g=est100.protein_g * k, carbs_g=est100.carbs_g * k,
+               fat_g=est100.fat_g * k).rounded()  # fmt: skip
+    return FoodLine(name=name[:30], grams=grams, oil="正常", est100=est100, macros=m)
+
+
+def sum_lines(lines: Sequence[FoodLine]) -> Macros:
+    return Macros(
+        kcal=round(sum(x.macros.kcal for x in lines)),
+        protein_g=round(sum(x.macros.protein_g for x in lines)),
+        carbs_g=round(sum(x.macros.carbs_g for x in lines)),
+        fat_g=round(sum(x.macros.fat_g for x in lines)),
+    )
+
+
+def line_text(x: FoodLine) -> str:
+    return f"{x.name} {x.grams:g} 克" + (f"（{x.oil}）" if x.oil != "正常" else "")
+
+
 class Meal(BaseModel):
     """一条饮食记录。"""
 
@@ -75,23 +128,48 @@ class Meal(BaseModel):
     name: str = Field(min_length=1, max_length=40)
     items: list[str] = Field(default_factory=list, max_length=12)
     macros: Macros
+    # 逐样食物（§118），以前的记录没有
+    foods: list[FoodLine] = Field(default_factory=list, max_length=12)
+    image_key: str = Field(default="", max_length=60)  # 从食谱、减脂餐记的：用它的配图（§119）
     estimated: bool = True  # 照片和描述估算的（减脂餐列表里的也是估算）
     confidence: str = ""  # 低 / 中 / 高
     note: str = Field(default="", max_length=120)
     said: str = Field(default="", max_length=120)  # 用户的描述
 
 
+def meal_image(meal: Meal) -> dict[str, Any] | None:
+    """这一餐的配图（§119）：从食谱、减脂餐记的用它的图；否则用分量最大、有图的那样食物的图。"""
+    from ironm_agent.food_images import image_for
+
+    if meal.image_key and (im := image_for(meal.image_key)):
+        return im
+    for x in sorted(meal.foods, key=lambda f: -f.grams):
+        if x.food_id and (im := image_for(f"food:{x.food_id}")):
+            return im
+    return None
+
+
+def meal_from(kind: MealKind, name: str, lines: Sequence[FoodLine], **extra: Any) -> Meal:
+    """按逐样食物拼一条记录：整餐营养是各样加起来。"""
+    note = extra.pop("note", "")
+    if any(x.est100 is not None for x in lines):
+        guess = "、".join(x.name for x in lines if x.est100 is not None)
+        note = "；".join(s for s in (note, f"库里没有，按估算：{guess}") if s)
+    return Meal(kind=kind, name=name[:40] or "这一餐", items=[line_text(x) for x in lines],
+                macros=sum_lines(lines), foods=list(lines), note=note[:120], **extra)  # fmt: skip
+
+
 # ---- 估算 -----------------------------------------------------------------------------------
 
-_ESTIMATE = """你是健身 App 里的营养师，根据用户拍的照片和描述估算这一餐的营养。
+_ESTIMATE = """你是健身 App 里的营养师，根据用户拍的照片和描述，说出这一餐有哪些食物、各多少。
 
 做法：
-1. 先认出有哪些食物、大概多少量（用碗、盘、个、克描述）；描述里说的量（比如"吃了一半"）优先于照片。
-2. 按常见的家常做法估算热量、蛋白质、碳水、脂肪；油多的菜按油多算。
-3. 拿不准的地方写进 note，比如"看不出用了多少油"；照片里不是食物或看不清时，confidence 写"低"并在 note 里说明。
-4. 热量要和营养素对得上：蛋白质 × 4 + 碳水 × 4 + 脂肪 × 9 ≈ 热量。
+1. 认出每一样食物，写常见的叫法（米饭、番茄炒蛋、鸡胸肉），估吃下去的克数；描述里说的量（比如"吃了一半"）优先于照片。
+2. 炒菜、外卖菜写油量：少油、正常、多油；看不出就写正常。不用你算热量，系统按食物库算。
+3. 每样再给一个每 100 克的营养估值（per100），库里查不到时才用。
+4. 拿不准的地方写进 note，比如"看不出用了多少油"；照片里不是食物或看不清时，confidence 写"低"并在 note 里说明。
 
-只输出 JSON：{"name": "这一餐的简短名字", "items": ["牛肉面 1 碗（吃了一半）"], "kcal": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0, "confidence": "低/中/高", "note": "拿不准的地方"}"""
+只输出 JSON：{"name": "这一餐的简短名字", "foods": [{"name": "米饭", "grams": 150, "oil": "正常", "per100": {"kcal": 130, "protein_g": 2.7, "carbs_g": 28, "fat_g": 0.3}}], "confidence": "低/中/高", "note": "拿不准的地方"}"""
 
 
 async def estimate(
@@ -109,7 +187,12 @@ async def estimate(
     except ModelUnavailable:
         return None
     raw = parse_json(reply.content) or {}
-    try:
+    lines = _lines(raw.get("foods"))
+    if lines:  # 模型只认食物和分量，营养由食物库算（§118）
+        return meal_from(kind, str(raw.get("name") or said or "这一餐"), lines,
+                         confidence=str(raw.get("confidence") or "")[:4],
+                         note=str(raw.get("note") or ""), said=said[:120])  # fmt: skip
+    try:  # 没给逐样食物时照旧用它估的整餐营养
         macros, changed = Macros.model_validate(raw).reconciled()
         note = str(raw.get("note") or "")
         if changed:
@@ -125,6 +208,28 @@ async def estimate(
         )
     except ValidationError:
         return None
+
+
+def _lines(raw: Any) -> list[FoodLine]:
+    """模型给的逐样食物 → 按库算好的；克数不合理、库里没有又没给估值的跳过。"""
+    out: list[FoodLine] = []
+    for x in raw if isinstance(raw, list) else []:
+        if not isinstance(x, dict) or not str(x.get("name") or "").strip():
+            continue
+        try:
+            grams = float(x.get("grams") or 0)
+            est = (
+                Macros.model_validate(x["per100"]).reconciled()[0]
+                if isinstance(x.get("per100"), dict)
+                else None
+            )
+            if 0 < grams <= 3000:
+                out.append(
+                    food_line(str(x["name"]), grams, str(x.get("oil") or "正常"), est100=est)
+                )
+        except (KeyError, ValueError, ValidationError):
+            continue
+    return out[:12]
 
 
 # ---- 推荐 -----------------------------------------------------------------------------------
@@ -317,6 +422,7 @@ def preset_meal(p: Preset, kind: MealKind) -> Meal:
         items=list(p.items),
         macros=Macros(kcal=p.kcal, protein_g=p.protein_g, carbs_g=p.carbs_g, fat_g=p.fat_g),
         note="按常见分量估算",
+        image_key=f"preset:{p.id}",
     )
 
 
@@ -338,6 +444,7 @@ class StoredMeal:
             "created": self.created.isoformat(),
             "has_photo": self.has_photo,
             **self.meal.model_dump(mode="json"),
+            "image": meal_image(self.meal),
         }
 
 
@@ -346,6 +453,8 @@ class MealStore(Protocol):
         self, user_id: str, day: date, meal: Meal, photo: bytes | None = None, mime: str = ""
     ) -> StoredMeal: ...
     async def day(self, user_id: str, day: date) -> list[StoredMeal]: ...
+    async def since(self, user_id: str, day: date) -> list[StoredMeal]: ...
+    async def replace(self, user_id: str, meal_id: str, meal: Meal) -> StoredMeal | None: ...
     async def photo(self, user_id: str, meal_id: str) -> tuple[bytes, str] | None: ...
     async def delete(self, user_id: str, meal_id: str) -> bool: ...
 
@@ -379,6 +488,20 @@ class MealBook:
             (r for u, r, _, _ in self.rows.values() if u == user_id and r.day == day),
             key=lambda r: r.created,
         )
+
+    async def since(self, user_id: str, day: date) -> list[StoredMeal]:
+        return sorted(
+            (r for u, r, _, _ in self.rows.values() if u == user_id and r.day >= day),
+            key=lambda r: (r.day, r.created),
+        )
+
+    async def replace(self, user_id: str, meal_id: str, meal: Meal) -> StoredMeal | None:
+        found = self.rows.get(meal_id)
+        if found is None or found[0] != user_id:
+            return None
+        row = StoredMeal(found[1].id, found[1].day, meal, found[1].created, found[1].has_photo)
+        self.rows[meal_id] = (user_id, row, found[2], found[3])
+        return row
 
     async def photo(self, user_id: str, meal_id: str) -> tuple[bytes, str] | None:
         found = self.rows.get(meal_id)
@@ -452,6 +575,30 @@ class PgMeals:
             "FROM ironm_meal WHERE user_id = :uid AND day = :day ORDER BY created_at",
             {"uid": user_id, "day": day},
         )
+        return self._rows(rows)
+
+    async def since(self, user_id: str, day: date) -> list[StoredMeal]:
+        rows = await self._q(
+            "SELECT id, day, decrypt_content(content) AS content, photo IS NOT NULL AS has_photo, created_at "
+            "FROM ironm_meal WHERE user_id = :uid AND day >= :day ORDER BY day, created_at",
+            {"uid": user_id, "day": day},
+        )
+        return self._rows(rows)
+
+    async def replace(self, user_id: str, meal_id: str, meal: Meal) -> StoredMeal | None:
+        rows = await self._q(
+            "UPDATE ironm_meal SET content = encrypt_content(:content) WHERE user_id = :uid AND id = :id "
+            "RETURNING id, day, photo IS NOT NULL AS has_photo, created_at",
+            {"uid": user_id, "id": meal_id,
+             "content": json.dumps(meal.model_dump(mode="json"), ensure_ascii=False)},
+        )  # fmt: skip
+        if not rows:
+            return None
+        r = rows[0]
+        return StoredMeal(str(r["id"]), r["day"], meal, r["created_at"], bool(r["has_photo"]))
+
+    @staticmethod
+    def _rows(rows: list[dict[str, Any]]) -> list[StoredMeal]:
         out = []
         for r in rows:
             try:

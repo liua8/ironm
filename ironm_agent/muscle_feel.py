@@ -13,6 +13,19 @@ from typing import Any, Protocol
 from ironm_agent.body import muscle_codes
 from ironm_agent.protools.recovery import Feel
 
+# 打卡时点的"哪里酸"（§105）对应的肌肉：记进同一份肌肉酸痛，人体图和恢复估算照顾到
+SORE_MUSCLES: dict[str, tuple[str, ...]] = {
+    "胸": ("muscle.pec_major_upper", "muscle.pec_major_lower"),
+    "背": ("muscle.lats", "muscle.rhomboids", "muscle.mid_lower_traps"),
+    "肩": ("muscle.anterior_delt", "muscle.lateral_delt", "muscle.posterior_delt"),
+    "手臂": ("muscle.biceps", "muscle.triceps"),
+    "大腿前": ("muscle.quadriceps",),
+    "大腿后": ("muscle.hamstrings",),
+    "臀": ("muscle.glute_max", "muscle.glute_med"),
+    "小腿": ("muscle.gastrocnemius", "muscle.soleus"),
+    "核心": ("muscle.rectus_abdominis", "muscle.obliques"),
+}
+
 
 class FeelStore(Protocol):
     async def add(self, user_id: str, muscle: str, feel: Feel, day: date) -> None: ...

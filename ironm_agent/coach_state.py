@@ -140,6 +140,7 @@ class Inputs:
     day: Any = None  # day_state.DayState：今日状态（§54）
     review: Review | None = None  # 今天的管家复盘（§85），模型决定的今天怎么练
     memory: list[Any] = field(default_factory=list)  # 记忆条目（§95 认特殊情况）
+    seen: Any = None  # diet_adjust.Observed：按记的吃和体重变化估的实际消耗（§118）
 
 
 @dataclass(frozen=True)
@@ -173,6 +174,10 @@ def today_version(
     session = inp.plan.session_on(today)
     if session is None:
         return TodayVersion("rest", f"今天（{name}）按计划休息", why="恢复也是训练的一部分")
+    if inp.day is not None and getattr(inp.day, "edits", None):  # 计划页"只改今天"的先套上（§106）
+        from ironm_agent.plan_edit import today_session
+
+        session = today_session(session, inp.day.edits)
     state = readiness(inp.snapshot.readings, "", today)
     original = session.model_dump(mode="json")
     gap = gap_scale(inp.logs, today)
@@ -314,7 +319,7 @@ def _food_items(inp: Inputs) -> list[Item]:
                         why=why, basis=kcal.source, action="auto",
                         value={"kcal": round(kcal.value),
                                "protein": protein.value if protein else None}))  # fmt: skip
-    proposal, _ = propose(inp.snapshot.metrics, inp.snapshot.profile, inp.diet, inp.snapshot.today)
+    proposal, _ = propose(inp.snapshot.metrics, inp.snapshot.profile, inp.diet, inp.snapshot.today, inp.seen)
     if proposal is not None:
         more = "多" if proposal.delta > 0 else "少"
         out.append(Item(key="proposal:diet", kind="proposal", action="confirm",
@@ -597,6 +602,7 @@ class Deps:
     illness: Any = None  # illness.IllnessStore（§46）
     day: Any = None  # day_state.DayStore（§54）
     memory: Any = None  # memory_store.MemoryStore：认孕期、心脏病这类特殊情况（§95）
+    meals: Any = None  # meals.MealStore：按记的吃和体重变化估实际消耗（§118）
 
 
 async def _gather(user_id: str, deps: Deps, today: date) -> Inputs:
@@ -622,6 +628,12 @@ async def _gather(user_id: str, deps: Deps, today: date) -> Inputs:
     inp.pains = await safely("pain", deps.pain.since(user_id, today - timedelta(days=14))) or []
     inp.goal = await safely("goal", deps.goals.get(user_id))
     inp.diet = await safely("diet", deps.diet.current(user_id))
+    if deps.meals is not None:  # 和饮食页同一个算法，管家和饮食页的提议一致（§118）
+        from ironm_agent.diet_adjust import OBSERVE_DAYS, by_day, observed
+
+        rows = await safely("meals", deps.meals.since(user_id, today - timedelta(days=OBSERVE_DAYS - 1)))
+        if rows is not None:
+            inp.seen = observed(by_day(rows), snap.readings.weight, today)[0]
     if deps.day is not None:
         inp.day = await safely("day", deps.day.get(user_id, today))
     if deps.illness is not None:

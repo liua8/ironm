@@ -12,6 +12,7 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from ironm_agent.actions import ACTION_TOOLS, Desk
 from ironm_agent.kb import Entry, KnowledgeBase
 from ironm_agent.llm import ToolCall
 from ironm_agent.protools import registry as pro
@@ -248,6 +249,7 @@ class Toolbox:
         # 单 Agent 另加的工具（再装一份 Skill、查 App 用法，spec [2026-10-23] §67）：名字 → (说明, 执行)
         self.extra: dict[str, tuple[dict[str, Any], ExtraTool]] = dict(extra or {})
         self.actions_held = ""  # 这一轮没放进系统提示的计划和记录写法，装训练类规程时补上（§96）
+        self.actions: Desk | None = None  # 动作工具：跟着规程一起装（§120），由单 Agent 那一轮给
         self.flags: frozenset[str] = (
             frozenset()
         )  # 这个人的少见情况：再装基础规程时带上对应的规则（§74）
@@ -285,7 +287,13 @@ class Toolbox:
         if self.context is not None:
             out += [t.schema() for t in pro.tools_for(self.spec.role.value)]
         out += [schema for schema, _ in self.extra.values()]
+        if self.actions is not None:
+            out += self.actions.schemas()
         return out
+
+    def is_action(self, name: str) -> bool:
+        """动作工具（改计划、新计划、记训练）：不占查询次数（§120）。"""
+        return self.actions is not None and name in ACTION_TOOLS
 
     def _exercises(self, query: str) -> str:
         from ironm_agent.exercises import library_kb
@@ -346,6 +354,8 @@ class Toolbox:
             self.evidence.calls.append({"tool": call.name, "result": self._outcome, "ms": ms})
 
     async def _dispatch(self, call: ToolCall) -> str:
+        if self.actions is not None and call.name in ACTION_TOOLS:
+            return await self.actions.run(call.name, call.arguments)
         if call.name in self.extra:
             return await self.extra[call.name][1](self, call.arguments)
         if call.name == KNOWLEDGE and self.spec.kb_domains:

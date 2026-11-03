@@ -10,14 +10,14 @@ from ironm_agent.kb import default_kb
 from ironm_agent.memory_layers import PROFILE, RECALL, layers
 from ironm_agent.memory_store import CATEGORIES, Item, now
 from ironm_agent.skill_route import catalog
-from ironm_agent.skills import SKILLS_DIR, folder_skills, pick_any, skills
+from ironm_agent.skills import SKILLS_DIR, by_id, folder_skills, pick_any, skills
 from ironm_agent.tool_catalog import CATALOG
 from tests.fakes import jsonr
 from tests.test_single_agent import single
 from tests.test_skill_route import ids, routed
 from tests.test_turn_flow import run
 
-FIRST = ("intake-assess", "goal-set")
+FIRST = ("intake-assess",)  # §111 目标设定并进建档与目标
 # 规程里能写的工具：对话里登记的工具，加上查记忆、App 用法
 KNOWN_TOOLS = {t.agent for t in CATALOG if t.agent} | {RECALL, "app_help"}
 
@@ -71,8 +71,8 @@ def test_catalog_lists_the_first_batch_and_loading_brings_the_body() -> None:
     body_marker = "## ① 安全筛查"
     assert body_marker not in text  # 目录里只有名字和什么时候用
     x = next(s for s in skills() if s.id == "intake-assess")
-    shown = x.text(frozenset())  # 装载时只放决策卡和分节目录（§99）
-    assert shown.startswith("【初次评估】（决策卡）") and body_marker not in shown
+    shown = x.text(frozenset())  # 装载时只放步骤卡和分节目录（§99、§111）
+    assert shown.startswith("【建档与目标】（步骤卡）") and body_marker not in shown
     assert "① 安全筛查" in shown and "query_medications" in shown
     assert body_marker in x.text(full=True)
 
@@ -96,18 +96,18 @@ def test_new_user_always_gets_intake_assessment() -> None:
 
 def test_new_user_routed_elsewhere_still_gets_intake(monkeypatch: Any) -> None:
     a, s = single(lambda *_: jsonr({"answer": "先问两件事〔K56〕。"}), monkeypatch)
-    s.route = routed(["goal-set"], ["train"], intent="想减肥")
-    _, seen = run(a, "我想减肥")
+    s.route = routed(["diet-plan"], ["food"], intent="想减肥怎么吃")
+    _, seen = run(a, "我想减肥，怎么吃")
     got = ids(seen)
-    assert got.index("intake-assess") < got.index("goal-set")  # 情况要求的排前面
-    assert "【初次评估】（决策卡）" in s.system and "【目标设定】（决策卡）" in s.system
+    assert "intake-assess" in got and "diet-plan" in got  # 新用户照样装建档（§108 起他问的那份排前面）
+    assert "【建档与目标】（步骤卡）" in s.system and "【饮食方案】（步骤卡）" in s.system
 
 
 def test_old_user_is_not_pushed_into_intake(monkeypatch: Any) -> None:
     a, s = single(lambda *_: jsonr({"answer": "8 周减 4 公斤〔K37〕。"}), monkeypatch, old=True)
-    s.route = routed(["goal-set"], ["train"], intent="想减肥")
-    _, seen = run(a, "我想减肥")
-    assert "intake-assess" not in ids(seen) and "goal-set" in ids(seen)
+    s.route = routed(["diet-plan"], ["food"], intent="想减肥怎么吃")
+    _, seen = run(a, "我想减肥，怎么吃")
+    assert "intake-assess" not in ids(seen) and "diet-plan" in ids(seen)
 
 
 def test_new_kb_entries_have_source_place_and_wait_for_review() -> None:
@@ -130,14 +130,14 @@ def test_training_level_is_a_memory_category_in_the_profile() -> None:
 
 # ---- 第 3–5 批（§81）----
 
-ALL = {"intake-assess", "goal-set", "plan-build", "cardio-fitness", "move-coach",
-       "log-review", "readiness-adjust", "progress-plateau", "comeback", "pain-injury",
-       "special-groups", "diet-plan", "supplements-meds", "data-read"}  # fmt: skip  # §101：生病期间并进今天练不练，恢复与睡眠并进恢复基础
+ALL = {"intake-assess", "plan-build", "move-coach", "log-review", "readiness-adjust", "pain-injury",
+       "diet-plan", "data-read"}  # fmt: skip  # §111：收成 8 个工作流（目标设定、中断后回归、进展与平台期并进去）
 OLD = {"plan-readiness", "plan-deload", "plan-return", "move-teach", "move-swap", "move-warmup",
        "train-cardio", "train-habit", "food-targets", "food-muscle", "food-fatloss", "food-timing",
        "food-supplement", "food-takeout", "food-photo", "food-habit", "rest-readiness", "rest-sleep",
        "rest-soreness", "rest-sick", "rest-overtraining", "rest-return", "rest-pain", "rest-redflag",
-       "data-trend", "data-labs", "data-missing", "sick-days", "recovery-sleep"}  # fmt: skip
+       "data-trend", "data-labs", "data-missing", "sick-days", "recovery-sleep",
+       "goal-set", "comeback", "progress-plateau", "cardio-fitness", "supplements-meds", "special-groups"}  # fmt: skip
 
 
 def test_all_eighteen_folder_skills_and_only_cores_left_in_yaml() -> None:
@@ -162,9 +162,13 @@ def test_safety_floors_from_the_old_skills_are_kept() -> None:
     assert "发烧时不运动" in body["readiness-adjust"]
     assert all(w in body["pain-injury"] for w in ("断裂声", "不能活动或承重", "麻木", "不诊断"))
     assert "不给健康意见" in body["data-read"] and "不建议改药" in body["data-read"]
-    assert "孕期、哺乳期、有慢病或在用药的人，吃补剂前先问医生或药师" in body["supplements-meds"]
-    assert "不建议改药停药" in body["supplements-meds"]
-    assert "立即停止并就医" in body["special-groups"]
+    food, train = by_id("food-core"), by_id("train-core")  # §110：三份主题规程并进基础规程
+    assert food is not None and train is not None
+    supplements = food.section("补剂与用药") or ""
+    assert "孕期、哺乳期、有慢病或在用药的人，吃补剂前先问医生或药师" in supplements
+    assert "不建议改药停药" in supplements and "不建议改药停药" in food.text()  # 边界每轮都在
+    assert "立即停止并就医" in (train.section("特殊人群") or "")
+    assert "立即停下，尽快就医" in train.text()  # 运动中胸痛头晕：每轮都在
     assert "不推荐安眠药" in next(x for x in skills() if x.id == "rest-core").text()
     assert "状态差时不安排大重量" in body["readiness-adjust"]
 

@@ -497,7 +497,7 @@ NEW_PLAN = re.compile(
     r"重新排|重排|新排|重新做|重新制定|重做|从头|换个计划|新计划|再排一份"
     r"|(?:换成|改成|改为).{0,6}(?:分化|上下肢|推拉腿|全身练|全身训练)"
 )
-_SCOPE_HINT = "只想改这一次的话，跟我说「只改今天」。"
+SCOPE_HINT = "只想改这一次的话，跟我说「只改今天」。"
 
 
 _BUSY = re.compile(r"练不了|不能练|不练|没空|没时间|出差|有事|不在家|不在|去不了")
@@ -519,7 +519,7 @@ def blocked_days(text: str) -> set[int]:
 
 def scope_hint(text: str) -> str:
     """没说是只改这次还是以后都这样时，卡片上提醒一句（§45 需求 9）。"""
-    return "" if _FOREVER.search(text) or _ONLY_NOW.search(text) else _SCOPE_HINT
+    return "" if _FOREVER.search(text) or _ONLY_NOW.search(text) else SCOPE_HINT
 
 
 # ---- 每周复盘、首页提醒的调整由规则生成（§45 需求 2；最多改两天）-------------------------------
