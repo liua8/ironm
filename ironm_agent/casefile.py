@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Literal
 
+from ironm_agent import facts as _facts
 from ironm_agent.memory_store import Item
 from ironm_agent.memory_view import Recall, until_text
 from ironm_agent.metrics import ACTIVITY, GOALS, Metric, Point, Profile, Readings
@@ -23,7 +24,7 @@ type Level = Literal["good", "fair", "poor", "unknown"]
 LEVEL_NAMES: dict[Level, str] = {"good": "好", "fair": "一般", "poor": "差", "unknown": "数据不足"}
 _RANK: dict[Level, int] = {"unknown": 0, "good": 1, "fair": 2, "poor": 3}
 
-LIMIT_CATEGORIES = ("injury", "equipment", "schedule", "diet", "goal", "event")
+LIMIT_CATEGORIES = ("injury", "special", "equipment", "schedule", "diet", "goal", "event")
 
 
 @dataclass(frozen=True)
@@ -259,6 +260,14 @@ _MEMORY_RISKS: tuple[tuple[str, re.Pattern[str], str], ...] = (
 SURGERY_DAYS = 90
 
 
+def _since(item: Item) -> date:
+    """术后从第一次记的那天算（更新会新建一条，不重新计时，§148）。"""
+    try:
+        return date.fromisoformat(str(item.data.get("since") or ""))
+    except ValueError:
+        return item.created.date()
+
+
 def risks(r: Readings, memory: Sequence[Item], today: date) -> tuple[Risk, ...]:
     out: list[Risk] = []
     crisis = _bp_worst(r, today, 14, 180, 110)
@@ -273,8 +282,24 @@ def risks(r: Readings, memory: Sequence[Item], today: date) -> tuple[Risk, ...]:
     if hr and statistics.fmean(hr) > 100:
         out.append(Risk("rhr_high", f"你最近 7 天平均静息心率 {statistics.fmean(hr):.0f} 次/分，偏高：先找医生看看，再加大训练。"))  # fmt: skip
     seen = {x.key for x in out}
-    for item in memory:
-        if item.category != "injury" or item.status != "active":
+    notes = {k: n for k, _, n in _MEMORY_RISKS}
+    for item in memory:  # 结构化的（§148）：伤病、特殊情况带的代码，伤病类型是术后
+        if item.status != "active" or not item.data or item.category not in _facts.STRUCTURED:
+            continue
+        codes = _facts.codes_of(item.data)
+        if item.category == "injury" and item.data.get("kind") == "术后":
+            codes = [*codes, "surgery"]
+        for code in dict.fromkeys(codes):
+            if code in seen or code not in notes:
+                continue
+            if code == "surgery" and (today - _since(item)).days > SURGERY_DAYS:
+                continue
+            if code == "hypertension" and seen & {"bp_crisis", "bp_high"}:
+                continue
+            seen.add(code)
+            out.append(Risk(code, notes[code]))
+    for item in memory:  # 还没补字段的旧记忆：照旧按句子认
+        if item.category != "injury" or item.status != "active" or item.data:
             continue
         for key, pattern, note in _MEMORY_RISKS:
             if key in seen or not pattern.search(item.content):
@@ -290,18 +315,11 @@ def risks(r: Readings, memory: Sequence[Item], today: date) -> tuple[Risk, ...]:
 
 # ---- 伤病部位（§4 约束核对用）---------------------------------------------------------------
 
-# 键是身体部位编码表（body_codes.yaml）里的关节编码
-PARTS: dict[str, re.Pattern[str]] = {
-    "joint.knee": re.compile(r"膝|半月板|髌"),
-    "joint.lumbar": re.compile(r"腰|椎间盘|下背|脊柱"),
-    "joint.shoulder": re.compile(r"肩"),
-    "joint.wrist": re.compile(r"手腕|腕关节"),
-    "joint.ankle": re.compile(r"脚踝|踝|跟腱"),
-    "joint.cervical": re.compile(r"颈椎|脖子"),
-}
-_PAIN = re.compile(r"疼|痛|伤|不舒服|酸|肿|弹响|咔咔响|响了一下|卡住|打软")
+# 部位（关节编码）、疼痛和体态的说法和结构化字段共用一份（facts.py，§148 补了髋和手肘）
+PARTS = _facts.PARTS
+_PAIN = _facts.PAIN
 NEAR_PAIN = 8  # 部位和疼痛的说法相隔几个字以内才算一起说的
-_POSTURE = re.compile(r"圆肩|驼背|含胸|头前伸|探颈|富贵包|骨盆前倾|骨盆后倾|高低肩|翼状肩|X型腿|O型腿|扁平足")
+_POSTURE = _facts.POSTURE
 
 
 def _hurts(part: re.Pattern[str], text: str) -> bool:
@@ -318,14 +336,9 @@ def _hurts(part: re.Pattern[str], text: str) -> bool:
 
 
 def injured_parts(memory: Sequence[Item], text: str) -> tuple[str, ...]:
-    """有伤病的部位：记忆里有效的伤病，加上这句话里本人说正疼的部位（"深蹲会影响膝盖吗"
-    "膝盖不疼""我妈膝盖疼"都不算）。"""
-    found = []
-    for item in memory:
-        if item.category == "injury" and item.status == "active":
-            if _POSTURE.search(item.content) and not _PAIN.search(item.content):
-                continue  # 只说了体态（"久坐导致圆肩"），没说疼和伤：不当成那个部位有伤（§108）
-            found += [k for k, p in PARTS.items() if p.search(item.content)]
+    """有伤病的部位：记忆里有效的伤病（读字段，§148；没字段的旧记忆按句子认，只说体态的不算，§108），
+    加上这句话里本人说正疼的部位（"深蹲会影响膝盖吗""膝盖不疼""我妈膝盖疼"都不算）。"""
+    found = _facts.injured(memory)
     found += [k for k, p in PARTS.items() if _hurts(p, text)]
     return tuple(dict.fromkeys(found))
 
@@ -360,7 +373,10 @@ class CaseFile:
         if self.today is not None:
             head = f"- 今天：{self.today.isoformat()}（周{'一二三四五六日'[self.today.weekday()]}）"
             if self.day:  # 今天的状态以这里为准（spec [2026-10-23] §54）
-                lines.append(head + "，今天的状态以这里为准（比对话里更早的说法新；他这一句刚说的更新，冲突时按他这一句）：")
+                lines.append(
+                    head
+                    + "，今天的状态以这里为准（比对话里更早的说法新；他这一句刚说的更新，冲突时按他这一句）："
+                )
                 lines += [f"  {x}" for x in self.day]
             else:
                 lines.append(head)

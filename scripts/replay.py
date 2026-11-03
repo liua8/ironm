@@ -170,6 +170,16 @@ def active_events(user_id: str) -> int:
         ).fetchone()[0])  # fmt: skip
 
 
+def memory_keys(user_id: str) -> set[str]:
+    """重放账号有效记忆的键（伤病"部位+左右"、特殊情况代码，§148；键是明文，不读内容）。"""
+    with db() as c:
+        rows = c.execute(
+            "SELECT key FROM ironm_memory WHERE user_id = %s AND status IN ('active', 'pending')"
+            " AND key IS NOT NULL", (user_id,),
+        ).fetchall()  # fmt: skip
+    return {str(r[0]) for r in rows}
+
+
 def memories(user_id: str) -> dict[str, int]:
     """重放账号现在有效的记忆，按类别数条数（§145），只数条数、不读内容。"""
     with db() as c:
@@ -187,6 +197,7 @@ def judge(
     ill: int | None,
     events: int | None = None,
     mem: dict[str, int] | None = None,
+    keys: set[str] | None = None,
 ) -> list[str]:
     """不符合的地方；空列表就是符合。"""
     bad = []
@@ -208,6 +219,9 @@ def judge(
         got = (mem or {}).get(cat, 0)
         if got != n:
             bad.append(f"有效的 {cat} 记忆应有 {n} 条，实际 {got} 条")
+    bad += [
+        f"应有记忆键 {k}，没有" for k in turn.get("memory_keys") or [] if k not in (keys or set())
+    ]
     asks = answer.count("？") + answer.count("?")
     if "asks" in turn and asks > turn["asks"]:
         bad.append(f"问题最多 {turn['asks']} 个，实际 {asks} 个")
@@ -242,11 +256,12 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
                 if c["kind"] == "plan" and c["draft"]:
                     call("POST", f"/iron/api/drafts/{c['draft']}/confirm", {}, token)
         ill = illness_rows(user_id) if "illness" in turn else None
-        if "events" in turn or "memory" in turn:
+        if "events" in turn or "memory" in turn or "memory_keys" in turn:
             time.sleep(3)  # 当场写的记忆在回答之后
         events = active_events(user_id) if "events" in turn else None
         mem = memories(user_id) if "memory" in turn else None
-        bad = judge(turn, answer, cards, ill, events, mem)
+        keys = memory_keys(user_id) if "memory_keys" in turn else None
+        bad = judge(turn, answer, cards, ill, events, mem, keys)
         rows.append(Row(case=case["id"], turn=n, say=turn["say"], ok=not bad, bad=bad, secs=round(secs, 1),
                         answer=answer, cards=[c["kind"] for c in cards], tools=steps))  # fmt: skip
         print(f"{'-' * 72}\n问：{turn['say']}（{secs:.1f} 秒）")

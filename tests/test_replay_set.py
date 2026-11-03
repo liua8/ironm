@@ -283,3 +283,16 @@ def test_chat_judge_checks_memory_counts() -> None:
         "有效的 injury 记忆应有 1 条，实际 2 条" in bad
         and "有效的 equipment 记忆应有 1 条，实际 0 条" in bad
     )
+
+
+def test_chat_judge_checks_memory_keys() -> None:
+    """对话用例能查记忆的键（§148：伤病记成部位+左右、特殊情况记成代码）。"""
+    spec = importlib.util.spec_from_file_location("replay_script", ROOT / "scripts" / "replay.py")
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    keyed = {"memory_keys": ["injury:joint.knee:左"]}
+    assert mod.judge(keyed, "好", [], None, None, None, {"injury:joint.knee:左"}) == []
+    assert mod.judge(keyed, "好", [], None, None, None, set()) == [
+        "应有记忆键 injury:joint.knee:左，没有"
+    ]

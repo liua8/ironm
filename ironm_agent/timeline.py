@@ -15,7 +15,7 @@ from typing import Any
 _log = logging.getLogger("ironm_agent.run")
 
 DEFAULT_DAYS, MAX_DAYS, MAX_LINES = 28, 90, 80
-_KINDS = {"injury": "伤病", "event": "近期的事"}
+_KINDS = {"injury": "伤病", "special": "特殊情况", "event": "近期的事"}
 
 SCHEMA: dict[str, Any] = {
     "type": "function",

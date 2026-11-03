@@ -8,6 +8,7 @@
 #   asks      这一轮最多问几个问题（按问号数）；不写就不检查
 #   confirm   true：这一轮出的计划预览当场确认，后面几轮在这份计划上改（§120）
 #   memory    这一轮之后重放账号各类有效记忆的条数，如 {injury: 1}（§145）；不写就不检查
+#   memory_keys 这一轮之后应有的记忆键，如 [injury:joint.knee:左]（§148 伤病、特殊情况结构化）
 # 只用规则判断，不打分。
 
 profile: {height_cm: 175, birth: "1995-06-01", sex: male, goal: fat_loss, activity: moderate}
@@ -236,6 +237,18 @@ cases:
         memory: {injury: 1, equipment: 1}
       - say: 久坐圆肩怎么改善
         memory: {injury: 1, equipment: 1}
+  - id: injury-structured
+    from: §148 伤病和特殊情况结构化：记成部位和左右；同一处再说是更新；高血压记成特殊情况
+    turns:
+      - say: 我左膝有旧伤，深蹲蹲深了会疼
+        memory: {injury: 1}
+        memory_keys: [injury:joint.knee:左]
+      - say: 左膝最近好多了，不过跑步还是有点疼
+        memory: {injury: 1}
+        memory_keys: [injury:joint.knee:左]
+      - say: 我有高血压，一直在吃药
+        memory: {injury: 1, special: 1}
+        memory_keys: [injury:joint.knee:左, special:hypertension]
 
 # 后台用例（§138 需求 1）：到期复查（kind: checkup，§129）、练完定下次（kind: next，§132）。
 # 本进程内存存储 + 真实模型，不登录、不碰账号和数据库。setup：

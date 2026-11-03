@@ -22,11 +22,12 @@ DATA_DAYS = 56  # 训练记录得出的偏好多少天没再被数据支持就�
 ADVICE_DAYS = 14  # 给过的建议多少天后不再给管家看（spec [2026-10-23] §109）
 MAX_FACTS = 60  # 超过这么多条有效记忆时按类别和优先级读取
 CATEGORY_CAP: dict[str, int] = {
-    "injury": 15, "goal": 5, "style": 5, "equipment": 10, "schedule": 8, "diet": 10,
+    "injury": 15, "special": 5, "goal": 5, "style": 5, "equipment": 10, "schedule": 8, "diet": 10,
     "preference": 12, "event": 5, "level": 2,
 }  # fmt: skip
 KEEP_ORDER: tuple[Category, ...] = (
-    "injury", "goal", "level", "style", "equipment", "schedule", "diet", "preference", "event",
+    "injury", "special", "goal", "level", "style", "equipment", "schedule", "diet", "preference",
+    "event",
 )  # fmt: skip
 RESOLVED_KEEP = 5  # 记忆多时，已解决的最多留几条
 

@@ -224,7 +224,7 @@ def conditions(
         out.append(f"④时间：{plan_line}")
     else:
         out.append("④时间：一周能练几天、每次大概多久、哪几天有空？")
-    hurts = of("injury")
+    hurts = of("injury") + of("special")  # 孕期、高血压这类特殊情况也在这一项确认（§148）
     if hurts:
         out.append(f"⑤伤病：{_said(hurts)}，现在怎么样？")
     else:

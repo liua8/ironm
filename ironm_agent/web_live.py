@@ -335,7 +335,12 @@ async def _situation(
         items = await memory.items(user_id)
     except Exception:
         items = []
-    injuries = [x.content for x in items if x.category == "injury" and x.status == "active"]
+    from ironm_agent.facts import describe
+    from ironm_agent.latest import current
+
+    items = current(items)  # 被新说法遮住的旧条目不列
+    injuries = [x.content + (f"（{describe(x.data)}）" if x.data.get("parts") else "")
+                for x in items if x.category in ("injury", "special") and x.status == "active"]  # fmt: skip
     special: frozenset[str] = frozenset()
     try:
         snap = await _web().snapshot_for(user_id)

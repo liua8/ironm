@@ -13,10 +13,11 @@ import logging
 import re
 import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from typing import Any, Literal, cast
 
+from ironm_agent.facts import STRUCTURED, key_of, said_side, structured
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
 from ironm_agent.memory_store import (
     CATEGORIES,
@@ -40,6 +41,7 @@ ANSWER_CHARS = 600  # 给提取看的回答最多几个字
 _PROMPT = """你负责替健身教练团队记住"这个用户本人"的情况，供以后回答时参考。根据这一轮对话，决定要新增、更新或标为已解决的记忆。
 
 类别（category 用英文代号）：
+- special 特殊情况：孕期、心脏病、糖尿病、高血压、近期做过手术（系统按这一类提醒运动风险）
 - injury 伤病与身体状况：伤病的部位和左右、怎么引起、什么动作会疼、医生的诊断与限制（如不建议跳）、慢性病。体态问题（圆肩、驼背、骨盆前倾）不是伤病：他说想改善的记成 goal，只是问怎么改善（「久坐圆肩怎么改善」）不记
 - equipment 器械与场地：有哪些器械（几公斤）、在家还是健身房、场地条件。不同的器械各记一条
 - schedule 可练时间与作息：哪几天能练、几点、每次多久，几点睡、几点起
@@ -76,7 +78,7 @@ _SURELY_TEMPORARY = re.compile(r"这两周|这一两周|这几天|出差|旅游|
 _LONG_TERM: frozenset[str] = frozenset({"equipment", "schedule", "goal"})
 # 长期类别（用户画像）：模型标了 lasting=short 的不进这些，记成近期事件（§103）
 _PROFILE: frozenset[str] = frozenset(
-    {"goal", "level", "injury", "equipment", "schedule", "diet", "preference", "style"}
+    {"goal", "level", "injury", "special", "equipment", "schedule", "diet", "preference", "style"}
 )
 
 _STATUS_NAMES = {"active": "有效", "pending": "待确认", "resolved": "已解决"}
@@ -124,6 +126,8 @@ class Op:
     target: Item | None = None
     inferred: bool = False
     until: date | None = None  # 近况到哪天为止
+    data: dict[str, Any] = field(default_factory=dict)  # 伤病、特殊情况的字段（§148）
+    key: str = ""
 
 
 @dataclass
@@ -247,9 +251,40 @@ def _problem(
         if same is not None:  # 同一件事又说了一遍：改原来那条，不新增（§73 需求 3）
             kind, target = "update", same
             until = until or same.until
+    data: dict[str, Any] = {}
+    key = ""
+    if kind == "resolve" and target is not None:  # 结束一条：字段照旧
+        data, key = dict(target.data), target.key
+    elif category in STRUCTURED:  # 伤病、特殊情况带字段，和原话对不上就退回（§148）
+        category, data, why = structured(category, raw, content, quote)
+        if why:
+            return None, why
+        if (target is not None and target.category == category and not data.get("side")
+                and data.get("parts") == target.data.get("parts") and target.data.get("side")):  # fmt: skip
+            # 改的是同一处、这次没说左右：沿用原来的（复核 11-03）
+            data["side"] = target.data["side"]
+        key = key_of(category, data)
+        side = str(data.get("side") or "")
+        if side and not inferred and not said_side(side, quote):
+            inferred = True  # 左右原话里没说：推测的，先放着等他确认
+        same = next((x for x in items.values() if key and x.key == key
+                     and x.status in ("active", "pending") and x is not target), None)  # fmt: skip
+        # 同一件事（同部位同侧、同一种特殊情况）说法变了：更新那一条；一样的照旧当成已经记着了。
+        # 推测的不顶掉他说过、正生效的那条（复核 11-03）：另记一条待确认
+        if (kind == "add" and same is not None and norm(same.content) != norm(content)
+                and not (inferred and same.status == "active")):  # fmt: skip
+            kind, target = "update", same
+        if target is not None and target.category == category:  # 更新时没再交的字段沿用原来那条
+            for name in ("kind", "severity", "triggers", "avoid", "codes", "since"):
+                if name not in data and name in target.data:
+                    data[name] = target.data[name]
+        if data.get("kind") == "术后" and not data.get(
+            "since"
+        ):  # 术后从第一次记的那天算，更新不重新计时
+            data["since"] = (today or date.today()).isoformat()
     content = absolute(content, today or date.today())  # "今天"写成日期（§103），数字核对在这之前
     op = Op(cast(Literal["add", "update", "resolve"], kind), cast(Category, category), content,
-            quote, target, inferred, until)  # fmt: skip
+            quote, target, inferred, until, data, key)  # fmt: skip
     return op, ""
 
 
@@ -263,7 +298,7 @@ _ONE_OFF = re.compile(
     r"今天|今早|今晚|昨天|昨晚|刚才|刚刚|这顿|这次|早上|中午|晚上|早餐|午餐|晚餐|早饭|午饭|晚饭"
 )
 _HABIT = re.compile(r"每天|每周|每次|一直|平时|经常|习惯|通常|总是|开始")
-_PROFILE_FACTS: frozenset[str] = frozenset({"injury", "goal", "level", "diet"})
+_PROFILE_FACTS: frozenset[str] = frozenset({"injury", "special", "goal", "level", "diet"})
 _ASKING = re.compile(
     r"[？?]|吗$|呢$|怎么办|怎么改善|怎么|如何|能不能|可不可以|要不要|是不是|为什么|有没有|行不行|会不会"
 )
@@ -405,6 +440,29 @@ def validate(
         if op is None:
             rejected.append(problem)
             continue
+        twin = next(
+            (i for i, o in enumerate(ops) if op.key and o.key == op.key and o.op != "resolve"), None
+        )
+        if (
+            twin is not None and op.op != "resolve"
+        ):  # 同一轮同一件事交了两条：合成一条（复核 11-03）
+            first = ops[twin]
+            if first.target is not None and op.target is not None and first.target is not op.target:
+                rejected.append("同一件事交了两条，改的不是同一条")
+                continue
+            merged = {**first.data, **op.data}
+            for name in ("triggers", "avoid", "codes"):
+                both = [*first.data.get(name, []), *op.data.get(name, [])]
+                if both:
+                    merged[name] = list(dict.fromkeys(both))
+            # 他说的那条为准（推测的不顶掉他说的）；两条都是他说的，以后一条为准；都是推测才算推测（复核 11-03）
+            keep = op if (not op.inferred or first.inferred) else first
+            target = first.target or op.target
+            if target is not None and target.id not in touched:
+                touched.add(target.id)
+            ops[twin] = replace(keep, op="update" if target is not None else "add", target=target,
+                                data=merged, inferred=first.inferred and op.inferred)  # fmt: skip
+            continue
         if op.target is not None:
             if op.target.id in touched:
                 rejected.append("同一条记忆改了两次")
@@ -436,8 +494,29 @@ def validate(
                     touched.add(x.id)
                     ops.append(Op("resolve", x.category, op.content, op.quote, x))
             continue
-        ops.append(op)
+        ops += _one_per_code(op, items, touched)
     return ops[:MAX_OPS], rejected
+
+
+def _one_per_code(op: Op, items: Mapping[str, Item], touched: set[str]) -> list[Op]:
+    """一句话里说了几种特殊情况（"有糖尿病和高血压"）：一种一条，各自按代码更新（复核 11-03），
+    免得以后单说"高血压控制住了"时把糖尿病一起盖掉。"""
+    codes = list(op.data.get("codes") or [])
+    if op.category != "special" or op.op != "add" or len(codes) < 2:
+        return [op]
+    out = []
+    for code in codes:
+        key = f"special:{code}"
+        same = next((x for x in items.values() if x.key == key and x.status in ("active", "pending")
+                     and x.id not in touched), None)  # fmt: skip
+        if same is not None and norm(same.content) == norm(op.content):
+            continue  # 已经记着了
+        if same is not None and not (op.inferred and same.status == "active"):
+            touched.add(same.id)
+            out.append(replace(op, op="update", target=same, data={"codes": [code]}, key=key))
+        else:
+            out.append(replace(op, data={"codes": [code]}, key=key))
+    return out
 
 
 _ENDED = re.compile(
@@ -459,7 +538,7 @@ def changes_of(ops: Sequence[Op], at: datetime | None = None) -> list[Change]:
         if op.target is not None:
             out.append(Change("status", id=op.target.id, status="superseded"))
         item = Item(new_id(), op.category, op.content, op.quote, origin, status, at, at,
-                    op.target.id if op.target else None, op.until)  # fmt: skip
+                    op.target.id if op.target else None, op.until, op.data, op.key)  # fmt: skip
         out.append(Change("insert", item=item))
     return out
 

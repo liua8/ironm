@@ -209,8 +209,10 @@ ASK_TERMS_SCHEMA: dict[str, Any] = {
     },
 }
 
-_CATEGORIES = ["injury", "equipment", "schedule", "diet", "preference", "goal", "level", "style",
-               "event", "followup"]  # fmt: skip
+_CATEGORIES = ["injury", "special", "equipment", "schedule", "diet", "preference", "goal", "level",
+               "style", "event", "followup"]  # fmt: skip
+_JOINTS = ["joint.shoulder", "joint.elbow", "joint.wrist", "joint.cervical", "joint.lumbar", "joint.hip",
+           "joint.knee", "joint.ankle"]  # fmt: skip
 REMEMBER_SCHEMA: dict[str, Any] = {
     "type": "function",
     "function": {
@@ -219,6 +221,8 @@ REMEMBER_SCHEMA: dict[str, Any] = {
             "他这句话说了关于他本人、以后要照顾到的情况时调用，一次可以交几条；提问、闲聊、别人的事、假设、否定的说法不记，"
             "已有的不重复记。只写他说了的：问句带出的不算（「肌酐高了怎么办」「久坐圆肩怎么改善」不记）；你的安排不写进去；"
             "圆肩驼背是体态不是 injury。一顿饭、一次训练不记（那是 log_meal、log_workout）。"
+            "伤病（injury）写 parts、side（他说了左右才写）、哪些动作会疼 triggers、不能做的 avoid；"
+            "孕期、心脏病、糖尿病、高血压、近期手术记成 special，写 codes（几种都写）。系统按原话核对部位，对不上会退回。"
             "short 的（今天累、这周出差）系统记成近期的事，until：\"这周\"写周日、\"这两天\"写明天，看不出写 7 天后。"
             "长期的情况变了 update 那一条；他说好了、结束了、取消了，resolve 还在生效的近况和跟进，不新增\"已结束\"。"
             "答应回访、他要你提醒的记 followup；\"该问的、到期的跟进\"里你提了或他答了，用编号 resolve。"
@@ -242,6 +246,19 @@ REMEMBER_SCHEMA: dict[str, Any] = {
                             "lasting": {"type": "string", "enum": ["long", "short"],
                                         "description": "long（一直要照顾）或 short（某一天、这几天）"},
                             "until": {"type": "string", "description": "event、followup 的截止日 YYYY-MM-DD"},
+                            "parts": {"type": "array", "items": {"type": "string", "enum": _JOINTS},
+                                      "description": "injury：哪个关节（肩、手肘、手腕、颈椎、腰椎、髋、膝、踝），要是他说到的"},
+                            "side": {"type": "string", "enum": ["左", "右", "两侧"],
+                                     "description": "injury：左右；他没说就不写"},
+                            "kind": {"type": "string", "enum": ["旧伤", "急性", "慢性", "术后"]},
+                            "severity": {"type": "string", "enum": ["轻", "中", "重"]},
+                            "triggers": {"type": "array", "items": {"type": "string"},
+                                         "description": "injury：哪些动作会疼（他说的），如[\"深蹲\"]"},
+                            "avoid": {"type": "array", "items": {"type": "string"},
+                                      "description": "injury：不能做的（他或医生说的），如[\"跳跃\"]"},
+                            "codes": {"type": "array", "items": {"type": "string", "enum": [
+                                "pregnancy", "cardiac", "diabetes", "hypertension", "surgery"]},
+                                      "description": "special（伤病里顺带说了也写）：孕期、心脏病、糖尿病、高血压、近期手术"},
                         },
                         "required": ["op"],
                     },

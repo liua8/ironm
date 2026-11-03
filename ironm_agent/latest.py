@@ -26,12 +26,29 @@ def _same_text(category: str, text: str) -> frozenset[str]:
     return frozenset({f"{category}:{_PUNCT.sub('', text)}"})
 
 
+_SIDES = {"左": ("左",), "右": ("右",), "两侧": ("两侧", "左", "右"), "": ("", "两侧", "左", "右")}
+
+
+def _fact_keys(item: Item) -> frozenset[str]:
+    """左膝、右膝是两件事；没说左右（"膝盖不怎么疼了"）、两侧的和同部位哪边都算同一件事，新的为准（复核 11-03）。
+    特殊情况一种一个键（同一条带了几种时，后来单说其中一种也算同一件事）。"""
+    from ironm_agent.facts import codes_of
+
+    if item.category == "special":
+        return frozenset(f"special:{c}" for c in codes_of(item.data)) or frozenset({item.key})
+    side = str(item.data.get("side") or "")
+    return frozenset(f"injury:{p}:{s}" for p in item.data.get("parts") or [] for s in _SIDES.get(side, (side,))) \
+        or frozenset({item.key})  # fmt: skip
+
+
 def keys(item: Item) -> frozenset[str]:
     """这条记忆说的是哪件（几件）事；两条有相同的 key 就是同一件事。"""
     from ironm_agent.casefile import PARTS
     from ironm_agent.memory_extract import _EVENT_KINDS
 
     c, text = item.category, item.content
+    if item.key:  # 伤病、特殊情况有字段（§148）：按部位+左右、按代码算同一件事
+        return _fact_keys(item)
     if c in _ONE:
         return frozenset({c})
     if c in ("event", "followup"):  # 近况和待跟进算一类：出差了、说好的回来前提醒，同一件事

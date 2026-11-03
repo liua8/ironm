@@ -29,6 +29,7 @@ PROFILE: tuple[str, ...] = (
     "goal",
     "level",
     "injury",
+    "special",
     "equipment",
     "schedule",
     "diet",
@@ -37,7 +38,7 @@ PROFILE: tuple[str, ...] = (
 )
 # 每轮常驻：目标、伤病、器械、训练水平、回答风格（都是短行，且几乎每类回答都要用）。
 # 日程、饮食、偏好按这一轮的决定取（DECISION），避免把整本档案塞进提示词。
-ALWAYS: tuple[Category, ...] = ("goal", "injury", "equipment", "level", "style")
+ALWAYS: tuple[Category, ...] = ("goal", "injury", "special", "equipment", "level", "style")
 DECISION: dict[str, tuple[Category, ...]] = {
     "train": ("schedule", "preference"),
     "plan": ("schedule", "preference"),
@@ -185,11 +186,19 @@ def daily_asks(
     profile = " ".join(
         x.content for x in items if x.category == "injury" and x.status != "superseded"
     )
+    recorded = {p for x in items if x.category == "injury" and x.status != "superseded"
+                for p in (x.data.get("parts") or [])}  # 结构化的部位（§148）  # fmt: skip
     days = Counter(code for code, _ in {(c, d) for c, d in pains if (today - d).days < PAIN_DAYS})
     for code, n in days.items():
         name = JOINT_NAMES.get(code, "")
         key = f"pain:{code}"
-        if n < PAIN_TIMES or not name or AUTO + key in seen or _short(name) in profile:
+        if (
+            n < PAIN_TIMES
+            or not name
+            or AUTO + key in seen
+            or code in recorded
+            or _short(name) in profile
+        ):
             continue
         out.append(
             _auto(
