@@ -1,8 +1,7 @@
-"""管家整合：请到多位专业角色时，把它们的意见整合成一个回答，并在发出前用规则核对。
+"""管家的回答发出前的核对和改写（单 Agent，10-28 起不再有多位角色的整合）。
 
-- 核对逐句进行（checks.check_text，与专业 Agent 的意见同一套规则）。
+- 核对逐句进行（checks.check_text）：出处、数字、个人数据；再按约束规则核对。
 - 核对不通过时带着原因改写一次；仍不通过就 repair（对不上的个人数据句删掉，其余改标〔经验〕）。
-- 模型不可用时，给出主责角色的意见，并提示这次回答受限。
 """
 
 from __future__ import annotations
@@ -34,9 +33,7 @@ _KB_REF = KB_REF
 class Composed:
     text: str  # 回答正文，带出处标记（内部核对用；展示时去掉，出处放进"依据与来源"）
     entries: tuple[Entry, ...]  # 正文引用到的依据库条目，按出现顺序
-    degraded: bool
     rewrites: int
-    by_model: bool
     calcs: tuple[tuple[str, str], ...] = ()  # 正文引用到的指标计算（C 编号，说明）
     rows: tuple[tuple[str, str], ...] = ()  # 正文引用到的健康数据（rid，说明）
     violations: tuple[str, ...] = ()  # 约束核对第一次发现的问题类别（spec [2026-10-23] §4）
@@ -123,17 +120,13 @@ def _composed(
     rows: Mapping[str, str],
     *,
     rewrites: int,
-    degraded: bool = False,
-    by_model: bool = True,
 ) -> Composed:
     used_calcs = tuple((c, calcs[c]) for c in dict.fromkeys(CALC_REF.findall(answer)) if c in calcs)
     used_rows = tuple((r, rows[r]) for r in cited_ids(answer) if r in rows)
     return Composed(
         answer,
         _ordered_entries(answer, entries),
-        degraded,
         rewrites,
-        by_model,
         used_calcs,
         used_rows,
     )

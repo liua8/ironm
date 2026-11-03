@@ -30,29 +30,21 @@ _log = logging.getLogger("ironm_agent.experts")
 
 MAX_QUERIES = 3  # 每个 Agent 每轮最多查询几次
 MAX_ROUNDS = 5  # 每个 Agent 每轮最多和模型往返几次（含查询）
-_FIELDS = ("conclusion", "for_you", "how", "caution", "uncertain")
-_SOLO_FIELDS = ("answer",)  # 只请到一位（或单 Agent 对照组）时，它直接写给用户的回答
+_FIELDS = ("answer",)  # 管家直接写给用户的回答（单 Agent，§68 起只有这一项）
 
 
 class Opinion(ContractModel):
     role: Role
     speak: bool
     reason: str = ""  # 不发言的原因
-    conclusion: str = ""
-    for_you: str = ""
-    how: str = ""
-    caution: str = ""
-    uncertain: str = ""
-    answer: str = ""  # 直接给用户的回答（solo 模式），有它时就不再整合
+    answer: str = ""  # 直接给用户的回答
     # 改计划、新计划、记训练不再写在这里，由管家调用动作工具交给系统（§120）
     basis: tuple[str, ...] = ()  # 意见里引用到的编号：K 开头为依据库条目，r 开头为健康数据行
     general: bool = False  # 没有资料依据，只给不带具体数字的一般建议
     memory: list[dict[str, Any]] | None = None  # 单 Agent 这一轮要记的（§68），由代码核对后写入
 
     def body(self) -> str:
-        if self.answer:
-            return self.answer
-        return "\n".join(getattr(self, f) for f in _FIELDS if getattr(self, f))
+        return self.answer
 
 
 @dataclass(frozen=True)
@@ -65,22 +57,6 @@ class Consultation:
     trace: dict[str, Any] = field(default_factory=dict)
 
 
-_PROMPT = """你是健身 App 里的「{name}」，负责：{duty}。
-{team}
-
-{framework}
-
-回答方式：
-1. 先给结论，再用一句话说理由，再给做法；只答问的，没问到的不说。
-2. 关于这个人的事实（状态、伤病、计划、记录、数据）只照档案、数据和他这句话说，不推测、不编造；档案里有和问题相关的数据时，结论用上一条。
-3. 给具体的量（组次、克数、分钟），不说"适量、多注意、循序渐进"。
-4. 你被请来就要回答：资料里没有就凭专业经验答；不诊断、不开药。
-先看档案和系统查好的资料，不够再用工具查（{tools}），最多 3 次，拿到要的就作答。
-
-出处（系统会逐句核对）：用到资料的句子句末写〔K03〕，用到档案或计算结果写〔C2〕，凭经验写〔经验〕；用到他的健康数据写成 <statement>这句话<cite>[r3]</cite></statement>。带数字的句子都要有出处，数字照资料、计算或数据写；按他的体重换算时资料编号和数据编号都写上。
-{tail}"""
-
-
 def _user_message(
     text: str,
     history: Sequence[str],
@@ -89,12 +65,11 @@ def _user_message(
     memory: str = "",
     *,
     case: str = "",
-    relay: str = "",
     note: str = "",
     prefetched: str = "",
 ) -> str:
     parts = [f"用户的问题：{text}"]
-    for extra in (case, personal, memory, relay, note):
+    for extra in (case, personal, memory, note):
         if extra:
             parts.append(extra)
     if prefetched:
@@ -125,10 +100,8 @@ def problems_of(opinion: Opinion, evidence: Evidence, text: str) -> list[str]:
     )
 
 
-def _repaired(
-    opinion: Opinion, evidence: Evidence, text: str, names: Sequence[str] = _FIELDS
-) -> Opinion:
-    """逐个字段 repair：对不上的个人数据句删掉，其余对不上出处的句子改标〔经验〕。"""
+def _repaired(opinion: Opinion, evidence: Evidence, text: str) -> Opinion:
+    """repair 回答：对不上的个人数据句删掉，其余对不上出处的句子改标〔经验〕。"""
     fields = {
         f: repair(
             getattr(opinion, f),
@@ -137,7 +110,7 @@ def _repaired(
             question=text,
             calcs=evidence.calcs,
         )
-        for f in names
+        for f in _FIELDS
     }
     body = "\n".join(fields.values())
     if not body.strip():
@@ -158,20 +131,13 @@ def _salvage(content: str, fields: Sequence[str]) -> dict[str, Any] | None:
     return out or None
 
 
-def _parse(
-    role: Role,
-    content: str,
-    fields: Sequence[str] = _FIELDS,
-    question: str = "",
-    task: str | None = None,
-) -> Opinion | None:
+def _parse(role: Role, content: str, question: str = "") -> Opinion | None:
+    fields = _FIELDS
     raw = parse_json(content) or _salvage(content, fields)
     if raw is None:
         return None
-    if fields == _SOLO_FIELDS and is_slots(
-        raw
-    ):  # 按分段写的：由代码拼成正文、按问题类型限长（§38）
-        raw = {**raw, "answer": assemble(raw, question, task)}
+    if is_slots(raw):  # 按分段写的：由代码拼成正文、按问题类型限长（§38）
+        raw = {**raw, "answer": assemble(raw, question)}
     data: dict[str, Any] = {k: raw.get(k) for k in ("general", *fields) if k in raw}
     if isinstance(raw.get("memory"), list):
         data["memory"] = [x for x in raw["memory"] if isinstance(x, dict)]
@@ -209,8 +175,6 @@ async def _loop(
     toolbox: Toolbox,
     llm: LLM,
     text: str,
-    fields: Sequence[str] = _FIELDS,
-    task: str | None = None,
     today: date | None = None,
     trace: dict[str, Any] | None = None,
     *,
@@ -258,10 +222,10 @@ async def _loop(
                     result = await toolbox.run(call)
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
             continue
-        opinion = _parse(spec.role, reply.content, fields, question, task)
+        opinion = _parse(spec.role, reply.content, question)
         if opinion is not None:  # 同一件事写了两遍（普通句子 + 带编号的标记）：先合并再核对
             opinion = opinion.model_copy(
-                update={f: merge_echoes(getattr(opinion, f)) for f in _FIELDS + _SOLO_FIELDS}
+                update={f: merge_echoes(getattr(opinion, f)) for f in _FIELDS}
             )
             memo = opinion.memory if opinion.memory is not None else memo
             opinion = opinion.model_copy(update={"memory": memo})
@@ -291,7 +255,7 @@ async def _loop(
             _log.info(
                 "expert opinion repaired: role=%s problems=%d", spec.role.value, len(problems)
             )
-            return _settled(_repaired(opinion, toolbox.evidence, text, fields), desk, trace)
+            return _settled(_repaired(opinion, toolbox.evidence, text), desk, trace)
         fixes += 1
         messages.append({"role": "assistant", "content": reply.content})
         messages.append(

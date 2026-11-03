@@ -3,7 +3,7 @@
 from typing import Any
 
 from ironm_agent.answer_format import LIMITS, assemble, drop_said, is_slots, kind_of, slots_prompt
-from ironm_agent.experts import _SOLO_FIELDS, _parse
+from ironm_agent.experts import _parse
 from ironm_agent.roles import Role
 from tests.test_plugin import text_of
 from tests.test_turn_flow import Coach, agent, run, snapshot_of
@@ -80,12 +80,11 @@ def test_too_long_drops_later_steps_but_keeps_answer_and_alert() -> None:
 
 def test_plain_text_answers_still_work() -> None:
     assert not is_slots({"answer": "一段文字"})
-    op = _parse(Role.TRAINER, '{"answer": "一段文字的回答"}', _SOLO_FIELDS, "深蹲怎么做")
+    op = _parse(Role.TRAINER, '{"answer": "一段文字的回答"}', "深蹲怎么做")
     assert op is not None and op.answer == "一段文字的回答"
     op = _parse(
         Role.TRAINER,
         '{"answer": "你的 BMI 是 24.5", "reason": "按 75 公斤、175 厘米算", "steps": [], "next": ""}',
-        _SOLO_FIELDS,
         "我的 BMI 是多少",
     )
     assert op is not None and op.answer == "你的 BMI 是 24.5。按 75 公斤、175 厘米算。"

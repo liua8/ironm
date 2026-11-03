@@ -42,13 +42,10 @@ from ironm_agent.clarify import (
     CONFIRMED_NOTE,
     HEAD,
     PLAN_REQUEST,
-    Decision,
     asked,
     conditions,
     confirm_ask,
-    decide,
     replies,
-    wants_new,
 )
 from ironm_agent.compose import Composed, revise
 from ironm_agent.constraints import Context, Violation, annotate, annotate_plan
@@ -331,7 +328,6 @@ class Prepared:
     snapshot: Snapshot
     plan: Plan | None
     case: CaseFile
-    decision: Decision
 
 
 def _weather_case(w: Weather, plan: Plan | None, today: date) -> str:
@@ -1511,8 +1507,7 @@ class IronMAgent:
 
         composed = await revise(c, text, llm, constraints=rules, memory=recall, annotate=mark)
         run.update(constraints=list(composed.violations), constraint_fixed=composed.fixed)
-        run["_compose"] = {"checks": list(composed.checks), "repaired": composed.repaired,
-                           "degraded": composed.degraded}  # fmt: skip
+        run["_compose"] = {"checks": list(composed.checks), "repaired": composed.repaired}
         if must_block:  # 危急指标：查它说到了先别运动、尽快就医，没给训练安排（§86 需求 2）
             lack = missing(composed.text, RISK_NEEDS)
             run["risk_by"] = "fixed" if lack else "model"
@@ -2180,30 +2175,14 @@ class IronMAgent:
             case = replace(case, weather=_weather_case(current, plan, snapshot.today))
         if run is not None:
             run["weather"] = current is not None
-        has_plan = plan is not None
-        planning = wants_new(text, has_plan=has_plan) or asked(history) is not None
-        target = await self._target(user_id, snapshot) if planning else ""
-        decision = decide(
-            text, history, recall, snapshot.profile, has_plan=has_plan, target=target,
-            plan_line=schedule_line(plan) if plan is not None else "", today=snapshot.today,
-            checked_today=any(x.day == snapshot.today and x.done for x in logs),
-        )  # fmt: skip
-        if decision.new and not decision.ask:  # 排新计划：按具体目标说明怎么排（§55 需求 2）
-            aim = target or (GOALS[snapshot.profile.goal] if snapshot.profile.goal else "")
-            if aim:
-                said = f"他的目标：{aim}。计划说明第一句写这份计划为了这个目标怎么排，目标的数和日期照写。"
-                decision = replace(decision, note="\n".join(x for x in (decision.note, said) if x))
-        return Prepared(snapshot, plan, case, decision)
+        return Prepared(snapshot, plan, case)
 
     def _answer(
         self, composed: Composed, prefix: str, run: dict[str, Any], said: dict[str, Any]
     ) -> list[dict[str, Any]]:
         """回答正文与可展开的“依据与来源”。"""
-        run.update(path="answer", degraded=composed.degraded, rewrites=composed.rewrites,
-                   kb=[e.id for e in composed.entries])  # fmt: skip
+        run.update(path="answer", rewrites=composed.rewrites, kb=[e.id for e in composed.entries])
         blocks = []
-        if composed.degraded:
-            blocks.append(notice("这次回答受限：整合没有通过核对，下面给出主责角色核对过的意见。"))
         said["answer"] = answer_text(composed)
         blocks.append(
             text_block(answer_text(composed, prefix=prefix, suffix=run.get("_tail") or ""))

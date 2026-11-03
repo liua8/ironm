@@ -17,7 +17,6 @@ from ironm_agent.answer_format import slots_prompt
 from ironm_agent.casefile import CaseFile
 from ironm_agent.coach import app_guide
 from ironm_agent.experts import (
-    _SOLO_FIELDS,
     Consultation,
     Opinion,
     _loop,
@@ -256,7 +255,7 @@ async def respond(
     )
     toolbox.adopt(
         e
-        for r in (*framework_refs(Role.GENERAL, flags), *flag_refs(flags))
+        for r in (*framework_refs(Role.GENERAL), *flag_refs(flags))
         if (e := toolbox.kb.get(r)) is not None
     )
     asked = _user_message(
@@ -289,8 +288,7 @@ async def respond(
                              "exhausted": False, "forced": False, "domains": [r.value for r in domains]}  # fmt: skip
     start = time.perf_counter()
     try:
-        opinion = await _loop(GENERAL, messages, toolbox, llm, said, _SOLO_FIELDS, None, today,
-                              trace, question=text)  # fmt: skip
+        opinion = await _loop(GENERAL, messages, toolbox, llm, said, today, trace, question=text)
     except ModelUnavailable:
         silent = Opinion(role=Role.GENERAL, speak=False, reason="这次没能调用模型")
         trace["ms"] = int((time.perf_counter() - start) * 1000)

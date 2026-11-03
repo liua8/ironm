@@ -210,7 +210,8 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
         print("  准备：今天已打卡")
     session_id = str(json.load(call("POST", "/api/session", {}, token))["data"]["session_id"])
     made["sessions"].append(session_id)
-    rows: list[Row] = []
+    rows: list[Row] = made.setdefault("rows", [])  # 跑完一轮记一轮：中途出错时前面的轮照样进报告
+    start = len(rows)
     for n, turn in enumerate(case["turns"], 1):
         if turn.get("new_session"):  # 换一个会话接着聊（§73 会话摘要）：先等后台写完摘要
             time.sleep(int(turn.get("pause", 20)))
@@ -241,7 +242,7 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
         token, made["drafts"]
     )  # 下一条开始前会清空数据：这条的预览现在就取消
     made["drafts"] = []
-    return rows
+    return rows[start:]
 
 
 def cancel(token: str, drafts: list[str]) -> int:
@@ -376,18 +377,19 @@ def main() -> None:
     crashed = False
     if login_as is not None:
         token, user_id = login_as
-        made: dict[str, Any] = {"sessions": [], "drafts": [], "cancelled": 0}
+        made: dict[str, Any] = {"sessions": [], "drafts": [], "cancelled": 0, "rows": []}
         try:
             for i, case in enumerate(cases):
                 if i:
                     time.sleep(args.wait)
-                rows += run_case(case, spec["profile"], token, user_id, made)
-        except Exception as e:  # 中途出错：已经跑完的照样存报告
-            print(f"\n对话用例中途出错：{type(e).__name__}，已跑完的照样存报告")
+                run_case(case, spec["profile"], token, user_id, made)
+        except Exception as e:  # 中途出错：已经跑完的轮照样存报告
+            print(f"\n对话用例中途出错：{type(e).__name__}，已跑完的轮照样存报告")
             crashed = True
         finally:
             time.sleep(min(args.wait, 10))
             cleanup(token, user_id, made)
+        rows += made["rows"]
     code = finish(rows, args.label, args.against, {"models": models_used(config)})
     sys.exit(code if code == 1 or not crashed else 2)
 

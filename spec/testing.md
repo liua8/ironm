@@ -1191,6 +1191,15 @@ Obsoletes: [2026-10-23] §30 第 1 条（18 块平面图）
 - [x] 原有测试全部通过
   - 结果：1098 个
 
+### 143. 清理旧路径
+- [x] 清单里的死代码都删了；生产路径（generate_response → _single_turn → agent.respond → _loop → revise → render）不变；两个坏掉的评测脚本留着待定
+  - 结果：roles.py 从 160 多行到 67 行；experts、compose、plugin、frameworks、skill_route、router、actions 各删一段
+- [x] 原有测试全部通过
+  - 结果：1102 个（删掉的只有测 `claims` 的两句，改成测 `claimed`）
+- [x] 对话回放挑几条跑，和以前的结果比没有变差
+  - 结果：checked-in-today、preview-not-ok、action-tools 都符合；chat-records 第 1、4 轮（记体重）不符合，和这次清理无关：读数一律记在当天中午，mirobody 按"人+指标+时间+来源"认同一条，同一天第二条、删掉后重记都写不进（数据页记 71.9 也是 409）；重放账号今天已有一条撤掉的 72.5 占着，今天再跑这条都会这样。另作一项（要定同一天记两次是留两条还是后一次替换）
+  - 回放脚本顺手修了：对话用例中途出错时，那条用例已经跑完的轮照样进报告
+
 ## [2026-10-22]
 
 对应: spec.md `[2026-10-22]`

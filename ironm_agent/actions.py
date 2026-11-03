@@ -445,11 +445,6 @@ def unsatisfied(claims_: set[str], done: set[str]) -> set[str]:
     return {k for k in claims_ if not _MET_BY.get(k, {k}) & done}
 
 
-def claims(text: str) -> bool:
-    """回答里有没有说已经改了、记下了。"""
-    return bool(claimed(text))
-
-
 NOT_DONE = "这次没改成，也没记下来；你再说一次具体想怎么做，我来处理。"
 
 

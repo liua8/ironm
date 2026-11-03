@@ -22,7 +22,6 @@ from ironm_agent.actions import (
     Desk,
     Outcome,
     claimed,
-    claims,
 )
 from ironm_agent.llm import Reply
 from ironm_agent.skills import by_id
@@ -171,7 +170,7 @@ def test_action_calls_do_not_use_up_the_query_limit() -> None:
         {"role": "system", "content": "x"},
         {"role": "user", "content": "y"},
     ]
-    opinion = asyncio.run(_loop(GENERAL, msgs, box, llm, "把周三挪到周四", ("answer",)))
+    opinion = asyncio.run(_loop(GENERAL, msgs, box, llm, "把周三挪到周四"))
     assert box.actions.plan is not None and opinion.speak
     assert not any("查询次数已用完" in str(m.get("content")) for m in msgs)
 
@@ -205,7 +204,7 @@ def test_claim_wording() -> None:
                  "按你说的改好了，周四别练太重。", "已经帮你把卧推换成哑铃卧推了，如果肩还疼就停。",
                  "改好了，你看看卡片对不对？", "记下了，这次比上次多了一组。", "已经记下了，原来的计划不变。",
                  "已经把计划里周三的深蹲换成腿举了。"):  # fmt: skip
-        assert claims(said), said
+        assert claimed(said), said
     for said in ("可以把深蹲换成腿举。", "换成腿举就好了。", "建议挪到周四。", "你上次深蹲 60 公斤做了 8 次。",
                  "膝盖疼的话先别做深蹲，换成腿举更合适。", "要不要我帮你记下这次训练？",
                  "我可以帮你调整好计划吗？", "需要的话我可以帮你排好一份新计划。", "体重已经稳定，不用改了。",
@@ -213,7 +212,7 @@ def test_claim_wording() -> None:
                  # 复核新问题 D：主语是他
                  "你最近已经换了两次分化，先稳定一段。", "你的作息已经调了过来。", "你已经排了三周的训练。",
                  "你已经记下了每组的重量。"):  # fmt: skip
-        assert not claims(said), said  # 问句、提议、否定、说以前的事、主语是他都不算
+        assert not claimed(said), said  # 问句、提议、否定、说以前的事、主语是他都不算
     assert claimed("记下了，下次加重。周三挪到周四了。") == {
         "log",
         "change",

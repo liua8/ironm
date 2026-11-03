@@ -30,14 +30,14 @@ FRAMEWORKS[
 _REF = re.compile(r"〔(K\d{2,4})〕")
 
 
-def framework(role: Role, flags: Collection[str] = ()) -> str:
-    """管家的专业提示词。少见情况的规则（flags）随规程装进去（skills 的 special），这里不再按角色拼。"""
+def framework(role: Role) -> str:
+    """管家的专业提示词。少见情况的规则随规程装进去（skills 的 special），这里不再按角色拼。"""
     return FRAMEWORKS.get(role, "")
 
 
-def framework_refs(role: Role, flags: Collection[str] = ()) -> tuple[str, ...]:
+def framework_refs(role: Role) -> tuple[str, ...]:
     """提示词里引用到的依据库编号：这些条目记为这一轮可以引用的依据。"""
-    return tuple(dict.fromkeys(_REF.findall(framework(role, flags))))
+    return tuple(dict.fromkeys(_REF.findall(framework(role))))
 
 
 # 这类人的规则由代码每轮带上（特殊人群硬拦说明、档案风险提示），不再写在基础规程里（§101）；

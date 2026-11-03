@@ -24,7 +24,7 @@ PLAN_DETAIL = (
 
 def test_sources_show_only_the_plan_name_not_the_moves_or_instructions() -> None:
     assert shown(PLAN_DETAIL) == "计划与训练记录：当前计划：《居家减脂四练》每周 4 练，目标减脂"
-    composed = Composed("整体不错〔C9〕。", (), False, 0, True, calcs=(("C9", PLAN_DETAIL),))
+    composed = Composed("整体不错〔C9〕。", (), 0, calcs=(("C9", PLAN_DETAIL),))
     text = sources_text(composed)
     for leak in ("高脚杯深蹲", "不要再安排", "留空", "周一"):
         assert leak not in text, leak

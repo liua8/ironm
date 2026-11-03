@@ -45,7 +45,7 @@ def consultation_summary(c: Consultation) -> str:
     if ev.knowledge_queries:
         lines.append(f"查询依据库 {ev.knowledge_queries} 次，查到：{'、'.join(ev.entries) or '无'}")
     if c.opinion.speak:
-        first = c.opinion.conclusion or plain(c.opinion.answer).split("。")[0]
+        first = plain(c.opinion.answer).split("。")[0]
         lines.append(f"结论：{first[:60]}")
     return "\n".join(lines)
 

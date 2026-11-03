@@ -1,13 +1,12 @@
-"""调度用的公共部分（Route、身体不适与特殊人群的判断、按关键词调度）。
+"""身体不适与特殊人群的判断（concerns_of）：管家作答时提醒这句话涉及哪类情况。
 
-作答链路已改用 routing.py 的三路打分路由（spec [2026-10-23] §16）；这里的 route() 只留给路由测评做对照（原来的主教练调度）。
+规程怎么选在 skill_route.py（模型路由，出错按关键词）。
 """
 
 from __future__ import annotations
 
 from typing import Literal
 
-type Intent = Literal["chat", "app", "pro", "out_of_scope"]
 type Concern = Literal["discomfort", "special"]
 
 

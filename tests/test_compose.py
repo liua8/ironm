@@ -1,12 +1,8 @@
 """整合后的规则核对：逐句核对数字与所引的资料、数据行；安全官提醒由系统原样附上。"""
 
-
 from ironm_agent.checks import sentences
 from ironm_agent.compose import review
-from ironm_agent.experts import Consultation, Opinion
 from ironm_agent.kb import default_kb
-from ironm_agent.roles import Role
-from ironm_agent.tools import Evidence
 
 KB = default_kb()
 ENTRIES = {k: e for k in ("K10", "K17") if (e := KB.get(k)) is not None}
@@ -46,18 +42,3 @@ def test_data_number_outside_statement_fails() -> None:
 def test_unknown_row_and_entry_fail() -> None:
     problems = check("<statement>平均 58<cite>[r9]</cite></statement>，见〔K77〕")
     assert any("r9" in p for p in problems) and any("K77" in p for p in problems)
-
-
-def _consult(role: Role, **fields: object) -> Consultation:
-    opinion = Opinion.model_validate({"role": role, "speak": True, **fields}, strict=False)
-    return Consultation(opinion, Evidence(entries=dict(ENTRIES)), "spoke")
-
-
-
-
-
-
-
-
-
-

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
 from ironm_agent.roles import Role
@@ -48,7 +48,6 @@ class Routed:
     intent: str = ""
     fit: str = "skill"
     dropped: int = 0  # 选了但不在目录里（或是基础、讲法规程）的编号个数
-    extra: dict[str, str] = field(default_factory=dict)
     sources: bool = False  # 他在追问上一条回答的来源（§114：路由判断优先，出错才按关键词）
 
 
