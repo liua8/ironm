@@ -10,10 +10,11 @@ from typing import Any
 
 import pytest
 
+from ironm_agent.actions import RECORD_STATE
 from ironm_agent.illness import IllnessBook
 from ironm_agent.llm import Reply
 from ironm_agent.plan_ops import SCOPE_HINT
-from tests.fakes import jsonr
+from tests.fakes import call, jsonr
 from tests.test_plan_ops import Editor, _card_draft, _seeded
 from tests.test_plugin import text_of
 from tests.test_single_agent import single
@@ -46,14 +47,16 @@ def test_state_is_written_after_the_answer_from_what_the_agent_judged(
     ill = IllnessBook()
     at_answer: list[int] = []
 
-    def answer(*_: Any) -> Reply:
+    def answer(system: str, user: str, results: list[str]) -> Reply:
         at_answer.append(len(ill.rows.get("42", {})))  # 作答时还没写：关键词不再抢先开记录
-        return jsonr({"answer": "发烧就先别练〔经验〕。", "said": {"sick": "发烧"}})
+        if not results:
+            return call(RECORD_STATE, sick="发烧")  # §122：状态由工具交
+        return jsonr({"answer": "发烧就先别练〔经验〕。"})
 
     a, _ = single(answer, monkeypatch, old=True)
     a._illness = ill
     _, seen = settle(a, "我今天发烧了")
-    assert at_answer == [0] and seen["state_by"] == "model"
+    assert at_answer == [0, 0] and seen["state_by"] == "model"
     assert [e.symptoms for e in ill.rows["42"].values()] == [["发烧"]]
     quiet = IllnessBook()
     a, _ = single(lambda *_: jsonr({"answer": "发烧时先别练〔经验〕。"}), monkeypatch, old=True)
@@ -158,5 +161,3 @@ def test_edit_instructions_ask_the_agent_for_busy_days_and_scope() -> None:
 
     params = PLAN_EDIT_SCHEMA["function"]["parameters"]["properties"]
     assert "busy" in params and "scope" in params  # 改计划工具里问没空的日子和改动范围
-
-

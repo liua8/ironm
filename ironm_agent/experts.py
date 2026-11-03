@@ -17,7 +17,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from ironm_agent.actions import Desk
+from ironm_agent.actions import ALWAYS, Desk
 from ironm_agent.answer_format import assemble, is_slots
 from ironm_agent.checks import EXPERIENCE, check_text, cited_ids, merge_echoes, repair, sentences
 from ironm_agent.common import ContractModel
@@ -48,9 +48,6 @@ class Opinion(ContractModel):
     basis: tuple[str, ...] = ()  # 意见里引用到的编号：K 开头为依据库条目，r 开头为健康数据行
     general: bool = False  # 没有资料依据，只给不带具体数字的一般建议
     memory: list[dict[str, Any]] | None = None  # 单 Agent 这一轮要记的（§68），由代码核对后写入
-    said: dict[str, Any] | None = (
-        None  # 他这句说了自己今天什么状况（§114），模型判断，代码据此写状态
-    )
 
     def body(self) -> str:
         if self.answer:
@@ -178,8 +175,6 @@ def _parse(
     data: dict[str, Any] = {k: raw.get(k) for k in ("general", *fields) if k in raw}
     if isinstance(raw.get("memory"), list):
         data["memory"] = [x for x in raw["memory"] if isinstance(x, dict)]
-    if isinstance(raw.get("said"), dict):
-        data["said"] = raw["said"]
     data["speak"] = True  # 被请到就要回答，模型说"不发言"也不算
     for k in fields:
         if k in data and not isinstance(data[k], str):
@@ -225,31 +220,34 @@ async def _loop(
     fixes = 0
     rounds = 0
     memo: list[dict[str, Any]] | None = None  # 第一次写的记忆：改写时模型常常漏掉，沿用
-    told: dict[str, Any] | None = None  # 第一次写的 said（§114）：改写时漏掉也沿用
     desk = toolbox.actions
     offered = bool(toolbox.schemas())  # 有工具才提供；装了规程会多出动作工具，所以每轮重新取
+    only_actions = False  # 往返到上限后：不再查，只留动作工具，查好的计划、记录还能交上来
     while True:
         rounds += 1
         trace["rounds"] = rounds
-        tools = (toolbox.schemas() or None) if offered else None
+        offer = desk.schemas() if only_actions and desk is not None else toolbox.schemas()
+        tools = (offer or None) if offered else None
         reply = await llm.chat("expert", messages, tools=tools, json_mode=tools is None)
         # 装了动作类规程的那一轮多给两次往返：交了被退回还能改了再交（§120）
-        limit = MAX_ROUNDS + 2 if desk is not None and desk.unlocked else MAX_ROUNDS
+        limit = MAX_ROUNDS + 2 if desk is not None and desk.unlocked - set(ALWAYS) else MAX_ROUNDS
         if reply.tool_calls:
-            if rounds > limit + 1:  # 已经不给工具了还要查：放弃，不无限循环
+            if rounds > limit + 3:  # 已经不给工具了还要查：放弃，不无限循环
                 return Opinion(role=spec.role, speak=False, reason="一直在查询，没能给出意见")
             if rounds > limit:
                 trace["forced"] = True
                 messages.append(reply.as_message())
+                # 排计划要查好几样：到上限时查好的还没交（真实模型回放 11-03），再给两轮只交不查
+                grace = desk is not None and rounds <= limit + 2 and bool(desk.schemas())
                 for call in reply.tool_calls:
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": call.id,
-                            "content": "不要再查了，直接按 JSON 回答。",
-                        }
-                    )
-                offered = False  # 不再提供工具，逼它作答
+                    if grace and toolbox.is_action(call.name):
+                        result = await toolbox.run(call)
+                    else:
+                        result = ("不要再查了：要交的计划、记录现在用动作工具交，然后按 JSON 回答。" if grace
+                                  else "不要再查了，直接按 JSON 回答。")  # fmt: skip
+                    messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+                only_actions = grace and rounds < limit + 2
+                offered = only_actions  # 只留动作工具；再往后不提供工具，逼它作答
                 continue
             messages.append(reply.as_message())
             for call in reply.tool_calls:
@@ -266,8 +264,7 @@ async def _loop(
                 update={f: merge_echoes(getattr(opinion, f)) for f in _FIELDS + _SOLO_FIELDS}
             )
             memo = opinion.memory if opinion.memory is not None else memo
-            told = opinion.said if opinion.said is not None else told
-            opinion = opinion.model_copy(update={"memory": memo, "said": told})
+            opinion = opinion.model_copy(update={"memory": memo})
         if opinion is not None and desk is not None and rounds < limit:  # 提醒后还要留一轮能调工具
             # 刚确认了条件却没交计划、说了改却没改：提醒一次，让它调用工具或改口（§120）
             nudge = desk.followup(opinion.body())

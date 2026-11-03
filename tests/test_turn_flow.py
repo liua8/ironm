@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from ironm_agent.actions import NEW_PLAN, NUDGE_PLAN
+from ironm_agent.actions import NEW_PLAN, NUDGE_PLAN, RECORD_STATE
 from ironm_agent.casefile import Snapshot
 from ironm_agent.clarify import HEAD, MARK
 from ironm_agent.llm import ModelUnavailable, Reply, Stage
@@ -49,10 +49,21 @@ class Coach:
         self.system = system_of(messages)
         self.input = str(messages[1]["content"]) if len(messages) > 1 else ""
         self.seen.append(self.system + "\n" + self.input)
-        results = tool_results(messages)
+        said = self.extra.get(
+            "said"
+        )  # 他说了今天的状态：先调 record_state（§122 取代 JSON 里的 said）
+        if said and not any(m.get("tool_call_id") == f"c-{RECORD_STATE}" for m in messages):
+            return call(RECORD_STATE, **said)
+        results = [
+            str(m["content"])
+            for m in messages
+            if m.get("role") == "tool" and m.get("tool_call_id") != f"c-{RECORD_STATE}"
+        ]
         if self.act and (not results or (len(results) < 2 and again(results[-1]))):
             return call(self.act[0], **self.act[1])
-        return jsonr({"answer": self.answer, **self.extra})
+        return jsonr(
+            {"answer": self.answer, **{k: v for k, v in self.extra.items() if k != "said"}}
+        )
 
 
 def steady(
@@ -163,7 +174,9 @@ def test_risk_note_shows_once_per_session(monkeypatch: Any) -> None:
 
 
 def test_new_user_asking_for_a_plan_is_asked_first(monkeypatch: Any) -> None:
-    t = Coach(f"{HEAD}：目标、场景、器械、时间、伤病，还是这样吗？")  # 它决定先列条件（§120 不再写 action）
+    t = Coach(
+        f"{HEAD}：目标、场景、器械、时间、伤病，还是这样吗？"
+    )  # 它决定先列条件（§120 不再写 action）
     a = agent(t, monkeypatch=monkeypatch, snapshot=snapshot_of(profile=Profile()))
     blocks, seen = run(a, "帮我做个训练计划")
     assert seen["path"] == "clarify" and HEAD in text_of(blocks) and not cards(blocks)
@@ -235,7 +248,9 @@ def test_missing_plan_is_asked_for_again_in_the_same_turn(monkeypatch: Any) -> N
         def __call__(
             self, stage: Stage, messages: Sequence[Mapping[str, Any]], tools: bool
         ) -> Reply:
-            if stage == "expert" and messages[-1].get("content") == NUDGE_PLAN:  # 同一轮提醒（§120）
+            if (
+                stage == "expert" and messages[-1].get("content") == NUDGE_PLAN
+            ):  # 同一轮提醒（§120）
                 self.stages.append("nudge")
                 return call(NEW_PLAN, plan=plan, changes="新排的")
             if stage == "expert" and tool_results(messages):

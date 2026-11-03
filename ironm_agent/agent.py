@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any
 
-from ironm_agent.actions import ASK_TERMS, LOG_WORKOUT, NEW_PLAN, PLAN_EDIT
+from ironm_agent.actions import ALWAYS, ASK_TERMS, LOG_WORKOUT, NEW_PLAN, PLAN_EDIT
 from ironm_agent.answer_format import slots_prompt
 from ironm_agent.casefile import CaseFile
 from ironm_agent.coach import app_guide
@@ -121,7 +121,7 @@ _PROMPT = """你是健身 App 里的「AI 健身管家」：一位持证体能�
 - short 的（今天累、这周出差）系统记成近期的事，until："这周"写周日、"这两天"写明天，看不出写 7 天后。一顿饭、一次训练不记。长期的情况变了 update 那一条；他说好了、结束了、取消了，resolve 还在生效的近况和跟进，不新增"已结束"。
 - 答应回访、他要你提醒的记 followup；"该问的、到期的跟进"里你提了或他答了，用编号 resolve。
 
-他说了自己今天的状况，JSON 加 "said"（只写说了的）：{{"sick":"症状","better":"好了|好些|没好","tired":true,"sleep":睡的小时,"minutes":能练的分钟,"good":true,"pain":["部位"]}}；问话、假设、别人的不写。
+他说了自己今天的状况调用 record_state，说了量的体重、腰围这类数调用 log_body，说了吃了什么调用 log_meal；只记他说了的，问话、假设、别人的不记。
 
 {slots}
 打招呼、道谢、闲聊时只写 answer（一两句自然回应），其余几段留空，不报今天的计划、打卡和数据。{skills}
@@ -234,9 +234,9 @@ async def respond(
     domains = domains_of(skills)
     if (
         toolbox.actions is not None
-    ):  # 先装上的规程带的动作工具（§120）；涉及训练时先确认条件的那个一直给（没有副作用）
+    ):  # 规程带的动作工具（§120）；状态、读数、一餐每轮都给，涉及训练时先确认条件的那个也给（§122）
         toolbox.actions.unlock(
-            [*([ASK_TERMS] if training else []), *(t for x in skills for t in x.toolset)]
+            [*ALWAYS, *([ASK_TERMS] if training else []), *(t for x in skills for t in x.toolset)]
         )
     tools = "、".join(str(s["function"]["name"]) for s in toolbox.schemas()) or "（没有可用的工具）"
     actions = actions_prompt(has_plan=has_plan, confirmed=confirmed, just_asked=just_asked)

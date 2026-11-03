@@ -8,11 +8,12 @@ import contextlib
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+from ironm_agent.actions import RECORD_STATE
 from ironm_agent.clarify import HEAD
 from ironm_agent.memory import COACH, thread_lines
 from ironm_agent.memory_store import Change, Item, MemoryBook
 from ironm_agent.memory_view import Recall
-from tests.fakes import jsonr
+from tests.fakes import call, jsonr
 from tests.test_plugin import text_of
 from tests.test_single_agent import single
 from tests.test_turn_flow import TODAY, shown
@@ -55,8 +56,9 @@ def items(a: Any) -> list[Item]:
 def test_agent_writes_a_recent_event_on_the_spot_and_sees_it_next_turn(monkeypatch: Any) -> None:
     def answer(system: str, user: str, results: list[str]) -> Any:
         if "我感冒了" in user.split("\n", 1)[0]:
-            return jsonr({"answer": "好，这几天先休息，好了再练〔经验〕。", "memory": [COLD],
-                          "said": {"sick": "感冒"}})  # 生病记录由 said 写（§114）
+            if not results:  # 生病记录由 record_state 写（§114、§122）
+                return call(RECORD_STATE, sick="感冒")
+            return jsonr({"answer": "好，这几天先休息，好了再练〔经验〕。", "memory": [COLD]})
         return jsonr({"answer": "先别练，等感冒好了再说〔经验〕。"})
 
     a, s = single(answer, monkeypatch)

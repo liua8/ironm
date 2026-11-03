@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from ironm_agent.actions import RECORD_STATE
 from ironm_agent.brief import weekly_review
 from ironm_agent.casefile import Snapshot
 from ironm_agent.illness import (
@@ -29,7 +30,7 @@ from ironm_agent.memory_store import MemoryBook
 from ironm_agent.metrics import Profile, Readings
 from ironm_agent.training import Plan, TrainingBook, WorkoutLog, plan_content, week_of
 from ironm_agent.triggers import missed_trigger, plateau_triggers
-from tests.fakes import jsonr
+from tests.fakes import call, jsonr
 from tests.test_turn_flow import Coach, agent, book, run, snapshot_of
 
 TODAY = date.today()
@@ -336,8 +337,9 @@ def test_vague_unwell_reaches_the_model_as_a_light_day_without_dates(monkeypatch
     from tests.test_single_agent import single
 
     def answer(system: str, user: str, results: list[str]) -> Any:
-        said = {"sick": "不舒服"} if "今天有点不舒服" in user.split("\n", 1)[0] else None
-        return jsonr({"answer": "可以，今天慢走 20 分钟。", **({"said": said} if said else {})})
+        if "今天有点不舒服" in user.split("\n", 1)[0] and not results:  # 记今天的状态（§122）
+            return call(RECORD_STATE, sick="不舒服")
+        return jsonr({"answer": "可以，今天慢走 20 分钟。"})
 
     a, s = single(answer, monkeypatch, old=True)
     a._illness = IllnessBook()
@@ -350,6 +352,8 @@ def test_vague_unwell_reaches_the_model_as_a_light_day_without_dates(monkeypatch
 def test_sick_skill_takes_the_request_first_when_unwell_is_vague() -> None:
     from ironm_agent.skills import skills
 
-    body = next(x for x in skills() if x.id == "readiness-adjust").body  # 生病期间并进今天练不练（§101）
+    body = next(
+        x for x in skills() if x.id == "readiness-adjust"
+    ).body  # 生病期间并进今天练不练（§101）
     assert '只说"有点不舒服、难受"、没说哪里' in body and "再问一句哪里不舒服" in body
     assert "没问怎么办：关心一句，问哪里不舒服，不主动给做法和安排" in body

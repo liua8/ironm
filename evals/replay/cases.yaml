@@ -205,3 +205,24 @@ cases:
       - say: 今天练了高脚杯深蹲 3 组，每组 12 次，哑铃 16 公斤
         must_not: [这次没改成]
         card: log
+
+  - id: chat-records
+    from: §122 对话里记下体重、一餐，要求改今天、调热量
+    turns:
+      - say: 今天早上称了 72.5 公斤
+        must: [["72.5"]]
+        must_not: [这次没改成, 没记下]
+        card: none
+      - say: 中午吃了一碗牛肉面
+        must: [[千卡]]
+        must_not: [这次没改成, 没记下]
+        card: none
+      - say: 热量目标帮我往上加 150，最近练完太饿
+        must: [[千卡]]
+        must_not: [这次没改成]
+        card: none
+      - say: 晚上又称了一下，146 斤
+        must: [["73"]]
+        must_not: [146 公斤]
+        card: none
+

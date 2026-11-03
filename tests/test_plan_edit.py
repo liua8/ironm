@@ -267,3 +267,16 @@ def test_page_has_edit_panel() -> None:
     assert "/iron/api/plan/edit" in JS and "/iron/api/plan/alternatives" in JS
     assert "只改今天" in JS and "以后都改" in JS and "排顺序" in JS and "恢复原计划" in JS
     assert "撤销" in JS[JS.index("function planEdited") :][:800]
+
+
+def test_today_swap_stores_the_substitute_that_was_used(monkeypatch: pytest.MonkeyPatch) -> None:
+    """独立审查（11-03，§122 需求 9）：只改今天换动作被系统换成替代动作时，存的是原来要的那个，
+    今天的版本重放时不查器械、伤处，原来要的动作又回来了。改成存实际换上的。"""
+    c, _, days = client(monkeypatch, equipment=frozenset({"自重", "哑铃"}))
+    r = post(c, WD, "today", kind="swap", exercise="杠铃深蹲", to="杠铃前蹲").json()
+    used = r["today"]["items"][0]["exercise"]
+    assert used != "杠铃前蹲" and "你没有" in r["notes"][0]  # 器械没有：换成了替代动作
+    state = asyncio.run(days.get("42", TODAY))
+    assert state is not None and state.edits[0].to == used  # 存的是实际换上的
+    today = next(d for d in c.get("/iron/api/week").json()["days"] if d["today"])
+    assert today["session"]["items"][0]["exercise"] == used  # 今天的版本也是它，不是杠铃前蹲

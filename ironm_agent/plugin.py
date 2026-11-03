@@ -19,7 +19,19 @@ from datetime import UTC, date, datetime, timedelta
 from functools import cache, partial
 from typing import Any, Literal
 
-from ironm_agent.actions import LOG_WORKOUT, NEW_PLAN, PLAN_EDIT, Desk, Handler, Outcome
+from ironm_agent.actions import (
+    ADJUST_TODAY,
+    KCAL_CHANGE,
+    LOG_BODY,
+    LOG_MEAL,
+    LOG_WORKOUT,
+    NEW_PLAN,
+    PLAN_EDIT,
+    RECORD_STATE,
+    Desk,
+    Handler,
+    Outcome,
+)
 from ironm_agent.agent import EXTRA_TOOLS, respond
 from ironm_agent.attachments import Attachments
 from ironm_agent.attachments import read as read_attachments
@@ -175,6 +187,71 @@ CONFLICT_ASK = (
 REVIEW_ASK = "按这周的复盘调整训练计划"  # 每周复盘一键生成调整方案时的问法（spec [2026-10-23] §18）
 REVIEW_MAX_DAYS = 2  # 按复盘调整每次最多改几天
 SCOPES = ("once", "always", "unclear")  # 改计划只改这次、以后都这样、没说清（§114）
+STATE_FIELDS = (
+    "sick",
+    "better",
+    "tired",
+    "sleep",
+    "minutes",
+    "good",
+    "pain",
+)  # 今天的状态（§114、§122）
+BODY_KINDS = (
+    "weight",
+    "body_fat",
+    "waist",
+    "resting_hr",
+    "systolic",
+    "diastolic",
+)  # 对话里能记的读数
+MEAL_KINDS = ("早餐", "午餐", "晚餐", "加餐", "夜宵", "练前", "练后")
+MAX_FOODS = 12  # 一餐最多几样（同饮食页）
+
+
+def _in_jin(raw: str, unit: Any, text: str) -> bool | None:
+    """体重他说的是不是斤：原话里这个数后面跟着"斤"或"公斤"按原话；否则看单位参数；没写单位时，
+    原话只出现"斤"（含"一百四十斤"这类中文数字）算斤、只出现"公斤"或都没有算公斤，两样都有说不清（None）。"""
+    after = re.search(re.escape(raw) + r"\s*(公斤|斤)", text)
+    if after:
+        return after.group(1) == "斤"
+    if unit in ("斤", "公斤"):
+        return bool(unit == "斤")
+    jin, kg = re.search(r"(?<!公)斤", text) is not None, "公斤" in text
+    if jin and kg:
+        return None
+    return jin
+
+
+def _sick_from_pain(told: dict[str, Any]) -> dict[str, Any]:
+    """ "哪里疼"里写了不是练的部位、是生病症状的（肚子疼、头疼），归到 sick（真实模型回放 11-03）。"""
+    from ironm_agent.casefile import PARTS
+    from ironm_agent.illness import detect
+
+    pain = told.get("pain")
+    if not isinstance(pain, list):
+        return told
+    words = [str(x) for x in pain]
+    ill = [
+        w
+        for w in words
+        if not any(p.search(w) for p in PARTS.values()) and detect(w.removesuffix("疼") + "疼")
+    ]
+    if not ill:
+        return told
+    out = {**told, "pain": [w for w in words if w not in ill]}
+    if not out["pain"]:
+        del out["pain"]
+    named = [w if w.endswith("疼") else w + "疼" for w in ill]
+    out["sick"] = "、".join(x for x in (str(out.get("sick") or ""), *named) if x)
+    return out
+
+
+def _metric_value(snapshot: Snapshot | None, key: str) -> float | None:
+    """档案里算好的一个指标的值（算不出来是 None）。"""
+    m = next((x for x in snapshot.metrics if x.key == key), None) if snapshot is not None else None
+    return float(m.value) if m is not None and m.value is not None else None
+
+
 WEATHER_WAIT_S = 4.0  # 天气最多等 4 秒（同一个地方 10 分钟内有缓存）
 NO_TEXT = "没有收到文字问题。"
 NO_ANSWER = "抱歉，这次没答上来，过一会儿再问我一次吧。"
@@ -346,6 +423,11 @@ class IronMAgent:
         self._pain = pain  # 说疼的部位和日期（触发型调整用，默认用数据库里 iron-m 自己的表）
         self._illness = illness  # 生病记录（spec [2026-10-23] §46，默认用数据库里 iron-m 自己的表）
         self._coach_store: Any = None  # 管家的方案（§84 读"不用这样调"；None 用线上的，测试里换掉）
+        self._readings: Any = (
+            None  # 自己记的读数、饮食记录、热量调整（§122 对话里记；None 用线上的）
+        )
+        self._meals: Any = None
+        self._diet: Any = None
         self._coach_cache: dict[str, tuple[date, Any]] = {}  # 同一轮只读一次管家方案（§97）
         self._web_search: Any = None  # 联网搜索（§91）；None 时按环境变量里的密钥配，测试里换成假的
         self._web_log: Any = None  # 联网查询的待审清单；None 用数据库里的
@@ -586,6 +668,28 @@ class IronMAgent:
         if self._day is None:
             self._day = default_day()
         return self._day
+
+    def _readings_store(self) -> Any:
+        """自己记的读数（体重、腰围……）写进健康记录（§26）；测试里换成内存版。"""
+        if self._readings is None:
+            from ironm_agent.readings import default_readings
+
+            self._readings = default_readings()
+        return self._readings
+
+    def _meals_store(self) -> Any:
+        if self._meals is None:
+            from ironm_agent.meals import default_meals
+
+            self._meals = default_meals()
+        return self._meals
+
+    def _diet_store(self) -> Any:
+        if self._diet is None:
+            from ironm_agent.diet_adjust import default_diet
+
+            self._diet = default_diet()
+        return self._diet
 
     async def _read_day(self, user_id: str, run: dict[str, Any]) -> DayState | None:
         """今天的状态（只读）；读不到当作没有。"""
@@ -977,7 +1081,8 @@ class IronMAgent:
         except Exception as e:  # 不把异常原文给用户
             _log.error("turn failed: error_type=%s", type(e).__name__)
             run["error_type"] = type(e).__name__
-            yield {"type": "error", "message": FAILED}
+            done = run["_desk"].done_note() if run.get("_desk") is not None else ""
+            yield {"type": "error", "message": "\n\n".join(x for x in (FAILED, done) if x)}
         finally:
             # 这一轮存下、卡片却没发出去的预览（出错、断开、被取消）作废（§120）；放进后台，取消时也能跑完
             if (desk := run.pop("_desk", None)) is not None and desk.drafts:
@@ -1324,7 +1429,8 @@ class IronMAgent:
         ctx = Context.of(case)
         desk = Desk(
             self._action_handlers(user_id, text, plan, ctx, snapshot.today, run, tools_ctx,
-                                  confirmed=confirmed, merge=bool(history), blocked=blocked is not None),
+                                  confirmed=confirmed, merge=bool(history), blocked=blocked is not None,
+                                  snapshot=snapshot),
             has_plan=plan is not None, must_plan=confirmed_now and replying and blocked is None,
         )  # fmt: skip
         toolbox.actions = desk
@@ -1337,8 +1443,8 @@ class IronMAgent:
             images=[x.part() for x in files.images], known=known, memory_block=memory_block,
         )  # fmt: skip
         yield finished("agent", consultation_summary(c), ok=c.status != "failed")
-        run["_judged_state"] = c.status != "failed"  # 作答了：said 就是它的判断（没写就是没说）
-        run["_said_state"] = c.opinion.said or {}
+        run["_judged_state"] = c.status != "failed"  # 作答了：没调 record_state 就是没说（§122）
+        run["_said_state"] = dict(desk.said)
         if c.opinion.memory and self._remember_on:  # 这一轮要记的：核对后当场写入（§68）
             said["remembered"] = await self._remember_now(
                 user_id, text, c.opinion.answer, c.opinion.memory, known, run, snapshot.today
@@ -1366,8 +1472,8 @@ class IronMAgent:
             if must_block:
                 run["risk_by"] = "fixed"
             said["answer"] = ""
-            yield text_block(fixed_risk if must_block else "\n\n".join(
-                x for x in (refusal_fixed, NO_ANSWER) if x))  # fmt: skip
+            yield text_block("\n\n".join(x for x in (fixed_risk, desk.done_note()) if x) if must_block
+                             else "\n\n".join(x for x in (refusal_fixed, NO_ANSWER, desk.done_note()) if x))  # fmt: skip
             return
 
         own = plain(c.opinion.answer).strip()
@@ -1381,7 +1487,7 @@ class IronMAgent:
             await self._drop_drafts(user_id, desk.drafts)
             run.update(action_dropped="risk", path="risk", risk_by="fixed")
             said["answer"] = ""
-            yield text_block(fixed_risk)
+            yield text_block("\n\n".join(x for x in (fixed_risk, desk.done_note()) if x))
             return
         if action == "new_plan":
             # 要新计划、本会话还没确认条件：由它用自己的话列出条件请他确认（§55、§86），不出预览；
@@ -1414,7 +1520,7 @@ class IronMAgent:
                 await self._drop_drafts(user_id, desk.drafts)
                 run["path"] = "risk"
                 said["answer"] = ""
-                yield text_block(fixed_risk)
+                yield text_block("\n\n".join(x for x in (fixed_risk, desk.done_note()) if x))
                 return
         unsaid = [k for k in kinds if missing(composed.text, REFUSAL_NEEDS[k])]
         if unsaid:  # 拒答没提医生（药师）：开头补上固定的一句（§86 需求 3）
@@ -1516,6 +1622,7 @@ class IronMAgent:
         confirmed: bool,
         merge: bool,
         blocked: bool,
+        snapshot: Snapshot | None = None,
     ) -> dict[str, Handler]:
         """动作工具的处理（spec [2026-10-23] §120）：校验、套用、检查、存成预览，结果当场交还给管家。
 
@@ -1609,9 +1716,279 @@ class IronMAgent:
             return Outcome(True, "已出训练记录预览，等他确认。", kind="log", cards=tuple(log_card(draft, log)),
                            draft=draft.id)  # fmt: skip
 
-        handlers: dict[str, Handler] = {LOG_WORKOUT: log_workout}
-        if not blocked:
+        goal = {"kcal": _metric_value(snapshot, "kcal_target")}  # 这一轮里调过热量，后面按新目标算
+
+        async def record_state(desk: Desk, args: Mapping[str, Any]) -> Outcome:
+            told = {k: v for k, v in args.items() if k in STATE_FIELDS and v not in (None, "", [])}
+            told = _sick_from_pain(told)
+            if not told:
+                return Outcome(False, "没写他说了什么状态；他没说就不用调用。", "format")
+            desk.said.update(told)  # 作答后按原来的规则写（§46、§54、§114）
+            return Outcome(True, "收到，作答后写进今天的状态。", kind="state", what="state")
+
+        async def log_body(desk: Desk, args: Mapping[str, Any]) -> Outcome:
+            from ironm_agent.memory_extract import digits
+            from ironm_agent.readings import KINDS, OutOfRange, check
+
+            kind, said = str(args.get("kind") or ""), args.get("value")
+            if (
+                kind not in BODY_KINDS
+                or not isinstance(said, int | float)
+                or isinstance(said, bool)
+            ):
+                return Outcome(
+                    False, "要写哪一项（体重、体脂率、腰围、静息心率、血压）和他说的数。", "format"
+                )
+            raw = f"{float(said):g}"
+            if raw not in digits(
+                text, chinese=True
+            ):  # 数只能是他这句话里说的（说斤就写斤的那个数）
+                return Outcome(False, "这个数不在他这句话里，没记：写他原话里的数，说的是斤就写斤的数、"
+                               "unit 写斤，由系统换算；他没说具体的数就问他。", "number")  # fmt: skip
+            jin = kind == "weight" and _in_jin(raw, args.get("unit"), text)
+            if jin is None:
+                return Outcome(
+                    False,
+                    "他这句话里斤和公斤都有，看不出这个数是哪个单位：问他，或者 unit 写清楚。",
+                    "unit",
+                )
+            value = float(said) / 2 if jin else float(said)
+            day = today
+            if args.get("day"):
+                try:
+                    day = date.fromisoformat(str(args["day"]))
+                except ValueError:
+                    return Outcome(False, "日期写成 YYYY-MM-DD（今天就不写），没记。", "day")
+            if day > today or (today - day).days > 30:
+                return Outcome(False, "日期只能是今天或 30 天以内，没记。", "day")
+            try:
+                k = check(kind, value)
+            except OutOfRange as e:
+                return Outcome(False, f"没记：{e}，问他是不是说错了。", "range")
+            store = self._readings_store()
+            try:  # 同一天记过同样的数：不重复写（数据库那边也挡，这里先看一眼，两种存储一样）
+                seen = await store.recent(user_id, kind, limit=20)
+            except Exception:
+                seen = []
+            same_day = [r for r in seen if r.get("day") == day.isoformat()]
+            if any(float(r.get("value") or 0) == value for r in same_day):
+                return Outcome(
+                    False, f"{k.title} {value:g} {k.shown}这天已经记过，没重复记。", "dup"
+                )
+            if (
+                await store.add(user_id, kind, value, day) < 1
+            ):  # 健康记录里一天一项只留一个（同数据页）
+                had = f"（{float(same_day[0].get('value') or 0):g} {k.shown}）" if same_day else ""
+                return Outcome(False, f"这天已经记过一个{k.title}{had}，一天只记一个，这个没记上；"
+                               "他要改就在数据页改那一条。", "dup")  # fmt: skip
+            self._later(user_id, self._coach(user_id, "记数据", True))
+            when = "" if day == today else f"（{day.month}月{day.day}日）"
+            said_as = f"（他说的是 {raw} 斤）" if jin else ""
+            return Outcome(True, f"已记下{when}：{KINDS[kind].title} {value:g} {k.shown}{said_as}"
+                           "（数据页能改、删）。", kind="saved", what="body",
+                           note=f"记下了{when}{KINDS[kind].title} {value:g} {k.shown}")  # fmt: skip
+
+        async def log_meal(desk: Desk, args: Mapping[str, Any]) -> Outcome:
+            from ironm_agent.meals import Macros, food_line, meal_from, totals
+
+            kind = str(args.get("kind") or "")
+            if kind not in MEAL_KINDS:
+                return Outcome(
+                    False, "要写哪一餐（早餐、午餐、晚餐、加餐、夜宵、练前、练后）。", "format"
+                )
+            foods = [f for f in args.get("foods") or [] if isinstance(f, Mapping)]
+            if len(foods) > MAX_FOODS:
+                return Outcome(False, f"一餐最多记 {MAX_FOODS} 样，合并一下再交。", "format")
+            lines, missed, bad = [], [], []
+            for f in foods:
+                name, grams = str(f.get("name") or "").strip()[:30], f.get("grams")
+                if not name or not isinstance(grams, int | float) or not 0 < float(grams) <= 3000:
+                    bad.append(name or "没写名字的")
+                    continue
+                est = None
+                if isinstance(f.get("per100"), Mapping):
+                    try:
+                        est = Macros.model_validate(f["per100"])
+                    except Exception:
+                        bad.append(f"{name}（每 100 克估值要写全 kcal、protein_g、carbs_g、fat_g）")
+                        continue
+                try:
+                    lines.append(
+                        food_line(name, float(grams), str(f.get("oil") or "正常"), est100=est)
+                    )
+                except KeyError:
+                    missed.append(name)
+                except Exception:  # 克数乘估值超出合理范围
+                    bad.append(f"{name}（份量或估值不合理）")
+            if not lines:
+                why = "；".join(x for x in (f"库里没有{'、'.join(missed)}，又没给每 100 克的估值" if missed else "",
+                                         f"写得不对：{'、'.join(bad)}" if bad else "") if x) or "没写吃了什么、多少克"  # fmt: skip
+                return Outcome(False, f"没记：{why}。补上再交。", "format")
+            title = str(args.get("name") or "").strip() or "、".join(x.name for x in lines)
+            meal = meal_from(kind, title, lines, estimated=True, note="对话里记的，按食物库算")  # type: ignore[arg-type]
+            store = self._meals_store()
+            row = await store.add(user_id, today, meal)
+            for old in await store.day(user_id, today):  # 每种餐每天只留一份（§43，同饮食页）
+                if old.id != row.id and old.meal.kind == meal.kind:
+                    await store.delete(user_id, old.id)
+            day_total = totals(await store.day(user_id, today)).kcal
+            self._later(user_id, self._coach(user_id, "记饮食", True))
+            target = goal["kcal"]
+            left = (
+                f"，目标约 {round(target)}，还能吃约 {max(0, round(target - day_total))} 千卡"
+                if target
+                else ""
+            )
+            skipped = "；".join(x for x in (f"{'、'.join(missed)}库里没有又没给估值" if missed else "",
+                                            f"{'、'.join(bad)}没记" if bad else "") if x)  # fmt: skip
+            return Outcome(True, f"已记下{kind}：{meal.name}，约 {round(meal.macros.kcal)} 千卡、蛋白质 "
+                           f"{round(meal.macros.protein_g)} 克（今天的{kind}只留这一份）；今天一共约 "
+                           f"{round(day_total)} 千卡{left}{'；' + skipped + '，没算进去' if skipped else ''}"
+                           "（饮食页能改份量、删掉）。", kind="saved", what="meal",
+                           note=f"记下了{kind}：{meal.name}（约 {round(meal.macros.kcal)} 千卡）")  # fmt: skip
+
+        async def adjust_today(desk: Desk, args: Mapping[str, Any]) -> Outcome:
+            from ironm_agent.plan_edit import edit as edit_today
+            from ironm_agent.plan_edit import today_session
+            from ironm_agent.training import PlanEdit
+
+            session = current.session_on(today) if current is not None else None
+            if current is None or session is None or tools is None:
+                why = "他还没有训练计划" if current is None else "今天按计划不练"
+                return Outcome(False, f"没改：{why}，没有今天这一次可改。", "no_session")
+            days = self._day_store()
+            try:
+                state = await days.get(user_id, today)
+            except Exception:
+                state = None
+            before = list(state.edits) if state is not None else []
+            cur = Plan(
+                title=current.title, days_per_week=1, sessions=[today_session(session, before)]
+            )
+            edits: list[PlanEdit] = []
+            for c in args.get("changes") or []:
+                if isinstance(c, Mapping) and c.get("kind") in ("swap", "edit", "remove"):
+                    try:
+                        edits.append(PlanEdit.model_validate({k: c[k] for k in
+                                     ("kind", "exercise", "to", "sets", "reps") if c.get(k) not in (None, "")}))  # fmt: skip
+                    except Exception:
+                        return Outcome(
+                            False,
+                            "改法没写对：每条写 kind（swap/edit/remove）和今天那一次里的动作名。",
+                            "format",
+                        )
+            ratio = args.get("ratio")
+            scaling = isinstance(ratio, int | float) and not isinstance(ratio, bool)
+            if scaling and not 0.5 <= float(ratio) <= 0.9:  # type: ignore[arg-type]
+                return Outcome(False, "整体按几成练要在 0.5–0.9 之间。", "format")
+            if not edits and not scaling:
+                return Outcome(
+                    False, "没写要怎么改（换动作、改组次、去掉，或者整体按几成练）。", "format"
+                )
+            applied: list[PlanEdit] = []
+            lines: list[str] = []
+            notes: list[str] = []
+            skipped: list[str] = []
+            warnings: list[str] = []
+            for e in (
+                edits
+            ):  # 一条一条套：只存真正套上的；被换成替代动作的按实际换上的存（独立审查 11-03）
+                had = {x.exercise for x in cur.sessions[0].items}
+                got = edit_today(cur, session.day, [e], equipment=tools.equipment, injured=tools.injured,
+                                 special=tools.special)  # fmt: skip
+                if not got.lines:
+                    skipped += got.skipped or [f"{e.exercise}没改成"]
+                    continue
+                if got.problems:
+                    skipped.append(
+                        f"{e.exercise}这样改有问题：" + "；".join(plain(x) for x in got.problems)
+                    )
+                    continue
+                actual = e
+                if e.kind == "swap":
+                    new = [x.exercise for x in got.plan.sessions[0].items if x.exercise not in had]
+                    if new and new[0] != e.to:
+                        actual = e.model_copy(update={"to": new[0]})
+                applied.append(
+                    actual.model_copy(update={"line": "；".join([*got.lines, *got.notes])[:120]})
+                )
+                lines += got.lines
+                notes += got.notes
+                warnings += got.warnings
+                cur = got.plan
+            if (
+                scaling
+            ):  # 按几成练在具体改法之后、按改完的算；他明说了组数的动作不再按比例减（复核 11-03）
+                named = {e.to or e.exercise for e in applied if e.kind == "edit" and e.sets}
+                cut = 0
+                for x in cur.sessions[0].items:
+                    n = max(1, int(x.sets * float(ratio) + 0.5))  # type: ignore[arg-type]  # 同计划减量的取整（§45）
+                    if x.exercise in named or n >= x.sets:
+                        continue
+                    e = PlanEdit(kind="edit", exercise=x.exercise, sets=n)
+                    got = edit_today(cur, session.day, [e], equipment=tools.equipment, injured=tools.injured,
+                                     special=tools.special)  # fmt: skip
+                    if got.lines and not got.problems:
+                        applied.append(e.model_copy(update={"line": "；".join(got.lines)[:120]}))
+                        lines += got.lines
+                        cur = got.plan
+                        cut += 1
+                if not cut:
+                    skipped.append("按这个比例组数没有变化（组数少的动作至少留 1 组）")
+            if not applied:
+                return Outcome(
+                    False, "没改成：" + "；".join(skipped) + "。照这个跟他说。", "rejected"
+                )
+            await days.set_edits(user_id, today, [*before, *applied])
+            self._later(user_id, self._coach(user_id, "只改今天", True))
+            run["today_edits"] = len(applied)
+            parts = ["已改好今天这一次：" + "；".join(lines)]
+            if notes:
+                parts.append("另外：" + "；".join(notes))
+            if skipped:
+                parts.append("没改的：" + "；".join(skipped))
+            if warnings:
+                parts.append("提醒：" + "；".join(plain(x) for x in warnings))
+            return Outcome(True, "。".join(parts) + "（原计划不变，计划页能恢复今天原样）。", kind="changed",
+                           what="today", note="今天这一次改了：" + "；".join(lines))  # fmt: skip
+
+        async def kcal_change(desk: Desk, args: Mapping[str, Any]) -> Outcome:
+            from ironm_agent.diet_adjust import _apply as within_limits
+            from ironm_agent.metrics import KcalAdjust
+            from ironm_agent.special import MINOR, PREGNANCY
+
+            delta = args.get("delta")
+            target, bmr = goal["kcal"], _metric_value(snapshot, "bmr")
+            if not isinstance(delta, int | float) or isinstance(delta, bool) or not delta:
+                return Outcome(False, "要写每天多吃（正数）或少吃（负数）多少千卡。", "format")
+            if snapshot is None or target is None or bmr is None:
+                return Outcome(
+                    False, "他的热量目标还算不出来（缺身高、体重、年龄或目标），没调。", "no_target"
+                )
+            if delta < 0 and tools is not None and tools.special & {MINOR, PREGNANCY}:
+                return Outcome(False, "没调：18 岁以下、孕期不在对话里减热量，跟他说请医生或营养师定（§90 规程）。",
+                               "special")  # fmt: skip
+            diet = self._diet_store()
+            reason = str(args.get("reason") or "你要求的").strip()[:60]
+            prop, why = within_limits(round(float(delta)), reason, "对话里调的", target, bmr,
+                                      snapshot.profile, await diet.current(user_id))  # fmt: skip
+            if prop is None:
+                return Outcome(False, f"没调：{why}", "limit")
+            await diet.apply(user_id, KcalAdjust(prop.total, today, reason))
+            goal["kcal"] = float(prop.after)
+            self._later(user_id, self._coach(user_id, "调热量", True))
+            note = "" if prop.delta == round(float(delta)) else "（按上下限调到这里）"
+            return Outcome(True, f"已调好：每日热量目标 {prop.before} → {prop.after} 千卡{note}"
+                           "（饮食页能撤销）。", kind="changed", what="kcal",
+                           note=f"每日热量目标调到 {prop.after} 千卡")  # fmt: skip
+
+        handlers: dict[str, Handler] = {
+            LOG_WORKOUT: log_workout, RECORD_STATE: record_state, LOG_BODY: log_body,
+            LOG_MEAL: log_meal, KCAL_CHANGE: kcal_change,
+        }  # fmt: skip
+        if not blocked:  # 危急情况：不给训练安排（§5），记录和饮食照旧
             handlers[NEW_PLAN] = new_plan
+            handlers[ADJUST_TODAY] = adjust_today
             if current is not None:
                 handlers[PLAN_EDIT] = edit
         return handlers

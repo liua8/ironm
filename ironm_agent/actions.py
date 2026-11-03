@@ -25,8 +25,17 @@ LOG_WORKOUT = "log_workout"
 ASK_TERMS = (
     "ask_plan_terms"  # 要排新计划、先请他确认条件（取代原来 JSON 里的 "action": "new_plan"）
 )
-ACTION_TOOLS = (PLAN_EDIT, NEW_PLAN, LOG_WORKOUT, ASK_TERMS)
-MAX_ACTIONS = 4  # 每轮最多调用几次动作工具（不占查询次数）
+RECORD_STATE = "record_state"  # 今天的状态（§122，取代回答 JSON 里的 said）
+LOG_BODY = "log_body"  # 体重、腰围这类读数进健康记录（§122）
+LOG_MEAL = "log_meal"  # 对话里记一餐（§122）
+ADJUST_TODAY = "adjust_today"  # 只改今天这一次训练（§122）
+KCAL_CHANGE = "propose_kcal_change"  # 调每日热量目标（§122）
+ACTION_TOOLS = (
+    PLAN_EDIT, NEW_PLAN, LOG_WORKOUT, ASK_TERMS, RECORD_STATE, LOG_BODY, LOG_MEAL, ADJUST_TODAY,
+    KCAL_CHANGE,
+)  # fmt: skip
+ALWAYS = (RECORD_STATE, LOG_BODY, LOG_MEAL)  # 他随时可能说到：每一轮都给（§122）
+MAX_ACTIONS = 6  # 每轮最多调用几次动作工具（不占查询次数；记今天的状态不算）
 
 _DAY = "1 到 7，1 是周一"
 _ITEM = {
@@ -198,11 +207,182 @@ ASK_TERMS_SCHEMA: dict[str, Any] = {
     },
 }
 
+RECORD_STATE_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": RECORD_STATE,
+        "description": (
+            "他这句话说了自己今天的状况时调用（只写他说了的；问话、假设、别人的不写）：生病的症状、病好了没有、累、"
+            "昨晚睡了几小时、今天能练多少分钟、状态好、哪里疼。系统作答后写进今天的状态，今天的版本跟着变。"
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "sick": {
+                    "type": "string",
+                    "description": '生病、身体不舒服的症状，如"感冒、喉咙痛""肚子疼、拉肚子""发烧 38 度"',
+                },
+                "better": {
+                    "type": "string",
+                    "enum": ["好了", "好些", "没好"],
+                    "description": "病好了没有",
+                },
+                "tired": {"type": "boolean", "description": "说累"},
+                "sleep": {"type": "number", "description": "昨晚睡了几小时"},
+                "minutes": {"type": "integer", "description": "今天能练多少分钟"},
+                "good": {"type": "boolean", "description": "说状态好"},
+                "pain": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        '练的部位哪里疼（关节、肌肉），如["左膝", "腰"]；肚子疼、头疼这类不舒服写进 sick'
+                    ),
+                },
+            },
+        },
+    },
+}
+
+LOG_BODY_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": LOG_BODY,
+        "description": (
+            "他说了自己量的体重、体脂率、腰围、静息心率、血压时调用：写进健康记录（数据页能改、删）。"
+            "数只能是他这句话里说的，不换算、不猜；问句、假设、别人的不记。一个数调用一次。"
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": ["weight", "body_fat", "waist", "resting_hr", "systolic", "diastolic"],
+                    "description": "体重（公斤）、体脂率（%）、腰围（厘米）、静息心率、收缩压、舒张压",
+                },
+                "value": {"type": "number", "description": "他原话里的数（说的是斤就写斤的数）"},
+                "unit": {
+                    "type": "string",
+                    "enum": ["公斤", "斤"],
+                    "description": "体重他说的单位，默认公斤",
+                },
+                "day": {"type": "string", "description": "哪天量的，YYYY-MM-DD；不写是今天"},
+            },
+            "required": ["kind", "value"],
+        },
+    },
+}
+
+LOG_MEAL_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": LOG_MEAL,
+        "description": (
+            "他说了自己今天吃了什么时调用，记进今天的饮食记录（同一种餐今天只留一份；饮食页能改份量、删掉）。你只说哪一餐、有哪些食物、"
+            '各多少克（按他说的量估，"一碗米饭"约 150 克）、炒菜和外卖的油量；热量由系统按食物库算，不用你算。'
+            "库里可能没有的食物再给每 100 克的估值。结果会告诉你这一餐多少热量、今天还能吃多少。问吃什么、打算吃的、昨天以前吃的不记。"
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": ["早餐", "午餐", "晚餐", "加餐", "夜宵", "练前", "练后"],
+                },
+                "name": {"type": "string", "description": '这一餐的简短名字，如"牛肉面"'},
+                "foods": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "常见叫法，如米饭、番茄炒蛋"},
+                            "grams": {"type": "number", "description": "吃下去的克数"},
+                            "oil": {"type": "string", "enum": ["少油", "正常", "多油"]},
+                            "per100": {
+                                "type": "object",
+                                "description": "每 100 克的估值 {kcal, protein_g, carbs_g, fat_g}，库里没有时才用",
+                            },
+                        },
+                        "required": ["name", "grams"],
+                    },
+                },
+            },
+            "required": ["kind", "foods"],
+        },
+    },
+}
+
+ADJUST_TODAY_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": ADJUST_TODAY,
+        "description": (
+            "只改今天这一次训练（原计划不变，计划页能恢复今天原样）。只在他同意了你提的改法、或者明确要你改今天时调用；"
+            "只是问今天练不练、你还在建议时不调用。可以换动作、改组次、去掉某个动作，或者整体按几成练（ratio 0.5–0.9，"
+            "每个动作的组数按比例减）。换的动作系统会查器械和伤处，不合适会退回。"
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "changes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "kind": {"type": "string", "enum": ["swap", "edit", "remove"]},
+                            "exercise": {
+                                "type": "string",
+                                "description": "今天那一次里现有的动作名",
+                            },
+                            "to": {"type": "string", "description": "swap 换成的动作"},
+                            "sets": {"type": "integer", "description": "edit 改成几组"},
+                            "reps": {"type": "string", "description": "edit 改成几次"},
+                        },
+                        "required": ["kind", "exercise"],
+                    },
+                },
+                "ratio": {"type": "number", "description": "整体按几成练，0.5–0.9；不减就不写"},
+            },
+        },
+    },
+}
+
+KCAL_CHANGE_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": KCAL_CHANGE,
+        "description": (
+            "调他的每日热量目标（饮食页能撤销）。只在他同意了你提的调整、或者明确要求时调用。"
+            "系统按上下限执行：累计调整不超过 ±500 千卡、不低于基础代谢和安全下限，结果会告诉你实际调到多少。"
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "delta": {
+                    "type": "integer",
+                    "description": "每天多吃（正数）或少吃（负数）多少千卡",
+                },
+                "reason": {"type": "string", "description": "一句话原因"},
+            },
+            "required": ["delta", "reason"],
+        },
+    },
+}
+
 SCHEMAS = {
     PLAN_EDIT: PLAN_EDIT_SCHEMA,
     NEW_PLAN: NEW_PLAN_SCHEMA,
     LOG_WORKOUT: LOG_WORKOUT_SCHEMA,
     ASK_TERMS: ASK_TERMS_SCHEMA,
+    RECORD_STATE: RECORD_STATE_SCHEMA,
+    LOG_BODY: LOG_BODY_SCHEMA,
+    LOG_MEAL: LOG_MEAL_SCHEMA,
+    ADJUST_TODAY: ADJUST_TODAY_SCHEMA,
+    KCAL_CHANGE: KCAL_CHANGE_SCHEMA,
 }
 _CONFIRMED = (
     f"他刚回应了你列的条件清单，算确认，不要再问一遍：调用 {NEW_PLAN}（kind 写 new）交计划，他改了哪几项就按改了的排；"
@@ -229,8 +409,9 @@ _NOT_CLAIM = re.compile(
 )
 _HIS = re.compile(r"(?<![帮给按])你")  # 主语是他："你已经换了两次分化"不是说系统改了
 NUDGE_CLAIM = (
-    "（系统核对，不是用户说的）你的回答里说已经改了计划或记下了训练，但这一轮没有成功调用 "
-    f"{PLAN_EDIT}、{NEW_PLAN} 或 {LOG_WORKOUT}（没有这些工具时先用 load_skill 装 plan-build 或 log-review）。"
+    "（系统核对，不是用户说的）你的回答里说已经改了或记下了，但这一轮没有成功调用对应的工具"
+    f"（改计划 {PLAN_EDIT}、{NEW_PLAN}，只改今天 {ADJUST_TODAY}，调热量 {KCAL_CHANGE}，记训练 {LOG_WORKOUT}，"
+    f"记一餐 {LOG_MEAL}，记体重这类数 {LOG_BODY}；没有的先用 load_skill 装对应的规程）。"
     "要改就调用工具；不改就改口，不要说已经改了、记下了。"
 )
 NUDGE_PLAN = (
@@ -247,8 +428,21 @@ def claimed(text: str) -> set[str]:
         m = _CLAIM.search(clause)
         if m is None or _NOT_CLAIM.search(clause) or _HIS.search(clause[: m.start()]):
             continue
-        out.add("log" if _LOGGED.search(m.group(0)) else "plan")
+        out.add("log" if _LOGGED.search(m.group(0)) else "change")
     return out
+
+
+# 记录类（记训练、一餐、读数、今天的状态）任何一样做成，说"记下了"都算；修改类（改计划、只改今天、调热量）同理。
+# 细分到哪一样容易把常见回答判错、整段删掉（复核 11-03："记下了……今天的训练减到七成"被当成记训练）
+_MET_BY = {
+    "log": {"workout", "meal", "body", "state"},
+    "change": {"plan", "today", "kcal"},
+}
+
+
+def unsatisfied(claims_: set[str], done: set[str]) -> set[str]:
+    """说了做了、这一轮却没做成的那几种。"""
+    return {k for k in claims_ if not _MET_BY.get(k, {k}) & done}
 
 
 def claims(text: str) -> bool:
@@ -261,7 +455,7 @@ NOT_DONE = "这次没改成，也没记下来；你再说一次具体想怎么�
 
 def strip_claims(text: str, done: Iterable[str] = ()) -> str:
     """去掉说已经改了、记下了、其实没做成的那几句（做成了的那种留着）；全去掉了就如实说没做成。"""
-    kept = [s for s in sentences(text) if not (claimed(s) - set(done))]
+    kept = [s for s in sentences(text) if not unsatisfied(claimed(s), set(done))]
     return "".join(kept).strip() or NOT_DONE
 
 
@@ -274,7 +468,9 @@ class Outcome:
     reason: str = (
         ""  # 退回的原因类别（日志、运行记录用），如 format / conflict / check / special / confirm
     )
-    kind: str = ""  # 出了预览：plan / log
+    kind: str = ""  # 出了预览：plan / log；直接记下：saved（一餐、读数）；直接改了：changed（今天、热量）；state
+    what: str = ""  # 做成的是哪一种（核对"说了做却没做"用）：meal / body / today / kcal / state
+    note: str = ""  # 给他看的一句（没答出来时告诉他这一轮已经做了什么）
     cards: tuple[dict[str, Any], ...] = ()
     draft: str = ""  # 存下的预览编号
 
@@ -295,6 +491,11 @@ class Desk:
     rejected: Counter[str] = field(default_factory=Counter)  # 原因类别 → 次数
     plan: Outcome | None = None  # 这一轮最后一张计划预览
     logs: list[Outcome] = field(default_factory=list)
+    saved: list[Outcome] = field(default_factory=list)  # 直接记下的：一餐、读数（§122）
+    changed: list[Outcome] = field(default_factory=list)  # 直接改了的：今天、热量（§122）
+    said: dict[str, Any] = field(
+        default_factory=dict
+    )  # 今天的状态，作答后写入（§122，原来的 said）
     stale: list[str] = field(default_factory=list)  # 同一轮被后一张换掉的计划预览编号（要作废）
     replaced: list[str] = field(
         default_factory=list
@@ -322,11 +523,25 @@ class Desk:
 
     @property
     def done(self) -> bool:
-        return self.plan is not None or bool(self.logs)
+        return bool(self.done_kinds)
 
     @property
     def kinds(self) -> list[str]:
+        """出了哪几种预览卡片（各配一句确认说明）。"""
         return (["plan"] if self.plan is not None else []) + (["log"] if self.logs else [])
+
+    @property
+    def done_kinds(self) -> set[str]:
+        """做成了哪几种（核对"说了做却没做"用）：plan、workout、meal、body、today、kcal、state。"""
+        out = {"plan"} if self.plan is not None else set()
+        out |= {"workout"} if self.logs else set()
+        out |= {"state"} if self.said else set()
+        return out | {x.what for x in (*self.saved, *self.changed) if x.what}
+
+    def done_note(self) -> str:
+        """这一轮已经直接记下、改了的（没答出来、退回固定说法时也告诉他，免得再说一遍又记一次）。"""
+        got = [x.note or x.text for x in (*self.saved, *self.changed)]
+        return "这一轮已经做了：" + "；".join(got) + "。" if got else ""
 
     @property
     def cards(self) -> list[dict[str, Any]]:
@@ -356,7 +571,8 @@ class Desk:
             self.ask_new_plan = True
             self._note(name, "ok")
             return _TERMS
-        self.calls += 1
+        if name != RECORD_STATE:  # 记今天的状态不计次
+            self.calls += 1
         if self.calls > MAX_ACTIONS:
             self._note(name, "limit")
             return _LIMIT
@@ -382,8 +598,12 @@ class Desk:
             if self.plan is not None and self.plan.draft and self.plan.draft != out.draft:
                 self.stale.append(self.plan.draft)
             self.plan = out
-        else:
+        elif out.kind == "log":
             self.logs.append(out)
+        elif out.kind == "saved":
+            self.saved.append(out)
+        elif out.kind == "changed":
+            self.changed.append(out)
 
     async def finish(self) -> None:
         """这一轮结束：计划检查没过被退回、它没再交，按交上来的那份出预览（同原来改一次不成照出，§12）。"""
@@ -421,11 +641,11 @@ class Desk:
 
     def unmet(self, answer: str) -> set[str]:
         """说了做了、这一轮却没做成的那几种（改计划和记训练分开看）。"""
-        return claimed(answer) - set(self.kinds)
+        return unsatisfied(claimed(answer), self.done_kinds)
 
     def settle(self, answer: str) -> str:
         """提醒过还是说了改却没改：去掉那几句。"""
         if not self.unmet(answer):
             return answer
         self.unacted = True
-        return strip_claims(answer, self.kinds)
+        return strip_claims(answer, self.done_kinds)

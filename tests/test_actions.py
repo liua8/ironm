@@ -70,7 +70,8 @@ def test_data_risk_turn_has_no_plan_tools_but_can_still_log(monkeypatch: Any) ->
 
     handlers = a._action_handlers("42", "x", seeded_plan(), Context(), TODAY, {}, ctx(),
                                   confirmed=True, merge=False, blocked=True)  # fmt: skip
-    assert set(handlers) == {LOG_WORKOUT}  # 拦下时只给记训练（和原来一样）
+    assert PLAN_EDIT not in handlers and NEW_PLAN not in handlers  # 拦下时不给训练安排（§5）
+    assert {LOG_WORKOUT, "record_state", "log_body", "log_meal"} <= set(handlers)  # 记录照旧
 
 
 def test_edit_tool_previews_and_the_answer_matches_the_card(monkeypatch: Any) -> None:
@@ -150,7 +151,7 @@ def test_action_calls_are_capped_per_turn() -> None:
     d.unlock(_toolset("plan-build"))
     said = [asyncio.run(d.run(NEW_PLAN, {"n": str(i)})) for i in range(MAX_ACTIONS + 1)]
     assert all(x.startswith("已出") for x in said[:MAX_ACTIONS]) and "不能再交" in said[-1]
-    assert d.stale == ["0", "1", "2"]  # 同一轮被后一张换掉的要作废
+    assert d.stale == [str(i) for i in range(MAX_ACTIONS - 1)]  # 同一轮被后一张换掉的要作废
 
 
 def test_action_calls_do_not_use_up_the_query_limit() -> None:
@@ -213,7 +214,10 @@ def test_claim_wording() -> None:
                  "你最近已经换了两次分化，先稳定一段。", "你的作息已经调了过来。", "你已经排了三周的训练。",
                  "你已经记下了每组的重量。"):  # fmt: skip
         assert not claims(said), said  # 问句、提议、否定、说以前的事、主语是他都不算
-    assert claimed("记下了，下次加重。周三挪到周四了。") == {"log", "plan"}
+    assert claimed("记下了，下次加重。周三挪到周四了。") == {
+        "log",
+        "change",
+    }  # 没说是哪一种：按大类
 
 
 def test_prompt_and_answer_have_no_json_actions_left() -> None:
@@ -423,3 +427,20 @@ def test_terms_tool_is_offered_on_training_turns_without_plan_build(monkeypatch:
     a, s = single(lambda *_: jsonr({"answer": "你好！"}), monkeypatch, old=True)
     run(a, "你好")
     assert ASK_TERMS not in s.system.split("需要信息就调用工具（")[1].split("）")[0]  # 闲聊不给
+
+
+def test_plan_can_still_be_handed_in_after_the_round_limit(monkeypatch: Any) -> None:
+    """真实模型回放（11-03）：排计划查了好几样、到上限还没交，原来工具全收走就出不了计划；
+    现在到上限后再给两轮只交不查。"""
+    from ironm_agent.agent import LOAD_SKILL
+
+    def answer(system: str, user: str, results: list[str]) -> Reply:
+        if results and results[-1].startswith("已出"):
+            return jsonr({"answer": "排好了三练全身〔经验〕。"})
+        if results and "要交的计划" in results[-1]:
+            return call(NEW_PLAN, plan=NEW, changes="三练全身", kind="rewrite")
+        return call(LOAD_SKILL, id="plan-build")  # 一直在查
+
+    a, _ = single(answer, monkeypatch, seeded=True, old=True)
+    blocks, seen = run(a, "把训练改成三练全身")
+    assert seen["_experts"][0]["forced"] and cards(blocks) and seen["action"] == "edit"

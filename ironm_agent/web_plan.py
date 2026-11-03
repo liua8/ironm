@@ -112,6 +112,11 @@ async def edit_plan(
     out: dict[str, Any] = {"status": "ok", "lines": got.lines, "notes": got.notes,
                            "warnings": got.warnings}  # fmt: skip
     if body.scope == "today":
+        if e.kind == "swap":  # 被换成替代动作的：存实际换上的，今天的版本重放时才对（§122 需求 9）
+            had = {x.exercise for x in base.sessions[0].items}
+            used = [x.exercise for x in got.plan.sessions[0].items if x.exercise not in had]
+            if used and used[0] != e.to:
+                e = e.model_copy(update={"to": used[0]})
         line = "；".join([*got.lines, *got.notes])[:120]
         await days.set_edits(user_id, today, [*before, e.model_copy(update={"line": line})])
         out["today"] = got.plan.sessions[0].model_dump(mode="json")
