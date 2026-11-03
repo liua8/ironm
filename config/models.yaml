@@ -24,9 +24,9 @@ stages:
     extra_body: {thinking: {type: disabled}}
     timeout_s: 45
     max_retries: 1
-  coach: # 管家的后台决策：到期复查（§129）、练完定下次（§132）；不写时沿用 expert（§142）
+  coach: # 管家的后台决策：到期复查（§129）、练完定下次（§132）；不写时沿用 expert（§142）。11-03 项目负责人定用 v4-pro（回放更稳）
     base_url: https://api.deepseek.com
-    model: deepseek-flash
+    model: deepseek-v4-pro
     api_key_env: DEEPSEEK_API_KEY
     extra_body: {thinking: {type: disabled}}
     timeout_s: 45

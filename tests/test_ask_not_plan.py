@@ -105,8 +105,10 @@ def test_posture_is_not_an_injury() -> None:
 
 
 def test_memory_instructions_say_posture_is_not_an_injury() -> None:
-    from ironm_agent import agent, memory_extract
+    from ironm_agent import memory_extract
+    from ironm_agent.actions import REMEMBER_SCHEMA
 
-    assert "圆肩驼背是体态不是 injury" in agent._PROMPT and "久坐圆肩怎么改善" in agent._PROMPT
+    tool = REMEMBER_SCHEMA["function"]["description"]  # 写法在工具说明里（§145）
+    assert "圆肩驼背是体态不是 injury" in tool and "久坐圆肩怎么改善" in tool
     assert "体态问题（圆肩、驼背、骨盆前倾）不是伤病" in memory_extract._PROMPT
     assert "久坐圆肩怎么改善" in memory_extract._PROMPT

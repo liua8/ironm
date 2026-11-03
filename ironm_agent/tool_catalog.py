@@ -70,6 +70,8 @@ CATALOG: tuple[Tool, ...] = (
          note="装了今天练不练才有；他同意或要求才调，原计划不变（§122）"),
     Tool("调热量", "iron-m", "propose_kcal_change", frozenset({"general"}), personal=True,
          note="装了饮食方案才有；累计 ±500、不低于安全下限（§122）"),
+    Tool("记一条记忆", "iron-m", "remember", frozenset({"general"}), personal=True,
+         note="每轮都给（暂停记忆、系统拼的问法不给）；调用时预核，回答写完再核对写入（§145）"),
     Tool("定下次目标", "iron-m", personal=True,
          note="不在对话里：记下一次训练后后台叫醒管家时才给（set_next_target）；动作要在计划里、加重不超过一成（§132）"),
     Tool("本人的训练", "iron-m", mcp="query_my_training", personal=True,

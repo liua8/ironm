@@ -30,12 +30,14 @@ LOG_BODY = "log_body"  # 体重、腰围这类读数进健康记录（§122）
 LOG_MEAL = "log_meal"  # 对话里记一餐（§122）
 ADJUST_TODAY = "adjust_today"  # 只改今天这一次训练（§122）
 KCAL_CHANGE = "propose_kcal_change"  # 调每日热量目标（§122）
+REMEMBER = "remember"  # 记忆（§145，取代回答 JSON 里的 memory）
 ACTION_TOOLS = (
     PLAN_EDIT, NEW_PLAN, LOG_WORKOUT, ASK_TERMS, RECORD_STATE, LOG_BODY, LOG_MEAL, ADJUST_TODAY,
-    KCAL_CHANGE,
+    KCAL_CHANGE, REMEMBER,
 )  # fmt: skip
-ALWAYS = (RECORD_STATE, LOG_BODY, LOG_MEAL)  # 他随时可能说到：每一轮都给（§122）
-MAX_ACTIONS = 6  # 每轮最多调用几次动作工具（不占查询次数；记今天的状态不算）
+ALWAYS = (RECORD_STATE, LOG_BODY, LOG_MEAL, REMEMBER)  # 他随时可能说到：每一轮都给（§122、§145）
+UNCOUNTED = (RECORD_STATE, REMEMBER)  # 不占动作次数
+MAX_ACTIONS = 6  # 每轮最多调用几次动作工具（不占查询次数；记今天的状态、记忆不算）
 
 _DAY = "1 到 7，1 是周一"
 _ITEM = {
@@ -206,6 +208,49 @@ ASK_TERMS_SCHEMA: dict[str, Any] = {
         "parameters": {"type": "object", "additionalProperties": False, "properties": {}},
     },
 }
+
+_CATEGORIES = ["injury", "equipment", "schedule", "diet", "preference", "goal", "level", "style",
+               "event", "followup"]  # fmt: skip
+REMEMBER_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": REMEMBER,
+        "description": (
+            "他这句话说了关于他本人、以后要照顾到的情况时调用，一次可以交几条；提问、闲聊、别人的事、假设、否定的说法不记，"
+            "已有的不重复记。只写他说了的：问句带出的不算（「肌酐高了怎么办」「久坐圆肩怎么改善」不记）；你的安排不写进去；"
+            "圆肩驼背是体态不是 injury。一顿饭、一次训练不记（那是 log_meal、log_workout）。"
+            "short 的（今天累、这周出差）系统记成近期的事，until：\"这周\"写周日、\"这两天\"写明天，看不出写 7 天后。"
+            "长期的情况变了 update 那一条；他说好了、结束了、取消了，resolve 还在生效的近况和跟进，不新增\"已结束\"。"
+            "答应回访、他要你提醒的记 followup；\"该问的、到期的跟进\"里你提了或他答了，用编号 resolve。"
+            "系统先按规则核一遍，没通过的会告诉你原因；回答写完后再核对才写入。"
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "op": {"type": "string", "enum": ["add", "update", "resolve"]},
+                            "target": {"type": "string", "description": "已有记忆编号（add 不写）"},
+                            "category": {"type": "string", "enum": _CATEGORIES},
+                            "content": {"type": "string", "description": "一句话≤40字，留部位左右重量时间"},
+                            "quote": {"type": "string", "description": "他原话里一字不差的一段"},
+                            "inferred": {"type": "boolean", "description": "推测的写 true"},
+                            "lasting": {"type": "string", "enum": ["long", "short"],
+                                        "description": "long（一直要照顾）或 short（某一天、这几天）"},
+                            "until": {"type": "string", "description": "event、followup 的截止日 YYYY-MM-DD"},
+                        },
+                        "required": ["op"],
+                    },
+                },
+            },
+            "required": ["items"],
+        },
+    },
+}  # fmt: skip
 
 RECORD_STATE_SCHEMA: dict[str, Any] = {
     "type": "function",
@@ -383,6 +428,7 @@ SCHEMAS = {
     LOG_MEAL: LOG_MEAL_SCHEMA,
     ADJUST_TODAY: ADJUST_TODAY_SCHEMA,
     KCAL_CHANGE: KCAL_CHANGE_SCHEMA,
+    REMEMBER: REMEMBER_SCHEMA,
 }
 _CONFIRMED = (
     f"他刚回应了你列的条件清单，算确认，不要再问一遍：调用 {NEW_PLAN}（kind 写 new）交计划，他改了哪几项就按改了的排；"
@@ -411,7 +457,8 @@ _HIS = re.compile(r"(?<![帮给按])你")  # 主语是他："你已经换了两�
 NUDGE_CLAIM = (
     "（系统核对，不是用户说的）你的回答里说已经改了或记下了，但这一轮没有成功调用对应的工具"
     f"（改计划 {PLAN_EDIT}、{NEW_PLAN}，只改今天 {ADJUST_TODAY}，调热量 {KCAL_CHANGE}，记训练 {LOG_WORKOUT}，"
-    f"记一餐 {LOG_MEAL}，记体重这类数 {LOG_BODY}；没有的先用 load_skill 装对应的规程）。"
+    f"记一餐 {LOG_MEAL}，记体重这类数 {LOG_BODY}，记他的伤病、器械这类情况 {REMEMBER}；"
+    "没有的先用 load_skill 装对应的规程）。"
     "要改就调用工具；不改就改口，不要说已经改了、记下了。"
 )
 NUDGE_PLAN = (
@@ -435,7 +482,7 @@ def claimed(text: str) -> set[str]:
 # 记录类（记训练、一餐、读数、今天的状态）任何一样做成，说"记下了"都算；修改类（改计划、只改今天、调热量）同理。
 # 细分到哪一样容易把常见回答判错、整段删掉（复核 11-03："记下了……今天的训练减到七成"被当成记训练）
 _MET_BY = {
-    "log": {"workout", "meal", "body", "state"},
+    "log": {"workout", "meal", "body", "state", "memory"},
     "change": {"plan", "today", "kcal"},
 }
 
@@ -491,6 +538,10 @@ class Desk:
     said: dict[str, Any] = field(
         default_factory=dict
     )  # 今天的状态，作答后写入（§122，原来的 said）
+    memory: list[dict[str, Any]] = field(
+        default_factory=list
+    )  # 这一轮交的记忆，回答写完后核对写入（§145，原来回答里的 memory）
+    memory_ok: Callable[[str], bool] | None = None  # 按回答核对记忆有没有通过的长期情况
     stale: list[str] = field(default_factory=list)  # 同一轮被后一张换掉的计划预览编号（要作废）
     replaced: list[str] = field(
         default_factory=list
@@ -558,6 +609,10 @@ class Desk:
     async def run(self, name: str, args: Mapping[str, Any]) -> str:
         if name not in self.unlocked:
             self._note(name, "locked")
+            if name == REMEMBER:  # 暂停记忆、系统拼的问法：不记，也不用装规程（复核 11-03）
+                return (
+                    "这一轮不记记忆（他暂停了记忆，或这句话不是他自己说的），不用再调，直接作答。"
+                )
             return f"现在没有 {name} 这个工具；要用先装带它的规程（load_skill）。"
         if name == ASK_TERMS:  # 只是标记它在确认条件，不存东西、不计次
             if self.must_plan:  # 他刚回应了条件清单：算确认，该交计划了（真实模型回放 11-03）
@@ -566,7 +621,7 @@ class Desk:
             self.ask_new_plan = True
             self._note(name, "ok")
             return _TERMS
-        if name != RECORD_STATE:  # 记今天的状态不计次
+        if name not in UNCOUNTED:  # 记今天的状态、记忆不计次
             self.calls += 1
         if self.calls > MAX_ACTIONS:
             self._note(name, "limit")
@@ -635,8 +690,11 @@ class Desk:
         return None
 
     def unmet(self, answer: str) -> set[str]:
-        """说了做了、这一轮却没做成的那几种（改计划和记训练分开看）。"""
-        return unsatisfied(claimed(answer), self.done_kinds)
+        """说了做了、这一轮却没做成的那几种（改计划和记训练分开看）。记了记忆要按回答核对通过才算（§145）。"""
+        done = self.done_kinds
+        if self.memory and self.memory_ok is not None and self.memory_ok(answer):
+            done = done | {"memory"}
+        return unsatisfied(claimed(answer), done)
 
     def settle(self, answer: str) -> str:
         """提醒过还是说了改却没改：去掉那几句。"""

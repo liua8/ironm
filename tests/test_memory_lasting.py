@@ -64,9 +64,18 @@ def test_old_items_are_shown_with_the_day_they_were_said() -> None:
 
 
 def test_prompts_say_how_to_mark_and_what_not_to_keep() -> None:
-    assert '"lasting":"long' in agent._PROMPT and "一顿饭、一次训练不记" in agent._PROMPT
+    import json
+
+    from ironm_agent.actions import REMEMBER_SCHEMA
+
+    tool = json.dumps(REMEMBER_SCHEMA, ensure_ascii=False)  # 写法在工具说明里（§145）
+    assert (
+        "long（一直要照顾）" in tool
+        and "一顿饭、一次训练不记" in tool
+        and "remember" in agent._PROMPT
+    )
     assert (
         "lasting：long" in memory_extract._PROMPT
         and "一次训练练了什么不记" in memory_extract._PROMPT
     )
-    assert "在 memory 里用 update 改那一条" in agent._JUST_ASKED
+    assert "调用 remember 用 update 改那一条" in agent._JUST_ASKED

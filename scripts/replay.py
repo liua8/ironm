@@ -170,12 +170,23 @@ def active_events(user_id: str) -> int:
         ).fetchone()[0])  # fmt: skip
 
 
+def memories(user_id: str) -> dict[str, int]:
+    """重放账号现在有效的记忆，按类别数条数（§145），只数条数、不读内容。"""
+    with db() as c:
+        rows = c.execute(
+            "SELECT category, count(*) FROM ironm_memory WHERE user_id = %s AND status = 'active'"
+            " GROUP BY category", (user_id,),
+        ).fetchall()  # fmt: skip
+    return {str(k): int(n) for k, n in rows}
+
+
 def judge(
     turn: dict[str, Any],
     answer: str,
     cards: list[dict[str, str]],
     ill: int | None,
     events: int | None = None,
+    mem: dict[str, int] | None = None,
 ) -> list[str]:
     """不符合的地方；空列表就是符合。"""
     bad = []
@@ -193,6 +204,10 @@ def judge(
         bad.append(f"生病记录应有 {turn['illness']} 条，实际 {ill} 条")
     if "events" in turn and events != turn["events"]:
         bad.append(f"有效近况应有 {turn['events']} 条，实际 {events} 条")
+    for cat, n in (turn.get("memory") or {}).items():
+        got = (mem or {}).get(cat, 0)
+        if got != n:
+            bad.append(f"有效的 {cat} 记忆应有 {n} 条，实际 {got} 条")
     asks = answer.count("？") + answer.count("?")
     if "asks" in turn and asks > turn["asks"]:
         bad.append(f"问题最多 {turn['asks']} 个，实际 {asks} 个")
@@ -227,10 +242,11 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
                 if c["kind"] == "plan" and c["draft"]:
                     call("POST", f"/iron/api/drafts/{c['draft']}/confirm", {}, token)
         ill = illness_rows(user_id) if "illness" in turn else None
-        if "events" in turn:
+        if "events" in turn or "memory" in turn:
             time.sleep(3)  # 当场写的记忆在回答之后
         events = active_events(user_id) if "events" in turn else None
-        bad = judge(turn, answer, cards, ill, events)
+        mem = memories(user_id) if "memory" in turn else None
+        bad = judge(turn, answer, cards, ill, events, mem)
         rows.append(Row(case=case["id"], turn=n, say=turn["say"], ok=not bad, bad=bad, secs=round(secs, 1),
                         answer=answer, cards=[c["kind"] for c in cards], tools=steps))  # fmt: skip
         print(f"{'-' * 72}\n问：{turn['say']}（{secs:.1f} 秒）")

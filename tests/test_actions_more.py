@@ -187,7 +187,7 @@ def test_adjust_today_refuses_rest_days_no_plan_and_bad_ratios(
 
 def test_adjust_today_is_not_given_on_a_data_risk_turn(monkeypatch: pytest.MonkeyPatch) -> None:
     _, desk, _, _ = harness(monkeypatch, "今天轻点", current=seeded_plan(), blocked=True)
-    assert ADJUST_TODAY not in desk.handlers and set(ALWAYS) <= set(desk.handlers)
+    assert ADJUST_TODAY not in desk.handlers and set(ALWAYS) - {"remember"} <= set(desk.handlers)  # 记忆另测（§145）
 
 
 # ---- 调热量 ------------------------------------------------------------------------------------

@@ -28,6 +28,7 @@ from ironm_agent.actions import (
     NEW_PLAN,
     PLAN_EDIT,
     RECORD_STATE,
+    REMEMBER,
     Desk,
     Handler,
     Outcome,
@@ -323,6 +324,21 @@ def asks_training(text: str) -> bool:
     return bool(_TRAIN_ASK.search(text)) and not _NOT_TRAINING.search(text)
 
 
+MEMORY_CAP = 8  # 一轮最多交几条记忆（和后台提取一轮最多落几条一样，§145）
+
+
+def _memory_holds(
+    ops: Sequence[Mapping[str, Any]], known: Mapping[str, Any], text: str, answer: str, today: date
+) -> bool:
+    """这一轮交的记忆按回答核对后，有没有通过的长期情况（近况不算：一次训练被记成近况，不能顶替记训练）。"""
+    from ironm_agent.memory_extract import validate
+
+    if not ops:
+        return False
+    checked, _ = validate({"ops": list(ops)}, known, text, answer, today=today)
+    return any(x.category != "event" for x in checked)
+
+
 @dataclass(frozen=True)
 class Prepared:
     snapshot: Snapshot
@@ -540,6 +556,14 @@ class IronMAgent:
             await default_coach_eval(user_id, reason, force)
         except Exception as e:
             _log.warning("coach evaluate failed: error_type=%s", type(e).__name__)
+
+    async def _paused(self, user_id: str) -> bool:
+        """他暂停了记忆没有；读不到当作没暂停（写入时还会再看一次）。"""
+        try:
+            return bool(await self._memory_store().paused(user_id))
+        except Exception as e:
+            _log.info("memory pause unknown: error_type=%s", type(e).__name__)
+            return False
 
     async def _record_pain(self, user_id: str, parts: list[str]) -> None:
         """记下这句话里说疼的部位（spec [2026-10-23] §18 需求 5）；暂停记忆时不记。"""
@@ -1405,6 +1429,7 @@ class IronMAgent:
         personal = await basics
         run["basics"] = len(personal.lines)
         known = lay.handles
+        remembering = self._remember_on and not await self._paused(user_id)  # 暂停记忆不给（§145）
         using = "、".join(x.name for x in loaded)
         yield started(
             "agent",
@@ -1426,9 +1451,13 @@ class IronMAgent:
         desk = Desk(
             self._action_handlers(user_id, text, plan, ctx, snapshot.today, run, tools_ctx,
                                   confirmed=confirmed, merge=bool(history), blocked=blocked is not None,
-                                  snapshot=snapshot),
+                                  snapshot=snapshot, known=known, remembering=remembering),
             has_plan=plan is not None, must_plan=confirmed_now and replying and blocked is None,
         )  # fmt: skip
+        if remembering:  # "记下了"算不算做了：回答写完后核对，通过的长期记忆才算（复核 11-03）
+            desk.memory_ok = lambda answer: _memory_holds(
+                desk.memory, known, text, answer, snapshot.today
+            )
         toolbox.actions = desk
         run["_desk"] = desk  # 这一轮出了异常时作废它存下的预览（generate_response 里）
         c = await respond(
@@ -1441,9 +1470,9 @@ class IronMAgent:
         yield finished("agent", consultation_summary(c), ok=c.status != "failed")
         run["_judged_state"] = c.status != "failed"  # 作答了：没调 record_state 就是没说（§122）
         run["_said_state"] = dict(desk.said)
-        if c.opinion.memory and self._remember_on:  # 这一轮要记的：核对后当场写入（§68）
+        if desk.memory and self._remember_on:  # 这一轮调 remember 交的：核对后当场写入（§68、§145）
             said["remembered"] = await self._remember_now(
-                user_id, text, c.opinion.answer, c.opinion.memory, known, run, snapshot.today
+                user_id, text, c.opinion.answer, desk.memory, known, run, snapshot.today
             )
         loaded_more = [x.get("tool") for x in c.evidence.calls if x.get("tool") == "load_skill"]
         run["_experts"] = [{"role": Role.GENERAL.value, "status": c.status, **c.trace,
@@ -1618,6 +1647,8 @@ class IronMAgent:
         merge: bool,
         blocked: bool,
         snapshot: Snapshot | None = None,
+        known: Mapping[str, Any] | None = None,
+        remembering: bool = False,
     ) -> dict[str, Handler]:
         """动作工具的处理（spec [2026-10-23] §120）：校验、套用、检查、存成预览，结果当场交还给管家。
 
@@ -1977,10 +2008,52 @@ class IronMAgent:
                            "（饮食页能撤销）。", kind="changed", what="kcal",
                            note=f"每日热量目标调到 {prop.after} 千卡")  # fmt: skip
 
+        async def remember(desk: Desk, args: Mapping[str, Any]) -> Outcome:
+            """记忆（§145）：按 §68 的规则先核一遍，没通过的退回原因；跟进类的原话可能出自管家自己的回答，
+            先收下。回答写完后再完整核对一次才写入（_remember_now）。"""
+            from ironm_agent.memory_extract import validate
+
+            raw = args.get("items")
+            ops = [dict(x) for x in raw if isinstance(x, Mapping)] if isinstance(raw, list) else []
+            if not ops:
+                return Outcome(
+                    False,
+                    "要写 items：每条一件他说了的事（op、category、content、quote）。",
+                    "format",
+                )
+            room = MEMORY_CAP - len(desk.memory)
+            if room <= 0:
+                return Outcome(False, f"这一轮已经交了 {MEMORY_CAP} 条，够了，不用再交。", "memory")
+            kept, why = [], []
+            for op in ops[:room]:
+                ok, bad = validate({"ops": [op]}, known or {}, text, "", today=today)
+                target = (known or {}).get(str(op.get("target") or ""))
+                cat = str(op.get("category") or getattr(target, "category", ""))
+                if ok or cat == "followup":  # 跟进（含按编号结束的）原话可能在回答里：先收下
+                    kept.append(op)
+                elif bad:
+                    why += bad[:1]
+            if not kept and not why:  # 已经记着的：validate 静默跳过（复核 11-03）
+                return Outcome(False, "这些已经记着了，不用再交。", "memory")
+            desk.memory += kept
+            if why:  # 运行记录只记条数（§68）
+                run["memory_tool_rejected"] = int(run.get("memory_tool_rejected") or 0) + len(why)
+            back = f"没记：{'；'.join(dict.fromkeys(why))}。改了再交，或者不记。" if why else ""
+            if not kept:
+                return Outcome(False, back, "memory")
+            return Outcome(
+                True,
+                f"收到 {len(kept)} 条，回答写完后核对写入。{back}",
+                kind="memory",
+                what="memory",
+            )
+
         handlers: dict[str, Handler] = {
             LOG_WORKOUT: log_workout, RECORD_STATE: record_state, LOG_BODY: log_body,
             LOG_MEAL: log_meal, KCAL_CHANGE: kcal_change,
         }  # fmt: skip
+        if remembering:  # 暂停记忆、系统拼出来的问法：不给（§145）
+            handlers[REMEMBER] = remember
         if not blocked:  # 危急情况：不给训练安排（§5），记录和饮食照旧
             handlers[NEW_PLAN] = new_plan
             handlers[ADJUST_TODAY] = adjust_today

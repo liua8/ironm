@@ -32,8 +32,8 @@ def first_call(q: str, monkeypatch: Any) -> tuple[str, str, dict[str, Any]]:
 def test_precedence_compact_memory_and_catalog(monkeypatch: Any) -> None:
     system, user, _ = first_call("你好", monkeypatch)
     assert "安全规则（急症、就医、不诊断不开药）> 回答格式" in system
-    memory = re.search(r"记忆（他这句话说了.*?(?=\n\n)", system, re.S)
-    assert memory is not None and len(memory.group(0)) < 700  # 原来约 1000 字
+    # 记忆的写法搬进 remember 的工具说明（§145）：系统提示里只剩一句什么时候调
+    assert "调用 remember" in system and '"memory"' not in system and 'op":"add' not in system
     assert (
         "plan-build：要每周计划、改计划、停练回来" in catalog_any() and "（" not in catalog_any()
     )  # 目录列编号和一句什么时候用（§110 第 0 层），不再重复名字

@@ -50,6 +50,19 @@ def again(result: str) -> bool:
     return not result.startswith("已出") and "排新计划" not in result
 
 
+def remembering(
+    memory: Sequence[Mapping[str, Any]], answer: Mapping[str, Any], *before: Reply
+) -> Callable[..., Reply]:
+    """单 Agent 的假模型（§145）：先依次交 before 里的调用，再调 remember 交这些记忆，最后作答。"""
+    steps = [*before, call("remember", items=[dict(x) for x in memory])]
+
+    def reply(*args: Any) -> Reply:
+        results = args[-1] if args and isinstance(args[-1], list) else []
+        return steps[len(results)] if len(results) < len(steps) else jsonr(answer)
+
+    return reply
+
+
 def acting(
     name: str, args: Mapping[str, Any], answer: Mapping[str, Any], tries: int = 2
 ) -> Callable[[str, str, list[str]], Reply]:

@@ -182,5 +182,12 @@ def test_both_memory_instructions_have_the_rules() -> None:
     extract = memory_extract._PROMPT
     assert "问句里带出的事不等于他有这件事" in extract and '不新增"已结束"' in extract
     assert "用 update 指向那条建议" in extract and "分开记" in extract
-    turn = agent._PROMPT
-    assert "问句带出的不算" in turn and "你的安排不写进去" in turn and '不新增"已结束"' in turn
+    from ironm_agent.actions import REMEMBER_SCHEMA
+
+    turn = REMEMBER_SCHEMA["function"]["description"]  # 管家记记忆的写法在工具说明里（§145）
+    assert (
+        "remember" in agent._PROMPT
+        and "问句带出的不算" in turn
+        and "你的安排不写进去" in turn
+        and '不新增"已结束"' in turn
+    )

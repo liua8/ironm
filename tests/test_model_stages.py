@@ -23,7 +23,7 @@ def test_coach_falls_back_to_expert_when_not_configured() -> None:
     raw["stages"]["expert"]["model"] = "作答用的"
     old = ModelsConfig.model_validate(raw)
     assert old.route("coach").model == "作答用的" and old.route("expert").model == "作答用的"
-    assert load_models(MODELS_PATH).route("coach").model == "deepseek-flash"  # 默认不变
+    assert load_models(MODELS_PATH).route("coach").model == "deepseek-v4-pro"  # 11-03 定用 v4-pro
 
 
 def test_checkup_and_next_targets_use_the_coach_stage() -> None:

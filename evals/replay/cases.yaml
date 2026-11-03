@@ -7,6 +7,7 @@
 #   illness   这一轮之后重放账号有几条生病记录；不写就不检查
 #   asks      这一轮最多问几个问题（按问号数）；不写就不检查
 #   confirm   true：这一轮出的计划预览当场确认，后面几轮在这份计划上改（§120）
+#   memory    这一轮之后重放账号各类有效记忆的条数，如 {injury: 1}（§145）；不写就不检查
 # 只用规则判断，不打分。
 
 profile: {height_cm: 175, birth: "1995-06-01", sex: male, goal: fat_loss, activity: moderate}
@@ -226,6 +227,15 @@ cases:
         must_not: [146 公斤]
         card: none
 
+  - id: remember-tool
+    from: §145 记忆改成工具：说了伤病、器械会记，问句不记
+    turns:
+      - say: 我左膝有旧伤，深蹲蹲深了会疼
+        memory: {injury: 1}
+      - say: 家里只有一对 10 公斤的哑铃
+        memory: {injury: 1, equipment: 1}
+      - say: 久坐圆肩怎么改善
+        memory: {injury: 1, equipment: 1}
 
 # 后台用例（§138 需求 1）：到期复查（kind: checkup，§129）、练完定下次（kind: next，§132）。
 # 本进程内存存储 + 真实模型，不登录、不碰账号和数据库。setup：

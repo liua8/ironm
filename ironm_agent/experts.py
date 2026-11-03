@@ -41,7 +41,6 @@ class Opinion(ContractModel):
     # 改计划、新计划、记训练不再写在这里，由管家调用动作工具交给系统（§120）
     basis: tuple[str, ...] = ()  # 意见里引用到的编号：K 开头为依据库条目，r 开头为健康数据行
     general: bool = False  # 没有资料依据，只给不带具体数字的一般建议
-    memory: list[dict[str, Any]] | None = None  # 单 Agent 这一轮要记的（§68），由代码核对后写入
 
     def body(self) -> str:
         return self.answer
@@ -139,8 +138,6 @@ def _parse(role: Role, content: str, question: str = "") -> Opinion | None:
     if is_slots(raw):  # 按分段写的：由代码拼成正文、按问题类型限长（§38）
         raw = {**raw, "answer": assemble(raw, question)}
     data: dict[str, Any] = {k: raw.get(k) for k in ("general", *fields) if k in raw}
-    if isinstance(raw.get("memory"), list):
-        data["memory"] = [x for x in raw["memory"] if isinstance(x, dict)]
     data["speak"] = True  # 被请到就要回答，模型说"不发言"也不算
     for k in fields:
         if k in data and not isinstance(data[k], str):
@@ -183,7 +180,6 @@ async def _loop(
     trace = trace if trace is not None else {}
     fixes = 0
     rounds = 0
-    memo: list[dict[str, Any]] | None = None  # 第一次写的记忆：改写时模型常常漏掉，沿用
     desk = toolbox.actions
     offered = bool(toolbox.schemas())  # 有工具才提供；装了规程会多出动作工具，所以每轮重新取
     only_actions = False  # 往返到上限后：不再查，只留动作工具，查好的计划、记录还能交上来
@@ -227,8 +223,6 @@ async def _loop(
             opinion = opinion.model_copy(
                 update={f: merge_echoes(getattr(opinion, f)) for f in _FIELDS}
             )
-            memo = opinion.memory if opinion.memory is not None else memo
-            opinion = opinion.model_copy(update={"memory": memo})
         if opinion is not None and desk is not None and rounds < limit:  # 提醒后还要留一轮能调工具
             # 刚确认了条件却没交计划、说了改却没改：提醒一次，让它调用工具或改口（§120）
             nudge = desk.followup(opinion.body())

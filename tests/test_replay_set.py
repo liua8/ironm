@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -267,3 +268,18 @@ def test_a_timeout_is_not_a_pass() -> None:
     finally:
         next_targets.TIMEOUT_S = old
     assert seen and "模型调用出错：CancelledError" in res.bad
+
+
+def test_chat_judge_checks_memory_counts() -> None:
+    """对话用例能查各类有效记忆的条数（§145）。"""
+    spec = importlib.util.spec_from_file_location("replay_script", ROOT / "scripts" / "replay.py")
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    turn = {"memory": {"injury": 1, "equipment": 1}}
+    assert mod.judge(turn, "好", [], None, None, {"injury": 1, "equipment": 1}) == []
+    bad = mod.judge(turn, "好", [], None, None, {"injury": 2})
+    assert (
+        "有效的 injury 记忆应有 1 条，实际 2 条" in bad
+        and "有效的 equipment 记忆应有 1 条，实际 0 条" in bad
+    )
