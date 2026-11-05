@@ -90,6 +90,7 @@ class Template(ContractModel):
     id: str = Field(pattern=r"^[a-z0-9-]+$")
     kind: Literal["base", "blogger"] = "base"  # 自己的初步方案 / 博主方案（§78）
     standard: bool = False  # 一般人的标准方案（§79）：一般成年人没点名时默认给
+    standard_weeks: tuple[int, ...] = ()  # 只在每周练这几天时算标准方案（§170：三分化只管 6 天）；空表示都算
     novice_sets: dict[Level, int] = Field(default_factory=dict)  # 新手每个动作最多几组，不做力竭
     name: str = Field(min_length=1, max_length=24)
     levels: tuple[Level, ...] = Field(min_length=1)
@@ -216,7 +217,7 @@ def choose(
             t.standard
             and not only
             and not misfit
-            and days in t.weeks
+            and days in (t.standard_weeks or t.weeks)
             and (goal is None or goal in t.goals)
             and (minutes is None or minutes >= t.minutes[0])
         ):
@@ -497,7 +498,7 @@ def plan_templates(
             changes.insert(
                 0, f"按{LEVELS[level]}减到每个动作最多 {t.novice_sets[level]} 组，不做到力竭"
             )
-        if t.standard and not asked:
+        if t.standard and not asked and c.days in (t.standard_weeks or t.weeks):
             changes.insert(0, "这是一般人的标准方案：一般成年人没点名时默认用这一份")
         checked = check_plan(plan, goal=goal, novice=level in (None, "none", "lt6m"),
                              injured=injured, equipment=equipment, available_days=days,

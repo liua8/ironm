@@ -45,10 +45,10 @@ def test_library_loads_and_covers_every_kind_of_person() -> None:
 
 
 def test_the_right_plan_for_each_kind_of_person() -> None:
-    assert top(level="none", goal="health", days=3, place="gym") == "kai-tan-ppl"  # 标准方案（§79）
+    assert top(level="none", goal="health", days=3, place="gym") == "start-full-3"  # 每周 3 天全身三练（§170）
     assert top(level="none", goal="health", days=3, minutes=30, place="gym") != "kai-tan-ppl"
     assert top(level="none", goal="muscle", days=2, place="gym") == "start-full-2"
-    assert top(level="lt6m", goal="health", days=3, place="home", equipment=BANDS) == "kai-tan-ppl"
+    assert top(level="lt6m", goal="health", days=3, place="home", equipment=BANDS) == "home-3"
     assert top(level="lt6m", goal="health", days=2, place="home", equipment=BANDS) == "home-3"
     assert top(level="6m-2y", goal="muscle", days=4, place="gym") == "upper-lower-4"
     assert top(level="2y+", goal="muscle", days=6, place="gym") == "kai-tan-ppl"
@@ -238,11 +238,10 @@ DUMBBELLS = frozenset({"自重", "哑铃"})
 
 def test_standard_split_is_the_default_for_ordinary_adults_only() -> None:
     for goal in ("muscle", "fat_loss", "health"):
-        for days in (3, 6):
-            assert top(level="6m-2y", goal=goal, days=days, place="gym") == "kai-tan-ppl"
-    assert (
-        top(level="none", goal="muscle", days=3, place="home", equipment=DUMBBELLS) == "kai-tan-ppl"
-    )
+        assert top(level="6m-2y", goal=goal, days=6, place="gym") == "kai-tan-ppl"
+        # 每周 3 天：每个肌群一周练到 3 次，不默认三分化（§170，三分化只练到 1 次〔K05〕）
+        assert top(level="6m-2y", goal=goal, days=3, place="gym") == "mid-full-3"
+    assert top(level="none", goal="muscle", days=3, place="home", equipment=DUMBBELLS) == "home-3"
     assert top(level="2y+", goal="strength", days=3, place="gym") == "strength-3"  # 冲重量照旧
     assert top(level="none", goal="health", days=2, place="gym") == "start-full-2"
     assert top(level="6m-2y", goal="muscle", days=4, place="gym") == "upper-lower-4"
@@ -284,10 +283,20 @@ def test_single_arm_pulldown_was_added_without_renumbering() -> None:
 
 
 def test_tool_says_it_is_the_standard_plan_and_where_it_comes_from() -> None:
-    r = plan_templates(level="none", goal="muscle", days=3, minutes=None, place="gym", age=28,
+    r = plan_templates(level="none", goal="muscle", days=6, minutes=None, place="gym", age=28,
                        equipment=GYM)  # fmt: skip
     text = "\n".join(r.notes)
     assert "一般人的标准方案" in text and "按零基础减到每个动作最多 2 组" in text
+    three = plan_templates(level="none", goal="muscle", days=3, minutes=None, place="gym", age=28,
+                           equipment=GYM, name="谭成义三分化")  # fmt: skip
+    named = "\n".join(three.notes)
+    assert "kai-tan-ppl" in named and "没点名时默认用这一份" not in named  # 点名照给；每周 3 天不说是默认的
+    assert "每个肌群每周只练 1 次" in named  # 不足照旧说明
+    plain = plan_templates(level="6m-2y", goal="muscle", days=3, minutes=None, place="gym", age=28,
+                           equipment=GYM)  # fmt: skip
+    listed = "\n".join(plain.notes)
+    assert "（mid-full-3）" in listed.split("方案2")[0]  # 每周 3 天排第一的是全身三练
+    assert "kai-tan-ppl" not in listed  # 没点名、每周 3 天：三分化不再推荐
     assert "博主方案：参考凯圣王、谭成义" in text and "和依据不一致" in text
 
 
