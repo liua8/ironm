@@ -614,6 +614,7 @@ async def get_brief(
     today = today_brief(snap, items, current, logs)
     week = weekly_review(snap, current, logs, plan.since if plan else None,
                          sick=sick_days(eps, snap.today), sick_times=recurring(eps, snap.today))  # fmt: skip
+    week.update(tips=[], actions=[])  # 规则的每周建议不给了，要不要调由管家复盘提（§163）
     hero = hero_line(today, week)
     rainy = hot = False
     try:  # 鼓励的话会看今天的天气（spec [2026-10-23] §34）；取不到就不看

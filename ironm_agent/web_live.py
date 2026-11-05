@@ -24,9 +24,9 @@ from ironm_agent.live import (
     to_log,
 )
 from ironm_agent.memory_store import MemoryStore
-from ironm_agent.training import SORE_PARTS, Feeling, TrainingStore, WorkoutLog
+from ironm_agent.training import SORE_PARTS, Feeling, Plan, TrainingStore, WorkoutLog
 from ironm_agent.web import _verify, after_workout, memory_store, record_sore, training_store
-from ironm_agent.web_more import DAY, FEEL, ILLNESS, PAIN, body_later, today_edits
+from ironm_agent.web_more import DAY, FEEL, ILLNESS, PAIN, body_later, review_today, today_edits
 
 _log = logging.getLogger("ironm_agent.live")
 router = APIRouter()
@@ -206,6 +206,7 @@ async def start_live(
 
         plan = plan_on(plan, await load_temps(store, user_id), date.today()) or plan
         plan = with_today(plan, await today_edits(day, user_id, date.today()), date.today())
+        plan = await _coach_ratio(user_id, plan)
     rests = await lives.rests(user_id)
     session = ""
     names: list[str] = []
@@ -231,6 +232,19 @@ def _in_library(name: str) -> bool:
     except LiveError:
         return False
     return True
+
+
+async def _coach_ratio(user_id: str, plan: Plan) -> Plan:
+    """管家复盘定了今天按几成练：今天那一次换成按几成的版本，和首页的"今天"一样（复核 11-05）。"""
+    from ironm_agent.today import build
+
+    review = await review_today(user_id)
+    told = review.today() if review is not None else None
+    today = plan.session_on(date.today())
+    if told is None or not told.value.get("ratio") or today is None:
+        return plan
+    scaled = build(today, scale=float(told.value["ratio"]), scale_why=told.why).session
+    return plan.model_copy(update={"sessions": [scaled if x is today else x for x in plan.sessions]})
 
 
 @router.put("/iron/api/live")

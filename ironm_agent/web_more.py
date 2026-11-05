@@ -1187,7 +1187,7 @@ def plan_change_later(user_id: str, draft: dict[str, Any], *, undone: bool = Fal
     """确认或撤销按操作改的计划后，在后台记进管家的调整经历（spec [2026-10-23] §45）。"""
     from ironm_agent.coach_state import record_plan_later
 
-    if draft.get("kind") != "plan" or not draft.get("ops"):
+    if draft.get("kind") not in ("plan", "temp") or not (draft.get("ops") or (draft.get("temp") or {}).get("ops")):
         return
     try:
         record_plan_later(coach_deps().store, user_id, draft, undone=undone)
@@ -1324,6 +1324,18 @@ async def coach_seen(body: CoachSeen, user_id: str = Depends(_verify())) -> dict
 
     await mark_seen(coach_deps().store, user_id, body.version)
     return {"seen": body.version}
+
+
+@router.post("/iron/api/coach/retry")
+async def coach_retry(user_id: str = Depends(_verify())) -> dict[str, Any]:
+    """首页"管家出错了"点重试：今天的复盘失败了（或还没有）就在后台重跑（§163，复核 11-05）；已经看过的不重跑。"""
+    from ironm_agent.review import retry_later
+
+    review = await review_today(user_id)
+    if review is not None and not review.failed:
+        return {"status": "ok"}
+    retry_later(user_id, coach_deps())
+    return {"status": "reviewing", "message": "管家正在看今天的情况"}
 
 
 @router.post("/iron/api/coach/decide")

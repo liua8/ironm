@@ -2141,9 +2141,10 @@ class IronMAgent:
         self, user_id: str, current: Plan, args: Mapping[str, Any], ctx: Context, tools: ToolContext,
         run: dict[str, Any], today: date, store: Any,
     ) -> Outcome:  # fmt: skip
-        """临时调整（§163 需求 2）：日期、改法核对后套到当前计划上、按时长修剪、检查新带来的问题，存成预览。"""
+        """临时调整（§163 需求 2）：日期、改法核对后套到当前计划上、检查新带来的问题，存成预览。
+        不按时长修剪：生效时也不修剪，预览要和生效的一样（复核 11-05）。检查按叠上重叠的临时调整后的那版。"""
         from ironm_agent import plan_layers
-        from ironm_agent.plan_ops import Conflict, apply, fit_time, parse_ops
+        from ironm_agent.plan_ops import Conflict, apply, parse_ops
 
         try:
             start = date.fromisoformat(str(args.get("start") or ""))
@@ -2156,24 +2157,30 @@ class IronMAgent:
         ops = parse_ops(args.get("ops"))
         if not ops:
             return Outcome(False, "ops 要是改法列表，写法同 propose_plan_edit。", "format")
+        base = plan_layers.stacked(current, await plan_layers.load(store, user_id), start, end)
         try:
-            applied = fit_time(apply(current, ops, equipment=tools.equipment, injured=tools.injured))
+            applied = apply(current, ops, equipment=tools.equipment, injured=tools.injured)
         except Conflict as e:
             return Outcome(False, f"改法互相矛盾：{e}。问他想怎么改。", "conflict")
+        try:
+            layered = apply(base, ops, equipment=tools.equipment, injured=tools.injured).plan
+        except Conflict as e:
+            return Outcome(False, f"和他已经确认的临时调整冲突：{e}。先问他那份要不要撤销。", "conflict")
         if not applied.done:
             return Outcome(False, "一条都没改成：" + "；".join(applied.skipped) + "。看清计划里那几天的动作再交。", "rejected")
 
         def review(p: Plan) -> tuple[str, ...]:
-            return check_plan(p, current=current, goal=tools.goal, injured=tools.injured,
+            return check_plan(p, current=base, goal=tools.goal, injured=tools.injured,
                               equipment=tools.equipment, special=tools.special).problems  # fmt: skip
 
-        had = {_no_day(x) for x in review(current)}
-        left = [x for x in review(applied.plan) if _no_day(x) not in had]
+        had = {_no_day(x) for x in review(base)}
+        left = [x for x in review(layered) if _no_day(x) not in had]
         if left:
             run["plan_check"] = "failed"
             return Outcome(False, "这样改会有问题：" + "；".join(left) + "。改了再交。", "check")
         why = str(args.get("why") or "")[:60]
-        content = plan_layers.content(start, end, why, applied, applied.lines)
+        stored = await store.plan(user_id)
+        content = plan_layers.content(start, end, why, applied, applied.lines, stored.line_id if stored else "")
         draft = await store.add_draft(user_id, "temp", content)
         run["preview"] = "temp"
         return Outcome(True, "已出临时调整的预览卡片，等他确认（确认前计划没改，到期自动回到原计划）。", kind="temp",

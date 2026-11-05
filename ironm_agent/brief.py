@@ -1,6 +1,6 @@
 """首页的今日简报与每周复盘（spec [2026-10-23] §10）：全部用规则生成，打开首页就能看到，不调用模型。
 
-- 今日简报：今天的身体状态、今天按计划练什么（状态差时建议改成轻松版或休息）、今日营养目标、一条最该注意的提醒；
+- 今日简报：今天的身体状态、今天按计划练什么（状态差时怎么练由管家定，§163）、今日营养目标、一条最该注意的提醒；
 - 每周复盘：本周（周一到今天）计划完成几次、体重变化、平均睡眠、静息心率与心率变异性的变化，按规则给 1–3 条建议。
 """
 
@@ -45,10 +45,8 @@ def today_brief(
         }
     else:
         tip = ""
-        if any(x.block for x in found):
-            tip = "先别练，等血压降下来、医生同意再说。"
-        elif state.level == "poor":
-            tip = "今天状态不好，建议改成轻松版（重量减轻、组数减半）或休息。"
+        if any(x.block for x in found):  # 安全护栏：危急指标
+            tip = "先别练，等血压降下来、医生同意再说。"  # 状态差不再由规则建议减半、休息（§163），看管家的"今天"
         training = {
             "kind": "session",
             "name": session.name,
@@ -60,8 +58,6 @@ def today_brief(
     kcal, protein = _metric(snap.metrics, "kcal_target"), _metric(snap.metrics, "protein_target")
     if found:
         alert = found[0].note
-    elif state.level == "poor":
-        alert = "今天" + "；".join(state.reasons[:2]) + "：优先休息和睡眠。"
     elif state.level == "unknown":
         alert = "连接手表或导入苹果健康的最新数据，这里就能判断你今天的状态。"
     else:
@@ -148,7 +144,6 @@ def weekly_review(
 def hero_line(today: dict[str, Any], week: dict[str, Any]) -> dict[str, str]:
     """首页"今日战报"的大标题和一句鼓劲的话（spec [2026-10-23] §19）：按规则，不调用模型。"""
     t = today.get("training") or {}
-    level = (today.get("readiness") or {}).get("level")
     planned, done = week.get("planned") or 0, week.get("done") or 0
     week_won = bool(planned) and done >= planned
     kind = t.get("kind")
@@ -158,11 +153,6 @@ def hero_line(today: dict[str, Any], week: dict[str, Any]) -> dict[str, str]:
             "push": "今天的训练完成了，干得漂亮！好好吃饭、早点睡。",
         }
     if kind == "session":
-        if level == "poor":
-            return {
-                "title": f"今天练{t['name']}",
-                "push": "状态差也来了，就赢了一半：按今天的版本轻松练。",
-            }
         if week_won:
             return {"title": f"今天练{t['name']}", "push": "本周目标已经达成，这一练是额外加分！"}
         return {

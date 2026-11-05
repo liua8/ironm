@@ -409,6 +409,11 @@ class StoredPlan:
     created: datetime
     edit: bool = False  # 在上一版上按操作改出来的（管家复盘、对话里挪一天换动作，§93）
     start: date | None = None  # 这条改动链最早那一版的启用日期
+    root: str = ""  # 这条改动链最早那一版（新排的那份）的编号：临时调整只跟着这条链（复核 11-05）
+
+    @property
+    def line_id(self) -> str:
+        return self.root or self.id
 
     @property
     def since(self) -> date:
@@ -433,7 +438,7 @@ def lineage(
         plan._earlier = tuple(
             (d, p.plan) for p in ordered[:i] if (d := p.created.astimezone().date()) < start
         )
-    return replace(current, plan=plan, start=start)
+    return replace(current, plan=plan, start=start, root=ordered[i].id)
 
 
 def _is_edit(content: dict[str, Any]) -> bool:
@@ -466,6 +471,16 @@ class Draft:
             return (at or now()).astimezone().date() > start
         return (at or now()) - self.created > timedelta(hours=DRAFT_HOURS)
 
+    def _expires(self) -> datetime:
+        """什么时候作废：临时调整是开始那天结束时（§163），其余 24 小时。"""
+        if self.kind == "temp":
+            try:
+                start = date.fromisoformat(str((self.content.get("temp") or {}).get("start")))
+                return datetime.combine(start + timedelta(days=1), datetime.min.time()).astimezone()
+            except ValueError:
+                return self.created
+        return self.created + timedelta(hours=DRAFT_HOURS)
+
     def json(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -473,7 +488,7 @@ class Draft:
             "state": self.state,
             "expired": self.state == "pending" and self.expired(),
             "created": self.created.isoformat(),
-            "expires": (self.created + timedelta(hours=DRAFT_HOURS)).isoformat(),
+            "expires": self._expires().isoformat(),
             **self.content,
         }
 

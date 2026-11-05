@@ -193,7 +193,8 @@ def new_item(
     move = _move(name)
     timed = bool(move is not None and move.timed)
     planned = (
-        next((x for s in plan.sessions for x in s.items if x.exercise == name), None)
+        next((x for s in sorted(plan.sessions, key=lambda s: s.day != date.today().isoweekday())
+              for x in s.items if x.exercise == name), None)  # 今天那一次排前面（复核 11-05）
         if plan
         else None
     )

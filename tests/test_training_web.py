@@ -80,7 +80,7 @@ def test_quick_log_from_home_and_delete() -> None:
     assert c.delete(f"/iron/api/workouts/{w['id']}").status_code == 404
 
 
-def test_brief_and_weekly_review_use_rules_only(monkeypatch: Any) -> None:
+def test_brief_gives_no_rule_advice(monkeypatch: Any) -> None:
     from ironm_agent import web
 
     today = date.today()
@@ -102,10 +102,8 @@ def test_brief_and_weekly_review_use_rules_only(monkeypatch: Any) -> None:
     session = PLAN.session_on(today)
     assert t["kind"] == ("session" if session else "rest")
     assert data["today"]["nutrition"]["kcal"] is not None
-    tips = "".join(data["week"]["tips"])
-    assert "平均只睡 6.2 小时" in tips and "少吃约 200 千卡" in tips
-    if data["week"]["due"] >= 2:
-        assert "不到一半" in tips  # 这周一次都没练
+    assert data["week"]["tips"] == [] and data["week"]["actions"] == []  # 要不要调由管家复盘提（§163）
+    assert "planned" in data["week"] and "done" in data["week"]  # 事实照给
 
 
 def test_brief_carries_the_safety_alert_only_when_there_is_a_risk(monkeypatch: Any) -> None:

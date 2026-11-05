@@ -96,7 +96,7 @@ def test_evaluate_versions_and_changes() -> None:
     dp = deps(training=with_plan(), pain=pain, snapshot=snap(per_week=-0.4))
     s1, c1 = asyncio.run(evaluate("42", dp, reason="打卡"))
     assert s1.version == 1 and c1 and all(c.change == "added" for c in c1)
-    assert {c.key for c in c1} == {x.key for x in s1.items}
+    assert {c.key for c in c1} == {x.key for x in s1.items} - {"today"}  # 管家还没看：今天不算一次调整
     same, none = asyncio.run(evaluate("42", dp, reason="每天第一次打开", force=False))
     assert same.version == 1 and none == []  # 今天评估过：不重复算
     again, none2 = asyncio.run(evaluate("42", dp, reason="记饮食"))
@@ -120,9 +120,14 @@ def test_evaluate_versions_and_changes() -> None:
 
 def test_next_day_today_item_counts_as_a_change() -> None:
     dp = deps(training=with_plan())
+    from ironm_agent.coach_state import Review
+
     asyncio.run(evaluate("42", dp, reason="x", today=TODAY - timedelta(days=1)))
     s, changes = asyncio.run(evaluate("42", dp, reason="每天第一次打开", force=False))
-    assert s.day == TODAY and any(c.key == "today" and c.change == "changed" for c in changes)
+    assert s.day == TODAY and not any(c.key == "today" for c in changes)  # 管家正在看：不算调整（复核 11-05）
+    asyncio.run(dp.store.save("42", s.model_copy(update={"review": Review(day=TODAY)}), []))
+    s, changes = asyncio.run(evaluate("42", dp, reason="复盘"))
+    assert any(c.key == "today" and c.change == "changed" for c in changes)  # 看完了：记一次
 
 
 def test_log_has_counts_not_content(caplog: pytest.LogCaptureFixture) -> None:

@@ -116,6 +116,7 @@ class Review(BaseModel):
     checked: list[str] = Field(default_factory=list)  # 今天核对完的以前的调整（§89）
     stage: str = ""  # 今天写的 4 周阶段小结（§89）
     weekly: bool = False  # 这次是这周的每周复查（§163）
+    failed_at: datetime | None = None  # 什么时候失败的：过一会儿才自动再试（复核 11-05）
 
     def today(self) -> Done | None:
         return next((d for d in self.done if d.type == "today" and not d.undone), None)
@@ -431,6 +432,8 @@ def diff(old: State | None, items: Sequence[Item], today: date, version: int) ->
 
     for x in items:
         prev = before.pop(x.key, None)
+        if x.key == "today" and x.value.get("reviewing"):
+            continue  # "管家正在看"不是一次调整：不记、不推给他；看完了再按定下的记（复核 11-05）
         if prev is None:
             out.append(change("added", x, None))
         elif (
@@ -781,11 +784,18 @@ async def mark_seen(store: CoachStore, user_id: str, version: int) -> None:
             )
 
 
+def _temp_after(draft: dict[str, Any]) -> str:
+    t = draft.get("temp") or {}
+    if not t:
+        return ""
+    return f"临时调整 {t.get('start')}–{t.get('end')}：" + "；".join(str(x) for x in t.get("lines") or [])
+
+
 async def record_plan(
     store: CoachStore, user_id: str, draft: dict[str, Any], *, undone: bool = False
 ) -> bool:
-    """确认或撤销一份按操作改的计划时，记一条调整经历：哪几条操作、原因（spec [2026-10-23] §45）。"""
-    ops = draft.get("ops")
+    """确认或撤销一份按操作改的计划、临时调整时，记一条调整经历：哪几条操作、原因（spec [2026-10-23] §45、§163）。"""
+    ops = draft.get("ops") or (draft.get("temp") or {}).get("ops")
     if not ops:
         return False
     state = await store.get(user_id)
@@ -793,7 +803,7 @@ async def record_plan(
     record = Change(id=uuid.uuid4().hex[:16], at=datetime.now(UTC), day=date.today(),
                     version=state.version if state else 0, key="plan", kind="proposal",
                     change="removed" if undone else "accepted", before="",
-                    after=str(draft.get("changes") or "")[:200], why=whys[:120],
+                    after=str(draft.get("changes") or _temp_after(draft))[:200], why=whys[:120],
                     basis=f"{len(ops)} 条操作", status="confirm")  # fmt: skip
     await store.log(user_id, [record])
     return True

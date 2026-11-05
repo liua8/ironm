@@ -84,7 +84,9 @@ def test_due_expectation_is_checked_and_given_to_the_model_and_to_him() -> None:
     assert any(x.title == "上次的调整效果怎么样" and "没达到" in x.why for x in state.items)
     # 核对过的不再核对
     again, _ = model()
-    assert not asyncio.run(review.run("42", dp, again, today=day, force=True)).checked
+    redo = asyncio.run(review.run("42", dp, again, today=day, force=True))
+    assert redo.checked == out.checked  # 同一天重看：核对过的照留着，不再核对一遍
+    assert len([c for c in asyncio.run(dp.store.history("42", 200)) if c.key == "review:today" and c.result]) == 1
 
 
 def test_undone_or_uncheckable_adjustments_are_not_checked() -> None:

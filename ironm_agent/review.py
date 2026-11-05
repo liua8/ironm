@@ -38,7 +38,7 @@ from ironm_agent.insights import compare, situations
 from ironm_agent.kb import default_kb
 from ironm_agent.llm import LLM, TurnLLM, load_models, parse_json
 from ironm_agent.metrics import KcalAdjust, safe_floor
-from ironm_agent.training import plan_content, week_start, weekday_name
+from ironm_agent.training import REST_WORDS, plan_content, week_start, weekday_name
 
 _log = logging.getLogger("ironm_agent.review")
 
@@ -170,6 +170,12 @@ def facts(
         bits = [x for x in (p.get("side"), p.get("exercise") and f"做{p['exercise']}时", p.get("level")) if x]
         lines.append(f"说疼：{ago(p['day'], today)} {JOINT_NAMES.get(p['part'], p['part'])}" + (f"（{'，'.join(bits)}）" if bits else ""))
     lines += [f"临时调整（他确认过的）：{t.line()}" for t in inp.temps if t.end >= today]
+    edits = list(getattr(inp.day, "edits", None) or []) if inp.day is not None else []
+    if edits:  # 今天已经改过（对话里管家或他自己在计划页改的）：再按几成练会叠上去
+        lines.append("今天已经改过（只改今天）：" + "；".join(e.line or f"{e.kind} {e.exercise}".strip() for e in edits))
+    for log in inp.logs:  # 打卡勾的没练原因（他自己填的）
+        if not log.done and log.rest and (today - log.day).days <= 7:
+            lines.append(f"{ago(log.day, today)}没练：{REST_WORDS.get(log.rest, log.rest)}")
     if inp.advice is not None and inp.advice.reasons:  # 天气：户外练不练由管家定
         lines.append(f"今天的天气：{inp.advice.name}（{'；'.join(inp.advice.reasons)}）")
     lines += extra
@@ -201,24 +207,46 @@ def _ids(raw: Any) -> list[str]:
     return [str(x).strip() for x in items if re.fullmatch(r"[FK]\d+", str(x).strip())]
 
 
+RETRY_AFTER = timedelta(minutes=10)  # 失败后自动再试的间隔：模型一直不可用时不至于每次打开都调一次
+
+
 async def run(
-    user_id: str, deps: Deps, llm: LLM, *, today: date | None = None, force: bool = False
-) -> Review:
+    user_id: str, deps: Deps, llm: LLM, *, today: date | None = None, force: bool = False,
+    retry: bool = False,
+) -> Review:  # fmt: skip
     """跑一次复盘（今天已经做过就直接用；force 时重做）。结果存进管家的方案，再重新评估一次。"""
     today = today or date.today()
     async with _LOCKS.setdefault(
         user_id, asyncio.Lock()
     ):  # 打开对话和第一次提问同时触发：只跑一次（审查 11-03）。只在单进程里有效，多进程要换数据库锁
-        return await _run(user_id, deps, llm, today=today, force=force)
+        try:
+            return await _run(user_id, deps, llm, today=today, force=force, retry=retry)
+        except Exception as e:  # 还没调模型就出错（读数据、计划）：记成失败，首页显示"管家出错了"、能重试（复核 11-05）
+            _log.warning("review setup failed: error_type=%s", type(e).__name__)
+            failed = Review(day=today, failed=True, failed_at=datetime.now(UTC))
+            try:  # 早上已经生效的照留着（和模型出错时一样）：没就今天做出决定才算失败（复核 11-05）
+                state = await deps.store.get(user_id)
+                earlier = state.review if state is not None and state.review is not None and state.review.day == today else None
+                if earlier is not None:
+                    told = earlier.today() is not None
+                    failed = earlier.model_copy(update={"failed": not told, "failed_at": None if told else failed.failed_at})
+                await _save(user_id, deps, failed, today)
+            except Exception as e2:
+                _log.warning("review failure not saved: error_type=%s", type(e2).__name__)
+            return failed
 
 
-async def _run(user_id: str, deps: Deps, llm: LLM, *, today: date, force: bool) -> Review:
+async def _run(user_id: str, deps: Deps, llm: LLM, *, today: date, force: bool, retry: bool = False) -> Review:
     state = await deps.store.get(user_id)
-    if not force and state is not None and state.review is not None and state.review.day == today:
-        return state.review
+    earlier = state.review if state is not None and state.review is not None and state.review.day == today else None
+    if not force and earlier is not None:  # 失败的过一会儿再试；他点了重试就马上试（复核 11-05）
+        waited = earlier.failed_at is None or datetime.now(UTC) - earlier.failed_at >= RETRY_AFTER
+        if not earlier.failed or not (retry or waited):
+            return earlier
     inp = await _gather(user_id, deps, today)
     stored = await deps.training.plan(user_id)  # 提改计划的底稿：和 inp.plan 同时取（复核 11-03）
     base = stored.id if stored is not None else ""
+    root = stored.line_id if stored is not None else ""
     checked, extra, hist = await _outcomes(user_id, deps, inp, today)
     staging = stage_due(state.stage_day if state is not None else None, inp.since, inp.logs, today)
     last_week = state.week_day if state is not None else None
@@ -227,6 +255,9 @@ async def _run(user_id: str, deps: Deps, llm: LLM, *, today: date, force: bool) 
         extra += _week_facts(inp, today)
     if staging:
         extra += [f"阶段：{x}" for x in _stage(inp, hist, today)]
+    kept = list(earlier.done) if earlier is not None else []  # 失败的那次已经生效的也留着（复核 11-05）
+    extra += [f"今天已经定过：{d.title}（要改就再调一次，同一项以这次为准）" for d in kept if not d.undone]
+    extra += [f"今天他撤销了：{d.title}（别再这样调）" for d in kept if d.undone]
     fs, refs = facts(inp, today, extra)
     blocked = any(r.block for r in risks(inp.snapshot.readings, inp.memory, today))
     skills = _due_skills(inp, today, staging or weekly)
@@ -242,6 +273,10 @@ async def _run(user_id: str, deps: Deps, llm: LLM, *, today: date, force: bool) 
         ["事实：", *(f"[{k}] {v}" for k, v in fs.items()), "", "可以引用的资料：", *_kb_lines(refs)]
     )
     review = Review(day=today, checked=checked, weekly=weekly)
+    if earlier is not None:  # 同一天重看：早上定的照留着，同一项以这次为准（复核 11-05）
+        review = Review(day=today, checked=[*earlier.checked, *(x for x in checked if x not in earlier.checked)],
+                        weekly=weekly or earlier.weekly, done=list(kept), stage=earlier.stage,
+                        summary=earlier.summary)  # fmt: skip
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
@@ -261,7 +296,7 @@ async def _run(user_id: str, deps: Deps, llm: LLM, *, today: date, force: bool) 
                     offer
                     and turn < MAX_TURNS - 1
                     and not nudged
-                    and not review.done
+                    and review.done == kept
                     and says_adjust(said)
                 ):
                     nudged = True  # 总结里说了要调、却没调用工具：提醒一次（真实模型 11-03）
@@ -283,13 +318,14 @@ async def _run(user_id: str, deps: Deps, llm: LLM, *, today: date, force: bool) 
                     blocked,
                     today,
                     review,
+                    root,
                 )
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": said})
     except Exception as e:  # 模型不可用：不调整，不退回规则（§85 需求 5）；已经生效的照记，能撤销
         _log.warning("review failed: error_type=%s", type(e).__name__)
-        review.failed = not any(
-            d.type == "today" for d in review.done
-        )  # 没就今天做出决定：今天照规则兜底
+        review.failed = review.today() is None  # 没就今天做出决定：显示"管家出错了"，能重试
+        if review.failed:
+            review.failed_at = datetime.now(UTC)
     if raw is not None:
         review.summary = str(raw.get("summary") or "")[:120]
         if staging:
@@ -327,16 +363,16 @@ def _due_skills(inp: Inputs, today: date, staging: bool) -> list[Any]:
 async def _call(
     base: str,
     user_id: str, deps: Deps, inp: Inputs, name: str, args: dict[str, Any], allowed: set[str],
-    fs: dict[str, str], blocked: bool, today: date, review: Review,
+    fs: dict[str, str], blocked: bool, today: date, review: Review, root: str = "",
 ) -> str:  # fmt: skip
     """执行一次复查里的工具调用：校验沿用 §85 的 _apply；同一项调两次以后一次为准。日志只记工具名和结果。"""
     if name not in allowed:
         _log.info("review tool: tool=%s result=locked", name)
         return f"今天的复查没有 {name}（没到复查它的时候），不调这一项。"
     kind = str(args.get("kind") or "note") if name == NOTE else _TYPE[name]
-    a = {**args, "type": kind, "_base": base}
+    a = {**args, "type": kind, "_base": base, "_root": root}
     first = (
-        next((d for d in review.done if d.key == "review:kcal"), None) if kind == "kcal" else None
+        next((d for d in review.done if d.key == "review:kcal" and not d.undone), None) if kind == "kcal" else None
     )
     if first is not None:  # 同一轮第二次调热量：先撤掉第一次，撤销时才回得到原样（审查 11-03）
         await deps.diet.undo(user_id)
@@ -544,17 +580,19 @@ async def _temp(
         return None
     if inp.plan is None or ops is None or start < today or end < start or (end - start).days >= plan_layers.MAX_DAYS:
         return None
+    base = plan_layers.stacked(inp.plan, inp.temps, start, end)  # 和重叠的临时调整叠起来再检查（复核 11-05）
     try:
         got = apply(inp.plan, ops)
+        layered = apply(base, ops).plan
     except Conflict:
         return None
     special = flags(inp.snapshot.profile, risks(inp.snapshot.readings, inp.memory, today), today)
-    had = {p for p in check_plan(inp.plan, special=special).problems if is_special(p)}
-    left = [p for p in check_plan(got.plan, current=inp.plan, special=special).problems
+    had = {p for p in check_plan(base, special=special).problems if is_special(p)}
+    left = [p for p in check_plan(layered, current=base, special=special).problems
             if not (is_special(p) and p in had)]  # fmt: skip
     if not got.done or left:
         return None
-    content = {**plan_layers.content(start, end, why, got, got.lines), "source": CHECKUP,
+    content = {**plan_layers.content(start, end, why, got, got.lines, str(a.get("_root") or "")), "source": CHECKUP,
                "base": str(a.get("_base") or "")}  # fmt: skip
     draft = await deps.training.add_draft(user_id, "temp", content)
     span = f"{start.month}月{start.day}日" + (f"到{end.month}月{end.day}日" if end != start else "")
@@ -611,11 +649,12 @@ async def _save_locked(user_id: str, deps: Deps, review: Review, today: date) ->
     if state is None:
         return
     at = datetime.now(UTC)
+    prev = state.review.done if state.review is not None and state.review.day == today else []
     changes = [Change(id=uuid.uuid4().hex[:16], at=at, day=today, version=state.version, key=d.key,
                       kind="review", change="added", after=d.title, why=d.why, basis=d.basis,
                       status="info" if d.type in ("note", "ask") else "confirm" if d.type == "propose" else "auto",
                       expect=d.expect, check=d.check, due=d.due)
-               for d in review.done]  # fmt: skip
+               for d in review.done if not d.undone and d not in prev]  # fmt: skip  # 早上记过的、撤销了的不再记（复核 11-05）
     update: dict[str, Any] = {"review": review}
     if review.stage:  # 阶段小结写成了：下一次从今天起算 28 天（§89）
         update.update(stage_day=today, stage_text=review.stage)
@@ -644,6 +683,20 @@ def rerun_later(user_id: str, deps: Deps, reason: str) -> None:
             await run(user_id, deps, TurnLLM(load_models(), os.environ), force=True)
         except Exception as e:
             _log.warning("review rerun failed: error_type=%s reason=%s", type(e).__name__, reason[:20])
+
+    task = asyncio.create_task(go())
+    _BACKGROUND.add(task)
+    task.add_done_callback(_BACKGROUND.discard)
+
+
+def retry_later(user_id: str, deps: Deps) -> None:
+    """首页"管家出错了"点重试：失败的马上再试一次；已经看成了的不重跑（点两下也只跑一次）。"""
+
+    async def go() -> None:
+        try:
+            await run(user_id, deps, TurnLLM(load_models(), os.environ), retry=True)
+        except Exception as e:
+            _log.warning("review retry failed: error_type=%s", type(e).__name__)
 
     task = asyncio.create_task(go())
     _BACKGROUND.add(task)

@@ -125,9 +125,8 @@ def test_kcal_change_respects_the_safety_floor_and_can_be_undone() -> None:
     floor_adj = asyncio.run(dp.diet.current("42"))
     assert floor_adj is not None and floor_adj.kcal < 0
     soon, _ = model({"type": "kcal", "delta": 200, "why": "减得太快", "basis": [f]})
-    assert not asyncio.run(
-        review.run("42", dp, soon, force=True)
-    ).done  # 不到 14 天不复查热量（§129）
+    assert asyncio.run(review.run("42", dp, soon, force=True)).done == got.done  # 不到 14 天不复查热量（§129）
+    assert asyncio.run(dp.diet.current("42")).kcal == floor_adj.kcal  # type: ignore[union-attr]  # 早上定的照留着
     later = TODAY + timedelta(days=14)
     probe2, seen2 = model()
     asyncio.run(review.run("42", dp, probe2, force=True, today=later))

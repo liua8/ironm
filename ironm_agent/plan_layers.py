@@ -29,6 +29,7 @@ class Temp:
     why: str
     ops: tuple[dict[str, Any], ...]
     lines: tuple[str, ...] = ()
+    root: str = ""  # 做这份临时调整时那条计划链的编号；换了新排的计划就不再套（撤销新计划后又回来）
 
     def covers(self, day: date) -> bool:
         return self.start <= day <= self.end
@@ -50,7 +51,8 @@ def of_draft(d: Any) -> Temp | None:
     ops = tuple(x for x in t.get("ops") or [] if isinstance(x, dict))
     if not ops or end < start:
         return None
-    return Temp(str(d.id), start, end, str(t.get("why") or ""), ops, tuple(str(x) for x in t.get("lines") or []))
+    return Temp(str(d.id), start, end, str(t.get("why") or ""), ops, tuple(str(x) for x in t.get("lines") or []),
+                str(t.get("root") or ""))  # fmt: skip
 
 
 def active(temps: Sequence[Temp], day: date) -> list[Temp]:
@@ -78,7 +80,28 @@ def plan_on(plan: Plan | None, temps: Sequence[Temp], day: date) -> Plan | None:
     return out
 
 
-def content(start: date, end: date, why: str, applied: Any, lines: Sequence[str]) -> dict[str, Any]:
+def stacked(plan: Plan, temps: Sequence[Temp], start: date, end: date) -> Plan:
+    """新的临时调整要和哪版计划比：基础计划套上和它日期有重叠的、已经确认的临时调整（复核 11-05）。
+    检查用这一版，免得两份临时调整叠在一起才出问题（比如两份各删一天，叠起来一周只剩一天）。"""
+    from ironm_agent.plan_ops import Conflict, apply, parse_ops
+
+    out = plan
+    for t in temps:
+        if t.start > end or t.end < start:
+            continue
+        ops = parse_ops(list(t.ops))
+        try:
+            got = apply(out, ops) if ops else None
+        except Conflict:
+            continue
+        if got is not None and got.done:
+            out = got.plan
+    return out
+
+
+def content(
+    start: date, end: date, why: str, applied: Any, lines: Sequence[str], root: str = ""
+) -> dict[str, Any]:
     """存进预览卡片的内容：网页沿用训练记录那种卡片（标题、一句说明、几行）。"""
     from ironm_agent.plan_ops import describe
 
@@ -88,15 +111,18 @@ def content(start: date, end: date, why: str, applied: Any, lines: Sequence[str]
         "headline": f"{span}这样练，之后回到原计划" + (f"：{why}" if why else ""),
         "items": list(lines),
         "temp": {"start": start.isoformat(), "end": end.isoformat(), "why": why,
-                 "ops": describe(applied)["ops"], "lines": list(lines)},
+                 "ops": describe(applied)["ops"], "lines": list(lines), "root": root},
     }  # fmt: skip
 
 
 async def load(store: Any, user_id: str) -> list[Temp]:
-    """他确认过、还没结束的临时调整；读不到当作没有。"""
+    """他确认过、还没撤销的临时调整，只要做在当前这条计划链上的：后来确认了一份新排的计划，旧计划上的临时调整
+    不再套（撤销新计划、回到旧的，又会套上）；按操作改的计划还是同一条链（复核 11-05）。读不到当作没有。"""
     try:
         drafts = await store.temps(user_id)
+        stored = await store.plan(user_id) if drafts else None
     except Exception as e:
         _log.warning("temps unavailable: error_type=%s", type(e).__name__)
         return []
-    return [t for t in (of_draft(d) for d in drafts) if t is not None]
+    line = stored.line_id if stored is not None else ""
+    return [t for t in (of_draft(d) for d in drafts) if t is not None and (not t.root or t.root == line)]

@@ -38,7 +38,7 @@ def test_today_brief_with_plan_and_poor_state() -> None:
     )
     b = today_brief(snap(tired), [], PLAN, [])
     assert b["readiness"]["level"] == "poor" and b["training"]["name"] == "上肢拉"
-    assert "轻松版" in b["training"]["tip"] and b["alert"]
+    assert not b["training"]["tip"] and not b["alert"]  # 状态差不再由规则建议减量、休息（§163）
     rest = today_brief(
         snap(Readings()), [], PLAN.model_copy(update={"sessions": PLAN.sessions[:2]}), []
     )
@@ -87,7 +87,7 @@ def test_hero_line_four_cases() -> None:
     week = {"planned": 3, "done": 1}
     assert hero_line(today("session", done=True), week)["title"] == "下肢 已拿下"
     poor = hero_line(today("session", level="poor"), week)
-    assert poor["title"] == "今天练下肢" and "今天的版本" in poor["push"]
+    assert poor["title"] == "今天练下肢" and "轻松" not in poor["push"]  # 不再按规则叫他轻松练（§163）
     go = hero_line(today("session"), week)
     assert "50 分钟" in go["push"] and "冲" in go["push"]
     assert hero_line(today("rest"), week)["title"] == "休息日"

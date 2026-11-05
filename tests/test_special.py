@@ -148,7 +148,8 @@ def test_tools_and_daily_review_apply_the_rules(monkeypatch: Any) -> None:
     day = TODAY.isoweekday()
     lighter, _ = model({"type": "plan", "why": "血压偏高先减量", "basis": [f],
                         "ops": [{"kind": "reduce", "day": day, "ratio": 0.7}]})  # fmt: skip
-    assert asyncio.run(review.run("42", dp, lighter, force=True, today=stage)).done
+    first = asyncio.run(review.run("42", dp, lighter, force=True, today=stage)).done
+    assert first
     heavier, _ = model({"type": "plan", "why": "x", "basis": [f],
                         "ops": [{"kind": "edit", "day": day, "exercise": "罗马尼亚硬拉", "sets": 3, "reps": "3–5"}]})  # fmt: skip
-    assert not asyncio.run(review.run("42", dp, heavier, force=True, today=stage)).done
+    assert asyncio.run(review.run("42", dp, heavier, force=True, today=stage)).done == first  # 加重的没通过，只剩先提的
