@@ -66,6 +66,7 @@ class State(BaseModel):
     choices: dict[str, Choice] = Field(default_factory=dict)  # 每条待确认调整的选择
     review: Review | None = None  # 今天的管家复盘（§85）
     stage_day: date | None = None  # 上次 4 周阶段小结是哪天（§89）
+    week_day: date | None = None  # 上次每周复查是哪天（§163：每周叫醒管家看一次这周）
     stage_text: str = ""  # 那次的小结（对话里追问时讲）
     targets: dict[str, Any] = Field(
         default_factory=dict
@@ -114,6 +115,7 @@ class Review(BaseModel):
     failed: bool = False  # 模型没调用成功：不调整
     checked: list[str] = Field(default_factory=list)  # 今天核对完的以前的调整（§89）
     stage: str = ""  # 今天写的 4 周阶段小结（§89）
+    weekly: bool = False  # 这次是这周的每周复查（§163）
 
     def today(self) -> Done | None:
         return next((d for d in self.done if d.type == "today" and not d.undone), None)
@@ -397,11 +399,7 @@ def compute(inp: Inputs, today: date) -> list[Item]:
         *_review_items(inp),
         _today_item(inp, today),
         *_weather_items(inp, today),
-        *_alert_items(inp, today),
-        *(
-            _review_item(inp) if not _proposed(inp) else []
-        ),  # 复查提了改计划：不再出规则的每周建议（§129）
-    ]
+    ]  # 规则的提醒（反复疼、连续没练、中断、平台期）和每周复盘建议去掉了：都交给管家复盘（§163）
     items += _food_items(inp)
     items += _goal_items(inp)
     items += _target_items(inp)
@@ -705,7 +703,7 @@ async def _evaluate(
     state = State(version=version, day=today, at=datetime.now(UTC), reason=reason, items=items,
                   seen=old.seen if old else 0, choices=old.choices if old else {},
                   review=review, stage_day=old.stage_day if old else None,
-                  stage_text=old.stage_text if old else "",
+                  stage_text=old.stage_text if old else "", week_day=old.week_day if old else None,
                   targets=old.targets if old else {})  # fmt: skip
     await deps.store.save(user_id, state, changes)
     _log.info("coach evaluated %s", json.dumps({"version": version, "items": len(items),

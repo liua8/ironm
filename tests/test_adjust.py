@@ -100,32 +100,18 @@ def client(
     return TestClient(app), book, seen
 
 
-def test_review_proposal_makes_a_plan_preview(monkeypatch: pytest.MonkeyPatch) -> None:
-    new = plan_of((1, "全身A"), (3, "上肢"), (5, "全身C"))
-    c, book, seen = client(
-        monkeypatch, new, ["这周计划 3 次只练了 1 次，不到一半：可以把每周训练减到 2 天。"]
+def test_review_proposal_only_hands_over_what_the_coach_proposed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§163：规则的每周复盘、按提醒生成的改法去掉了；管家没提，就是这周不用改，也不再请模型另生成一份。"""
+    c, _, seen = client(
+        monkeypatch,
+        plan_of((1, "全身A")),
+        ["这周计划 3 次只练了 1 次，不到一半：可以把每周训练减到 2 天。"],
     )
-    r = c.post("/iron/api/review/proposal").json()
-    assert r["status"] == "ok" and r["changed_days"] == 1 and r["warning"] == ""
-    assert (
-        seen["agent"].asked.startswith("按这周的复盘调整训练计划")
-        and "最多改两处" in seen["agent"].asked
-    )
-    assert r["draft"]["kind"] == "plan" and r["draft"]["state"] == "pending"
-    assert asyncio.run(book.plan("42")).plan.sessions[1].name == "全身B"  # 确认前计划不变
-    assert c.post(f"/iron/api/drafts/{r['draft']['id']}/confirm").status_code == 200
-    assert asyncio.run(book.plan("42")).plan.sessions[1].name == "上肢"
-    assert c.post(f"/iron/api/drafts/{r['draft']['id']}/undo").status_code == 200
-    assert asyncio.run(book.plan("42")).plan.sessions[1].name == "全身B"  # 撤销后回到原来的
-
-
-def test_review_proposal_warns_and_handles_no_tips(monkeypatch: pytest.MonkeyPatch) -> None:
-    big = plan_of((2, "a"), (4, "b"), (6, "c"))
-    c, _, _ = client(monkeypatch, big, ["睡眠不足"])
-    r = c.post("/iron/api/review/proposal").json()
-    assert r["changed_days"] > 2 and "超过了每次最多改 2 天" in r["warning"]
-    c2, _, _ = client(monkeypatch, big, [])
-    assert c2.post("/iron/api/review/proposal").json()["status"] == "no_change"
+    assert c.post("/iron/api/review/proposal").json()["status"] == "no_change"
+    assert c.post("/iron/api/review/proposal?trigger=pain").json()["status"] == "no_change"
+    assert "agent" not in seen
 
 
 def test_chain_sends_back_a_review_plan_that_changes_too_much() -> None:
@@ -590,26 +576,9 @@ def test_trigger_endpoints_and_pain_records(monkeypatch: pytest.MonkeyPatch) -> 
         ("joint.knee", real),
         ("joint.knee", real - timedelta(days=4)),
     ]  # 管家读出来记下的
-    kinds = [t["kind"] for t in c.get("/iron/api/triggers").json()["triggers"]]
-    assert "pain" in kinds
-    seen: dict[str, Any] = {}
-
-    def fake_agent(training: TrainingBook, memory: Any) -> FakeAgent:
-        seen["agent"] = FakeAgent(training, THREE)
-        return seen["agent"]
-
-    async def snap(user_id: str, today: date | None = None) -> Snapshot:
-        p = Profile(height_cm=175, sex="male", goal="muscle", activity="moderate")
-        return Snapshot(p, Readings(), tuple(compute_all(Readings(), p, real)), real)
-
-    monkeypatch.setattr(web, "snapshot_for", snap)
-    monkeypatch.setattr(web_more, "make_agent", fake_agent)
-    r = c.post("/iron/api/review/proposal?trigger=pain").json()
-    assert r["status"] == "ok" and r["warning"] == "" and r["by"] == "rule"  # 规则直接改（§45）
-    assert "agent" not in seen  # 不调用模型
-    moves = [x["exercise"] for s in r["draft"]["plan"]["sessions"] for x in s["items"]]
-    assert "杠铃深蹲" not in moves and r["draft"]["ops"][0]["kind"] == "swap"
-    assert c.post("/iron/api/review/proposal?trigger=plateau").json()["status"] == "no_change"
+    assert (
+        c.get("/iron/api/triggers").json()["triggers"] == []
+    )  # 规则的"反复疼"提醒去掉了，交给管家复盘（§163）
 
 
 def test_chat_pain_is_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -716,28 +685,3 @@ def test_today_tired_and_gap_do_not_stack() -> None:
     )
     assert [x.sets for x in v.session.items] == [2, 1, 1, 1, 1]  # 只减半，不再乘七成
     assert "已包含中断后的降量" in v.changes[0] and v.reasons == ("没睡好", "上次训练是 9 天前")
-
-
-def test_review_with_rule_actions_changes_the_plan_without_a_model(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """复盘建议能变成固定操作时由规则直接改（spec [2026-10-23] §45）：不调用模型、最多改两天。"""
-    from ironm_agent import brief
-
-    c, book, seen = client(monkeypatch, OLD, [])
-    tips = ["这周计划 3 次只练了 1 次，不到一半：可以把每周训练减到 2 天。"]
-    monkeypatch.setattr(
-        brief,
-        "weekly_review",
-        lambda *a, **k: {
-            "tips": tips,
-            "actions": [{"kind": "fewer_days", "days": 2, "why": "完成不到一半"}],
-        },
-    )
-    r = c.post("/iron/api/review/proposal").json()
-    assert r["status"] == "ok" and r["by"] == "rule" and "agent" not in seen
-    assert r["changed_days"] == 1 and r["draft"]["ops"] == [
-        {"kind": "remove", "day": 5, "why": "完成不到一半"}
-    ]
-    assert c.post(f"/iron/api/drafts/{r['draft']['id']}/confirm").status_code == 200
-    assert [s.day for s in asyncio.run(book.plan("42")).plan.sessions] == [1, 3]  # type: ignore[union-attr]

@@ -684,7 +684,6 @@ def make_agent(training: TrainingStore, memory: MemoryStore) -> Any:
 
 # ---- 触发型调整（spec [2026-10-23] §18 需求 5）---------------------------------------------------
 
-TRIGGER_ASK = "按首页的提醒调整训练计划"
 
 
 def day_store() -> Any:
@@ -711,43 +710,11 @@ def pain_store() -> Any:
 PAIN = Depends(pain_store)  # 测试时用 dependency_overrides 换成内存版
 
 
-async def _triggers(
-    user_id: str, training: TrainingStore, pain: Any, today: date, illness: Any = None, memory: Any = None
-) -> list[Any]:
-    from ironm_agent.illness import sick_days
-    from ironm_agent.triggers import PAIN_DAYS, PLATEAU_LOOKBACK, detect
-
-    stored = await training.plan(user_id)
-    logs = [
-        x.log for x in await training.workouts(user_id, today - timedelta(days=PLATEAU_LOOKBACK))
-    ]
-    pains = await pain.since(user_id, today - timedelta(days=PAIN_DAYS))
-    if memory is not None:  # 说好了的那处，之前的疼不再算（§158）
-        from ironm_agent.body_now import fresh
-
-        try:
-            pains = fresh(pains, await memory.items(user_id))
-        except Exception as e:
-            _log.info("memory unavailable for triggers: error_type=%s", type(e).__name__)
-    eps = await _episodes(illness, user_id, today) if illness is not None else []
-    return detect(
-        stored.plan if stored else None, logs, stored.since if stored else None, pains, today,
-        sick_days(eps, today),
-    )  # fmt: skip
-
-
 @router.get("/iron/api/triggers")
-async def get_triggers(
-    user_id: str = Depends(_verify()),
-    training: TrainingStore = TRAINING,
-    pain: Any = PAIN,
-    illness: Any = ILLNESS,
-    memory: MemoryStore = MEMORY,
-) -> dict[str, Any]:
-    found = await _triggers(user_id, training, pain, date.today(), illness, memory)
-    return {"triggers": [
-        {"kind": t.kind, "title": t.title, "detail": t.detail, "action": t.action} for t in found
-    ]}  # fmt: skip
+async def get_triggers(user_id: str = Depends(_verify())) -> dict[str, Any]:
+    """首页提醒：反复疼、连续没练、中断、平台期这些规则提醒去掉了，改由管家复盘看着说（§163）。
+    接口留着给旧页面用，返回空。"""
+    return {"triggers": []}
 
 
 @router.post("/iron/api/review/proposal")
@@ -755,76 +722,15 @@ async def review_proposal(
     trigger: str = "",
     user_id: str = Depends(_verify()),
     training: TrainingStore = TRAINING,
-    memory: MemoryStore = MEMORY,
-    pain: Any = PAIN,
-    illness: Any = ILLNESS,
 ) -> dict[str, Any]:
-    """按每周复盘（或首页的某条提醒，trigger 为提醒的种类）生成调整方案；提醒在服务端重新判断。"""
-    from ironm_agent.brief import weekly_review
-    from ironm_agent.illness import recurring, sick_days
-    from ironm_agent.plugin import REVIEW_ASK, REVIEW_MAX_DAYS
-    from ironm_agent.protools.plan_check import changed_days
-    from ironm_agent.training import parse_plan
-
+    """首页"按复盘调整"：只交管家复盘提的预览（§129、§163）。规则的每周复盘和按提醒生成的改法去掉了，
+    管家没提就是这周不用改；想调可以直接跟管家说。"""
     stored = await training.plan(user_id)
     if stored is None:
         raise HTTPException(409, "还没有训练计划：先让教练排一份")
     if not trigger and (ready := await _checkup_proposal(user_id, training)) is not None:
-        return ready  # 每日复查提的改计划：已经存成预览，直接给他看（§129 需求 3）
-    snap = await _web().snapshot_for(user_id)
-    if trigger:
-        found = await _triggers(user_id, training, pain, snap.today, illness, memory)
-        hit = next((t for t in found if t.kind == trigger and t.action == "proposal"), None)
-        if hit is None:
-            return {"status": "no_change", "message": "这条提醒已经不需要处理了。"}
-        tips = [hit.tip]
-        actions = _trigger_actions(hit, stored.plan)
-        ask = f"{TRIGGER_ASK}（只改需要改的地方）：{hit.tip}"
-    else:
-        logs = [x.log for x in await training.workouts(user_id, snap.today - timedelta(days=14))]
-        eps = await _episodes(illness, user_id, snap.today)
-        review = weekly_review(snap, stored.plan, logs, stored.since, sick=sick_days(eps, snap.today),
-                               sick_times=recurring(eps, snap.today))  # fmt: skip
-        tips, actions = review["tips"], list(review.get("actions") or [])
-        if not tips:
-            return {"status": "no_change", "message": "这周没有需要调整的地方，照计划来。"}
-        ask = f"{REVIEW_ASK}（每次最多改两处，只改需要改的地方）：" + "".join(tips)
-    ruled = await _rule_proposal(user_id, actions, stored.plan, training, memory, trigger, tips)
-    if ruled is not None:  # 复盘和提醒能变成固定操作的：规则直接改，不调用模型（§45）
-        return ruled
-    agent = make_agent(training, memory)
-    msgs = [{"role": "user", "content": ask}]
-    blocks = [b async for b in agent.generate_response(user_id, msgs, session_id="")]
-    card = next(
-        (
-            b
-            for b in blocks
-            if b.get("type") == "tool_call" and str(b.get("id", "")).startswith("card-")
-        ),
-        None,
-    )
-    answer = "".join(str(b.get("text", "")) for b in blocks if b.get("type") == "text")
-    if card is None:
-        return {
-            "status": "failed",
-            "message": "这次没能生成调整方案，可以到对话里让教练改。",
-            "answer": answer,
-        }
-    draft = await training.draft(user_id, str(card["id"])[len("card-") :])
-    if draft is None:
-        raise HTTPException(500, "调整方案没有保存成功，请再试一次")
-    new = parse_plan(draft.content.get("plan"))[0]
-    n = changed_days(new, stored.plan) if new is not None else 0
-    return {
-        "status": "ok",
-        "tips": tips,
-        "answer": answer,
-        "draft": draft.json(),
-        "changed_days": n,
-        "warning": f"这份方案改动了 {n} 天，超过了每次最多改 {REVIEW_MAX_DAYS} 天"
-        if n > REVIEW_MAX_DAYS and not trigger
-        else "",
-    }
+        return ready  # 管家复查提的改计划、临时调整：已经存成预览，直接给他看
+    return {"status": "no_change", "message": "管家这次没提要调整的地方；想调可以直接跟管家说。"}
 
 
 async def _checkup_proposal(user_id: str, training: TrainingStore) -> dict[str, Any] | None:
@@ -858,69 +764,7 @@ async def _checkup_proposal(user_id: str, training: TrainingStore) -> dict[str, 
             "changed_days": 0, "warning": ""}  # fmt: skip
 
 
-def _trigger_actions(hit: Any, plan: Any) -> list[dict[str, Any]]:
-    """首页提醒对应的调整：反复疼换掉压这个部位的动作，连续没练少一天或减量，平台期换变式。"""
-    if hit.kind == "pain" and hit.part:
-        return [{"kind": "swap_part", "part": hit.part, "why": hit.title}]
-    if hit.kind == "missed":
-        kind = "fewer_days" if plan.days_per_week > 2 else "lighter"
-        return [{"kind": kind, "days": plan.days_per_week - 1, "why": hit.title}]
-    if hit.kind == "plateau" and hit.exercises:
-        return [{"kind": "variant", "exercises": list(hit.exercises), "why": hit.title}]
-    return []
 
-
-async def _rule_proposal(
-    user_id: str,
-    actions: list[dict[str, Any]],
-    plan: Any,
-    training: TrainingStore,
-    memory: MemoryStore,
-    trigger: str,
-    tips: list[str],
-) -> dict[str, Any] | None:
-    """按规则生成操作、由代码改计划（spec [2026-10-23] §45）；变不成操作或一条都套不上时返回 None。"""
-    from ironm_agent.casefile import injured_parts
-    from ironm_agent.constraints import Context, annotate_plan
-    from ironm_agent.facts import equipment as equipment_in
-    from ironm_agent.memory_view import Recall
-    from ironm_agent.plan_ops import apply, describe, fit_time, review_ops
-    from ironm_agent.protools.plan_check import changed_days
-    from ironm_agent.training import plan_content
-
-    if not actions:
-        return None
-    try:
-        items = Recall.of(await memory.items(user_id)).items
-    except Exception as e:  # 读不到记忆：当作不知道器械和伤病
-        _log.warning("memory unavailable: error_type=%s", type(e).__name__)
-        items = ()
-    injured = injured_parts(items, "")
-    equipment = equipment_in(items)  # 读字段（§150）
-    ops = review_ops(actions, plan, equipment=equipment, injured=injured)
-    if not ops:
-        return None
-    applied = fit_time(apply(plan, ops, equipment=equipment, injured=injured))
-    if not applied.done:
-        return None
-    new = annotate_plan(applied.plan, Context(injuries=tuple(injured)))
-    extra = describe(applied)
-    draft = await training.add_draft(
-        user_id,
-        "plan",
-        plan_content(new, applied.changes, ops=extra["ops"], skipped=extra["skipped"]),
-    )
-    _log.info("rule proposal: ops=%d skipped=%d", len(applied.done), len(applied.skipped))
-    where = "首页的提醒" if trigger else "这周的复盘"
-    return {
-        "status": "ok",
-        "tips": tips,
-        "answer": f"按{where}改了：" + "；".join(applied.lines) + "。",
-        "draft": draft.json(),
-        "changed_days": changed_days(new, plan),
-        "warning": "",
-        "by": "rule",
-    }
 
 
 # ---- 两周饮食复盘（spec [2026-10-23] §18 需求 2）------------------------------------------------

@@ -44,40 +44,6 @@ def test_still_hurting_somewhere_on_that_joint_means_not_healed() -> None:
     assert healed_on([old_heal, again]) == {}
 
 
-def test_home_reminders_drop_knee_pain_from_before_he_said_it_healed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from mirobody.server.auth import verify_token
-
-    from ironm_agent import web, web_more
-    from ironm_agent.training import TrainingBook, plan_content
-    from tests.test_adjust import THREE
-
-    real = date.today()
-    pain, memory, book = PainBook(), MemoryBook(), TrainingBook()
-    d = asyncio.run(book.add_draft("42", "plan", plan_content(THREE)))
-    asyncio.run(book.confirm("42", d.id))
-    pain.rows["42"] = [
-        ("joint.knee", real - timedelta(days=4)),
-        ("joint.knee", real - timedelta(days=2)),
-    ]
-    app = FastAPI()
-    app.include_router(web.router)
-    app.dependency_overrides[verify_token] = lambda: "42"
-    for dep in (web_more.training_store, web.training_store):
-        app.dependency_overrides[dep] = lambda: book
-    for dep in (web.memory_store, web_more.memory_store):
-        app.dependency_overrides[dep] = lambda: memory
-    app.dependency_overrides[web_more.pain_store] = lambda: pain
-    c = TestClient(app)
-    assert "pain" in [t["kind"] for t in c.get("/iron/api/triggers").json()["triggers"]]
-    healed = replace(knee("resolved", 0), updated=at(real) + timedelta(hours=1), created=at(real))
-    asyncio.run(memory.apply("42", [Change("insert", item=healed)]))
-    assert "pain" not in [t["kind"] for t in c.get("/iron/api/triggers").json()["triggers"]]
-
-
 def test_the_coach_also_drops_pain_from_before_it_healed() -> None:
     from ironm_agent.coach_state import _gather
     from tests.test_coach import deps
@@ -169,7 +135,9 @@ def test_cough_is_better_does_not_start_another_illness(monkeypatch: Any) -> Non
     asyncio.run(
         ill.save(
             "42",
-            Episode(symptoms=["发烧", "嗓子疼"], level="fever", started=date.today() - timedelta(days=1)),
+            Episode(
+                symptoms=["发烧", "嗓子疼"], level="fever", started=date.today() - timedelta(days=1)
+            ),
         )
     )
     a._illness = ill

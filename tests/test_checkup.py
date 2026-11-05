@@ -32,11 +32,13 @@ def test_which_skills_are_checked_when() -> None:
     assert (
         "【今天练不练 · 到期复查】" in first and "【饮食方案 · 到期复查】" in first
     )  # 从没调过热量
-    assert "排训练计划" not in first and "propose_plan_edit" not in first.split("装上的规程")[0]
+    assert "【排训练计划 · 到期复查】" in first  # 这周第一次复查：看一眼这周（§163）
     asyncio.run(dp.diet.apply("42", KcalAdjust(-200, TODAY, "x")))
     llm, _ = model()
     asyncio.run(review.run("42", dp, llm, force=True))
-    assert "饮食方案" not in systems(llm)  # 刚调过：不到 14 天不查
+    again = systems(llm)
+    assert "饮食方案" not in again  # 刚调过：不到 14 天不查
+    assert "排训练计划" not in again and "propose_plan_edit" not in again.split("装上的规程")[0]  # 同一周再查：不再看计划
     llm, _ = model()
     asyncio.run(review.run("42", dp, llm, force=True, today=TODAY + timedelta(days=28)))
     staged = systems(llm)
@@ -156,8 +158,7 @@ def test_confirm_button_returns_the_stored_preview_from_the_endpoint(
         raise AssertionError("不该重新生成")
 
     monkeypatch.setattr(web_more, "_web", no_regenerate)
-    out = asyncio.run(web_more.review_proposal(trigger="", user_id="42", training=dp.training,
-                                               memory=None, pain=None, illness=None))  # type: ignore[arg-type]  # fmt: skip
+    out = asyncio.run(web_more.review_proposal(trigger="", user_id="42", training=dp.training))
     assert out["status"] == "ok" and out["draft"]["id"] == got.done[0].value["draft"]
 
 

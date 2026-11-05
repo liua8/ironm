@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from ironm_agent.actions import ADJUST_TODAY, KCAL_CHANGE, PLAN_EDIT
+from ironm_agent.actions import ADJUST_TODAY, KCAL_CHANGE, PLAN_EDIT, TEMP_CHANGE
 from ironm_agent.casefile import risks
 from ironm_agent.coach_state import (
     Change,
@@ -38,7 +38,7 @@ from ironm_agent.insights import compare, situations
 from ironm_agent.kb import default_kb
 from ironm_agent.llm import LLM, TurnLLM, load_models, parse_json
 from ironm_agent.metrics import KcalAdjust, safe_floor
-from ironm_agent.training import plan_content, weekday_name
+from ironm_agent.training import plan_content, week_start, weekday_name
 
 _log = logging.getLogger("ironm_agent.review")
 
@@ -116,12 +116,15 @@ TOOLS: dict[str, dict[str, Any]] = {
                         {"ratio": {"type": "number"}, "rest": {"type": "boolean"}}, []),
     KCAL_CHANGE: _tool(KCAL_CHANGE, "调每日热量目标：每天多吃（正数）或少吃（负数）多少千卡。不低于基础代谢和安全下限。",
                        {"delta": {"type": "integer"}}, ["delta"]),
-    PLAN_EDIT: _tool(PLAN_EDIT, "提改计划：交操作（swap/move/add/edit/remove/reduce，同对话里改计划）。系统套用、检查后存成预览，他同意才保存。",
+    PLAN_EDIT: _tool(PLAN_EDIT, "提改计划（以后都这样）：交操作（swap/move/add/edit/remove/reduce，同对话里改计划）。系统套用、检查后存成预览，他同意才保存。",
                      {"ops": {"type": "array", "items": {"type": "object"}}}, ["ops"]),
+    TEMP_CHANGE: _tool(TEMP_CHANGE, "提临时调整（这几天这样练，到期回到原计划，如减量一周、病后一周、出差几天）：start、end（YYYY-MM-DD，最长 28 天）、ops（同改计划）。存成预览，他确认才生效。",
+                       {"start": {"type": "string"}, "end": {"type": "string"},
+                        "ops": {"type": "array", "items": {"type": "object"}}}, ["start", "end", "ops"]),
     NOTE: _tool(NOTE, "只提醒他一句（kind 写 note），或者拿不准时问他一句（kind 写 ask）。",
                 {"kind": {"type": "string", "enum": ["note", "ask"]}, "text": {"type": "string"}}, ["kind", "text"]),
 }  # fmt: skip
-_TYPE = {ADJUST_TODAY: "today", KCAL_CHANGE: "kcal", PLAN_EDIT: "plan"}
+_TYPE = {ADJUST_TODAY: "today", KCAL_CHANGE: "kcal", PLAN_EDIT: "plan", TEMP_CHANGE: "temp"}
 _LOCKS: dict[str, asyncio.Lock] = {}  # 每个人一把：同一天的复查不并发跑两次
 
 
@@ -218,11 +221,15 @@ async def _run(user_id: str, deps: Deps, llm: LLM, *, today: date, force: bool) 
     base = stored.id if stored is not None else ""
     checked, extra, hist = await _outcomes(user_id, deps, inp, today)
     staging = stage_due(state.stage_day if state is not None else None, inp.since, inp.logs, today)
+    last_week = state.week_day if state is not None else None
+    weekly = inp.plan is not None and (last_week is None or week_start(last_week) < week_start(today))
+    if weekly:  # 这周第一次复查：看一眼这周和上周（§163，取代规则的每周复盘和提醒）
+        extra += _week_facts(inp, today)
     if staging:
         extra += [f"阶段：{x}" for x in _stage(inp, hist, today)]
     fs, refs = facts(inp, today, extra)
     blocked = any(r.block for r in risks(inp.snapshot.readings, inp.memory, today))
-    skills = _due_skills(inp, today, staging)
+    skills = _due_skills(inp, today, staging or weekly)
     allowed = {NOTE, *(t for x in skills for t in x.toolset if t in TOOLS)}
     schemas = [TOOLS[n] for n in TOOLS if n in allowed]
     system = _PROMPT.format(
@@ -234,7 +241,7 @@ async def _run(user_id: str, deps: Deps, llm: LLM, *, today: date, force: bool) 
     user = "\n".join(
         ["事实：", *(f"[{k}] {v}" for k, v in fs.items()), "", "可以引用的资料：", *_kb_lines(refs)]
     )
-    review = Review(day=today, checked=checked)
+    review = Review(day=today, checked=checked, weekly=weekly)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
@@ -290,6 +297,19 @@ async def _run(user_id: str, deps: Deps, llm: LLM, *, today: date, force: bool) 
     await _save(user_id, deps, review, today)
     _log.info("review done %s", json.dumps({"adjust": len(review.done), "failed": review.failed}))
     return review
+
+
+def _week_facts(inp: Inputs, today: date) -> list[str]:
+    """每周复查的事实：上周和这周到今天，计划练几次、练了几次（生病的日子不算应练）。"""
+    from ironm_agent.illness import sick_days
+    from ironm_agent.training import week_of
+
+    sick = sick_days(inp.illness, today)
+    out = []
+    for label, day in (("上周", week_start(today) - timedelta(days=1)), ("这周到今天", today)):
+        w = week_of(inp.plan, inp.logs, day, inp.since, sick)
+        out.append(f"{label}：计划 {w.planned} 次，该练 {w.due} 次，练了 {w.done} 次")
+    return out
 
 
 def _due_skills(inp: Inputs, today: date, staging: bool) -> list[Any]:
@@ -440,7 +460,7 @@ async def _apply(
         if chk is not None
         else {}
     )
-    if kind in ("today", "plan") and blocked:
+    if kind in ("today", "plan", "temp") and blocked:
         return None  # 危急指标：不调训练（代码已经拦下、建议就医）
     if kind == "today":
         if a.get("rest") is True:
@@ -454,6 +474,9 @@ async def _apply(
         return None
     if kind == "plan":
         got = await _plan(user_id, deps, inp, a, why, basis, expect)
+        return got.model_copy(update=track) if got is not None else None
+    if kind == "temp":
+        got = await _temp(user_id, deps, inp, a, why, basis, expect, today)
         return got.model_copy(update=track) if got is not None else None
     if kind == "kcal":
         got = await _kcal(user_id, deps, inp, a, why, basis, expect, today)
@@ -503,6 +526,40 @@ async def _plan(
     )  # 存成预览，他同意才保存（§129）
     return Done(key="review:propose", type="propose", title="建议这样改计划：" + "；".join(got.lines)[:100],
                 why=why, basis=basis, expect=expect, value={"draft": draft.id})  # fmt: skip
+
+
+async def _temp(
+    user_id: str, deps: Deps, inp: Inputs, a: dict[str, Any], why: str, basis: str, expect: str, today: date
+) -> Done | None:
+    """提临时调整（§163）：日期和操作核对、套得上、检查过，存成临时调整预览，他确认才生效。"""
+    from ironm_agent import plan_layers
+    from ironm_agent.plan_ops import Conflict, apply, parse_ops
+    from ironm_agent.protools.plan_check import check_plan
+    from ironm_agent.special import flags, is_special
+
+    ops = parse_ops(a.get("ops"))
+    try:
+        start, end = date.fromisoformat(str(a.get("start") or "")), date.fromisoformat(str(a.get("end") or ""))
+    except ValueError:
+        return None
+    if inp.plan is None or ops is None or start < today or end < start or (end - start).days >= plan_layers.MAX_DAYS:
+        return None
+    try:
+        got = apply(inp.plan, ops)
+    except Conflict:
+        return None
+    special = flags(inp.snapshot.profile, risks(inp.snapshot.readings, inp.memory, today), today)
+    had = {p for p in check_plan(inp.plan, special=special).problems if is_special(p)}
+    left = [p for p in check_plan(got.plan, current=inp.plan, special=special).problems
+            if not (is_special(p) and p in had)]  # fmt: skip
+    if not got.done or left:
+        return None
+    content = {**plan_layers.content(start, end, why, got, got.lines), "source": CHECKUP,
+               "base": str(a.get("_base") or "")}  # fmt: skip
+    draft = await deps.training.add_draft(user_id, "temp", content)
+    span = f"{start.month}月{start.day}日" + (f"到{end.month}月{end.day}日" if end != start else "")
+    return Done(key="review:temp", type="propose", title=f"建议{span}临时这样练：" + "；".join(got.lines)[:90],
+                why=why, basis=basis, expect=expect, value={"draft": draft.id, "temp": True})  # fmt: skip
 
 
 async def _kcal(
@@ -562,6 +619,8 @@ async def _save_locked(user_id: str, deps: Deps, review: Review, today: date) ->
     update: dict[str, Any] = {"review": review}
     if review.stage:  # 阶段小结写成了：下一次从今天起算 28 天（§89）
         update.update(stage_day=today, stage_text=review.stage)
+    if review.weekly and not review.failed:  # 这周看过了（失败的下次再看）
+        update.update(week_day=today)
     await deps.store.save(user_id, state.model_copy(update=update), changes)
 
 

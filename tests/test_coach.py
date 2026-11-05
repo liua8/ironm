@@ -62,12 +62,12 @@ def test_compute_lists_each_item_with_reason_and_basis() -> None:
     assert items["kcal"].title.startswith("每天约") and items["kcal"].action == "auto"
     diet = items["proposal:diet"]  # 减脂体重持平：建议少吃
     assert diet.action == "confirm" and "少吃约 200 千卡" in diet.title and "〔K37〕" in diet.basis
-    assert items["alert:pain"].action == "confirm" and "〔K33〕" in items["alert:pain"].basis
+    assert (
+        "alert:pain" not in items and "proposal:review" not in items
+    )  # 规则的提醒、每周建议都交给管家（§163）
     assert items["goal"].kind == "goal" and items["retest"].kind == "retest"
     kinds = [x.kind for x in compute(inp, TODAY)]
-    assert kinds[0] == "today" and kinds.index("alert") < kinds.index("kcal") < kinds.index(
-        "target"
-    )
+    assert kinds[0] == "today" and "alert" not in kinds and kinds.index("kcal") < kinds.index("target")
     rest = {x.key: x for x in compute(Inputs(snapshot=snap()), TODAY)}
     assert rest["today"].title == "还没有训练计划" and "proposal:review" not in rest
 
@@ -101,15 +101,21 @@ def test_evaluate_versions_and_changes() -> None:
     assert same.version == 1 and none == []  # 今天评估过：不重复算
     again, none2 = asyncio.run(evaluate("42", dp, reason="记饮食"))
     assert again.version == 1 and none2 == []  # 有新情况但方案没变：不出新版本
-    pain.rows["42"] = [("joint.knee", TODAY), ("joint.knee", TODAY - timedelta(days=2))]
-    s2, c2 = asyncio.run(evaluate("42", dp, reason="说疼"))
-    assert s2.version == 2 and [(c.key, c.change) for c in c2] == [("alert:pain", "added")]
-    assert c2[0].why and c2[0].basis and c2[0].status == "confirm"
-    pain.rows["42"] = []
-    s3, c3 = asyncio.run(evaluate("42", dp, reason="说疼"))
-    assert [(c.key, c.change) for c in c3] == [("alert:pain", "removed")] and s3.version == 3
-    history = asyncio.run(dp.store.history("42"))
-    assert history[0].key == "alert:pain" and len(history) == len(c1) + 2
+    from ironm_agent.coach_state import Done, Review
+
+    note = Review(
+        day=TODAY,
+        done=[Done(key="review:note", type="note", title="这周多喝水", why="练得多", basis="F1")],
+    )
+    asyncio.run(
+        dp.store.save("42", s1.model_copy(update={"review": note}), [])
+    )  # 管家复盘提醒了一句
+    s2, c2 = asyncio.run(evaluate("42", dp, reason="复盘"))
+    assert s2.version == 2 and ("review:note", "added") in [(c.key, c.change) for c in c2]
+    asyncio.run(dp.store.save("42", s2.model_copy(update={"review": Review(day=TODAY)}), []))
+    s3, c3 = asyncio.run(evaluate("42", dp, reason="复盘"))
+    assert ("review:note", "removed") in [(c.key, c.change) for c in c3] and s3.version == 3
+    assert "alert:pain" not in {x.key for x in s3.items}  # 规则的"反复疼"提醒不再有（§163）
 
 
 def test_next_day_today_item_counts_as_a_change() -> None:
@@ -155,7 +161,9 @@ def test_coach_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     c = TestClient(app)
     r = c.get("/iron/api/coach").json()
     assert r["version"] == 1 and r["items"][0]["key"] == "today"
-    assert {x["key"] for x in r["pending"]} >= {"alert:pain"}
+    assert {x["key"] for x in r["pending"]} >= {"proposal:diet"} and "alert:pain" not in {
+        x["key"] for x in r["items"]
+    }
     assert r["changes"] and all(x["day"] == TODAY.isoformat() for x in r["changes"])
     assert c.get("/iron/api/coach").json()["version"] == 1  # 同一天再打开不重复算
     assert c.get("/iron/api/coach/history").json()["changes"]
@@ -233,27 +241,27 @@ def test_inbox_pending_unseen_and_choices() -> None:
     history = asyncio.run(dp.store.history("42"))
     news = unseen(s1, history)
     assert news and all(c.status != "confirm" for c in news)  # 要确认的不在"改了什么"里重复
-    assert "alert:pain" in {x.key for x in pending(s1, TODAY)}
+    assert "proposal:diet" in {x.key for x in pending(s1, TODAY)}
     asyncio.run(mark_seen(dp.store, "42", s1.version))
     s1b = asyncio.run(dp.store.get("42"))
     assert s1b is not None and s1b.seen == 1 and unseen(s1b, history) == []
-    item = asyncio.run(decide(dp.store, "42", "alert:pain", "later"))
-    assert item is not None and item.key == "alert:pain"
+    item = asyncio.run(decide(dp.store, "42", "proposal:diet", "later"))
+    assert item is not None and item.key == "proposal:diet"
     s2 = asyncio.run(dp.store.get("42"))
-    assert s2 is not None and "alert:pain" not in {
+    assert s2 is not None and "proposal:diet" not in {
         x.key for x in pending(s2, TODAY)
     }  # 暂不：今天不再问
-    assert "alert:pain" in {x.key for x in pending(s2, TODAY + timedelta(days=1))}  # 明天再问
-    asyncio.run(decide(dp.store, "42", "alert:pain", "accept"))
+    assert "proposal:diet" in {x.key for x in pending(s2, TODAY + timedelta(days=1))}  # 明天再问
+    asyncio.run(decide(dp.store, "42", "proposal:diet", "accept"))
     s3 = asyncio.run(dp.store.get("42"))
-    assert s3 is not None and "alert:pain" not in {
+    assert s3 is not None and "proposal:diet" not in {
         x.key for x in pending(s3, TODAY + timedelta(days=3))
     }
     kinds = [c.change for c in asyncio.run(dp.store.history("42"))[:2]]
     assert kinds == ["accepted", "declined"]  # 选择写进调整经历
     assert asyncio.run(decide(dp.store, "42", "kcal", "accept")) is None  # 不用确认的不接受选择
     s4, _ = asyncio.run(evaluate("42", dp, reason="说疼"))  # 重新评估时保留看过的版本和选择
-    assert s4.seen == 1 and "alert:pain" in s4.choices
+    assert s4.seen == 1 and "proposal:diet" in s4.choices
 
 
 def test_inbox_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -273,12 +281,14 @@ def test_inbox_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
     app.dependency_overrides[verify_token] = lambda: "42"
     c = TestClient(app)
     r = c.get("/iron/api/coach/inbox").json()
-    assert r["changes"] and {x["key"] for x in r["pending"]} >= {"alert:pain"}
+    assert r["changes"] and {x["key"] for x in r["pending"]} >= {"proposal:diet"}
     assert c.post("/iron/api/coach/seen", json={"version": r["version"]}).status_code == 200
     assert c.get("/iron/api/coach/inbox").json()["changes"] == []  # 看过的不再出现
-    d = c.post("/iron/api/coach/decide", json={"key": "alert:pain", "decision": "later"})
-    assert d.status_code == 200 and d.json()["item"]["value"]["trigger"] == "pain"
-    assert "alert:pain" not in {x["key"] for x in c.get("/iron/api/coach/inbox").json()["pending"]}
+    d = c.post("/iron/api/coach/decide", json={"key": "proposal:diet", "decision": "later"})
+    assert d.status_code == 200 and d.json()["item"]["key"] == "proposal:diet"
+    assert "proposal:diet" not in {
+        x["key"] for x in c.get("/iron/api/coach/inbox").json()["pending"]
+    }
     assert (
         c.post("/iron/api/coach/decide", json={"key": "nope", "decision": "accept"}).status_code
         == 404
