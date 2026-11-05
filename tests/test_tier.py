@@ -270,8 +270,8 @@ def test_db_version_writes_votes_without_names(monkeypatch: pytest.MonkeyPatch) 
     assert all(not s.lstrip().startswith("CREATE") or "ironm_tier_" in s for s, _ in seen)
 
 
-def test_nav_tabs_tier_entry_and_avatar_into_me() -> None:
-    """§104：底部是管家 / 训练 / 饮食 / 身体；夯榜是首页右上角一个入口；"我的"从头像进。"""
+def test_nav_tabs_and_old_addresses() -> None:
+    """§121：底部是 首页 / 图鉴 / 战绩 / 我；夯榜在图鉴里；右上角头像和夯榜入口去掉；旧地址跳新位置。"""
     from pathlib import Path
 
     web = Path(__file__).resolve().parents[1] / "ironm_agent" / "web"
@@ -279,11 +279,26 @@ def test_nav_tabs_tier_entry_and_avatar_into_me() -> None:
     tabs = html[html.index('id="tabs"') : html.index("</nav>")]
     assert [x.split('"')[0] for x in tabs.split('data-tab="')[1:]] == [
         "home",
-        "train",
-        "food",
-        "body",
+        "atlas",
+        "record",
+        "me",
     ]
-    assert 'id="tierlink" href="#tier"' in html and 'data-tab="tier"' not in html
-    assert 'id="avatar" href="#me"' in html
+    assert all(f"</span>{n}</a>" in tabs for n in ("首页", "图鉴", "战绩", "我"))
+    assert 'id="tierlink"' not in html and 'id="avatar"' not in html
     assert "#me/profile" not in js and "#me/data" not in js
-    assert 'const tierHref = (board, part = "") => `#tier/' in js  # §72
+    assert 'const tierHref = (board, part = "") => `#rank/' in js  # §161：榜单在排行榜里
+    moved = js[js.index("function moved(") : js.index("let renderSeq")]
+    for old in (
+        'name === "moves"',
+        'name === "food"',
+        'name === "train"',
+        'name === "tier"',
+        'name === "data"',
+    ):
+        assert old in moved, old
+    assert (
+        'sub === "log" ? "#record/timeline"' in moved
+        and '"#plan"' in moved
+        and '"#home/eat"' in moved
+        and "`#rank" in moved
+    )

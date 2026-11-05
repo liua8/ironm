@@ -398,8 +398,8 @@ def test_food_page_has_the_new_parts() -> None:
     from pathlib import Path
 
     js = (Path(__file__).resolve().parents[1] / "ironm_agent" / "web" / "app.js").read_text()
-    for words in ("从库里选", "常吃的", "保存份量", "照片估算通常偏低", "新建食谱", "照计划记",
-                  "按你记的估的实际消耗", 'section("今天吃什么"', 'section("食谱"', "foodTile(", "imageCredit("):  # fmt: skip
+    for words in ("从图鉴选", "常吃的", "保存份量", "照片估算通常偏低", "新建食谱", "照计划记",
+                  "按你记的估的实际消耗", 'section("今天吃什么"', "recipesPage(view)", "foodTile(", "imageCredit("):  # fmt: skip
         assert words in js, words
     assert (
         "0.5 : 1" not in js and "OIL_K = { 少油: 0.5, 正常: 1, 多油: 1.5 }" in js

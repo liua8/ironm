@@ -510,6 +510,11 @@ def main() -> None:
     if why:
         sys.exit("停下：" + why)
     login_as = login() if cases else None  # 先登录：登不上就停在花钱之前（复核 11-03）
+    if login_as is not None:
+        # 每个人用自己的模型（§167）：重放账号也要先在「我 → 模型和 API」填一个模型（用 .env 里的 DeepSeek 密钥即可）
+        mine = json.load(call("GET", "/iron/api/my-model", token=login_as[0])).get("model")
+        if not mine:  # 对话也用本人模型了：没填就停在花钱之前（§167）
+            sys.exit("停下：重放账号还没填模型。用重放账号登录网页，在「我 → 模型和 API」填一个（§167），再跑。")
     rows: list[Row] = run_agent(agent, spec["profile"], config) if agent else []
     crashed = False
     if login_as is not None:

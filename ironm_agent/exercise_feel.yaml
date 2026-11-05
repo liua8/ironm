@@ -516,3 +516,69 @@ feel:
   towel-curl:
     - cue: 脚和手在拔河：手往上拉，脚往下踩着不让它轻松上来
       replaces: 自我对抗提供阻力
+
+  # 第三批（§144）
+  treadmill-run:
+    - cue: 步子像踩小碎步，脚落在身体正下方，别往前大步够
+      replaces: 小步幅、高步频，着地点靠近重心
+    - cue: 跑跑步机像在原地跑，手别去抓扶手
+      replaces: 不扶扶手，身体在跑带中央
+  elliptical:
+    - cue: 脚跟像粘在踏板上，整个脚掌一起踩
+      replaces: 全脚掌接触踏板
+    - cue: 上身像靠在一面墙上那样直着，别趴到扶手上
+      replaces: 躯干直立，不依靠扶手
+  rowing-machine:
+    - cue: 先像跳远起跳一样用腿蹬，手只是最后顺手一拉
+      replaces: 蹬腿发力为主，手臂最后拉
+    - cue: 回去像倒放录像：手先走，身体再走，膝盖最后弯
+      replaces: 回桨顺序为手、躯干、腿
+  jump-rope:
+    - cue: 跳的高度刚够塞进一张纸，像脚底装了弹簧轻轻点地
+      replaces: 低跳，前脚掌轻落地
+    - cue: 手像在身体两边摇两个小摇把，胳膊别抡圈
+      replaces: 以手腕转绳，肘贴近身体
+  jumping-jack:
+    - cue: 落地像猫一样轻，听不到咚咚声
+      replaces: 前脚掌落地，屈膝缓冲
+  mountain-climber:
+    - cue: 背上像放着一杯水，腿怎么跑都别让水洒出来
+      replaces: 躯干稳定，臀部不上下起伏
+    - cue: 膝盖往胸口收，像要用膝盖去碰手肘
+      replaces: 屈髋收膝至胸前
+  hanging-leg-raise:
+    - cue: 抬腿时把屁股往上卷，像要把裤兜翻过来朝向天花板
+      replaces: 骨盆后倾，腹直肌下部发力
+    - cue: 身体像一根挂着的钟摆，但你要让它停住不荡
+      replaces: 避免借助摆动
+  smith-squat:
+    - cue: 像要坐到身后一把矮凳上，屁股往后、往下坐
+      replaces: 髋膝同时屈曲下蹲
+    - cue: 膝盖像两盏车灯，全程照着脚尖的方向
+      replaces: 膝关节对准脚尖方向
+  seated-leg-curl:
+    - cue: 像用脚后跟把一块垫子往椅子底下扫进去
+      replaces: 屈膝，腘绳肌收缩
+  t-bar-row:
+    - cue: 想象用手肘去够身后的墙，手只是挂钩
+      replaces: 以肘带动，背阔肌发力
+    - cue: 上身像一张定住的桌面，拉的时候不上下起伏
+      replaces: 躯干角度保持不变
+  reverse-pec-deck:
+    - cue: 像要从背后把一扇对开的门推开
+      replaces: 肩水平外展，三角肌后束发力
+    - cue: 肩膀离耳朵远一点，像有人轻轻往下按着
+      replaces: 沉肩，避免上斜方肌代偿
+  sumo-squat:
+    - cue: 蹲下时用膝盖把两边的墙往外推
+      replaces: 膝关节外展对准脚尖
+    - cue: 站起来时像要把地面往两边撕开
+      replaces: 脚掌向外发力，臀部与内收肌参与
+  assisted-pull-up:
+    - cue: 先别弯手臂，先把肩膀从耳朵边拉下来
+      replaces: 先肩胛下沉再屈肘
+    - cue: 想象用手肘往下、往后去插裤兜
+      replaces: 肘向下后方拉，背阔肌发力
+  triceps-kickback:
+    - cue: 大臂像钉在身体侧面的一根木棍，只有小臂在动
+      replaces: 肩关节固定，仅肘伸展

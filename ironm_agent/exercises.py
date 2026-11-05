@@ -45,6 +45,7 @@ class Exercise(ContractModel):
     harder: str
     avoid: str = Field(min_length=1)
     timed: bool = False  # 计时类动作（平板支撑等）：训练记录器记秒数不记次数（§71）
+    common: bool = True  # 最常见的动作（§144）；在家替代器械用的冷门动作标 false，图鉴里排在后面
 
 
 class Library(ContractModel):

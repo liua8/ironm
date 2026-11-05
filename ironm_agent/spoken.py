@@ -8,13 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
 from collections.abc import Sequence
-from typing import Any
 
 from ironm_agent.checks import plain
-from ironm_agent.llm import LLM, TurnLLM, load_models
+from ironm_agent.llm import LLM
 
 _log = logging.getLogger("ironm_agent.run")
 TIMEOUT_S = 15.0  # 急症要尽快给出：等不到就用固定回答
@@ -111,8 +109,3 @@ async def say(
         _log.info("spoken fell back: missing=%s", ",".join(lack))
         return None
     return text
-
-
-def default_llm() -> Any:
-    """网页接口用的模型（测试里换掉）。"""
-    return TurnLLM(load_models(), os.environ)

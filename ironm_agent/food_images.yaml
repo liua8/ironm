@@ -1,0 +1,458 @@
+# 照片清单（spec [2026-10-23] §119、§126、§131），由 scripts/fetch_stock_images.py 生成，不要手改。
+# 照片来自 Unsplash / Pexels（免费许可），每张写明作者、许可和来源；页面上署名。图片文件在本机数据目录，不进仓库。
+images:
+  train:legs:
+    file: train-legs.jpg
+    source: https://images.unsplash.com/photo-1761839258420-5c3e2f2e2a74?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/woman-lifting-weights-in-a-gym-IYLLF511aOY
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Land O'Lakes, Inc.
+  train:chest:
+    file: train-chest.jpg
+    source: https://images.unsplash.com/photo-1690731033723-ad718c6e585a?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/a-man-doing-a-bench-press-with-a-barbell-Dueawl5Q75s
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Shoham Avisrur
+  train:back:
+    file: train-back.jpg
+    source: https://images.unsplash.com/photo-1605296867424-35fc25c9212a?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/IZw5zLHMfd4
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Anastase Maragos
+  train:shoulders:
+    file: train-shoulders.jpg
+    source: https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/woman-doing-weight-lifting-h4i9G-de7Po
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: John Arano
+  train:arms:
+    file: train-arms.jpg
+    source: https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/topless-man-in-black-shorts-carrying-black-dumbbell-7kEpUPB8vNk
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Anastase Maragos
+  train:core:
+    file: train-core.jpg
+    source: https://images.unsplash.com/photo-1767611097425-87ceea79a3f0?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/woman-performing-a-plank-exercise-on-a-yoga-mat-mgC52hk8TeU
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Margaret Young
+  train:fullbody:
+    file: train-fullbody.jpg
+    source: https://images.unsplash.com/photo-1758875570127-b6ff35e42436?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/SMaujCcYGHo
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Vitaly Gariev
+  train:cardio:
+    file: train-cardio.jpg
+    source: https://images.unsplash.com/photo-1590646299178-1b26ab821e34?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/woman-in-white-tank-top-running-on-dirt-road-during-daytime-GAGed6WJoOY
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Greg Rosenke
+  train:rest:
+    file: train-rest.jpg
+    source: https://images.unsplash.com/photo-1776710669971-eebdde536700?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/man-stretching-quadriceps-on-a-mat-in-gym-3AdUo5OtXxA
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Gilson Gomes
+  recipe:oat-egg-breakfast:
+    file: recipe-oat-egg-breakfast.jpg
+    source: https://images.pexels.com/photos/7780023/pexels-photo-7780023.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/cooked-food-on-the-table-7780023/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: Denys Gromov
+  recipe:greek-yogurt-bowl:
+    file: recipe-greek-yogurt-bowl.jpg
+    source: https://images.unsplash.com/photo-1633104060731-32143505bacc?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/a-bowl-of-cereal-with-blueberries-and-granola-z71M3cfW40c
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Shayna Douglas
+  recipe:wholewheat-egg-sandwich:
+    file: recipe-wholewheat-egg-sandwich.jpg
+    source: https://images.pexels.com/photos/31150225/pexels-photo-31150225.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/delicious-egg-sandwich-on-ceramic-plate-31150225/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: Deep Dasgupta
+  recipe:protein-shake:
+    file: recipe-protein-shake.jpg
+    source: https://images.unsplash.com/photo-1741330892093-19fd5bbe209a?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/banana-smoothie-next-to-fresh-bananas-a2sz7pBAM4I
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Balooon69
+  recipe:chicken-brown-rice:
+    file: recipe-chicken-brown-rice.jpg
+    source: https://images.pexels.com/photos/32287751/pexels-photo-32287751.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/healthy-lunch-box-with-rice-and-vegetables-32287751/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: David Balbino
+  recipe:beef-broccoli:
+    file: recipe-beef-broccoli.jpg
+    source: https://images.unsplash.com/photo-1783375175952-705a0600e05c?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/BA2UZ6w8JfY
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: sheri silver
+  recipe:salmon-sweet-potato:
+    file: recipe-salmon-sweet-potato.jpg
+    source: https://images.pexels.com/photos/37332337/pexels-photo-37332337.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/traditional-japanese-salmon-and-sweet-potato-dish-37332337/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: Gu Ko
+  recipe:shrimp-zucchini:
+    file: recipe-shrimp-zucchini.jpg
+    source: https://images.pexels.com/photos/7616731/pexels-photo-7616731.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/cooked-shrimp-in-the-pot-7616731/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: Rolando Somarriba
+  recipe:tomato-egg-noodles:
+    file: recipe-tomato-egg-noodles.jpg
+    source: https://images.pexels.com/photos/34290527/pexels-photo-34290527.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/delicious-chinese-noodle-bowl-with-toppings-34290527/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: Gaven Wang
+  recipe:tofu-mushroom:
+    file: recipe-tofu-mushroom.jpg
+    source: https://images.unsplash.com/photo-1756139692898-420adf341c71?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/lhsVVqc9ndU
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: tom tang
+  recipe:chicken-salad-bowl:
+    file: recipe-chicken-salad-bowl.jpg
+    source: https://images.unsplash.com/photo-1787087090329-63d501db683c?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/chicken-salad-with-feta-and-olives-a32qDsxmR8Q
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Chloë Forbes-Kindlen
+  recipe:tuna-rice-bowl:
+    file: recipe-tuna-rice-bowl.jpg
+    source: https://images.unsplash.com/photo-1710106687822-999dbeb73dee?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/aWtg3mUBuy0
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Anna Jakutajc-Wojtalik
+  recipe:steamed-fish-meal:
+    file: recipe-steamed-fish-meal.jpg
+    source: https://images.unsplash.com/photo-1760504526044-840cade997b2?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/steamed-fish-with-chili-and-black-beans-rn0WM4No-5A
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Davis Dai
+  recipe:lean-pork-pepper:
+    file: recipe-lean-pork-pepper.jpg
+    source: https://images.pexels.com/photos/724294/pexels-photo-724294.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/cooked-food-on-top-of-white-ceramic-plate-724294/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: Cats Coming
+  recipe:chicken-thigh-potato:
+    file: recipe-chicken-thigh-potato.jpg
+    source: https://images.unsplash.com/photo-1765118437934-ef3a79885243?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/BBVwaLo7cl0
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: tommao wang
+  recipe:egg-veg-congee:
+    file: recipe-egg-veg-congee.jpg
+    source: https://images.pexels.com/photos/32835478/pexels-photo-32835478.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/delicious-homemade-rice-porridge-in-ceramic-bowl-32835478/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: FOX (@fox-58267)
+  recipe:beef-noodle-soup:
+    file: recipe-beef-noodle-soup.jpg
+    source: https://images.pexels.com/photos/31623304/pexels-photo-31623304.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/delicious-taiwanese-beef-noodle-soup-bowl-31623304/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: Markus Winkler
+  recipe:edamame-snack:
+    file: recipe-edamame-snack.jpg
+    source: https://images.pexels.com/photos/1860193/pexels-photo-1860193.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/green-bean-1860193/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: Valeria Boltneva
+  recipe:yogurt-banana-snack:
+    file: recipe-yogurt-banana-snack.jpg
+    source: https://images.pexels.com/photos/7111471/pexels-photo-7111471.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/bananas-beside-two-white-bowls-with-heavy-cream-7111471/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: Piotr Arnoldes
+  recipe:shrimp-egg-fried-rice:
+    file: recipe-shrimp-egg-fried-rice.jpg
+    source: https://images.unsplash.com/photo-1551326844-4df70f78d0e9?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/fry-rice-with-prawn-dish-dTNNDTbZr8I
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Mae Mu
+  preset:takeout-chicken-rice:
+    file: preset-takeout-chicken-rice.jpg
+    source: https://images.pexels.com/photos/30635713/pexels-photo-30635713.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/healthy-meal-prep-with-chicken-and-broccoli-30635713/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: Iara Melo
+  preset:takeout-beef-noodle:
+    file: preset-takeout-beef-noodle.jpg
+    source: https://images.pexels.com/photos/32708187/pexels-photo-32708187.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/delicious-beef-noodle-soup-in-red-bowl-32708187/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: Yuen Tou Zan
+  preset:takeout-wrap:
+    file: preset-takeout-wrap.jpg
+    source: https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/white-and-brown-food-on-white-ceramic-plate-Spp1G283dow
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Max Griss
+  preset:takeout-poke:
+    file: preset-takeout-poke.jpg
+    source: https://images.unsplash.com/photo-1768326119231-bf064c1b8fdf?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/a-colorful-poke-bowl-with-tuna-avocado-and-edamame-ounjBTyK6VY
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Sergio Mena Ferreira
+  preset:canteen-fish-two-veg:
+    file: preset-canteen-fish-two-veg.jpg
+    source: https://images.pexels.com/photos/35211821/pexels-photo-35211821.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/colorful-and-healthy-asian-bento-lunch-35211821/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: Change C.C
+  preset:canteen-tomato-egg:
+    file: preset-canteen-tomato-egg.jpg
+    source: https://images.pexels.com/photos/29529570/pexels-photo-29529570.jpeg?auto=compress&cs=tinysrgb&w=1080
+    page: https://www.pexels.com/photo/delicious-chinese-tomato-and-egg-stir-fry-29529570/
+    license: Pexels License
+    license_url: https://www.pexels.com/license/
+    author: 木 灬
+  preset:store-oden:
+    file: preset-store-oden.jpg
+    source: https://images.unsplash.com/photo-1761064392867-9001ed23a8a8?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/bowl-of-japanese-oden-stew-with-daikon-and-egg-z-cXoH4acvI
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Nicholas Ng
+  preset:store-sandwich:
+    file: preset-store-sandwich.jpg
+    source: https://images.unsplash.com/photo-1754652327590-634bfebc7cf0?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/chicken-salad-sandwich-with-lettuce-on-white-bread-BmP0dv6WfSo
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Dillon Lobo
+  preset:store-sweet-potato:
+    file: preset-store-sweet-potato.jpg
+    source: https://images.unsplash.com/photo-1639922414789-74610d7385ea?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/a-close-up-of-some-food-on-a-piece-of-tin-foil-43U-vt3dwYg
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Dong Cheng
+  preset:home-oats:
+    file: preset-home-oats.jpg
+    source: https://images.unsplash.com/photo-1685600049052-0e0c079e9cf9?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/dSTuGblp7-0
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Ekin Deniz Çoban
+  preset:home-salmon:
+    file: preset-home-salmon.jpg
+    source: https://images.unsplash.com/photo-1570645314284-8b28f8fac62e?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/q8NvIxPYvR8
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Solstice Hannan
+  preset:home-tofu:
+    file: preset-home-tofu.jpg
+    source: https://images.unsplash.com/photo-1788537330018-5bdc6ae1ff4c?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/mapo-tofu-and-cucumber-salad-lunch-U3-UXOUds9s
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Zoshua Colah
+  food:rice:
+    file: food-rice.jpg
+    source: https://images.unsplash.com/photo-1704916029292-ec7b5976204c?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/a-bowl-of-rice-on-a-white-background-3zplOwmV6v0
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Mehmet Keskin
+  food:brown-rice:
+    file: food-brown-rice.jpg
+    source: https://images.unsplash.com/photo-1561767782-d8e3aa77ef77?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/a-close-up-of-a-pile-of-brown-rice-tyVcPQfncrg
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Utsman Media
+  food:oats:
+    file: food-oats.jpg
+    source: https://images.unsplash.com/photo-1722882270575-f437c338a4de?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/ThMhV-RaQ24
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Xhiliana
+  food:wholewheat-bread:
+    file: food-wholewheat-bread.jpg
+    source: https://images.unsplash.com/photo-1534620808146-d33bb39128b2?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/sliced-breads-on-white-surface-WHJTaLqonkU
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Louise Lyshøj
+  food:sweet-potato:
+    file: food-sweet-potato.jpg
+    source: https://images.unsplash.com/photo-1744659749700-c4213f840355?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/a-pile-of-sweet-potatoes-in-a-basket-eB2X4DnIk4c
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Yen Vu
+  food:corn:
+    file: food-corn.jpg
+    source: https://images.unsplash.com/photo-1760361571822-1984e9a5887d?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/three-ears-of-fresh-corn-on-a-wooden-surface-PIhPkdnYpf0
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Mustafa akın
+  food:noodles:
+    file: food-noodles.jpg
+    source: https://images.unsplash.com/photo-1633352615955-f0c99e8b7e5a?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/a-close-up-of-a-bunch-of-noodles-L7POzOAoaQY
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Jakub Dziubak
+  food:egg:
+    file: food-egg.jpg
+    source: https://images.unsplash.com/photo-1586802990181-a5771596eaea?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/brown-egg-on-white-paper-towel-Jc2JGFFsfNI
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Morgane Perraud
+  food:chicken-breast:
+    file: food-chicken-breast.jpg
+    source: https://images.unsplash.com/photo-1633096013004-e2cb4023b560?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/two-raw-chicken-breasts-in-a-black-bowl-9ZrWR8R961U
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Philippe Zuber
+  food:beef-lean:
+    file: food-beef-lean.jpg
+    source: https://images.unsplash.com/photo-1613454320437-0c228c8b1723?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/AQ_BdsvLgqA
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Eiliv Aceron
+  food:salmon-raw:
+    file: food-salmon-raw.jpg
+    source: https://images.unsplash.com/photo-1599084993091-1cb5c0721cc6?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/sliced-fish-meat-on-white-surface-dKhkCiD4zEQ
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Abstral Official
+  food:shrimp:
+    file: food-shrimp.jpg
+    source: https://images.unsplash.com/photo-1559737558-2f5a35f4523b?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/cooked-shrimp-platter-hEKN_m0qGMA
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Maria Labanda
+  food:tofu-firm:
+    file: food-tofu-firm.jpg
+    source: https://images.unsplash.com/photo-1722635940350-d1b2e5129379?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/SGSJOJcEIL8
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Kamala Bright
+  food:milk:
+    file: food-milk.jpg
+    source: https://images.unsplash.com/photo-1550583724-b2692b85b150?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/person-pours-milk-into-glass-_8bnn1GqX70
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Eiliv Aceron
+  food:greek-yogurt:
+    file: food-greek-yogurt.jpg
+    source: https://images.unsplash.com/photo-1571212515416-fef01fc43637?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/a-bowl-of-yogurt-with-a-spoon-in-it-NFHeBysjCTI
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: micheile henderson
+  food:broccoli:
+    file: food-broccoli.jpg
+    source: https://images.unsplash.com/photo-1685504445355-0e7bdf90d415?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/a-close-up-of-broccoli-on-a-white-background-TL6bTnQWMbk
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Katherine Jenswold
+  food:spinach:
+    file: food-spinach.jpg
+    source: https://images.unsplash.com/photo-1574316071802-0d684efa7bf5?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/fresh-green-spinach-leaves-6AAptb2kBak
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Shutter Sphere Collective
+  food:tomato:
+    file: food-tomato.jpg
+    source: https://images.unsplash.com/photo-1630223697313-a6f764e12109?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/red-tomato-on-white-surface-sOuCfIuAJIY
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Cobus Redelinghuys
+  food:banana:
+    file: food-banana.jpg
+    source: https://images.unsplash.com/photo-1587132137056-bfbf0166836e?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/yellow-banana-on-white-background-Kl3467edwsE
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Mockup Graphics
+  food:apple:
+    file: food-apple.jpg
+    source: https://images.unsplash.com/photo-1619546813926-a78fa6372cd2?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/red-apple-on-white-background-rxN2MRdFJVg
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Amit Lahav
+  food:blueberry:
+    file: food-blueberry.jpg
+    source: https://images.unsplash.com/photo-1498557850523-fd3d118b962e?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/blueberries-on-white-ceramic-container-4qujjbj3srs
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Joanna Kosinska
+  food:almond:
+    file: food-almond.jpg
+    source: https://images.unsplash.com/photo-1615485737457-f07082c77813?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/brown-almond-nuts-on-white-background-hw8vOPAIZgk
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Mockup Graphics
+  food:avocado:
+    file: food-avocado.jpg
+    source: https://images.unsplash.com/photo-1519162808019-7de1683fa2ad?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/sliced-avocado-EMX1eJ1BcgU
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Thought Catalog
+  food:whey:
+    file: food-whey.jpg
+    source: https://images.unsplash.com/photo-1693996046865-19217d179161?w=1080&q=78&fm=jpg&fit=crop
+    page: https://unsplash.com/photos/a-scoop-of-powder-sitting-on-top-of-a-table-MUlIfSNODXE
+    license: Unsplash License
+    license_url: https://unsplash.com/license
+    author: Alex Saks

@@ -115,3 +115,18 @@ tags:
   prone-pulldown: {pattern: v_pull, groups: [part.back], muscles: [muscle.lats, muscle.mid_lower_traps], assist: [muscle.erector_spinae, muscle.posterior_delt]}
   prone-y-raise: {pattern: shoulder, groups: [part.shoulder, part.back], friendly: [joint.shoulder], muscles: [muscle.posterior_delt, muscle.mid_lower_traps], assist: [muscle.rhomboids]}
   towel-curl: {pattern: curl, groups: [group.biceps], muscles: [muscle.biceps], assist: [muscle.brachialis, muscle.forearms]}
+  # 第三批（§144）
+  treadmill-run: {pattern: cardio, stress: [joint.knee, joint.ankle]}
+  elliptical: {pattern: cardio, friendly: [joint.knee]}
+  rowing-machine: {pattern: cardio, stress: [joint.lumbar]}
+  jump-rope: {pattern: cardio, stress: [joint.knee, joint.ankle]}
+  jumping-jack: {pattern: cardio, stress: [joint.knee, joint.ankle]}
+  mountain-climber: {pattern: plyo, stress: [joint.wrist, joint.shoulder], muscles: [muscle.rectus_abdominis, muscle.hip_flexors], assist: [muscle.anterior_delt, muscle.quadriceps]}
+  hanging-leg-raise: {pattern: core, groups: [part.core], stress: [joint.shoulder, joint.lumbar], muscles: [muscle.rectus_abdominis, muscle.hip_flexors], assist: [muscle.obliques, muscle.forearms]}
+  smith-squat: {pattern: squat, groups: [group.quadriceps, group.glutes], stress: [joint.knee], muscles: [muscle.quadriceps, muscle.glute_max], assist: [muscle.adductors]}
+  seated-leg-curl: {pattern: hinge, groups: [group.hamstrings], friendly: [joint.lumbar], muscles: [muscle.hamstrings], assist: [muscle.gastrocnemius]}
+  t-bar-row: {pattern: h_pull, groups: [part.back, group.biceps], stress: [joint.lumbar], muscles: [muscle.lats, muscle.mid_lower_traps], assist: [muscle.rhomboids, muscle.posterior_delt, muscle.biceps, muscle.erector_spinae]}
+  reverse-pec-deck: {pattern: shoulder, groups: [part.shoulder, part.back], friendly: [joint.shoulder, joint.lumbar], muscles: [muscle.posterior_delt], assist: [muscle.mid_lower_traps, muscle.rhomboids]}
+  sumo-squat: {pattern: squat, groups: [group.quadriceps, group.glutes], stress: [joint.knee, joint.hip], muscles: [muscle.glute_max, muscle.adductors, muscle.quadriceps]}
+  assisted-pull-up: {pattern: v_pull, groups: [part.back, group.biceps], muscles: [muscle.lats, muscle.biceps], assist: [muscle.mid_lower_traps, muscle.forearms]}
+  triceps-kickback: {pattern: extension, groups: [group.triceps], muscles: [muscle.triceps], assist: [muscle.posterior_delt]}

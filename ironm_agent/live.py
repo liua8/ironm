@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from collections.abc import Sequence
 from datetime import date, datetime, timedelta
@@ -49,6 +50,7 @@ class LiveItem(BaseModel):
         default=None, ge=0, le=1000
     )  # 开始时预填的重量（计划目标或上次的），训练中自己调的上下限按它算（§104）
     sets: list[LiveSet] = Field(default_factory=list, max_length=20)
+    cardio: bool = False  # 有氧：一段一行只记时长（页面填分钟，存秒）（§130）
 
 
 class Live(BaseModel):
@@ -191,7 +193,8 @@ def new_item(
 ) -> LiveItem:
     """一个动作：重量和次数按计划目标、上次做的预先填好；都没有时空着。"""
     move = _move(name)
-    timed = bool(move is not None and move.timed)
+    cardio = bool(move is not None and move.part == "有氧")
+    timed = bool(move is not None and move.timed) or cardio
     planned = (
         next((x for s in sorted(plan.sessions, key=lambda s: s.day != date.today().isoweekday())
               for x in s.items if x.exercise == name), None)  # 今天那一次排前面（复核 11-05）
@@ -217,6 +220,20 @@ def new_item(
         )  # fmt: skip
     elif planned is not None:
         target = f"计划 {planned.sets} 组 × {planned.reps}"
+    if cardio:  # 有氧（§130）：一段，按计划写的分钟或上次的时长预填，不记重量和次数
+        mins = (
+            re.match(r"\s*(\d+)", planned.reps)
+            if planned is not None and "分钟" in planned.reps
+            else None
+        )
+        secs = int(mins.group(1)) * 60 if mins else (last[0][1][-1].seconds if last else None)
+        target = (
+            f"计划 {planned.reps}"
+            if planned is not None
+            else (f"上次 {round(secs / 60)} 分钟" if secs else "")
+        )
+        return LiveItem(exercise=name, timed=True, cardio=True, rest=rest_of(name, rests), target=target[:40],
+                        best=None, plan_kg=None, sets=[LiveSet(seconds=secs)])  # fmt: skip
     one = LiveSet(
         weight_kg=weight, reps=None if timed else reps, seconds=seconds if timed else None
     )

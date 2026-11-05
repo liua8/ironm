@@ -7,10 +7,10 @@ from typing import Any
 
 import pytest
 
-from ironm_agent import spoken
 from ironm_agent.live import Live, LiveItem, LiveSet
 from ironm_agent.live_adjust import FAILED, apply, current, session_lines
 from ironm_agent.llm import Reply
+from tests.conftest import model_is
 from tests.fakes import FakeLLM, jsonr
 from tests.test_live import PLAN, client, done
 
@@ -136,7 +136,7 @@ def test_tired_mid_workout_changes_the_rest_of_the_sets(monkeypatch: pytest.Monk
         return jsonr({"say": "后面两组减到 60 公斤，每组 6 个，别做到力竭。", "end": False,
                       "changes": [{"kind": "all", "item": 1, "weight_kg": 60, "reps": 6}]})  # fmt: skip
 
-    monkeypatch.setattr(spoken, "default_llm", lambda: FakeLLM(answer))
+    model_is(monkeypatch, FakeLLM(answer))
     r = c.post("/iron/api/live/adjust", json={"id": live["id"], "said": "很累"}).json()
     assert r["say"].startswith("后面两组减到 60 公斤") and r["changed"] == 1 and not r["urgent"]
     sets = r["live"]["items"][0]["sets"]
@@ -157,8 +157,7 @@ def test_emergency_and_model_failure_change_nothing(monkeypatch: pytest.MonkeyPa
     before = c.get("/iron/api/live").json()["live"]["items"]
     r = c.post("/iron/api/live/adjust", json={"id": live["id"], "said": "很累"}).json()
     assert r["say"] == FAILED and r["live"]["items"] == before  # 默认模型不可用：不改
-    monkeypatch.setattr(spoken, "default_llm",
-                        lambda: FakeLLM(lambda *_: Reply("马上停下来坐着，现在就打 120。")))  # fmt: skip
+    model_is(monkeypatch, FakeLLM(lambda *_: Reply("马上停下来坐着，现在就打 120。")))  # fmt: skip
     r = c.post(
         "/iron/api/live/adjust", json={"id": live["id"], "said": "胸口突然很痛，喘不上气"}
     ).json()
@@ -173,7 +172,7 @@ def test_pain_is_recorded_and_blocks_heavier(monkeypatch: pytest.MonkeyPatch) ->
     c, _, live, pains = start(monkeypatch)
     reply = {"say": "先停深蹲，换成箱式深蹲，蹲到不疼的高度。",
              "changes": [{"kind": "all", "item": 1, "weight_kg": 85}]}  # fmt: skip
-    monkeypatch.setattr(spoken, "default_llm", lambda: FakeLLM(lambda *_: jsonr(reply)))
+    model_is(monkeypatch, FakeLLM(lambda *_: jsonr(reply)))
     from ironm_agent import web_live
 
     read: list[tuple[str, str]] = []

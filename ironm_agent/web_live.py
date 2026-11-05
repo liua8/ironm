@@ -47,6 +47,7 @@ class StartIn(BaseModel):
 
     exercises: list[str] = Field(default_factory=list, max_length=15)
     today_plan: bool = False  # 从首页开始：带上今天计划里的动作
+    free: bool = False  # 自由训练（§133）：空的开始、不带今天的计划，训练页能加动作
 
 
 class SaveIn(BaseModel):
@@ -196,27 +197,47 @@ async def start_live(
     from ironm_agent.special import no_heavier
 
     now = datetime.now()
-    live = await lives.get(user_id)
-    if live is not None and not stale(live, now):  # 已有进行中的：接着练，不另开
-        return _out(live, now)
     plan, logs = await _context(user_id, store)
-    if body.today_plan and plan is not None:  # 临时调整（§163）、计划页"只改今天"的按改过的（§106）
+    if plan is not None:  # 临时调整（§163）、计划页"只改今天"的按改过的（§106）
         from ironm_agent.plan_layers import load as load_temps
         from ironm_agent.plan_layers import plan_on
 
         plan = plan_on(plan, await load_temps(store, user_id), date.today()) or plan
         plan = with_today(plan, await today_edits(day, user_id, date.today()), date.today())
         plan = await _coach_ratio(user_id, plan)
-    rests = await lives.rests(user_id)
-    session = ""
-    names: list[str] = []
+    # 从哪开始都带上今天的计划（§130）：从计划开练时总带；从别处开始时，今天还没练完才带
+    trained = any(x.day == date.today() and x.done and x.rest is None for x in logs)
+    want = plan is not None and not body.free and (body.today_plan or not trained)
+    today = plan.session_on(date.today()) if want else None
     try:
-        names = [known(x) for x in body.exercises]
+        picked = [known(x) for x in body.exercises]
     except LiveError as err:
         raise HTTPException(422, str(err)) from None
-    if body.today_plan and plan is not None and (s := plan.session_on(date.today())) is not None:
-        session = s.name
-        names = [x.exercise for x in s.items if _in_library(x.exercise)] + names
+    live = await lives.get(user_id)
+    if live is not None and not stale(live, now):  # 已有进行中的：接着练，不另开
+        # 先开的自由训练或单个动作，再从计划开始：今天计划里还没有的接在后面（§123）；
+        # 已经是从计划开始的，他删掉的动作不再加回来；从动作详情开始的，那个动作不在里面就加到最后（§130）
+        joins = today is not None and not live.session
+        have = {x.exercise for x in live.items}
+        wanted = [*(x.exercise for x in today.items), *picked] if joins and today else picked
+        names = [n for n in dict.fromkeys(wanted) if n not in have]
+        if not names and not joins:
+            return _out(live, now)
+        rests = await lives.rests(user_id)
+        more = [new_item(n, plan, logs, rests) for n in names]
+        update: dict[str, Any] = {"items": [*live.items, *more][:15], "updated": now}
+        if joins and today is not None:
+            update["session"] = today.name
+        live = live.model_copy(update=update)
+        await lives.save(user_id, live)
+        _log.info("live extended: added=%d joined_plan=%s", len(more), joins)
+        return _out(live, now)
+    rests = await lives.rests(user_id)
+    session = ""
+    names = picked  # 点的那个动作排第一，后面接今天的计划（§130）
+    if today is not None:
+        session = today.name
+        names = [*picked, *(x.exercise for x in today.items)]  # 库里没有的也照加（§123）
     items = [new_item(n, plan, logs, rests) for n in dict.fromkeys(names)][:15]
     live = fresh(session, items, now).model_copy(
         update={"no_heavier": no_heavier(await _special(user_id, memory))}
@@ -224,14 +245,6 @@ async def start_live(
     await lives.save(user_id, live)
     _log.info("live started: exercises=%d", len(items))
     return _out(live, now)
-
-
-def _in_library(name: str) -> bool:
-    try:
-        known(name)
-    except LiveError:
-        return False
-    return True
 
 
 async def _coach_ratio(user_id: str, plan: Plan) -> Plan:
@@ -258,10 +271,11 @@ async def save_live(
         raise HTTPException(409, "这次训练已经结束或换了一次，请刷新")
     before = {x.exercise: x.rest for x in live.items}
     for it in body.items:
-        try:
-            it.exercise = known(it.exercise)
-        except LiveError as err:
-            raise HTTPException(422, str(err)) from None
+        if it.exercise not in before:  # 原来就在里面的不再查：计划带进来的可能不在动作库（§123）
+            try:
+                it.exercise = known(it.exercise)
+            except LiveError as err:
+                raise HTTPException(422, str(err)) from None
         if it.exercise in before and it.rest != before[it.exercise]:
             await lives.set_rest(user_id, it.exercise, it.rest)
     live = live.model_copy(update={"items": body.items, "updated": now})
@@ -401,9 +415,9 @@ async def adjust_live(
     illness: Any = ILLNESS,
 ) -> dict[str, Any]:
     """练的时候跟管家说一句（太重、很累、哪里疼）：模型决定后面怎么练，代码按安全底线套上并保存。"""
-    from ironm_agent import spoken
     from ironm_agent.live_adjust import adjust, context_lines, current
     from ironm_agent.triggers import pain_parts
+    from ironm_agent.user_models import NO_MODEL, pick_quiet
 
     now = datetime.now()
     live = await lives.get(user_id)
@@ -420,7 +434,12 @@ async def adjust_live(
                           coach=coach, logs=logs)  # fmt: skip
     if rule := rules_text(special):
         facts += "\n" + rule
-    got = await adjust(spoken.default_llm(), live, body.said, target, facts, plan=plan, logs=logs,
+    llm = await pick_quiet(user_id)  # 用他自己的模型（§167）
+    if llm is None:
+        if pain_parts(body.said):  # 没有模型也照样守安全底线：说过疼，后面不加重（§104）
+            await lives.save(user_id, live.model_copy(update={"no_heavier": True, "updated": now}))
+        raise HTTPException(428, NO_MODEL)
+    got = await adjust(llm, live, body.said, target, facts, plan=plan, logs=logs,
                        rests=await lives.rests(user_id), special=special)  # fmt: skip
     if got.kinds:
         live = got.live.model_copy(update={"updated": now})

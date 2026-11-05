@@ -21,7 +21,7 @@ from ironm_agent import imports, weather
 from ironm_agent import profile as profiles
 from ironm_agent.brief import cheer, hero_line, today_brief, weekly_review
 from ironm_agent.casefile import Snapshot, risks
-from ironm_agent.exercise_images import images_for
+from ironm_agent.exercise_images import gif_for, images_for
 from ironm_agent.exercises import EQUIPMENT, NOTE, PARTS, library
 from ironm_agent.healthdata import read_all
 from ironm_agent.illness import active as illness_active
@@ -152,7 +152,10 @@ async def get_exercises(user_id: str = Depends(_verify())) -> dict[str, Any]:
         "parts": PARTS,
         "equipment": EQUIPMENT,
         "note": NOTE,
-        "exercises": [{**x.model_dump(), "images": images_for(x.id)} for x in lib.exercises],
+        "exercises": [
+            {**x.model_dump(), "images": images_for(x.id), "gif": gif_for(x.id)}
+            for x in lib.exercises
+        ],
     }
 
 
@@ -693,3 +696,28 @@ router.include_router(_photo)
 from ironm_agent.web_diet import router as _diet  # noqa: E402
 
 router.include_router(_diet)
+
+# 打卡分享卡和周报（spec [2026-11-03] §147）
+from ironm_agent.web_share import router as _share  # noqa: E402
+
+router.include_router(_share)
+
+# 认器械（spec [2026-11-03] §149）
+from ironm_agent.web_machines import router as _machines  # noqa: E402
+
+router.include_router(_machines)
+
+# 用自己的模型（spec [2026-11-03] §153）
+from ironm_agent.web_user_models import router as _my_model  # noqa: E402
+
+router.include_router(_my_model)
+
+# 图鉴里的方案库（spec [2026-11-05] §161）
+from ironm_agent.web_atlas import router as _atlas  # noqa: E402
+
+router.include_router(_atlas)
+
+# 找回密码（spec [2026-11-03] §155）：从 mirobody 挪进 iron-m，mirobody 的代码一行不改（§168）
+from ironm_agent.web_password import router as _password  # noqa: E402
+
+router.include_router(_password)

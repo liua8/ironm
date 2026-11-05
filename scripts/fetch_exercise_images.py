@@ -19,6 +19,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 API = "https://wger.de/api/v2"
 MAX_PER_EXERCISE = 2
+# 看过后不要的图（§144）：wger 上传的不是动作图
+BAD_IMAGES = {
+    "https://wger.de/media/exercise-images/1573/a9ab402b-61ef-4d60-b91a-df52bf7f41a9.jpg",  # 健腹轮：是个标志图
+    "https://wger.de/media/exercise-images/1573/662db55d-68d0-4297-8215-3dcf6c21c778.jpg",
+}
 WGER: dict[str, int] = {
     # 第一批
     "goblet-squat": 203, "back-squat": 1801, "romanian-deadlift": 1652, "deadlift": 184,
@@ -60,7 +65,7 @@ def main() -> int:
     images = json.loads(get(f"{API}/exerciseimage/?limit=1000&format=json"))["results"]
     by: dict[int, list[dict]] = {}
     for im in images:
-        if not im.get("is_ai_generated"):
+        if not im.get("is_ai_generated") and im["image"] not in BAD_IMAGES:
             by.setdefault(im["exercise"], []).append(im)
     lines = [
         "# 动作配图清单（spec [2026-10-23] §32），由 scripts/fetch_exercise_images.py 生成，不要手改。",

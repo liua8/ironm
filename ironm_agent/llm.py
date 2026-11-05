@@ -14,9 +14,10 @@ from pydantic import Field
 from ironm_agent.common import ContractModel
 from ironm_agent.yamlfile import load_yaml
 
-type Stage = Literal["route", "expert", "compose", "memory", "coach"]
-# 配置里没写这个环节时沿用哪个（§142：管家的后台决策默认和作答同一个模型，旧配置不用改）
-FALLBACK: dict[Stage, Stage] = {"coach": "expert"}
+type Stage = Literal["route", "expert", "compose", "memory", "coach", "vision"]
+# 配置里没写这个环节时沿用哪个（§142：管家的后台决策默认和作答同一个模型，旧配置不用改；
+# §149：认器械看图的也一样）
+FALLBACK: dict[Stage, Stage] = {"coach": "expert", "vision": "expert"}
 
 MODELS_PATH = Path(__file__).resolve().parent.parent / "config" / "models.yaml"
 

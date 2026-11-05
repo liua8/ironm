@@ -1,0 +1,458 @@
+# 照片候选（spec [2026-10-23] §126、§131）：Unsplash / Pexels 免费许可的照片，项目负责人 11-03 同意全部下载。
+# scripts/fetch_stock_images.py 按这里下载到本机数据目录（不进仓库），并写 food_images.yaml 清单；页面署名用 author、license、page。
+photos:
+  train:legs:
+    name: 腿臀
+    page: https://unsplash.com/photos/woman-lifting-weights-in-a-gym-IYLLF511aOY
+    author: Land O'Lakes, Inc.
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1761839258420-5c3e2f2e2a74
+    what: Woman under a loaded barbell doing a back squat in a gym
+  train:chest:
+    name: 胸
+    page: https://unsplash.com/photos/a-man-doing-a-bench-press-with-a-barbell-Dueawl5Q75s
+    author: Shoham Avisrur
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1690731033723-ad718c6e585a
+    what: Man pressing a barbell on a bench, dark gym, side angle
+  train:back:
+    name: 背
+    page: https://unsplash.com/photos/IZw5zLHMfd4
+    author: Anastase Maragos
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1605296867424-35fc25c9212a
+    what: Muscular man hanging from a pull-up bar, back to camera, moody light
+  train:shoulders:
+    name: 肩
+    page: https://unsplash.com/photos/woman-doing-weight-lifting-h4i9G-de7Po
+    author: John Arano
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5
+    what: Woman pressing a barbell overhead, seen from behind, CrossFit gym
+  train:arms:
+    name: 手臂
+    page: https://unsplash.com/photos/topless-man-in-black-shorts-carrying-black-dumbbell-7kEpUPB8vNk
+    author: Anastase Maragos
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e
+    what: Man doing a barbell curl in a gym
+  train:core:
+    name: 核心
+    page: https://unsplash.com/photos/woman-performing-a-plank-exercise-on-a-yoga-mat-mgC52hk8TeU
+    author: Margaret Young
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1767611097425-87ceea79a3f0
+    what: Woman holding a plank on a mat, bright white studio
+  train:fullbody:
+    name: 全身
+    page: https://unsplash.com/photos/SMaujCcYGHo
+    author: Vitaly Gariev
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1758875570127-b6ff35e42436
+    what: Man and woman doing kettlebell swings in a gym
+  train:cardio:
+    name: 有氧
+    page: https://unsplash.com/photos/woman-in-white-tank-top-running-on-dirt-road-during-daytime-GAGed6WJoOY
+    author: Greg Rosenke
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1590646299178-1b26ab821e34
+    what: Woman running on a forest trail, mid-stride
+  train:rest:
+    name: 休息
+    page: https://unsplash.com/photos/man-stretching-quadriceps-on-a-mat-in-gym-3AdUo5OtXxA
+    author: Gilson Gomes
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1776710669971-eebdde536700
+    what: Man stretching his quads on a mat in a gym
+  recipe:oat-egg-breakfast:
+    name: 燕麦牛奶配鸡蛋
+    page: https://www.pexels.com/photo/cooked-food-on-the-table-7780023/
+    author: Denys Gromov
+    license: Pexels License
+    url: https://images.pexels.com/photos/7780023/pexels-photo-7780023.jpeg
+    what: 'Top-down breakfast on a white table: oatmeal, halved eggs, salmon, tea'
+  recipe:greek-yogurt-bowl:
+    name: 希腊酸奶水果碗
+    page: https://unsplash.com/photos/a-bowl-of-cereal-with-blueberries-and-granola-z71M3cfW40c
+    author: Shayna Douglas
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1633104060731-32143505bacc
+    what: Yogurt with blueberries and granola in a white bowl, white background
+  recipe:wholewheat-egg-sandwich:
+    name: 全麦鸡蛋三明治
+    page: https://www.pexels.com/photo/delicious-egg-sandwich-on-ceramic-plate-31150225/
+    author: Deep Dasgupta
+    license: Pexels License
+    url: https://images.pexels.com/photos/31150225/pexels-photo-31150225.jpeg
+    what: Whole-wheat sandwich halves filled with egg, whole eggs beside, slate background
+  recipe:protein-shake:
+    name: 香蕉蛋白奶昔
+    page: https://unsplash.com/photos/banana-smoothie-next-to-fresh-bananas-a2sz7pBAM4I
+    author: Balooon69
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1741330892093-19fd5bbe209a
+    what: Glass of banana smoothie on light linen, banana at edge
+  recipe:chicken-brown-rice:
+    name: 鸡胸肉西兰花糙米饭
+    page: https://www.pexels.com/photo/healthy-lunch-box-with-rice-and-vegetables-32287751/
+    author: David Balbino
+    license: Pexels License
+    url: https://images.pexels.com/photos/32287751/pexels-photo-32287751.jpeg
+    what: 'Meal-prep box: rice, shredded chicken, broccoli, cucumber'
+  recipe:beef-broccoli:
+    name: 西兰花炒牛肉配米饭
+    page: https://unsplash.com/photos/BA2UZ6w8JfY
+    author: sheri silver
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1783375175952-705a0600e05c
+    what: Beef and broccoli over white rice in a white bowl
+  recipe:salmon-sweet-potato:
+    name: 香煎三文鱼配红薯
+    page: https://www.pexels.com/photo/traditional-japanese-salmon-and-sweet-potato-dish-37332337/
+    author: Gu Ko
+    license: Pexels License
+    url: https://images.pexels.com/photos/37332337/pexels-photo-37332337.jpeg
+    what: Pan-fried salmon pieces with sweet potato on a patterned plate, wood table
+  recipe:shrimp-zucchini:
+    name: 虾仁炒西葫芦
+    page: https://www.pexels.com/photo/cooked-shrimp-in-the-pot-7616731/
+    author: Rolando Somarriba
+    license: Pexels License
+    url: https://images.pexels.com/photos/7616731/pexels-photo-7616731.jpeg
+    what: Shrimp, zucchini and mushroom stir-fry in a pan, top-down
+  recipe:tomato-egg-noodles:
+    name: 番茄鸡蛋面
+    page: https://www.pexels.com/photo/delicious-chinese-noodle-bowl-with-toppings-34290527/
+    author: Gaven Wang
+    license: Pexels License
+    url: https://images.pexels.com/photos/34290527/pexels-photo-34290527.jpeg
+    what: White bowl of noodles topped with tomato-egg, minced pork and bok choy
+  recipe:tofu-mushroom:
+    name: 香菇豆腐煲
+    page: https://unsplash.com/photos/lhsVVqc9ndU
+    author: tom tang
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1756139692898-420adf341c71
+    what: Close-up of a clay pot stew with mushrooms, cubes and green chili
+  recipe:chicken-salad-bowl:
+    name: 鸡胸肉藜麦沙拉
+    page: https://unsplash.com/photos/chicken-salad-with-feta-and-olives-a32qDsxmR8Q
+    author: Chloë Forbes-Kindlen
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1787087090329-63d501db683c
+    what: Chicken salad with spinach, tomato, olives, feta and almonds in a white bowl, light background
+  recipe:tuna-rice-bowl:
+    name: 金枪鱼饭团碗
+    page: https://unsplash.com/photos/aWtg3mUBuy0
+    author: Anna Jakutajc-Wojtalik
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1710106687822-999dbeb73dee
+    what: Rice bowl topped with tuna mayo, chili sauce drizzle and scallion, chopsticks
+  recipe:steamed-fish-meal:
+    name: 清蒸鳕鱼配米饭青菜
+    page: https://unsplash.com/photos/steamed-fish-with-chili-and-black-beans-rn0WM4No-5A
+    author: Davis Dai
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1760504526044-840cade997b2
+    what: Chinese steamed white fish with soy, chili, black beans and scallion
+  recipe:lean-pork-pepper:
+    name: 青椒里脊配米饭
+    page: https://www.pexels.com/photo/cooked-food-on-top-of-white-ceramic-plate-724294/
+    author: Cats Coming
+    license: Pexels License
+    url: https://images.pexels.com/photos/724294/pexels-photo-724294.jpeg
+    what: Pork with green pepper strips on a white plate
+  recipe:chicken-thigh-potato:
+    name: 鸡腿肉土豆胡萝卜焖
+    page: https://unsplash.com/photos/BBVwaLo7cl0
+    author: tommao wang
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1765118437934-ef3a79885243
+    what: Rustic clay pot of braised chicken with potatoes, restaurant table
+  recipe:egg-veg-congee:
+    name: 鸡蛋青菜粥
+    page: https://www.pexels.com/photo/delicious-homemade-rice-porridge-in-ceramic-bowl-32835478/
+    author: FOX (@fox-58267)
+    license: Pexels License
+    url: https://images.pexels.com/photos/32835478/pexels-photo-32835478.jpeg
+    what: Plain rice congee with scallions in a blue-rim bowl
+  recipe:beef-noodle-soup:
+    name: 牛肉汤面
+    page: https://www.pexels.com/photo/delicious-taiwanese-beef-noodle-soup-bowl-31623304/
+    author: Markus Winkler
+    license: Pexels License
+    url: https://images.pexels.com/photos/31623304/pexels-photo-31623304.jpeg
+    what: Braised beef noodle soup with green onions, bowl on wood
+  recipe:edamame-snack:
+    name: 盐水毛豆加牛奶
+    page: https://www.pexels.com/photo/green-bean-1860193/
+    author: Valeria Boltneva
+    license: Pexels License
+    url: https://images.pexels.com/photos/1860193/pexels-photo-1860193.jpeg
+    what: Close-up of salted edamame pods in a black bowl
+  recipe:yogurt-banana-snack:
+    name: 酸奶香蕉加餐
+    page: https://www.pexels.com/photo/bananas-beside-two-white-bowls-with-heavy-cream-7111471/
+    author: Piotr Arnoldes
+    license: Pexels License
+    url: https://images.pexels.com/photos/7111471/pexels-photo-7111471.jpeg
+    what: Two white bowls of yogurt (figs, syrup) beside a bunch of bananas, bright
+  recipe:shrimp-egg-fried-rice:
+    name: 虾仁蛋炒饭
+    page: https://unsplash.com/photos/fry-rice-with-prawn-dish-dTNNDTbZr8I
+    author: Mae Mu
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1551326844-4df70f78d0e9
+    what: Shrimp fried rice in a black bowl, top-down on a dark mat
+  preset:takeout-chicken-rice:
+    name: 鸡胸肉糙米饭
+    page: https://www.pexels.com/photo/healthy-meal-prep-with-chicken-and-broccoli-30635713/
+    author: Iara Melo
+    license: Pexels License
+    url: https://images.pexels.com/photos/30635713/pexels-photo-30635713.jpeg
+    what: Takeout box of seasoned chicken, broccoli and rice, held in a hand
+  preset:takeout-beef-noodle:
+    name: 牛肉面
+    page: https://www.pexels.com/photo/delicious-beef-noodle-soup-in-red-bowl-32708187/
+    author: Yuen Tou Zan
+    license: Pexels License
+    url: https://images.pexels.com/photos/32708187/pexels-photo-32708187.jpeg
+    what: Clear-broth beef noodle soup with chopsticks, noodle-shop table
+  preset:takeout-wrap:
+    name: 全麦鸡肉卷
+    page: https://unsplash.com/photos/white-and-brown-food-on-white-ceramic-plate-Spp1G283dow
+    author: Max Griss
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1626700051175-6818013e1d4f
+    what: Two halves of a tortilla wrap with chicken and slaw, light background
+  preset:takeout-poke:
+    name: 波奇饭
+    page: https://unsplash.com/photos/a-colorful-poke-bowl-with-tuna-avocado-and-edamame-ounjBTyK6VY
+    author: Sergio Mena Ferreira
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1768326119231-bf064c1b8fdf
+    what: Tuna poke bowl with avocado, edamame and mango, chopsticks, wood table
+  preset:canteen-fish-two-veg:
+    name: 一荤两素加米饭
+    page: https://www.pexels.com/photo/colorful-and-healthy-asian-bento-lunch-35211821/
+    author: Change C.C
+    license: Pexels License
+    url: https://images.pexels.com/photos/35211821/pexels-photo-35211821.jpeg
+    what: 'Metal tins: pepper and green-bean stir-fry, braised pork, braised egg, greens, rice'
+  preset:canteen-tomato-egg:
+    name: 番茄炒蛋+清炒时蔬+杂粮饭
+    page: https://www.pexels.com/photo/delicious-chinese-tomato-and-egg-stir-fry-29529570/
+    author: 木 灬
+    license: Pexels License
+    url: https://images.pexels.com/photos/29529570/pexels-photo-29529570.jpeg
+    what: Bowl of tomato-egg stir-fry with chopsticks, top-down on wood
+  preset:store-oden:
+    name: 关东煮+豆浆
+    page: https://unsplash.com/photos/bowl-of-japanese-oden-stew-with-daikon-and-egg-z-cXoH4acvI
+    author: Nicholas Ng
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1761064392867-9001ed23a8a8
+    what: Oden with daikon, konjac, egg and skewer in a ceramic bowl
+  preset:store-sandwich:
+    name: 鸡胸肉三明治+圣女果
+    page: https://unsplash.com/photos/chicken-salad-sandwich-with-lettuce-on-white-bread-BmP0dv6WfSo
+    author: Dillon Lobo
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1754652327590-634bfebc7cf0
+    what: Chicken-salad sandwich halves with lettuce on a plain peach background
+  preset:store-sweet-potato:
+    name: 烤红薯+卤蛋+牛奶
+    page: https://unsplash.com/photos/a-close-up-of-some-food-on-a-piece-of-tin-foil-43U-vt3dwYg
+    author: Dong Cheng
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1639922414789-74610d7385ea
+    what: Street-style roasted sweet potatoes on foil
+  preset:home-oats:
+    name: 燕麦鸡蛋早餐
+    page: https://unsplash.com/photos/dSTuGblp7-0
+    author: Ekin Deniz Çoban
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1685600049052-0e0c079e9cf9
+    what: Bowl of oatmeal topped with seeds, spoon, on parchment
+  preset:home-salmon:
+    name: 香煎三文鱼+糙米+芦笋
+    page: https://unsplash.com/photos/q8NvIxPYvR8
+    author: Solstice Hannan
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1570645314284-8b28f8fac62e
+    what: Seared salmon fillet with asparagus and rice on a white plate
+  preset:home-tofu:
+    name: 麻婆豆腐+清炒菠菜+米饭
+    page: https://unsplash.com/photos/mapo-tofu-and-cucumber-salad-lunch-U3-UXOUds9s
+    author: Zoshua Colah
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1788537330018-5bdc6ae1ff4c
+    what: 'Top-down: mapo tofu with bok choy, plus a smashed cucumber salad, on wood'
+  food:rice:
+    name: 米饭
+    page: https://unsplash.com/photos/a-bowl-of-rice-on-a-white-background-3zplOwmV6v0
+    author: Mehmet Keskin
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1704916029292-ec7b5976204c
+    what: Bowl of cooked white rice on white, top-down
+  food:brown-rice:
+    name: 糙米饭
+    page: https://unsplash.com/photos/a-close-up-of-a-pile-of-brown-rice-tyVcPQfncrg
+    author: Utsman Media
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1561767782-d8e3aa77ef77
+    what: Close-up of raw brown rice grains
+  food:oats:
+    name: 燕麦片
+    page: https://unsplash.com/photos/ThMhV-RaQ24
+    author: Xhiliana
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1722882270575-f437c338a4de
+    what: Close-up of rolled oats
+  food:wholewheat-bread:
+    name: 全麦面包
+    page: https://unsplash.com/photos/sliced-breads-on-white-surface-WHJTaLqonkU
+    author: Louise Lyshøj
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1534620808146-d33bb39128b2
+    what: Sliced dark wholegrain loaf on white
+  food:sweet-potato:
+    name: 红薯
+    page: https://unsplash.com/photos/a-pile-of-sweet-potatoes-in-a-basket-eB2X4DnIk4c
+    author: Yen Vu
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1744659749700-c4213f840355
+    what: Pile of raw sweet potatoes in a basket
+  food:corn:
+    name: 玉米
+    page: https://unsplash.com/photos/three-ears-of-fresh-corn-on-a-wooden-surface-PIhPkdnYpf0
+    author: Mustafa akın
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1760361571822-1984e9a5887d
+    what: Three husked ears of corn on wood
+  food:noodles:
+    name: 面条
+    page: https://unsplash.com/photos/a-close-up-of-a-bunch-of-noodles-L7POzOAoaQY
+    author: Jakub Dziubak
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1633352615955-f0c99e8b7e5a
+    what: Close-up of fresh raw wheat noodles
+  food:egg:
+    name: 鸡蛋
+    page: https://unsplash.com/photos/brown-egg-on-white-paper-towel-Jc2JGFFsfNI
+    author: Morgane Perraud
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1586802990181-a5771596eaea
+    what: Brown eggs in a paper carton, soft light
+  food:chicken-breast:
+    name: 鸡胸肉
+    page: https://unsplash.com/photos/two-raw-chicken-breasts-in-a-black-bowl-9ZrWR8R961U
+    author: Philippe Zuber
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1633096013004-e2cb4023b560
+    what: Two raw chicken breasts in a black bowl on light marble, top-down
+  food:beef-lean:
+    name: 瘦牛肉
+    page: https://unsplash.com/photos/AQ_BdsvLgqA
+    author: Eiliv Aceron
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1613454320437-0c228c8b1723
+    what: Raw lean beef steak on a board with peppercorns and rosemary
+  food:salmon-raw:
+    name: 三文鱼
+    page: https://unsplash.com/photos/sliced-fish-meat-on-white-surface-dKhkCiD4zEQ
+    author: Abstral Official
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1599084993091-1cb5c0721cc6
+    what: One raw salmon portion on plain white
+  food:shrimp:
+    name: 虾
+    page: https://unsplash.com/photos/cooked-shrimp-platter-hEKN_m0qGMA
+    author: Maria Labanda
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1559737558-2f5a35f4523b
+    what: Cooked whole prawns on a white plate
+  food:tofu-firm:
+    name: 老豆腐
+    page: https://unsplash.com/photos/SGSJOJcEIL8
+    author: Kamala Bright
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1722635940350-d1b2e5129379
+    what: Pile of tofu cubes on a cutting board
+  food:milk:
+    name: 牛奶
+    page: https://unsplash.com/photos/person-pours-milk-into-glass-_8bnn1GqX70
+    author: Eiliv Aceron
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1550583724-b2692b85b150
+    what: Milk poured from a jug into a glass
+  food:greek-yogurt:
+    name: 希腊酸奶
+    page: https://unsplash.com/photos/a-bowl-of-yogurt-with-a-spoon-in-it-NFHeBysjCTI
+    author: micheile henderson
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1571212515416-fef01fc43637
+    what: Thick plain yogurt in a bowl with a mint sprig, top-down
+  food:broccoli:
+    name: 西兰花
+    page: https://unsplash.com/photos/a-close-up-of-broccoli-on-a-white-background-TL6bTnQWMbk
+    author: Katherine Jenswold
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1685504445355-0e7bdf90d415
+    what: Fresh broccoli on white
+  food:spinach:
+    name: 菠菜
+    page: https://unsplash.com/photos/fresh-green-spinach-leaves-6AAptb2kBak
+    author: Shutter Sphere Collective
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1574316071802-0d684efa7bf5
+    what: Pile of fresh spinach leaves
+  food:tomato:
+    name: 番茄
+    page: https://unsplash.com/photos/red-tomato-on-white-surface-sOuCfIuAJIY
+    author: Cobus Redelinghuys
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1630223697313-a6f764e12109
+    what: Vine tomatoes on white
+  food:banana:
+    name: 香蕉
+    page: https://unsplash.com/photos/yellow-banana-on-white-background-Kl3467edwsE
+    author: Mockup Graphics
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1587132137056-bfbf0166836e
+    what: Single banana on white
+  food:apple:
+    name: 苹果
+    page: https://unsplash.com/photos/red-apple-on-white-background-rxN2MRdFJVg
+    author: Amit Lahav
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1619546813926-a78fa6372cd2
+    what: Red apple on white
+  food:blueberry:
+    name: 蓝莓
+    page: https://unsplash.com/photos/blueberries-on-white-ceramic-container-4qujjbj3srs
+    author: Joanna Kosinska
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1498557850523-fd3d118b962e
+    what: Blueberries spilling from a small white bowl
+  food:almond:
+    name: 杏仁
+    page: https://unsplash.com/photos/brown-almond-nuts-on-white-background-hw8vOPAIZgk
+    author: Mockup Graphics
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1615485737457-f07082c77813
+    what: Almonds scattered on white
+  food:avocado:
+    name: 牛油果
+    page: https://unsplash.com/photos/sliced-avocado-EMX1eJ1BcgU
+    author: Thought Catalog
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1519162808019-7de1683fa2ad
+    what: Two avocado halves on white
+  food:whey:
+    name: 乳清蛋白粉
+    page: https://unsplash.com/photos/a-scoop-of-powder-sitting-on-top-of-a-table-MUlIfSNODXE
+    author: Alex Saks
+    license: Unsplash License
+    url: https://images.unsplash.com/photo-1693996046865-19217d179161
+    what: Scoop spilling protein powder on beige, no packaging

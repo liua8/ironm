@@ -64,6 +64,7 @@ class State(BaseModel):
     items: list[Item]
     seen: int = 0  # 用户在对话里看过的最新版本
     choices: dict[str, Choice] = Field(default_factory=dict)  # 每条待确认调整的选择
+    report_seen: date | None = None  # 点掉的是哪一周的周报（那周的周一，§147）
     review: Review | None = None  # 今天的管家复盘（§85）
     stage_day: date | None = None  # 上次 4 周阶段小结是哪天（§89）
     week_day: date | None = None  # 上次每周复查是哪天（§163：每周叫醒管家看一次这周）
@@ -705,6 +706,7 @@ async def _evaluate(
         return old, []
     state = State(version=version, day=today, at=datetime.now(UTC), reason=reason, items=items,
                   seen=old.seen if old else 0, choices=old.choices if old else {},
+                  report_seen=old.report_seen if old else None,
                   review=review, stage_day=old.stage_day if old else None,
                   stage_text=old.stage_text if old else "", week_day=old.week_day if old else None,
                   targets=old.targets if old else {})  # fmt: skip
@@ -819,6 +821,16 @@ async def decide(
     """记下用户对一条待确认调整的选择，并写进调整经历；没有这条时返回 None。"""
     async with state_lock(user_id):
         return await _decide(store, user_id, key, decision, today or date.today())
+
+
+async def mark_report_seen(store: CoachStore, user_id: str, monday: date) -> bool:
+    """对话页的周报消息点掉了（§147）：记下是哪一周的，这周不再出；还没有方案时返回 False。"""
+    async with state_lock(user_id):
+        state = await store.get(user_id)
+        if state is None:
+            return False
+        await store.save(user_id, state.model_copy(update={"report_seen": monday}), [])
+        return True
 
 
 async def _decide(

@@ -20,7 +20,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ironm_agent import weather
 from ironm_agent.exercises import library
-from ironm_agent.llm import TurnLLM, load_models
 from ironm_agent.meals import (
     MAX_PHOTO_BYTES,
     MEAL_KINDS,
@@ -42,6 +41,7 @@ from ironm_agent.metrics import GOALS
 from ironm_agent.plan_edit import apply_today, with_today
 from ironm_agent.protools.muscle_map import muscle_map
 from ironm_agent.training import TrainingStore, week_start
+from ironm_agent.user_models import OWN_FAILED
 
 _log = logging.getLogger("ironm_agent.web_more")
 
@@ -55,6 +55,27 @@ def _verify() -> Any:
     from mirobody.server.auth import verify_token
 
     return verify_token
+
+
+async def need_llm(user_id: str) -> Any:
+    """要调模型的接口用：用这个人自己填的模型（§167，没有默认模型）。
+    没填回 428 和一句"先填你自己的模型"（页面据此给"模型和 API"的入口）；读不到设置回 503。"""
+    from ironm_agent import user_models
+
+    try:
+        llm = await user_models.pick(user_id, user_model_store())
+    except Exception as e:
+        _log.warning("user model unavailable: error_type=%s", type(e).__name__)
+        raise HTTPException(503, "读不到你的模型设置，请稍后再试") from e
+    if llm is None:
+        raise HTTPException(428, user_models.NO_MODEL)
+    return llm
+
+
+def user_model_store() -> Any:
+    from ironm_agent.user_models import default_models
+
+    return default_models()
 
 
 def _web() -> Any:
@@ -521,9 +542,10 @@ async def add_meal(
         if data
         else None
     )
-    meal = await estimate(TurnLLM(load_models(), os.environ), said, meal_kind, image)
+    llm = await need_llm(user_id)  # 用他自己的模型（§167）
+    meal = await estimate(llm, said, meal_kind, image)
     if meal is None:
-        raise HTTPException(503, "这次没能估算，请稍后再试，或者换一张更清楚的照片")
+        raise HTTPException(503, OWN_FAILED)
     _log.info("meal added: photo=%s", data is not None)
     return await _save_meal(store, user_id, meal, data, mime)
 
@@ -628,9 +650,10 @@ async def recommend_meal(
         limits=limits,
         trained_today=trained,
     )
-    rec, problem = await recommend(TurnLLM(load_models(), os.environ), ctx)
+    llm = await need_llm(user_id)  # 用他自己的模型（§167）
+    rec, problem = await recommend(llm, ctx)
     if rec is None:
-        raise HTTPException(503, "这次没能生成推荐，请稍后再试")
+        raise HTTPException(503, OWN_FAILED)
     rest = ctx.remaining()
     return {
         "recommendation": rec.model_dump(),
@@ -683,7 +706,6 @@ def make_agent(training: TrainingStore, memory: MemoryStore) -> Any:
 
 
 # ---- 触发型调整（spec [2026-10-23] §18 需求 5）---------------------------------------------------
-
 
 
 def day_store() -> Any:
@@ -762,9 +784,6 @@ async def _checkup_proposal(user_id: str, training: TrainingStore) -> dict[str, 
         }
     return {"status": "ok", "tips": [d.why], "answer": f"{d.title}。{d.why}", "draft": draft.json(),
             "changed_days": 0, "warning": ""}  # fmt: skip
-
-
-
 
 
 # ---- 两周饮食复盘（spec [2026-10-23] §18 需求 2）------------------------------------------------
@@ -900,8 +919,12 @@ async def illness_check(
         raise HTTPException(404, "这条记录不存在")
     ep, _ = answer(ep, body.answer, today)
     await illness.save(user_id, ep)
-    reply = {"resolved": "好了就好", "better": "好一些了就好", "unwell": "知道了，多休息"}[body.answer]
-    message = "\n".join(x for x in (f"{reply}，管家会按这个重看今天怎么练。", doctor(ep, today)) if x)
+    reply = {"resolved": "好了就好", "better": "好一些了就好", "unwell": "知道了，多休息"}[
+        body.answer
+    ]
+    message = "\n".join(
+        x for x in (f"{reply}，管家会按这个重看今天怎么练。", doctor(ep, today)) if x
+    )
     rerun_later(user_id, coach_deps(), "回答了好些了吗")
     return {"message": message, "status": ep.status}
 
@@ -932,7 +955,9 @@ async def get_today(
     from ironm_agent.plan_layers import load as load_temps
     from ironm_agent.plan_layers import plan_on
 
-    if (plan_on(stored.plan, await load_temps(training, user_id), today) or stored.plan).session_on(today) is None:
+    if (plan_on(stored.plan, await load_temps(training, user_id), today) or stored.plan).session_on(
+        today
+    ) is None:
         return {"status": "rest"}  # 临时调整把今天也算上（§163）
     said, _ = await _day_said(day, user_id, today, tired=tired, minutes=minutes)
     if tired or minutes is not None:  # 首页点了：管家重看今天（§163），不按规则当场减半、删减
@@ -1049,10 +1074,14 @@ async def apply_goal(
         if new_goal is not None:
             await goals.set(user_id, new_goal)
         if memory is not None and before.get("memory"):
-            await memory.apply(user_id, [Change("status", id=x, status="superseded") for x, _ in before["memory"]])
+            await memory.apply(
+                user_id, [Change("status", id=x, status="superseded") for x, _ in before["memory"]]
+            )
     except Exception:
         try:
-            await restore_goal(user_id, {"goal": after, "before": before}, goals, memory, wake=False)
+            await restore_goal(
+                user_id, {"goal": after, "before": before}, goals, memory, wake=False
+            )
         except Exception as e:
             _log.warning("goal restore failed: error_type=%s", type(e).__name__)
         raise
@@ -1090,7 +1119,9 @@ async def restore_goal(
         else:
             await goals.clear(user_id)
     if memory is not None and before.get("memory"):
-        await memory.apply(user_id, [Change("status", id=x, status=was) for x, was in before["memory"]])
+        await memory.apply(
+            user_id, [Change("status", id=x, status=was) for x, was in before["memory"]]
+        )
     if wake:
         coach_later(user_id, "撤销改目标")
 
@@ -1187,7 +1218,9 @@ def plan_change_later(user_id: str, draft: dict[str, Any], *, undone: bool = Fal
     """确认或撤销按操作改的计划后，在后台记进管家的调整经历（spec [2026-10-23] §45）。"""
     from ironm_agent.coach_state import record_plan_later
 
-    if draft.get("kind") not in ("plan", "temp") or not (draft.get("ops") or (draft.get("temp") or {}).get("ops")):
+    if draft.get("kind") not in ("plan", "temp") or not (
+        draft.get("ops") or (draft.get("temp") or {}).get("ops")
+    ):
         return
     try:
         record_plan_later(coach_deps().store, user_id, draft, undone=undone)
@@ -1222,14 +1255,17 @@ def body_later(user_id: str, text: str, day: date, where: str) -> None:
 
     from ironm_agent.body_state import read_text
     from ironm_agent.coach_state import _BACKGROUND
-    from ironm_agent.llm import TurnLLM, load_models
+    from ironm_agent.user_models import pick_quiet
 
     if not str(text or "").strip():
         return
 
     async def go() -> None:
         try:
-            got = await read_text(user_id, text, day, where, coach_deps(), TurnLLM(load_models(), os.environ))
+            llm = await pick_quiet(user_id)  # 用他自己的模型；没填就不读（§167）
+            if llm is None:
+                return
+            got = await read_text(user_id, text, day, where, coach_deps(), llm)
             if got is not None and (got.pain or got.illness or got.day):
                 coach_later(user_id, f"{where}说了身体的事")
         except Exception as e:
@@ -1582,7 +1618,9 @@ async def get_week(
     plan = with_today(stored.plan, edits, today) if stored else None  # 今天改过的按改过的（§106）
     first = stored.plan.session_on(today) if stored else None
     edits = apply_today(first, edits)[1] if first is not None else []  # 只列还套得上的
-    days = week_plan(plan, wx.days if wx else (), today, now, adjust=False)  # 只要天气，不按天气改版本（§163）
+    days = week_plan(
+        plan, wx.days if wx else (), today, now, adjust=False
+    )  # 只要天气，不按天气改版本（§163）
     from dataclasses import replace as replaced
 
     from ironm_agent.plan_layers import load as load_temps
@@ -1590,7 +1628,10 @@ async def get_week(
 
     temps = await load_temps(training, user_id)
     if temps and plan is not None:  # 临时调整那几天按调整后的（§163）
-        days = [replaced(p, session=(plan_on(plan, temps, p.day) or plan).session_on(p.day)) for p in days]
+        days = [
+            replaced(p, session=(plan_on(plan, temps, p.day) or plan).session_on(p.day))
+            for p in days
+        ]
     weight = await _weight_now(user_id) if plan is not None else None
 
     def wx_json(p: Any) -> dict[str, Any] | None:

@@ -308,6 +308,9 @@ def _slot_json(ref: SlotRef | None, meal: Meal | None) -> dict[str, Any] | None:
     return {"type": ref.type, "id": ref.id, "servings": ref.servings, "missing": meal is None,
             "name": meal.name if meal else "（已经没有了）",
             "kcal": meal.macros.kcal if meal else 0, "protein_g": meal.macros.protein_g if meal else 0,
+            "carbs_g": meal.macros.carbs_g if meal else 0, "fat_g": meal.macros.fat_g if meal else 0,
+            # 逐样吃什么、多少克、多少千卡：首页·干饭列数量用（§125）
+            "foods": [{"name": f.name, "grams": f.grams, "kcal": f.macros.kcal} for f in meal.foods] if meal else [],
             "image": meal_image(meal) if meal else None}  # fmt: skip
 
 
@@ -412,9 +415,17 @@ async def log_diet_plan(
     return await _save_meal(meals, user_id, meal.model_copy(update={"note": "照计划记"}))
 
 
+@router.get("/iron/api/train-images")
+async def get_train_images(user_id: str = Depends(_verify())) -> dict[str, Any]:
+    """每个部位的训练照片和署名（§131）：首页"今日委托"的大图。"""
+    from ironm_agent.food_images import train_images
+
+    return {"images": train_images()}
+
+
 @router.get("/iron/api/food-images/{name}")
 async def get_food_image(name: str) -> Any:
-    """饮食配图（§119）：公开内容（来自 Wikimedia Commons，许可允许再用），<img> 带不了登录凭证，不验证登录。"""
+    """饮食和训练配图（§119、§131）：公开内容（Wikimedia Commons、Unsplash、Pexels，许可允许再用），<img> 带不了登录凭证，不验证登录。"""
     from fastapi.responses import FileResponse
 
     from ironm_agent.food_images import image_path

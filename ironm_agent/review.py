@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
 import uuid
 from collections.abc import Sequence
@@ -36,9 +35,10 @@ from ironm_agent.coach_state import (
 from ironm_agent.expect import RESULT_WORDS, judge, measure, parse_check, stage_due, stage_facts
 from ironm_agent.insights import compare, situations
 from ironm_agent.kb import default_kb
-from ironm_agent.llm import LLM, TurnLLM, load_models, parse_json
+from ironm_agent.llm import LLM, parse_json
 from ironm_agent.metrics import KcalAdjust, safe_floor
 from ironm_agent.training import REST_WORDS, plan_content, week_start, weekday_name
+from ironm_agent.user_models import pick_quiet
 
 _log = logging.getLogger("ironm_agent.review")
 
@@ -666,7 +666,9 @@ async def _save_locked(user_id: str, deps: Deps, review: Review, today: date) ->
 async def daily(user_id: str, deps: Deps) -> None:
     """每天第一次打开 App 或提问时跑一次（今天做过就不再跑）；出错只记错误类型。"""
     try:
-        await run(user_id, deps, TurnLLM(load_models(), os.environ))
+        if (llm := await pick_quiet(user_id)) is None:  # 用他自己的模型；没填今天就不看（§167）
+            return
+        await run(user_id, deps, llm)
     except Exception as e:
         _log.warning("daily review failed: error_type=%s", type(e).__name__)
 
@@ -680,7 +682,9 @@ def rerun_later(user_id: str, deps: Deps, reason: str) -> None:
 
     async def go() -> None:
         try:
-            await run(user_id, deps, TurnLLM(load_models(), os.environ), force=True)
+            if (llm := await pick_quiet(user_id)) is None:  # 没填自己的模型就不重看（§167）
+                return
+            await run(user_id, deps, llm, force=True)
         except Exception as e:
             _log.warning("review rerun failed: error_type=%s reason=%s", type(e).__name__, reason[:20])
 
@@ -694,7 +698,9 @@ def retry_later(user_id: str, deps: Deps) -> None:
 
     async def go() -> None:
         try:
-            await run(user_id, deps, TurnLLM(load_models(), os.environ), retry=True)
+            if (llm := await pick_quiet(user_id)) is None:
+                return
+            await run(user_id, deps, llm, retry=True)
         except Exception as e:
             _log.warning("review retry failed: error_type=%s", type(e).__name__)
 

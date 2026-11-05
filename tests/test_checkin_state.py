@@ -146,6 +146,8 @@ def test_page_has_state_picker_rest_sheet_and_trajectory() -> None:
     assert "...st.read()" in JS and JS.count("stateBox()") >= 3  # 打卡和记录器结束都能记状态
     assert "rest: why" in JS and "今天没练？" in JS
     assert 'tile("check", "练完打卡", "没练也能记", checkin)' in JS
-    log = JS[JS.index("async function trainLog") : JS.index("// ---- 身体")]
+    log = JS[
+        JS.index("async function recordPage") : JS.index("// ---- 身体")
+    ]  # §137 轨迹并进战绩一页
     assert "cal.streak_days" in log and "cal.month_minutes" in log and "x.rest" in log
     assert "cal.sets?.[iso]" in JS and "rest_days" in JS  # 月历按组数分深浅、没练的日子另一种颜色

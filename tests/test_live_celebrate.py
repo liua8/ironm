@@ -38,7 +38,8 @@ def test_best_and_records_use_the_estimated_max() -> None:
 def test_finish_returns_records_and_the_week(monkeypatch: pytest.MonkeyPatch) -> None:
     c, _, _ = client(monkeypatch, plan=PLAN, logs=(BEFORE,))
     live = c.post("/iron/api/live/start", json={"exercises": ["杠铃卧推"]}).json()["live"]
-    [item] = live["items"]
+    item = live["items"][0]  # §130：从动作开始也带上今天的计划，点的那个排第一
+    assert item["exercise"] == "杠铃卧推"
     assert item["best"] == 76.0  # 开始时带上以前最好的一组
     item["sets"][0] |= {"weight_kg": 62.5, "reps": 8}
     done(item, 0)

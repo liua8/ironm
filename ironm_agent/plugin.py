@@ -85,7 +85,7 @@ from ironm_agent.illness import (
 from ironm_agent.illness import summary_line as illness_line
 from ironm_agent.indicators import named_indicators, record_kinds
 from ironm_agent.kb import KnowledgeBase, default_kb
-from ironm_agent.llm import ModelsConfig, TurnLLM, load_models
+from ironm_agent.llm import ModelsConfig, ModelUnavailable, TurnLLM, load_models
 from ironm_agent.memory import (
     COACH,
     USER,
@@ -195,6 +195,19 @@ _DAILY: dict[str, date] = {}  # 每个人今天查过"该问的"没有（§73，
 SYNC_WAIT_S = 20  # 作答前最多等上一轮的档案与记忆更新多少秒（spec [2026-10-23] §51）
 
 FAILED = "IronM 这次没能回答，请稍后再试。"
+# 每个人用自己的模型（§167）：没填时普通问题这样回；急症、红旗照样按规则给固定的安全回答
+NO_MODEL_CHAT = "先在「我 → 模型和 API」填你自己的模型，IronM 才能回答。记训练、看计划不用填也能用。"
+SETTINGS_DOWN = "读不到你的模型设置，请稍后再试。"
+
+
+class _NoModel:
+    """没有可用的模型（§167）：调用一律失败，安全前置退回固定回答；其余这一轮不作答。"""
+
+    def __init__(self) -> None:
+        self.calls: list[Any] = []
+
+    async def chat(self, *_: Any, **__: Any) -> Any:
+        raise ModelUnavailable("no_model")
 CONFLICT_ASK = (
     "我没法确定你想怎么改。请分开说：先说一条，确认后再说下一条。"  # 改计划的要求互相矛盾时（§45）
 )
@@ -515,6 +528,8 @@ class IronMAgent:
         self._sync_wait = SYNC_WAIT_S
         self._health = health
         self._kb = kb or default_kb()
+        # 显式给了模型配置（评测、回放的本机直跑）就用它；网页和 App 的问答用每个人自己填的（§167）
+        self._fixed = models is not None
         self._models = models or load_models()
         self._environ = environ if environ is not None else os.environ
 
@@ -533,6 +548,23 @@ class IronMAgent:
             if isinstance(e, Mapping) and e.get("api_key") == ours
         }
         return same or dict.fromkeys(models, "iron-m")
+
+    async def _own_llm(self, user_id: str) -> TurnLLM | None:
+        """这个人自己填的模型（§167，没有默认模型）；没填返回 None，读不到设置时抛出。"""
+        if self._fixed:
+            return TurnLLM(self._models, self._environ)
+        from ironm_agent import user_models
+
+        got = await user_models.own_config(user_id)
+        return None if got is None else TurnLLM(*got)
+
+    async def _quiet_llm(self, user_id: str) -> TurnLLM | None:
+        """后台的事（摘要、记忆、读身体情况）用：没填或读不到设置都返回 None，这一步就不做（§167）。"""
+        try:
+            return await self._own_llm(user_id)
+        except Exception as e:
+            _log.warning("user model unavailable: error_type=%s", type(e).__name__)
+            return None
 
     async def _read_snapshot(self, user_id: str) -> Snapshot:
         """这一轮读一次这个人的数据（共享档案用）；读不到时当作没有数据，不影响作答。"""
@@ -699,7 +731,8 @@ class IronMAgent:
             if not lines:
                 return
             items = await memory.items(user_id)
-            llm = TurnLLM(self._models, self._environ)
+            if (llm := await self._quiet_llm(user_id)) is None:  # 用他自己的模型，没填不写摘要（§167）
+                return
             text, follow = await summarize(llm, lines, date.today(), items)
             if not text:
                 return
@@ -895,8 +928,9 @@ class IronMAgent:
                                  memory=self._memory_store())  # fmt: skip
         ill = illness_line(run.get("_ill") or [], date.today(), within=14)
         lines = [*([f"前面：他最近{ill}"] if ill else []), *context]  # 正在生病：他说"好多了"才对得上
-        got = await body_state.read_text(user_id, text, date.today(), "在对话里", stores,
-                                         TurnLLM(self._models, self._environ), context=lines)  # fmt: skip
+        if (llm := await self._quiet_llm(user_id)) is None:  # 用他自己的模型，没填不读（§167）
+            return
+        got = await body_state.read_text(user_id, text, date.today(), "在对话里", stores, llm, context=lines)
         if got is not None and (got.day or got.pain or got.illness):
             await self._coach(user_id, "说了今天的状态", True)  # 首页今天的版本跟着变
 
@@ -1016,7 +1050,8 @@ class IronMAgent:
                 if await store.paused(user_id):
                     return
                 items = await store.items(user_id)
-                llm = TurnLLM(self._models, self._environ)
+                if (llm := await self._quiet_llm(user_id)) is None:  # 用他自己的模型，没填不提取（§167）
+                    return
                 out = await extract(llm, items, text, answer, context, held)
                 await store.apply(user_id, out.changes)  # 生病记录不再从记忆里补记（§163）
         except Exception as e:  # 提取失败不影响已经发出的回答
@@ -1157,7 +1192,17 @@ class IronMAgent:
         run: dict[str, Any] = {"turn": uuid.uuid4().hex[:12], "path": "error", "agent": "single"}
         start = time.perf_counter()
         run["_t0"] = start
-        llm = TurnLLM(self._models, self._environ)
+        llm: Any = _NoModel()
+        problem = ""  # 没有可用的模型时这一轮怎么说（§167）
+        try:
+            own = await self._own_llm(user_id)
+            if own is None:
+                problem = NO_MODEL_CHAT
+            else:
+                llm = own
+        except Exception as e:  # 读不到他的模型设置：如实说，不当成没填，也不换成别的模型
+            _log.warning("user model unavailable: error_type=%s", type(e).__name__)
+            problem = SETTINGS_DOWN
         said: dict[str, Any] = {}  # 这一轮的回答（交给后台提取记忆，不进日志）
         # 这一轮的编号：页面上点"有用 / 没用"时带回来，评价记到这一轮的轨迹上（spec [2026-10-23] §31）
         yield {"type": "tool_call", "id": TURN_ID, "name": "", "args": {"turn": run["turn"]}}
@@ -1167,6 +1212,10 @@ class IronMAgent:
             if not text:
                 run["path"] = "no_text"
                 yield notice(NO_TEXT)
+                return
+            if problem and assess(text).level == "none":  # 急症、红旗照样走下去，给规则里的固定安全回答
+                run["path"] = "no_model"
+                yield text_block(problem)
                 return
             async for block in self._turn(user_id, session_id, text, llm, run, said, file_list):
                 yield block

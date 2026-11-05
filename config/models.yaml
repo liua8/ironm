@@ -31,6 +31,13 @@ stages:
     extra_body: {thinking: {type: disabled}}
     timeout_s: 45
     max_retries: 1
+  vision: # 认器械看图（§149）；不写时沿用 expert。deepseek-flash 能看图（11-03 实测）
+    base_url: https://api.deepseek.com
+    model: deepseek-flash
+    api_key_env: DEEPSEEK_API_KEY
+    extra_body: {thinking: {type: disabled}}
+    timeout_s: 30
+    max_retries: 1
   memory: # 记忆提取（回答发出后在后台进行，不占这一轮的次数）
     base_url: https://api.deepseek.com
     model: deepseek-flash

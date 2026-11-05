@@ -13,14 +13,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import weakref
 from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
 from ironm_agent.coach_state import Deps, Inputs, State, _gather, evaluate, loop_lock, state_lock
-from ironm_agent.llm import LLM, TurnLLM, load_models
+from ironm_agent.llm import LLM
 from ironm_agent.progression import (
     Decided,
     Target,
@@ -33,6 +32,7 @@ from ironm_agent.progression import (
     plan_mark,
 )
 from ironm_agent.training import PlanItem, SetDone, WorkoutLog
+from ironm_agent.user_models import pick_quiet
 
 _log = logging.getLogger("ironm_agent.next_targets")
 
@@ -231,7 +231,9 @@ async def _save(
 async def after_log(user_id: str, deps: Deps, log: WorkoutLog) -> None:
     """记下一次训练之后在后台跑；出错只记错误类型。"""
     try:
-        await run(user_id, deps, TurnLLM(load_models(), os.environ), log)
+        if (llm := await pick_quiet(user_id)) is None:  # 用他自己的模型；没填就不定下次（§167）
+            return
+        await run(user_id, deps, llm, log)
     except Exception as e:
         _log.warning("next targets failed: error_type=%s", type(e).__name__)
 

@@ -9,3 +9,8 @@ config/local.yaml
 
 evals/replay/reports/
 evals/sim/reports/
+
+# 手机 App（§164）
+app/node_modules/
+app/.expo/
+app/dist/

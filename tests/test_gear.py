@@ -127,6 +127,8 @@ def test_put_gear_replaces_the_old_memory(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_page_has_card_and_profile_entry_but_no_picker_at_training() -> None:
     assert "function gearCard" in JS and "gearCard(gear)" in JS and "gearSection()" in JS
-    assert "以后再说" in JS and "跟管家说" in JS and 'method: "PUT"' in JS
+    assert (
+        "以后再说" in JS and "跟 IronM 说" in JS and 'method: "PUT"' in JS
+    )  # §121 起管家改叫 IronM
     live = JS[JS.index("async function startLive") : JS.index("async function startLive") + 1500]
     assert "gear" not in live and "在哪练" not in live  # 开始训练不选场所

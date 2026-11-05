@@ -1,3 +1,4 @@
+
 """去掉触发式固定回答（spec [2026-10-23] §86）：判定仍由代码做，话交给模型说；
 必须说到的没说到、给了训练安排或模型失败时，才退回原来的固定回答。"""
 
@@ -14,6 +15,7 @@ from ironm_agent.llm import Reply
 from ironm_agent.metrics import Readings
 from ironm_agent.plugin import HELP_ASK
 from ironm_agent.spoken import NO_TRAINING, missing, say, urgent_needs
+from tests.conftest import model_is
 from tests.fakes import FakeLLM, acting, jsonr
 from tests.test_plugin import text_of
 from tests.test_single_agent import NEW, single
@@ -148,7 +150,7 @@ def test_illness_button_reply_no_longer_says_how_to_train(monkeypatch: Any) -> N
     from tests.test_illness import client, ep
 
     monkeypatch.setattr(review_mod, "rerun_later", lambda *a: None)
-    monkeypatch.setattr(spoken, "default_llm", lambda: FakeLLM(plain_reply("不该被调用")))
+    model_is(monkeypatch, FakeLLM(plain_reply("不该被调用")))
     ill = IllnessBook()
     e = ep()
     asyncio.run(ill.save("42", e))

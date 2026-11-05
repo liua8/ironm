@@ -188,9 +188,6 @@ images:
     - {"file": "lying-leg-raise-2.png", "source": "https://wger.de/media/exercise-images/125/Leg-raises-1.png", "page": "https://wger.de/exercise/377/view/", "license": "CC-BY-SA 3", "license_url": "https://creativecommons.org/licenses/by-sa/3.0/deed.en", "author": "Everkinetic", "author_url": ""}
   russian-twist:
     - {"file": "russian-twist-1.png", "source": "https://wger.de/media/exercise-images/1193/70ca5d80-3847-4a8c-8882-c6e9e485e29e.png", "page": "https://wger.de/exercise/1193/view/", "license": "CC-BY-SA 4", "license_url": "https://creativecommons.org/licenses/by-sa/4.0/deed.en", "author": "lion", "author_url": ""}
-  ab-wheel:
-    - {"file": "ab-wheel-1.png", "source": "https://wger.de/media/exercise-images/1573/a9ab402b-61ef-4d60-b91a-df52bf7f41a9.jpg", "page": "https://wger.de/exercise/1573/view/", "license": "CC-BY-SA 4", "license_url": "https://creativecommons.org/licenses/by-sa/4.0/deed.en", "author": "wger.de 贡献者", "author_url": ""}
-    - {"file": "ab-wheel-2.png", "source": "https://wger.de/media/exercise-images/1573/662db55d-68d0-4297-8215-3dcf6c21c778.jpg", "page": "https://wger.de/exercise/1573/view/", "license": "CC-BY-SA 4", "license_url": "https://creativecommons.org/licenses/by-sa/4.0/deed.en", "author": "wger.de 贡献者", "author_url": ""}
   pallof-press:
     - {"file": "pallof-press-1.png", "source": "https://wger.de/media/exercise-images/1194/074e1766-4208-4a67-a211-9721772d99b0.png", "page": "https://wger.de/exercise/1194/view/", "license": "CC-BY-SA 4", "license_url": "https://creativecommons.org/licenses/by-sa/4.0/deed.en", "author": "prevail90", "author_url": ""}
   side-bend:

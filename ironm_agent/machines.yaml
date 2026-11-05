@@ -1,0 +1,310 @@
+# 认器械（spec [2026-11-03] §149）：常见器械的名字、练哪里、怎么调、要注意什么，和动作库里能用它练的动作。
+# group：gym 健身房器械 / free 自由重量和小器材 / cardio 有氧器械
+# moves：动作库（exercises.yaml）里的编号，第一个是主要动作（卡片配图用它的动图或图片）
+# 内容由 Claude 按常见器械说明整理，待审定。
+version: "0.1"
+review: claude_draft
+
+machines:
+  - id: leg-press-machine
+    name: 腿举机
+    aka: [倒蹬机, 斜板腿举]
+    group: gym
+    trains: 大腿前侧、臀部
+    setup: [靠背调到坐进去后膝盖能弯到 90 度左右, 双脚踩在踏板中间、与肩同宽, 先松开两侧的安全锁再推]
+    careful: [推到顶膝盖不要锁死, 下放时腰和屁股不离开靠垫]
+    moves: [leg-press]
+
+  - id: hack-squat-machine
+    name: 哈克深蹲机
+    aka: [哈克机]
+    group: gym
+    trains: 大腿前侧、臀部
+    setup: [肩垫压在肩膀上、背贴紧靠垫, 双脚站在踏板中间偏上, 站直后打开安全把手]
+    careful: [蹲到不疼的深度, 膝盖顺着脚尖方向]
+    moves: [hack-squat]
+
+  - id: smith-machine
+    name: 史密斯机
+    aka: [史密斯架, 固定杠铃架]
+    group: gym
+    trains: 腿、胸、肩（看做什么动作）
+    setup: [杠只能上下走，转动手腕就能挂上或解锁, 先把两边的安全挡块调到比最低位置稍高, 做深蹲时双脚站在杠稍前一点]
+    careful: [每组做完转动杠挂回挂钩再松手, 不熟悉时先用空杠]
+    moves: [smith-squat]
+
+  - id: power-rack
+    name: 深蹲架
+    aka: [力量架, 龙门深蹲架]
+    group: gym
+    trains: 全身（深蹲、卧推、推举）
+    setup: [挂钩调到肩膀稍低一点, 保护杆调到比你蹲到最低时的杠略低, 两边杠铃片配重一样、卡好卡扣]
+    careful: [重量大时一定放保护杆或找人保护]
+    moves: [back-squat, front-squat, overhead-press, bench-press]
+
+  - id: lat-pulldown-machine
+    name: 高位下拉器
+    aka: [下拉机]
+    group: gym
+    trains: 背部（背阔肌）、手臂
+    setup: [大腿压垫压住大腿、坐稳不被拉起来, 双手比肩略宽握横杆]
+    careful: [拉到下巴到胸口之间就行, 不要往后仰着拽]
+    moves: [lat-pulldown, single-arm-pulldown, straight-arm-pulldown]
+
+  - id: seated-row-machine
+    name: 坐姿划船器
+    aka: [低位划船, 拉背机]
+    group: gym
+    trains: 背部中间、手臂
+    setup: [双脚踩稳踏板、膝盖微弯, 握住把手坐直，手臂伸直时背不变圆]
+    careful: [靠手肘往后拉，不靠身体前后晃]
+    moves: [seated-cable-row]
+
+  - id: cable-machine
+    name: 龙门架
+    aka: [绳索器, 拉力器, 双向滑轮]
+    group: gym
+    trains: 全身（看换什么把手、滑轮放多高）
+    setup: [滑轮高度调到动作需要的位置（下压放高处、夹胸放肩高）, 换上需要的把手：直杆、绳子或单手把手]
+    careful: [重量片下放时控制住，别让它砸下去]
+    moves: [cable-crossover, rope-pushdown, cable-curl, cable-lateral-raise, pallof-press, straight-arm-pulldown]
+
+  - id: chest-press-machine
+    name: 坐姿推胸机
+    aka: [推胸器]
+    group: gym
+    trains: 胸部、手臂后侧
+    setup: [座椅调到把手和胸口中间齐平, 背贴紧靠垫]
+    careful: [推出去手肘不锁死, 肩膀往下沉、别耸肩]
+    moves: [machine-chest-press]
+
+  - id: pec-deck-machine
+    name: 蝴蝶机
+    aka: [夹胸机, 飞鸟机]
+    group: gym
+    trains: 胸部；反着坐练肩膀后侧
+    setup: [座椅调到手臂和肩膀差不多高, 正着坐练夹胸，面朝机器坐练反向飞鸟]
+    careful: [手臂微弯固定，不要用手推]
+    moves: [pec-deck, reverse-pec-deck]
+
+  - id: shoulder-press-machine
+    name: 坐姿推肩机
+    aka: [推肩器]
+    group: gym
+    trains: 肩膀、手臂后侧
+    setup: [座椅调到把手在肩膀高度, 背贴紧靠垫]
+    careful: [往上推时不要拱腰, 肩膀疼就减小幅度]
+    moves: [machine-shoulder-press]
+
+  - id: leg-extension-machine
+    name: 腿屈伸机
+    aka: [坐姿伸腿机]
+    group: gym
+    trains: 大腿前侧
+    setup: [膝盖和机器的转轴对齐, 小腿压垫放在脚踝上方]
+    careful: [抬到腿伸直停一下再慢慢放, 膝盖疼时减重量或缩小幅度]
+    moves: [leg-extension]
+
+  - id: leg-curl-machine
+    name: 腿弯举机
+    aka: [勾腿机, 俯卧腿弯举, 坐姿腿弯举]
+    group: gym
+    trains: 大腿后侧
+    setup: [有趴着做的和坐着做的两种, 膝盖和转轴对齐，压垫放在脚踝上方]
+    careful: [胯和屁股不离开垫子, 放回去要慢]
+    moves: [lying-leg-curl, seated-leg-curl]
+
+  - id: hip-machine
+    name: 髋外展机
+    aka: [夹腿机, 髋内收外展机]
+    group: gym
+    trains: 臀部外侧（往外推）、大腿内侧（往里夹）
+    setup: [靠垫放在膝盖外侧练外展，放在内侧练内收, 先把开合角度调到不疼的范围]
+    careful: [慢推慢回，不靠惯性弹]
+    moves: [hip-abduction]
+
+  - id: calf-raise-machine
+    name: 提踵机
+    aka: [坐姿提踵机, 小腿机]
+    group: gym
+    trains: 小腿
+    setup: [膝盖压垫压在大腿靠近膝盖处, 前脚掌踩在踏板边缘，脚跟悬空]
+    careful: [脚跟往下放到能感觉小腿拉开，再踮到最高]
+    moves: [seated-calf-raise, calf-raise]
+
+  - id: assisted-pullup-machine
+    name: 辅助引体向上机
+    aka: [助力引体机]
+    group: gym
+    trains: 背部、手臂
+    setup: [选辅助重量：数字越大帮你越多, 跪或站在踏板上再握把手]
+    careful: [先沉肩再拉，下放要慢]
+    moves: [assisted-pull-up, chin-up]
+
+  - id: roman-chair
+    name: 罗马椅
+    aka: [山羊挺身架, 背伸架]
+    group: gym
+    trains: 腰背、臀部
+    setup: [胯骨顶在垫子上缘，能自由弯腰, 脚后跟卡在脚垫下]
+    careful: [起身到身体成一条直线就停，不往后仰]
+    moves: [back-extension]
+
+  - id: tbar-row
+    name: T 杠划船架
+    aka: [T 杠]
+    group: gym
+    trains: 背部中间
+    setup: [站上踏板或把杠铃一头插进固定座, 屈髋上身前倾，背挺直]
+    careful: [腰背不舒服时换有胸垫的划船]
+    moves: [t-bar-row]
+
+  - id: dumbbell
+    name: 哑铃
+    group: free
+    trains: 全身
+    setup: [从轻的开始，做完一组还剩两三个的余力]
+    careful: [放回架子时别砸, 换重量前先看清左右一样重]
+    moves: [dumbbell-bench-press, goblet-squat, one-arm-row, dumbbell-shoulder-press, dumbbell-curl, romanian-deadlift]
+
+  - id: barbell
+    name: 杠铃
+    aka: [奥杆]
+    group: free
+    trains: 全身（深蹲、硬拉、卧推、推举、划船）
+    setup: [空杆一般 20 公斤，女士杆 15 公斤, 两边配重一样，卡好卡扣]
+    careful: [卧推、深蹲用深蹲架或卧推架，放好保护]
+    moves: [back-squat, deadlift, bench-press, overhead-press, barbell-row]
+
+  - id: kettlebell
+    name: 壶铃
+    group: free
+    trains: 臀腿、全身
+    setup: [从轻的开始，摇摆类先学会屈髋]
+    careful: [摇摆靠屁股往前顶，不靠手臂抡]
+    moves: [kettlebell-swing, goblet-squat, sumo-deadlift]
+
+  - id: bench
+    name: 训练凳
+    aka: [卧推凳, 可调节凳]
+    group: free
+    trains: 配合哑铃、杠铃练胸、肩、背
+    setup: [靠背能调平、上斜，上斜一般 30 度左右]
+    careful: [调好后检查插销卡紧]
+    moves: [dumbbell-bench-press, incline-dumbbell-press, chest-supported-row, bench-dip, step-up]
+
+  - id: pullup-bar
+    name: 单杠
+    aka: [引体向上架]
+    group: free
+    trains: 背部、手臂、核心
+    setup: [握距比肩略宽，拉不上去可以挂弹力带辅助]
+    careful: [下放到手臂伸直，不要突然松手跳下]
+    moves: [pull-up, chin-up, hanging-leg-raise, inverted-row]
+
+  - id: dip-bars
+    name: 双杠
+    aka: [臂屈伸架]
+    group: free
+    trains: 胸部下方、手臂后侧
+    setup: [双手撑稳，肩膀往下沉]
+    careful: [下放到肩膀不疼的深度就行]
+    moves: [parallel-dip]
+
+  - id: resistance-band
+    name: 弹力带
+    aka: [拉力带, 阻力带]
+    group: free
+    trains: 全身（多用来热身、练臀、练肩）
+    setup: [颜色不同松紧不同，从松的开始, 绑在门或柱子上前先拉一下确认牢固]
+    careful: [用前看看有没有裂口]
+    moves: [band-face-pull, band-row, band-lateral-walk, hamstring-band-stretch]
+
+  - id: ab-wheel-tool
+    name: 健腹轮
+    aka: [腹肌轮, 滚轮]
+    group: free
+    trains: 腹部
+    setup: [先跪着做，膝盖下垫个垫子]
+    careful: [推出去腰不能塌, 腰疼先别做]
+    moves: [ab-wheel]
+
+  - id: foam-roller
+    name: 泡沫轴
+    aka: [瑜伽柱, 放松棒]
+    group: free
+    trains: 练后放松
+    setup: [把要放松的部位压在轴上，用手脚控制力度]
+    careful: [不压骨头和关节, 很疼的地方慢慢来]
+    moves: [foam-roll-quads, foam-roll-calves]
+
+  # 原来器材榜里有、这里没有的（§161 并进来）
+  - id: jump-rope-tool
+    name: 跳绳
+    group: free
+    trains: 心肺、小腿
+    setup: [双脚踩住绳子中间，把手拉到胸口附近长度正好, 用手腕转绳，前脚掌轻跳]
+    careful: [在木地板或软垫上跳, 膝盖、脚踝疼时先换快走]
+    moves: [jump-rope]
+
+  - id: yoga-mat
+    name: 瑜伽垫
+    aka: [健身垫]
+    group: free
+    trains: 在家做核心、拉伸时垫着
+    setup: [铺在平整的地上，防滑的一面朝下]
+    careful: [太薄的垫子跪着做动作时膝盖下再垫一层]
+    moves: [plank, dead-bug, glute-bridge, hip-flexor-stretch]
+
+  - id: lifting-belt
+    name: 举重腰带
+    aka: [力量腰带]
+    group: free
+    trains: 大重量深蹲、硬拉时帮着撑住腰腹
+    setup: [系在肚脐附近，吸一口气把肚子往外顶着腰带]
+    careful: [新手和中小重量用不上，先学会自己收紧核心, 腰疼不是靠腰带解决的，先问医生或康复师]
+    moves: [back-squat, deadlift]
+
+  - id: suspension-trainer
+    name: TRX 悬挂带
+    aka: [悬挂训练带]
+    group: free
+    trains: 全身（用自己的体重练）
+    setup: [挂在门上或架子上，先用力拉一下确认挂牢, 身体越斜越难，越直越容易]
+    careful: [练之前检查挂点和带子有没有磨损]
+    moves: [inverted-row, push-up, reverse-lunge]
+
+  - id: treadmill
+    name: 跑步机
+    group: cardio
+    trains: 心肺、腿
+    setup: [夹好安全扣再开始, 从步行速度慢慢加]
+    careful: [别抓着扶手跑, 停之前先降到步行速度]
+    moves: [treadmill-run, brisk-walk]
+
+  - id: elliptical-machine
+    name: 椭圆机
+    aka: [太空漫步机, 交叉训练机]
+    group: cardio
+    trains: 心肺、腿、臀
+    setup: [双脚踩稳踏板、握住活动扶手, 先用低阻力热身]
+    careful: [对膝盖冲击小，跑步膝盖疼可以换这个]
+    moves: [elliptical]
+
+  - id: spin-bike
+    name: 动感单车
+    aka: [健身车]
+    group: cardio
+    trains: 心肺、大腿
+    setup: [座椅调到脚踩到最低点时膝盖微弯, 车把调到上身能稍微前倾、肩膀放松]
+    careful: [阻力从低往高加]
+    moves: [cycling]
+
+  - id: rower
+    name: 划船机
+    aka: [室内划船器]
+    group: cardio
+    trains: 心肺、腿、背
+    setup: [双脚绑紧在踏板上, 力量大部分来自腿]
+    careful: [背一直挺直，腰疼时用低强度或先别做]
+    moves: [rowing-machine]

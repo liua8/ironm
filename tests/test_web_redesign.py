@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from ironm_agent import spoken
+from tests.conftest import model_is
 from tests.fakes import FakeLLM, jsonr
 from tests.test_live import PLAN, client
 from tests.test_live_adjust import start
@@ -40,11 +40,7 @@ def test_special_conditions_start_with_no_heavier(monkeypatch: pytest.MonkeyPatc
 
 def test_saying_it_hurts_turns_on_no_heavier(monkeypatch: pytest.MonkeyPatch) -> None:
     c, _, live, _ = start(monkeypatch)
-    monkeypatch.setattr(
-        spoken,
-        "default_llm",
-        lambda: FakeLLM(lambda *_: jsonr({"say": "先停一下。", "changes": []})),
-    )
+    model_is(monkeypatch, FakeLLM(lambda *_: jsonr({"say": "先停一下。", "changes": []})))
     r = c.post("/iron/api/live/adjust", json={"id": live["id"], "said": "膝盖有点疼"}).json()
     assert r["live"]["no_heavier"] is True
     assert c.get("/iron/api/live").json()["live"]["no_heavier"] is True  # 存下来了，后面一直不加重
@@ -65,10 +61,32 @@ def test_page_rules_in_the_script() -> None:
     assert "reportCard(" not in home and "weekPlanCard(" not in home  # 战报和本周计划挪到训练页
     assert (
         "startLive({ today_plan: true })"
-        in JS[JS.index("function trainCard") : JS.index("function dietCard")]
+        in JS[JS.index("function trainCard") : JS.index("function vitalsRow")]
     )
 
 
 def test_lack_row_lays_out_in_a_row() -> None:
     css = (WEB / "style.css").read_text()
     assert ".card.lack-row { flex-direction: row; }" in css
+
+
+def test_body_page_top_three_and_folds() -> None:
+    """§146：身体数据页上面是体重、BMI、体脂率；其余收进"全部指标"（含还没记的、原始记录）和"这周训练"（复盘、肌肉恢复），点开再看。"""
+    src = (Path(__file__).resolve().parents[1] / "ironm_agent" / "web" / "app.js").read_text(encoding="utf-8")
+    part = src[src.index("async function dataPart(view)") : src.index("// ---- 打卡照片")]
+    assert "m.weight" in part and "m.bmi" in part and "m.body_fat" in part and "weight_trend" in part
+    assert 'fold("全部指标"' in part and 'fold("这周训练"' in part
+    assert "lackRow" in part and "catalogSection()" in part  # 还缺几项并进全部指标；原始记录点开才取
+    assert "weekCard(brief.week)" in part and "bodyMap(" in part
+    assert 'h("details", { class: "me-more body-fold" }' in src  # 默认收起
+    assert 'row("身体数据", "体重、BMI、体脂率", "#body")' in src
+
+
+def test_weekly_review_only_gives_advice() -> None:
+    """§146 需求 3：复盘只给建议，不放生成调整方案；改计划跟 IronM 说。对话页管家消息里的确认改计划照旧。"""
+    src = (Path(__file__).resolve().parents[1] / "ironm_agent" / "web" / "app.js").read_text(encoding="utf-8")
+    card = src[src.index("function weekCard(w)") : src.index("function draftView(")]
+    assert "生成调整方案" not in card and "review/proposal" not in card
+    assert "想改计划，咨询 IronM。" in card
+    assert "proposalSheet" not in src
+    assert "/iron/api/review/proposal${trigger}" in src  # 管家消息里的确认改计划还在
