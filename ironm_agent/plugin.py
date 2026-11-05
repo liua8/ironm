@@ -30,6 +30,7 @@ from ironm_agent.actions import (
     RECORD_STATE,
     REMEMBER,
     SET_GOAL,
+    TEMP_CHANGE,
     Desk,
     Handler,
     Outcome,
@@ -136,6 +137,7 @@ from ironm_agent.render import (
     sections_text,
     sources_text,
     started,
+    temp_card,
     text_block,
 )
 from ironm_agent.roles import COACH_NAME, GENERAL, Role, spec_of
@@ -318,6 +320,7 @@ CONFIRM_NOTE = {
     "plan": "下面是计划预览，点「确认」才会保存，保存后也能撤销。",
     "log": "下面是这次训练的记录预览，点「确认」才会记下。",
     "goal": "下面是改目标的预览，点「确认」才会改，改了也能撤销。",  # §151
+    "temp": "下面是临时调整的预览，点「确认」才生效，到了结束日期自动回到原计划，也能提前撤销。",  # §163
 }
 # 本会话里这些回答给全文、不压成要点（列给他确认的条件、给出过的预览，spec [2026-10-23] §68）
 KEEP_WHOLE = (HEAD, *CONFIRM_NOTE.values())
@@ -2114,6 +2117,12 @@ class IronMAgent:
             said = "\n".join([text, *user_lines(list(history))[-3:], *[x for x in history if x.startswith(COACH)][-1:]])
             return await self._goal_preview(user_id, said, today, snapshot, args, store)
 
+        async def temp_change(desk: Desk, args: Mapping[str, Any]) -> Outcome:
+            """这几天临时这样练（§163 需求 2）：套到当前计划上、检查，出临时调整的预览卡片，他确认才生效。"""
+            if current is None or tools is None:
+                return Outcome(False, "他还没有训练计划，没有可以临时调整的；要先排计划。", "format")
+            return await self._temp_preview(user_id, current, args, ctx, tools, run, today, store)
+
         handlers: dict[str, Handler] = {
             LOG_WORKOUT: log_workout, RECORD_STATE: record_state, LOG_BODY: log_body,
             LOG_MEAL: log_meal, KCAL_CHANGE: kcal_change, SET_GOAL: set_goal,
@@ -2125,7 +2134,50 @@ class IronMAgent:
             handlers[ADJUST_TODAY] = adjust_today
             if current is not None:
                 handlers[PLAN_EDIT] = edit
+                handlers[TEMP_CHANGE] = temp_change
         return handlers
+
+    async def _temp_preview(
+        self, user_id: str, current: Plan, args: Mapping[str, Any], ctx: Context, tools: ToolContext,
+        run: dict[str, Any], today: date, store: Any,
+    ) -> Outcome:  # fmt: skip
+        """临时调整（§163 需求 2）：日期、改法核对后套到当前计划上、按时长修剪、检查新带来的问题，存成预览。"""
+        from ironm_agent import plan_layers
+        from ironm_agent.plan_ops import Conflict, apply, fit_time, parse_ops
+
+        try:
+            start = date.fromisoformat(str(args.get("start") or ""))
+            end = date.fromisoformat(str(args.get("end") or ""))
+        except ValueError:
+            return Outcome(False, "start、end 写成 YYYY-MM-DD。", "format")
+        if start < today or end < start or (end - start).days >= plan_layers.MAX_DAYS:
+            return Outcome(False, f"日期要从今天或以后开始、结束不早于开始、最长 {plan_layers.MAX_DAYS} 天；"
+                           "更长的是改计划本身，用 propose_plan_edit。", "format")  # fmt: skip
+        ops = parse_ops(args.get("ops"))
+        if not ops:
+            return Outcome(False, "ops 要是改法列表，写法同 propose_plan_edit。", "format")
+        try:
+            applied = fit_time(apply(current, ops, equipment=tools.equipment, injured=tools.injured))
+        except Conflict as e:
+            return Outcome(False, f"改法互相矛盾：{e}。问他想怎么改。", "conflict")
+        if not applied.done:
+            return Outcome(False, "一条都没改成：" + "；".join(applied.skipped) + "。看清计划里那几天的动作再交。", "rejected")
+
+        def review(p: Plan) -> tuple[str, ...]:
+            return check_plan(p, current=current, goal=tools.goal, injured=tools.injured,
+                              equipment=tools.equipment, special=tools.special).problems  # fmt: skip
+
+        had = {_no_day(x) for x in review(current)}
+        left = [x for x in review(applied.plan) if _no_day(x) not in had]
+        if left:
+            run["plan_check"] = "failed"
+            return Outcome(False, "这样改会有问题：" + "；".join(left) + "。改了再交。", "check")
+        why = str(args.get("why") or "")[:60]
+        content = plan_layers.content(start, end, why, applied, applied.lines)
+        draft = await store.add_draft(user_id, "temp", content)
+        run["preview"] = "temp"
+        return Outcome(True, "已出临时调整的预览卡片，等他确认（确认前计划没改，到期自动回到原计划）。", kind="temp",
+                       cards=tuple(temp_card(draft, content)), draft=draft.id, what="temp")  # fmt: skip
 
     async def _drop_drafts(self, user_id: str, ids: Sequence[str]) -> None:
         """这一轮没给他看到的预览作废。"""
@@ -2289,6 +2341,10 @@ class IronMAgent:
         snapshot, (plan, logs, since) = await snap, await train
         ill: list[Episode] = list((run or {}).get("_ill") or [])
         lines = case_lines(plan, logs, snapshot.today, since)
+        from ironm_agent.plan_layers import load as load_temps
+
+        lines += [f"临时调整（他确认过的，到期回到原计划）：{t.line()}"
+                  for t in await load_temps(self._training_store(), user_id) if t.end >= snapshot.today]  # fmt: skip
         recovering = recovering_days(ill, snapshot.today)  # 生病期间的组次不触发减重量（§46）
         steady = [x for x in logs if x.day not in recovering]
         # 生病只交事实（哪天说的什么、好没好），今天怎么练由管家定，代码不再算"休息、轻松、七成"（§163）

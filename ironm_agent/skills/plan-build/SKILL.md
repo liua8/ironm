@@ -7,7 +7,7 @@ brief: 要每周计划、改计划、停练回来
 not_for: 只问今天练什么用「今天练不练」；跑步骑车怎么练看训练基础的有氧参考段；伤后回来用「伤痛处理」；第一次开始健身先用「建档与目标」
 when: [计划, 课表, 每周, 一周练, 排一下, 安排一下, 怎么练, 增肌, 长肌肉, 练大, 力量, 大重量, 提高重量, 减脂期, 减脂训练, 在家练, 家里练, 没器械, 徒手, 弹力带, 只有哑铃, 时间少, 没时间, 半小时, 分化, 推拉腿, 上下肢, 全身, 新手计划, 好久没练, 很久没练, 停了, 中断, 断了, 重新开始练, 回来练, 又开始练, 放假回来, 出差回来, 停练, 掉肌肉, 会不会掉, 保住, 要出差, 放假, 肌肉记忆]
 on: [plan]
-tools: [plan_templates, check_plan, find_substitutes, estimate_strength, training_patterns, recall_memory, search_exercises, propose_new_plan, propose_plan_edit, ask_plan_terms]
+tools: [plan_templates, check_plan, find_substitutes, estimate_strength, training_patterns, recall_memory, search_exercises, propose_new_plan, propose_plan_edit, ask_plan_terms, propose_temporary_change]
 refs: [K01, K03, K04, K05, K28, K30, K31, K33, K37, K40, K56, K59, K60, K61, K62, K63, K64, K67, K84, K85, K86, K46, K29, K08]
 ---
 ## 步骤卡

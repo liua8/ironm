@@ -37,8 +37,8 @@ DRAFT_HOURS = 24
 MERGE_MINUTES = 30  # 这么久之内没确认的计划预览，再改一下时在它上面接着改（§45）
 WEEKDAYS = "一二三四五六日"
 type Kind = Literal[
-    "plan", "log", "goal"
-]  # goal：改目标的预览（§151），确认后由网页那层写档案和目标表
+    "plan", "log", "goal", "temp"
+]  # goal：改目标的预览（§151），确认后由网页那层写档案和目标表；temp：临时调整（§163），确认了才算数
 type DraftState = Literal["pending", "confirmed", "cancelled", "undone"]
 
 
@@ -458,6 +458,12 @@ class Draft:
     previous: str | None = None  # 确认时被替换的旧计划（撤销时恢复）
 
     def expired(self, at: datetime | None = None) -> bool:
+        if self.kind == "temp":  # 临时调整：过了开始日期还没确认就作废（§163）
+            try:
+                start = date.fromisoformat(str((self.content.get("temp") or {}).get("start")))
+            except ValueError:
+                return True
+            return (at or now()).astimezone().date() > start
         return (at or now()) - self.created > timedelta(hours=DRAFT_HOURS)
 
     def json(self) -> dict[str, Any]:
@@ -485,6 +491,7 @@ class TrainingStore(Protocol):
     async def cancel(self, user_id: str, draft_id: str) -> Draft | None: ...
     async def undo(self, user_id: str, draft_id: str) -> Draft | None: ...
     async def amend(self, user_id: str, draft_id: str, content: dict[str, Any]) -> None: ...
+    async def temps(self, user_id: str) -> list[Draft]: ...  # 确认过、还没撤销的临时调整（§163）
     async def log(self, user_id: str, log: WorkoutLog) -> StoredLog: ...
     async def delete_workout(self, user_id: str, workout_id: str) -> bool: ...
 
@@ -555,7 +562,7 @@ class TrainingBook:
             return self._put(
                 user_id, replace(d, state="confirmed", applied=new.id, previous=previous)
             )
-        if d.kind == "goal":
+        if d.kind in ("goal", "temp"):
             return self._put(user_id, replace(d, state="confirmed"))
         row = StoredLog(new_id(), _log_of(d.content), now())
         self._logs.setdefault(user_id, []).append(row)
@@ -572,6 +579,10 @@ class TrainingBook:
         d = await self.draft(user_id, draft_id)
         if d is not None:
             self._put(user_id, replace(d, content=content))
+
+    async def temps(self, user_id: str) -> list[Draft]:
+        rows = [d for d in self._drafts.get(user_id, {}).values() if d.kind == "temp" and d.state == "confirmed"]
+        return sorted(rows, key=lambda d: d.created)
 
     async def undo(self, user_id: str, draft_id: str) -> Draft | None:
         d = await self.draft(user_id, draft_id)
@@ -796,6 +807,14 @@ class PgTraining:
                 )
                 if not rows:
                     return None
+            elif d.kind == "temp":  # 临时调整：只改状态；过没过开始日期上面已经看过（§163）
+                rows = await tx.execute(
+                    "UPDATE ironm_draft SET state = 'confirmed', updated_at = now()"
+                    " WHERE id = :id AND user_id = :uid AND kind = 'temp' AND state = 'pending' RETURNING id",
+                    {"id": draft_id, "uid": user_id},
+                )
+                if not rows:
+                    return None
             else:
                 rows = await tx.execute(
                     "UPDATE ironm_draft SET state = 'confirmed', applied = :target, updated_at = now()"
@@ -811,6 +830,15 @@ class PgTraining:
                      "content": rows[0]["content"]},
                 )  # fmt: skip
         return await self.draft(user_id, draft_id)
+
+    async def temps(self, user_id: str) -> list[Draft]:
+        rows = await self._q(
+            "SELECT id, kind, decrypt_content(content) AS content, state, applied, previous, created_at"
+            " FROM ironm_draft WHERE user_id = :uid AND kind = 'temp' AND state = 'confirmed'"
+            " ORDER BY created_at",
+            {"uid": user_id},
+        )
+        return [_draft_row(r) for r in rows]
 
     async def amend(self, user_id: str, draft_id: str, content: dict[str, Any]) -> None:
         """改一份预览的内容（改目标确认时记下确认前的目标，§151）。"""
@@ -837,7 +865,7 @@ class PgTraining:
             await tx.execute(_LOCK, {"uid": user_id})
             rows = await tx.execute(
                 "UPDATE ironm_draft SET state = 'undone', updated_at = now()"
-                " WHERE id = :id AND user_id = :uid AND state = 'confirmed' AND (kind IN ('log', 'goal') OR EXISTS ("
+                " WHERE id = :id AND user_id = :uid AND state = 'confirmed' AND (kind IN ('log', 'goal', 'temp') OR EXISTS ("
                 " SELECT 1 FROM ironm_plan p WHERE p.id = ironm_draft.applied AND p.user_id = :uid AND p.active))"
                 " RETURNING kind, applied, previous",
                 {"id": draft_id, "uid": user_id},

@@ -150,6 +150,7 @@ class Inputs:
     logs: list[WorkoutLog] = field(default_factory=list)
     pains: list[tuple[str, date]] = field(default_factory=list)
     pain_details: list[dict[str, Any]] = field(default_factory=list)  # 说疼的细节：左右、动作、轻重（§163）
+    temps: list[Any] = field(default_factory=list)  # 他确认过的临时调整（plan_layers.Temp，§163）
     goal: Any = None  # goal.Goal
     diet: KcalAdjust | None = None
     advice: Any = None  # weather.Advice（今天的实时天气）
@@ -187,9 +188,12 @@ def today_version(inp: Inputs, today: date) -> TodayVersion:
     name = weekday_name(today.isoweekday())
     if inp.plan is None:
         return TodayVersion("no_plan", "还没有训练计划", why="可以让训练教练按你的目标排一份")
-    session = inp.plan.session_on(today)
+    from ironm_agent.plan_layers import active, plan_on
+
+    session = (plan_on(inp.plan, inp.temps, today) or inp.plan).session_on(today)  # 套上有效的临时调整（§163）
     if session is None:
-        return TodayVersion("rest", f"今天（{name}）按计划休息", why="恢复也是训练的一部分")
+        why = "；".join(f"临时调整：{t.line()}" for t in active(inp.temps, today)) or "恢复也是训练的一部分"
+        return TodayVersion("rest", f"今天（{name}）按计划休息", why=why)
     edits = list(getattr(inp.day, "edits", None) or []) if inp.day is not None else []
     if edits:  # 计划页"只改今天"、对话里管家调的只改今天（§106、§122）先套上
         from ironm_agent.plan_edit import today_session
@@ -605,6 +609,9 @@ async def _gather(user_id: str, deps: Deps, today: date) -> Inputs:
         "logs", deps.training.workouts(user_id, today - timedelta(days=HISTORY_DAYS))
     )
     inp.logs = [x.log for x in rows or []]
+    from ironm_agent.plan_layers import load as load_temps
+
+    inp.temps = await load_temps(deps.training, user_id)
     inp.pains = await safely("pain", deps.pain.since(user_id, today - timedelta(days=14))) or []
     if inp.memory:  # 说好了的那处，之前的疼不再算（§158）
         from ironm_agent.body_now import fresh

@@ -1085,16 +1085,22 @@ async def get_today(
     today = date.today()
     if stored is None:
         return {"status": "no_plan"}
-    if stored.plan.session_on(today) is None:
-        return {"status": "rest"}
+    from ironm_agent.plan_layers import load as load_temps
+    from ironm_agent.plan_layers import plan_on
+
+    if (plan_on(stored.plan, await load_temps(training, user_id), today) or stored.plan).session_on(today) is None:
+        return {"status": "rest"}  # 临时调整把今天也算上（§163）
     said, _ = await _day_said(day, user_id, today, tired=tired, minutes=minutes)
     if tired or minutes is not None:  # 首页点了：管家重看今天（§163），不按规则当场减半、删减
         rerun_later(user_id, coach_deps(), "首页点了今天的状态")
         session = stored.plan.session_on(today)
         return {"status": "reviewing", "original": session.model_dump(mode="json") if session else None,
                 "message": "管家正在看今天的情况"}  # fmt: skip
+    from ironm_agent.plan_layers import load as load_temps
+
     snap = await _web().snapshot_for(user_id)
-    inp = Inputs(snapshot=snap, plan=stored.plan, since=stored.since, day=said, review=await review_today(user_id))
+    inp = Inputs(snapshot=snap, plan=stored.plan, since=stored.since, day=said, review=await review_today(user_id),
+                 temps=await load_temps(training, user_id))  # fmt: skip
     v = today_version(inp, today)
     if v.status == "review_rest":  # 管家复盘定了今天休息
         return {"status": "rest_today", "original": v.original, "message": v.title}
@@ -1721,6 +1727,14 @@ async def get_week(
     first = stored.plan.session_on(today) if stored else None
     edits = apply_today(first, edits)[1] if first is not None else []  # 只列还套得上的
     days = week_plan(plan, wx.days if wx else (), today, now, adjust=False)  # 只要天气，不按天气改版本（§163）
+    from dataclasses import replace as replaced
+
+    from ironm_agent.plan_layers import load as load_temps
+    from ironm_agent.plan_layers import plan_on
+
+    temps = await load_temps(training, user_id)
+    if temps and plan is not None:  # 临时调整那几天按调整后的（§163）
+        days = [replaced(p, session=(plan_on(plan, temps, p.day) or plan).session_on(p.day)) for p in days]
     weight = await _weight_now(user_id) if plan is not None else None
 
     def wx_json(p: Any) -> dict[str, Any] | None:

@@ -33,9 +33,10 @@ ADJUST_TODAY = "adjust_today"  # 只改今天这一次训练（§122）
 KCAL_CHANGE = "propose_kcal_change"  # 调每日热量目标（§122）
 REMEMBER = "remember"  # 记忆（§145，取代回答 JSON 里的 memory）
 SET_GOAL = "propose_goal"  # 改正式目标：目标类型和目标体重，出卡片确认（§151）
+TEMP_CHANGE = "propose_temporary_change"  # 这几天临时这样练：带起止日期，出卡片确认，到期回到原计划（§163）
 ACTION_TOOLS = (
     PLAN_EDIT, NEW_PLAN, LOG_WORKOUT, ASK_TERMS, RECORD_STATE, LOG_BODY, LOG_MEAL, ADJUST_TODAY,
-    KCAL_CHANGE, REMEMBER, SET_GOAL,
+    KCAL_CHANGE, REMEMBER, SET_GOAL, TEMP_CHANGE,
 )  # fmt: skip
 ALWAYS = (
     RECORD_STATE,
@@ -457,6 +458,31 @@ KCAL_CHANGE_SCHEMA: dict[str, Any] = {
     },
 }
 
+TEMP_CHANGE_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": TEMP_CHANGE,
+        "description": (
+            "这几天临时这样练（出差只有哑铃、病后这一周减量、某个动作先停几天）：写开始和结束日期、改法、原因，"
+            "系统套到当前计划上、检查后出临时调整的预览卡片，他确认才生效，过了结束日期自动回到原计划。"
+            "改法写法和 propose_plan_edit 的 ops 一样（swap、move、add、edit、remove、reduce）。"
+            "他说以后都这样就不用这个，用 propose_plan_edit 改计划本身；只改今天这一次用 adjust_today。"
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "start": {"type": "string", "description": "从哪天开始，YYYY-MM-DD（今天或以后）"},
+                "end": {"type": "string", "description": "到哪天为止（含这天），YYYY-MM-DD，最长 28 天"},
+                "ops": {"type": "array", "items": {"type": "object"}, "description": "改法列表，同 propose_plan_edit"},
+                "why": {"type": "string", "description": "一句话原因，像当面对他说"},
+            },
+            "required": ["start", "end", "ops", "why"],
+        },
+    },
+}
+
+
 SCHEMAS = {
     PLAN_EDIT: PLAN_EDIT_SCHEMA,
     NEW_PLAN: NEW_PLAN_SCHEMA,
@@ -469,6 +495,7 @@ SCHEMAS = {
     KCAL_CHANGE: KCAL_CHANGE_SCHEMA,
     REMEMBER: REMEMBER_SCHEMA,
     SET_GOAL: SET_GOAL_SCHEMA,
+    TEMP_CHANGE: TEMP_CHANGE_SCHEMA,
 }
 _CONFIRMED = (
     f"他刚回应了你列的条件清单，算确认，不要再问一遍：调用 {NEW_PLAN}（kind 写 new）交计划，他改了哪几项就按改了的排；"
@@ -573,6 +600,7 @@ class Desk:
     rejected: Counter[str] = field(default_factory=Counter)  # 原因类别 → 次数
     plan: Outcome | None = None  # 这一轮最后一张计划预览
     goal: Outcome | None = None  # 这一轮最后一张改目标预览（§151）
+    temps: list[Outcome] = field(default_factory=list)  # 这一轮出的临时调整预览（§163）
     logs: list[Outcome] = field(default_factory=list)
     saved: list[Outcome] = field(default_factory=list)  # 直接记下的：一餐、读数（§122）
     changed: list[Outcome] = field(default_factory=list)  # 直接改了的：今天、热量（§122）
@@ -616,7 +644,7 @@ class Desk:
     def kinds(self) -> list[str]:
         """出了哪几种预览卡片（各配一句确认说明）。"""
         return ((["plan"] if self.plan is not None else []) + (["log"] if self.logs else [])
-                + (["goal"] if self.goal is not None else []))  # fmt: skip
+                + (["goal"] if self.goal is not None else []) + (["temp"] if self.temps else []))  # fmt: skip
 
     @property
     def done_kinds(self) -> set[str]:
@@ -625,6 +653,7 @@ class Desk:
         out |= {"workout"} if self.logs else set()
         out |= {"state"} if self.said else set()
         out |= {"goal"} if self.goal is not None else set()
+        out |= {"temp"} if self.temps else set()
         return out | {x.what for x in (*self.saved, *self.changed) if x.what}
 
     def done_note(self) -> str:
@@ -637,6 +666,7 @@ class Desk:
         out = list(self.plan.cards) if self.plan is not None else []
         for x in self.logs:
             out += x.cards
+        out += [c for x in self.temps for c in x.cards]
         return out + (list(self.goal.cards) if self.goal is not None else [])
 
     @property
@@ -648,6 +678,7 @@ class Desk:
     def drafts(self) -> list[str]:
         out = [self.plan.draft] if self.plan is not None and self.plan.draft else []
         out += [self.goal.draft] if self.goal is not None and self.goal.draft else []
+        out += [x.draft for x in self.temps if x.draft]
         return out + [x.draft for x in self.logs if x.draft]
 
     async def run(self, name: str, args: Mapping[str, Any]) -> str:
@@ -698,6 +729,8 @@ class Desk:
             if self.goal is not None and self.goal.draft and self.goal.draft != out.draft:
                 self.stale.append(self.goal.draft)
             self.goal = out
+        elif out.kind == "temp":
+            self.temps.append(out)
         elif out.kind == "saved":
             self.saved.append(out)
         elif out.kind == "changed":

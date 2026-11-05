@@ -8,7 +8,7 @@ not_for: 某个部位疼、受伤用「伤痛处理」；长期越练越累、�
 when: [累, 没睡好, 状态, 今天练什么, 还练吗, 能练吗, 今天能练, 酸痛, 熬夜, 睡了, 疲劳, 心率变异性, 静息心率, 压力大, 只有半小时, 今天没时间, 不舒服, 感冒, 发烧, 发热, 生病, 咳嗽, 嗓子疼, 喉咙痛, 鼻塞, 流鼻涕, 拉肚子, 腹泻, 胃肠炎, 新冠, 阳了, 病好了, 刚好, 退烧]
 on: [poor]
 default: true
-tools: [query_health_indicators, trend_analysis, training_patterns, recall_memory, check_plan, adjust_today, record_state]
+tools: [query_health_indicators, trend_analysis, training_patterns, recall_memory, check_plan, adjust_today, record_state, propose_temporary_change]
 refs: [K18, K19, K28, K29, K35, K80, K81, K82, K08, K23, K14, K107, K108]
 ---
 ## 步骤卡

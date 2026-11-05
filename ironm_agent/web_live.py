@@ -200,7 +200,11 @@ async def start_live(
     if live is not None and not stale(live, now):  # 已有进行中的：接着练，不另开
         return _out(live, now)
     plan, logs = await _context(user_id, store)
-    if body.today_plan and plan is not None:  # 计划页"只改今天"的按改过的（§106）
+    if body.today_plan and plan is not None:  # 临时调整（§163）、计划页"只改今天"的按改过的（§106）
+        from ironm_agent.plan_layers import load as load_temps
+        from ironm_agent.plan_layers import plan_on
+
+        plan = plan_on(plan, await load_temps(store, user_id), date.today()) or plan
         plan = with_today(plan, await today_edits(day, user_id, date.today()), date.today())
     rests = await lives.rests(user_id)
     session = ""

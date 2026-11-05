@@ -166,6 +166,7 @@ def facts(
     for p in getattr(inp, "pain_details", None) or []:  # 近两周说疼：哪处、左右、在做哪个动作（§163）
         bits = [x for x in (p.get("side"), p.get("exercise") and f"做{p['exercise']}时", p.get("level")) if x]
         lines.append(f"说疼：{ago(p['day'], today)} {JOINT_NAMES.get(p['part'], p['part'])}" + (f"（{'，'.join(bits)}）" if bits else ""))
+    lines += [f"临时调整（他确认过的）：{t.line()}" for t in inp.temps if t.end >= today]
     if inp.advice is not None and inp.advice.reasons:  # 天气：户外练不练由管家定
         lines.append(f"今天的天气：{inp.advice.name}（{'；'.join(inp.advice.reasons)}）")
     lines += extra
