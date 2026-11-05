@@ -99,7 +99,7 @@ def test_record_state_collects_what_he_said_and_is_not_counted(
 def test_said_is_gone_from_the_prompt_and_the_answer() -> None:
     from ironm_agent import agent, experts
 
-    assert '"said"' not in agent._PROMPT and "record_state" in agent._PROMPT
+    assert '"said"' not in agent._PROMPT and "record_state" in agent.RECORD_INLINE  # 切回当场记时才提（§166）
     assert "said" not in experts.Opinion.model_fields
 
 

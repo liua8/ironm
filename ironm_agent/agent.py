@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any
 
-from ironm_agent.actions import ALWAYS, ASK_TERMS, LOG_WORKOUT, NEW_PLAN, PLAN_EDIT
+from ironm_agent.actions import AFTER, ALWAYS, ASK_TERMS, LOG_WORKOUT, NEW_PLAN, PLAN_EDIT
 from ironm_agent.answer_format import slots_prompt
 from ironm_agent.casefile import CaseFile
 from ironm_agent.coach import app_guide
@@ -34,6 +34,9 @@ from ironm_agent.skills import Skill, by_id, catalog_any, prompt_of
 from ironm_agent.tools import Toolbox
 from ironm_agent.training import weekday_name
 
+# 他说的状况、要照顾到的情况怎么记（§166）：默认回答后系统在后台记；切回作答时当场调工具（§122、§145）
+RECORD_AFTER = '他说的身体状况和要照顾到的情况（伤病、器械、作息、偏好），系统在回答后自己记下，回答里不用说"记下了"。'
+RECORD_INLINE = "他说了自己今天的状况调用 record_state，说了关于他本人、以后要照顾到的情况（伤病、器械、作息、偏好、近期的事）调用 remember；"
 HARD_S = 42.0  # 作答最长多少秒（加上作答前的准备约 45 秒）；到了就停下说没答上来（§165）
 LOAD_SKILL = "load_skill"
 APP_HELP = "app_help"
@@ -114,7 +117,7 @@ _PROMPT = """你是健身 App 里的「AI 健身管家」：一位持证体能�
 
 出处（系统会逐句核对）：用到资料的句子句末写〔K03〕，用到档案或计算结果写〔C2〕，凭经验写〔经验〕；用到他的健康数据写成 <statement>这句话<cite>[r3]</cite></statement>。带数字的句子都要有出处，数字照资料、计算或数据写。
 
-他说了自己今天的状况调用 record_state，说了量的体重、腰围这类数调用 log_body，说了吃了什么调用 log_meal，说了关于他本人、以后要照顾到的情况（伤病、器械、作息、偏好、近期的事）调用 remember；要换目标方向或定目标体重和日期调用 propose_goal（出卡片，他确认才改）；只记他说了的，问话、假设、别人的不记。
+{record}说了量的体重、腰围这类数调用 log_body，说了吃了什么调用 log_meal；要换目标方向或定目标体重和日期调用 propose_goal（出卡片，他确认才改）；只记他说了的，问话、假设、别人的不记。
 
 可以再装的规程目录：
 {catalog}
@@ -223,6 +226,7 @@ async def respond(
     memory_block: str | None = None,
     training: bool = True,
     with_case: bool = True,
+    record_after: bool = True,
 ) -> Consultation:
     """单 Agent 作答一轮。出错时返回不发言的意见，不向外抛（和专业角色一样）。
     training：这一轮涉及训练才放计划和记录的写法；不涉及时装上训练类规程再补（§96）。"""
@@ -231,6 +235,8 @@ async def respond(
     if (
         toolbox.actions is not None
     ):  # 规程带的动作工具（§120）；状态、读数、一餐每轮都给，涉及训练时先确认条件的那个也给（§122）
+        # 记状态、记忆放到回答后（§166）：规程自带的、这一轮再装的规程带的也不给
+        toolbox.actions.withheld = frozenset(AFTER) if record_after else frozenset()
         toolbox.actions.unlock(
             [*ALWAYS, *([ASK_TERMS] if training else []), *(t for x in skills for t in x.toolset)]
         )
@@ -238,6 +244,7 @@ async def respond(
     toolbox.actions_held = "" if training else actions
     system = _PROMPT.format(
         framework=framework_for(),
+        record=RECORD_AFTER if record_after else RECORD_INLINE,
         actions=actions if training else ACTIONS_SHORT,
         slots=slots_prompt(text, None),
         skills=prompt_of(skills, flags),

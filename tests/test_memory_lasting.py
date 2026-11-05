@@ -72,7 +72,7 @@ def test_prompts_say_how_to_mark_and_what_not_to_keep() -> None:
     assert (
         "long（一直要照顾）" in tool
         and "一顿饭、一次训练不记" in tool
-        and "remember" in agent._PROMPT
+        and "remember" in agent.RECORD_INLINE  # 默认回答后在后台记（§166）
     )
     assert (
         "lasting：long" in memory_extract._PROMPT

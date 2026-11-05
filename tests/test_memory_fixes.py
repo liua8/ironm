@@ -186,7 +186,7 @@ def test_both_memory_instructions_have_the_rules() -> None:
 
     turn = REMEMBER_SCHEMA["function"]["description"]  # 管家记记忆的写法在工具说明里（§145）
     assert (
-        "remember" in agent._PROMPT
+        "remember" in agent.RECORD_INLINE  # 默认回答后在后台记（§166），切回当场记时才提
         and "问句带出的不算" in turn
         and "你的安排不写进去" in turn
         and '不新增"已结束"' in turn

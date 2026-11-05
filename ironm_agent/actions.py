@@ -46,6 +46,7 @@ ALWAYS = (
     SET_GOAL,
 )  # 他随时可能说到：每一轮都给（§122、§145）
 UNCOUNTED = (RECORD_STATE, REMEMBER)  # 不占动作次数
+AFTER = (RECORD_STATE, REMEMBER)  # 作答时不给：回答发出后由管家在后台读这句话再记（§166，省一轮往返）
 MAX_ACTIONS = 6  # 每轮最多调用几次动作工具（不占查询次数；记今天的状态、记忆不算）
 
 _DAY = "1 到 7，1 是周一"
@@ -628,6 +629,7 @@ class Desk:
     )
     ask_new_plan: bool = False  # 交了新计划但条件还没确认
     template_plans: dict[str, Any] = field(default_factory=dict)  # 这一轮方案库给的草稿：方案编号 → 计划（§165）
+    withheld: frozenset[str] = frozenset()  # 这一轮不给的（§166：记状态、记忆放到回答后），装规程也不开
     nudged: bool = False
     unacted: bool = False  # 说了改却没改，删了那几句
     trace: list[dict[str, str]] = field(default_factory=list)
@@ -638,7 +640,8 @@ class Desk:
 
     def unlock(self, toolset: Iterable[str]) -> list[str]:
         """装上一份规程：它带的动作工具开放给管家，返回这次新开放的。"""
-        new = [n for n in toolset if n in SCHEMAS and self.allowed(n) and n not in self.unlocked]
+        new = [n for n in toolset if n in SCHEMAS and self.allowed(n) and n not in self.unlocked
+               and n not in self.withheld]  # fmt: skip
         self.unlocked.update(new)
         return new
 
@@ -781,14 +784,18 @@ class Desk:
 
     def unmet(self, answer: str) -> set[str]:
         """说了做了、这一轮却没做成的那几种（改计划和记训练分开看）。记了记忆要按回答核对通过才算（§145）。"""
-        done = self.done_kinds
+        done = self.done_kinds | self._after()
         if self.memory and self.memory_ok is not None and self.memory_ok(answer):
             done = done | {"memory"}
         return unsatisfied(claimed(answer), done)
+
+    def _after(self) -> set[str]:
+        """§166：记状态、记忆放到回答后由系统记，说"记下了"不算没做（不再提醒、不删那句）。"""
+        return {"state", "memory"} if self.withheld & set(AFTER) else set()
 
     def settle(self, answer: str) -> str:
         """提醒过还是说了改却没改：去掉那几句。"""
         if not self.unmet(answer):
             return answer
         self.unacted = True
-        return strip_claims(answer, self.done_kinds)
+        return strip_claims(answer, self.done_kinds | self._after())

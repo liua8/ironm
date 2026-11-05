@@ -32,11 +32,16 @@ class Solo:
         self.system = ""
         self.user = ""
         self.offered: list[str] = []  # 最近一次作答给它的工具名
+        self.after: list[tuple[str, str]] = []  # 回答后在后台调的（环节、给它的话）
+        self.later: Callable[[str, str], Reply] = lambda stage, _: Reply("" if stage == "coach" else "{}")
 
     def __call__(self, stage: Stage, messages: Sequence[Mapping[str, Any]], tools: bool) -> Reply:
         if stage == "route":  # 按意图选规程（§75）：默认给不出合格的结果，退回按关键词
             self.routes.append(str(messages[-1]["content"]))
             return self.route(str(messages[-1]["content"]))
+        if stage in ("coach", "memory"):  # 回答后在后台记状态、记忆（§166）：默认什么都不记
+            self.after.append((stage, str(messages[-1]["content"])))
+            return self.later(stage, str(messages[-1]["content"]))
         self.stages.append(stage)
         assert stage == "expert", stage  # 单 Agent 没有路由、整合
         self.system = system_of(messages)

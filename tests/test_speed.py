@@ -387,3 +387,129 @@ def test_turn_budget_stays_at_twenty() -> None:
     from ironm_agent.llm import load_models
 
     assert load_models().turn_budget == 20  # 12 会让排计划那一轮直接答不出来（审查 11-05）
+
+
+def test_state_and_memory_are_recorded_after_the_answer(monkeypatch: Any) -> None:
+    """§166：作答时不给记状态、记记忆的工具，回答发出后管家在后台读这句话（带上前面两句）再记。"""
+    import asyncio
+    from datetime import date
+
+    from ironm_agent.actions import RECORD_STATE, REMEMBER
+    from ironm_agent.agent import RECORD_AFTER
+    from tests.fakes import call, jsonr
+    from tests.test_single_agent import single
+
+    a, solo = single(lambda *_: jsonr({"answer": "辛苦了，今晚先休息。"}), monkeypatch, old=True)
+    a._record_after = True
+    solo.later = lambda stage, _: call(RECORD_STATE, tired=True, sleep=5) if stage == "coach" else jsonr({})
+
+    async def asked(*_: str) -> list[str]:
+        return ["用户：今晚练什么", "教练（要点）：今天练下肢"]
+
+    a._history = asked
+    woke: list[str] = []
+
+    async def coach(user_id: str, reason: str, force: bool) -> None:
+        woke.append(reason)
+
+    a._coach = coach  # type: ignore[method-assign]
+
+    async def go() -> None:
+        msgs = [{"role": "user", "content": "好累，昨晚只睡了 5 小时"}]
+        [b async for b in a.generate_response("42", msgs, session_id="42:s1")]
+        await a.settle()
+
+    asyncio.run(go())
+    assert RECORD_STATE not in solo.offered and REMEMBER not in solo.offered and RECORD_AFTER in solo.system
+    coach = [x for s, x in solo.after if s == "coach"]
+    assert coach and "今天练下肢" in coach[0] and "前面：用户：今晚练什么" in coach[0] and "好累" in coach[0]
+    day = asyncio.run(a._day_store().get("42", date.today()))
+    assert day is not None and day.tired() is not None  # 后台读了、记下了
+    assert "说了今天的状态" in woke  # 记下了身体的事：叫醒管家重看今天
+    assert solo.offered  # 作答时给了别的工具，只是没有这两个
+    assert any(s == "memory" for s, _ in solo.after)  # 记忆照 §68 在后台提取
+
+
+def test_nothing_is_recorded_when_the_answer_failed(monkeypatch: Any) -> None:
+    import asyncio
+
+    from ironm_agent.llm import ModelUnavailable
+    from tests.test_single_agent import single
+
+    def broken(*_: Any) -> Any:
+        raise ModelUnavailable("down")
+
+    a, solo = single(broken, monkeypatch, old=True)
+    a._record_after = True
+
+    async def go() -> None:
+        msgs = [{"role": "user", "content": "好累"}]
+        [b async for b in a.generate_response("42", msgs, session_id="42:s1")]
+        await a.settle()
+
+    asyncio.run(go())
+    assert not [s for s, _ in solo.after if s == "coach"]  # 管家没答出来：不读、不记
+
+
+def test_saying_noted_is_not_treated_as_an_unkept_promise_when_recording_after() -> None:
+    from ironm_agent.actions import AFTER, Desk
+
+    answer = "好，左膝不舒服我记下了，今天先别做深蹲。"
+    inline = Desk(handlers={})
+    assert inline.unmet(answer) and inline.settle(answer) != answer  # 当场记的做法：没调工具就是没记
+    after = Desk(handlers={}, withheld=frozenset(AFTER))
+    assert not after.unmet(answer) and after.settle(answer) == answer  # 回答后系统会记：不删、不提醒
+
+
+def test_the_reader_sees_the_question_at_the_end_and_the_illness(monkeypatch: Any) -> None:
+    import asyncio
+    from datetime import date
+
+    from ironm_agent.body_state import read_text
+    from ironm_agent.llm import Reply
+
+    seen: list[str] = []
+
+    class LLM:
+        async def chat(self, stage: str, messages: Any, **k: Any) -> Reply:
+            seen.append(str(messages[-1]["content"]))
+            return Reply("")
+
+    long_answer = "教练（要点）：" + "今天的训练这样安排。" * 40 + "感冒好些了吗？"
+    asyncio.run(read_text("42", "好多了", date.today(), "在对话里", None, LLM(),
+                          context=["前面：他最近生病：3 天前说感冒", long_answer]))  # fmt: skip
+    assert "感冒好些了吗" in seen[0] and "生病：3 天前说感冒" in seen[0]
+
+
+def test_memory_extraction_sees_the_end_of_the_last_coach_line(monkeypatch: Any) -> None:
+    from tests.test_single_agent import single
+
+    a, _ = single(lambda *_: None, monkeypatch, old=True)  # type: ignore[arg-type,return-value]
+    history = ["用户：左膝还疼", "教练（要点）：" + "先别跑。" * 80 + "左膝还是这样吗？"]
+    a._record_after = True
+    assert any("左膝还是这样吗" in x for x in a._memory_context(history))
+    a._record_after = False
+    assert a._memory_context(history) == ["用户：左膝还疼"]  # 当场记的做法照原来只给他的话
+
+
+def test_an_active_illness_reaches_the_background_reader(monkeypatch: Any) -> None:
+    import asyncio
+    from datetime import date, timedelta
+
+    from ironm_agent.illness import Episode
+    from tests.fakes import jsonr
+    from tests.test_single_agent import single
+
+    a, solo = single(lambda *_: jsonr({"answer": "那就好，今天先轻松练。"}), monkeypatch, old=True)
+    a._record_after = True
+    sick = Episode(symptoms=["感冒"], level="above", started=date.today() - timedelta(days=2))
+    asyncio.run(a._illness_store().save("42", sick))
+
+    async def go() -> None:
+        msgs = [{"role": "user", "content": "好多了"}]
+        [b async for b in a.generate_response("42", msgs, session_id="42:s1")]
+        await a.settle()
+
+    asyncio.run(go())
+    coach = [x for s, x in solo.after if s == "coach"]
+    assert coach and "他最近" in coach[0] and "感冒" in coach[0]

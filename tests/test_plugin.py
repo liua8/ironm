@@ -71,7 +71,7 @@ def agent(
     async def no_data(_: str) -> Snapshot:
         return Snapshot()
 
-    return IronMAgent(
+    a = IronMAgent(
         health=health or FakeHealth(),
         models=load_models(),
         environ={},
@@ -82,6 +82,9 @@ def agent(
         day=DayBook(),
         goals=goals if goals is not None else GoalBook(),
     )
+    # 原有测试按作答时当场记状态、记忆来写（§122、§145，这条路仍可切回）；回答后在后台记的（§166）见 test_speed
+    a._record_after = False
+    return a
 
 
 def collect(a: IronMAgent, content: Any) -> list[dict[str, Any]]:

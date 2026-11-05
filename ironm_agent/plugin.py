@@ -505,6 +505,8 @@ class IronMAgent:
         self._earlier = earlier
         self._sources = sources
         self._remember_on = remember
+        # 今天的状态、记忆在回答发出后由管家在后台读了再记（§166）；False 时照 §122、§145 作答时当场调工具
+        self._record_after = True
         self._observe = observe
         self._locks: dict[str, asyncio.Lock] = {}  # 同一个人的记忆提取一次只跑一个
         self._tasks: set[asyncio.Task[None]] = set()  # 后台提取记忆的任务
@@ -868,11 +870,35 @@ class IronMAgent:
             _log.warning("day state unavailable: error_type=%s", type(e).__name__)
             return None
 
-    async def _settle_state(self, user_id: str, text: str, run: dict[str, Any]) -> None:
-        """作答后写他这句说了自己什么（§114）：只按管家这一轮交的 record_state 写；管家失败或走了别的路就不写，
-        不再按关键词兜底（§163 规则不要）。"""
-        if run.get("state_by") == "model":
+    def _memory_context(self, history: list[str]) -> list[str]:
+        """后台提取记忆时给的前文：他前面说的话；§166 起作答时不当场记，再带上管家上一句的结尾
+        （"还是这样吗""好些了吗"在那里），他回"还是""好了"才知道是在确认哪一条。"""
+        lines = user_lines(history)
+        coach = next((x for x in reversed(history) if not x.startswith(USER)), "")
+        if self._record_after and coach:
+            lines = [*lines, f"（管家上一句的结尾，只用来看懂他这句在回答什么）…{coach[-200:]}"]
+        return lines
+
+    async def _settle_state(self, user_id: str, text: str, run: dict[str, Any], context: Sequence[str] = ()) -> None:
+        """作答后写他这句说了自己什么（§114）：管家作答了才写，失败或走了别的路就不写，不按关键词兜底（§163）。
+        §166 起作答时不给 record_state：回答发出后在后台由管家读这句话（带上前两句）再记，省作答时的一轮往返。"""
+        if run.get("state_by") != "model":
+            return
+        if not self._record_after:
             await self._apply_said(user_id, run.get("_said_state") or {}, run)
+            return
+        from types import SimpleNamespace
+
+        from ironm_agent import body_state
+
+        stores = SimpleNamespace(illness=self._illness_store(), day=self._day_store(), pain=self._pain_store(),
+                                 memory=self._memory_store())  # fmt: skip
+        ill = illness_line(run.get("_ill") or [], date.today(), within=14)
+        lines = [*([f"前面：他最近{ill}"] if ill else []), *context]  # 正在生病：他说"好多了"才对得上
+        got = await body_state.read_text(user_id, text, date.today(), "在对话里", stores,
+                                         TurnLLM(self._models, self._environ), context=lines)  # fmt: skip
+        if got is not None and (got.day or got.pain or got.illness):
+            await self._coach(user_id, "说了今天的状态", True)  # 首页今天的版本跟着变
 
     async def _apply_said(self, user_id: str, told: Mapping[str, Any], run: dict[str, Any]) -> None:
         """管家交的他这句说了自己什么：写生病记录、今日状态、说疼记录（§163：只按交的写，字段不对的跳过）。"""
@@ -1145,14 +1171,14 @@ class IronMAgent:
             async for block in self._turn(user_id, session_id, text, llm, run, said, file_list):
                 yield block
             run["state_by"] = "model" if run.get("_judged_state") else "keyword"
-            self._later(user_id, self._settle_state(user_id, text, run))  # 他说了自己什么（§114）
+            self._later(user_id, self._settle_state(user_id, text, run, said.get("history") or []))  # §114、§166
             if "answer" in said and self._remember_on:
                 if said.get("remembered"):  # 单 Agent 这一轮已经当场记了（§68）
                     run["memory_extract"] = "agent"
                 else:  # 不先用关键词判断，后台兜底提取一次（§68）
                     self._later(
                         user_id,
-                        self._remember(user_id, text, said["answer"], user_lines(said["history"])),
+                        self._remember(user_id, text, said["answer"], self._memory_context(said["history"])),
                     )
                 # 每天第一次提问时管家评估一次（今天评估过就不再算）
                 self._later(user_id, self._coach(user_id, "每天第一次提问", False))
@@ -1547,7 +1573,7 @@ class IronMAgent:
             text, history, concerns_of(text), toolbox, llm, personal, recall, case=case, skills=loaded,
             note="" if chatting else note, with_case=not chatting,
             has_plan=plan is not None, confirmed=confirmed, just_asked=confirmed_now,
-            today=snapshot.today, training=on_training,
+            today=snapshot.today, training=on_training, record_after=self._record_after,
             images=[x.part() for x in files.images], known=known, memory_block=memory_block,
         ))  # fmt: skip
         try:

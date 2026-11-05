@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
@@ -132,11 +132,13 @@ async def apply(
     return out
 
 
-_READ_PROMPT = """你是健身 App 里的「AI 健身管家」。下面是他{where}写的一句话。判断这句话里他有没有说自己身体的状况：哪里疼（在做哪个动作时、左右、多疼）、生病了或病好了、累、没睡好。
-说了就调用 record_state 记下来（只写他说了的；"深蹲时左膝有点疼"记膝、左、深蹲、轻）；没说身体的事就不调用，什么都不用输出。"""
+_READ_PROMPT = """你是健身 App 里的「AI 健身管家」。下面是他{where}说的一句话。判断这句话里他有没有说自己身体的状况：哪里疼（在做哪个动作时、左右、多疼）、生病了或病好了、累、没睡好、今天只能练多少分钟、状态很好。
+说了就调用 record_state 记下来（只写他这句说了的；"深蹲时左膝有点疼"记膝、左、深蹲、轻）；问话、假设、说别人的不记；没说身体的事就不调用，什么都不用输出。
+前面几行只用来看懂他这句在回答什么（"好多了"回的是"感冒好些了吗"就记好些了），前面说过的不再记一遍。"""
 
 
-async def read_text(user_id: str, text: str, day: date, where: str, deps: Any, llm: Any) -> Applied | None:
+async def read_text(user_id: str, text: str, day: date, where: str, deps: Any, llm: Any,
+                    context: Sequence[str] = ()) -> Applied | None:  # fmt: skip
     """打卡备注、训练中说的话由管家读一遍（§163 需求 1）：说了疼、病、累就交 record_state，代码照写；
     没说或模型失败就不写，不按关键词猜。"""
     from ironm_agent.actions import RECORD_STATE, RECORD_STATE_SCHEMA
@@ -144,8 +146,10 @@ async def read_text(user_id: str, text: str, day: date, where: str, deps: Any, l
     text = str(text or "").strip()
     if not text:
         return None
+    # 对话里接着上一句的（"好多了"回的是"好些了吗"）：管家的问话在回答末尾，取结尾；他的话取开头
+    before = "".join(f"前面：{x[:200] if x.startswith('用户') else '…' + x[-200:]}\n" for x in context[-2:])
     messages = [{"role": "system", "content": _READ_PROMPT.format(where=where)},
-                {"role": "user", "content": f"{day.month}月{day.day}日{where}：{text[:200]}"}]  # fmt: skip
+                {"role": "user", "content": f"{before}{day.month}月{day.day}日{where}：{text[:200]}"}]  # fmt: skip
     try:
         reply = await llm.chat("coach", messages, tools=[RECORD_STATE_SCHEMA])
     except Exception as e:
