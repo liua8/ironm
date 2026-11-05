@@ -152,6 +152,7 @@ class Sim:
     history: list[str] = field(default_factory=list)
     session: str = f"{UID}:s1"
     day: dict[str, Any] = field(default_factory=dict)
+    runs: list[dict[str, Any]] = field(default_factory=list)  # 每轮的运行记录（走了哪条路、调了哪些工具）
 
     async def drain(self) -> None:
         """等后台的事做完（管家评估、定下次、记忆提取）。"""
@@ -164,6 +165,7 @@ class Sim:
 
     async def say(self, text: str) -> dict[str, Any]:
         msgs = [{"role": "user", "content": text}]
+        self.runs.clear()
         t0 = time.perf_counter()
         blocks = [b async for b in self.agent.generate_response(UID, msgs, session_id=self.session)]
         await self.drain()
@@ -172,7 +174,8 @@ class Sim:
                  if b.get("type") == "tool_call" and str(b.get("id", "")).startswith("card-")]  # fmt: skip
         self.history += ["用户：" + text, "教练（要点）：" + answer[:300]]
         turn = {"kind": "chat", "say": text, "answer": answer, "secs": round(time.perf_counter() - t0, 1),
-                "cards": [{"kind": c.get("kind"), "draft": c.get("draft")} for c in cards]}  # fmt: skip
+                "cards": [{"kind": c.get("kind"), "draft": c.get("draft")} for c in cards],
+                "run": {k: v for r in self.runs[-1:] for k, v in r.items() if not k.startswith("_")}}  # fmt: skip
         self.day["steps"].append(turn)
         print(f"  他：{text}\n  管家（{turn['secs']} 秒）：{answer[:160]}{'…' if len(answer) > 160 else ''}")
         return turn
@@ -211,6 +214,14 @@ class Sim:
         self.day["coach_changes"] = coach.get("changes", [])
         self.day["today"] = today
         self.day["triggers"] = triggers.get("triggers", [])
+
+    async def illness(self) -> list[dict[str, Any]]:
+        """生病记录（取证用）：开始、状态、症状、好了的那天。"""
+        from ironm_agent.illness import default_illness
+
+        eps = await default_illness().since(UID, START - timedelta(days=30))
+        return [{"started": e.started.isoformat(), "status": e.status, "symptoms": e.symptoms, "level": e.level,
+                 "ended": e.ended.isoformat() if e.ended else None} for e in eps]  # fmt: skip
 
     async def workout(self, *, rpe: int, note: str = "", hard: bool = False, light: bool = False,
                       energy: str | None = None, slept: str | None = None, sore: list[str] | None = None) -> None:  # fmt: skip
@@ -418,8 +429,11 @@ async def main(days: int) -> Path:
     from ironm_agent import plugin as plugin_mod
 
     chat_memory.whole = plugin_mod.whole = whole  # type: ignore[assignment]  # 整段对话原文（模拟里没有 mirobody 的对话库）
+    def observe(run: dict[str, Any]) -> None:
+        sim_holder["sim"].runs.append(dict(run))
+
     agent = IronMAgent(health=NoHealth(), models=load_models(), environ=os.environ, history=history,
-                       earlier=empty, sources=nothing, weather=nothing)  # fmt: skip
+                       earlier=empty, sources=nothing, weather=nothing, observe=observe)  # fmt: skip
     report: dict[str, Any] = {"start": START.isoformat(), "profile": PROFILE, "days": []}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://sim") as client:
         sim = Sim(client, agent)
@@ -438,6 +452,7 @@ async def main(days: int) -> Path:
                     sim.day["error"] = f"{type(e).__name__}: {e}"[:300]
                     print("  出错：", sim.day["error"])
                 after = plan_lines(await sim.plan())
+                sim.day["illness"] = await sim.illness()
                 sim.day["plan_after"] = after
                 sim.day["plan_changed"] = after != before
                 report["days"].append(sim.day)
