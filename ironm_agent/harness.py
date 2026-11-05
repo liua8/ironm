@@ -98,6 +98,8 @@ def problem_kinds(problems: Iterable[str]) -> list[str]:
     for p in problems:
         if "不存在的" in p:
             kind = "bad_ref"
+        elif "没有标出处" in p:  # 带数字的句子没写出处（§165：以前因为说明里有 <statement> 被算成格式）
+            kind = "uncited"
         elif "JSON" in p or "规定格式" in p or "意见是空的" in p or "<statement>" in p:
             kind = "format"
         elif "数据行里找不到" in p:

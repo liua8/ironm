@@ -9,6 +9,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -19,6 +20,19 @@ from ironm_agent.protools import registry as pro
 from ironm_agent.roles import RoleSpec
 
 _log = logging.getLogger("ironm_agent.tools")
+_OUTCOME: ContextVar[str] = ContextVar("tool_outcome", default="ok")
+# 页面上的进度（§165）：每开始一步告诉页面在做什么；没列的用工具清单里的名字
+STEP_NAMES = {
+    "search_knowledge": "查资料", "search_exercises": "查动作", "query_health_indicators": "看你的健康数据",
+    "compute_metrics": "算指标", "plan_templates": "挑方案", "check_plan": "检查计划",
+    "propose_new_plan": "排计划", "propose_plan_edit": "改计划", "propose_temporary_change": "排临时调整",
+    "log_workout": "记训练", "recall_memory": "翻你以前说的", "estimate_strength": "估重量",
+    "find_substitutes": "找替代动作", "training_patterns": "看训练记录", "pain_check": "判断疼痛",
+    "nutrition_calc": "算营养", "trend_analysis": "看趋势", "explain_trends": "解读数据",
+    "app_help": "查 App 用法", "search_web": "联网查", "load_skill": "翻做法", "timeline": "看时间线",
+}  # fmt: skip
+QUIET_STEPS = frozenset({"record_state", "remember"})  # 每轮顺手记的，不当一步给他看
+type Progress = Callable[[str, str, str, bool | None], None]  # (编号, 名字, 说明, 结果：None 表示刚开始)
 
 HEALTH = "query_health_indicators"
 KNOWLEDGE = "search_knowledge"
@@ -226,6 +240,14 @@ def _default_render(envelope: Any) -> str:
     return str(render_compact(envelope))
 
 
+def _step_name(tool: str) -> str:
+    if tool in STEP_NAMES:
+        return STEP_NAMES[tool]
+    from ironm_agent.tool_catalog import CATALOG
+
+    return next((x.title for x in CATALOG if x.agent == tool), "查一下")
+
+
 class Toolbox:
     """一个 Agent 在一轮里的工具箱。"""
 
@@ -264,7 +286,8 @@ class Toolbox:
         self.user_info = {"user_id": user_id, "session_id": session_id}
         self.render = render
         self.evidence = Evidence()
-        self._outcome = "ok"  # 这一次工具调用的结果（run 里记下）
+        self.progress: Progress | None = None  # 页面进度（§165）：每开始、做完一步告诉页面
+        self._steps = 0
         if calcs:
             self.evidence.calcs.update(calcs)
 
@@ -340,18 +363,43 @@ class Toolbox:
         self.evidence.calls.append({"tool": "prefetch_health", "result": self._outcome, "ms": ms})
         return text, len(self.evidence.support) - before, self._outcome != "error"
 
+    # 这一次工具调用的结果（run 里记下）：放在上下文变量里，几个查询同时跑时各记各的（§165）
+    @property
+    def _outcome(self) -> str:
+        return _OUTCOME.get()
+
+    @_outcome.setter
+    def _outcome(self, value: str) -> None:
+        _OUTCOME.set(value)
+
+    def step(self, name: str, detail: str = "") -> str | None:
+        """告诉页面开始了一步，返回这一步的编号（没接页面时 None）。"""
+        if self.progress is None:
+            return None
+        self._steps += 1
+        sid = f"step-{self._steps}"
+        self.progress(sid, name, detail[:40], None)
+        return sid
+
+    def step_done(self, sid: str | None, ok: bool = True) -> None:
+        if sid is not None and self.progress is not None:
+            self.progress(sid, "", "", ok)
+
     async def run(self, call: ToolCall) -> str:
         """执行一次工具调用，并记下结果和耗时（spec [2026-10-23] §31）。"""
         self._outcome = "ok"
         start = time.perf_counter()
+        sid = (None if call.name in QUIET_STEPS
+               else self.step(_step_name(call.name), str(call.arguments.get("query") or "")))  # fmt: skip
         try:
             return await self._dispatch(call)
-        except Exception:
+        except BaseException:  # 出错或被停下（到了时限）：这一步记成没做完
             self._outcome = "error"
             raise
         finally:
             ms = int((time.perf_counter() - start) * 1000)
             self.evidence.calls.append({"tool": call.name, "result": self._outcome, "ms": ms})
+            self.step_done(sid, self._outcome != "error")
 
     async def _dispatch(self, call: ToolCall) -> str:
         if self.actions is not None and call.name in ACTION_TOOLS:
@@ -381,6 +429,8 @@ class Toolbox:
         assert self.context is not None
         self.evidence.pro_queries += 1
         result = await pro.run(call.name, self.context, call.arguments)
+        if result.plans and self.actions is not None:  # 方案库的草稿：交新计划时可以只写方案编号和改法（§165）
+            self.actions.template_plans.update(result.plans)
         return pro.render(
             result,
             role=self.spec.role.value,

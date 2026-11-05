@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Mapping, Sequence
 from datetime import date
@@ -33,6 +34,7 @@ from ironm_agent.skills import Skill, by_id, catalog_any, prompt_of
 from ironm_agent.tools import Toolbox
 from ironm_agent.training import weekday_name
 
+HARD_S = 42.0  # 作答最长多少秒（加上作答前的准备约 45 秒）；到了就停下说没答上来（§165）
 LOAD_SKILL = "load_skill"
 APP_HELP = "app_help"
 
@@ -97,6 +99,7 @@ async def _app_help(box: Toolbox, args: Mapping[str, Any]) -> str:
 
 EXTRA_TOOLS = {LOAD_SKILL: (LOAD_SKILL_SCHEMA, _load_skill), APP_HELP: (APP_HELP_SCHEMA, _app_help)}
 
+# 不变的放前面、每轮不同的（动作写法、回答分段、装上的规程）放最后：提示缓存按开头相同的部分算（§165）
 _PROMPT = """你是健身 App 里的「AI 健身管家」：一位持证体能教练，同时懂运动营养和运动康复。训练、饮食、恢复与睡眠、身体数据的解读、App 怎么用、闲聊，都由你一个人回答。
 
 {framework}
@@ -107,20 +110,20 @@ _PROMPT = """你是健身 App 里的「AI 健身管家」：一位持证体能�
 1. 先判断这句话和前面的关系：新问题、对上一条回答的追问或质疑、补充条件、对计划预览的意见，还是闲聊。接着上一轮的，就接着上一轮答。被质疑时先核对你上一条回答和预览里实际说过什么：说错或漏了就认错并改正；没说错就用你说过的内容回答，不要顺着认错。
 2. 只答问的：第一句就是答案，原因放后面，没问到的不说，等他追问再展开。他提了要求（"给我安排个轻松的"），第一句先接住：能做就直接给，不能做再说为什么。他只说自己的状况（"今天有点不舒服""好累"）、没问怎么办时，关心一句、问怎么了，不主动给做法和安排。提起记忆和今天的状态像教练当面说话：用问候或一句话带过（"前两天说感冒了，好点了吗"），不报日期，不转述系统的判断（"现在还没好"），他没问的计划安排（今天本来是休息日、病后第一次按几成）不说。超出健身、饮食、恢复、身体数据的问题，说明帮不上、能帮什么。不诊断、不开药。
 3. 关于这个人的事实（状态、伤病、计划、记录、数据）只照档案、数据、记忆和对话说，不推测、不编造；数据不是最近 7 天的，说清是哪天的，不当成现在的状态；给具体的量（组次、克数、分钟），数字用工具结果、档案或资料里的，不自己估。
-4. 需要信息就调用工具（{tools}），一轮可以调几次，拿到要的就作答。问 App 怎么用时调用 app_help。装上的规程不够时调用 load_skill 再装一份（目录在最后）。
+4. 需要信息就调用工具（这一轮能用的都在工具列表里），一轮可以调几次，拿到要的就作答；要查几样（几个动作、几条资料）就在同一次里一起调用，不要查一样等一样。问 App 怎么用时调用 app_help。装上的规程不够时调用 load_skill 再装一份（目录在下面）。
 
 出处（系统会逐句核对）：用到资料的句子句末写〔K03〕，用到档案或计算结果写〔C2〕，凭经验写〔经验〕；用到他的健康数据写成 <statement>这句话<cite>[r3]</cite></statement>。带数字的句子都要有出处，数字照资料、计算或数据写。
+
+他说了自己今天的状况调用 record_state，说了量的体重、腰围这类数调用 log_body，说了吃了什么调用 log_meal，说了关于他本人、以后要照顾到的情况（伤病、器械、作息、偏好、近期的事）调用 remember；要换目标方向或定目标体重和日期调用 propose_goal（出卡片，他确认才改）；只记他说了的，问话、假设、别人的不记。
+
+可以再装的规程目录：
+{catalog}
 
 计划和训练记录（只在需要时做；只是问问、抱怨、闲聊、解释时不做，计划不动）：
 {actions}
 
-他说了自己今天的状况调用 record_state，说了量的体重、腰围这类数调用 log_body，说了吃了什么调用 log_meal，说了关于他本人、以后要照顾到的情况（伤病、器械、作息、偏好、近期的事）调用 remember；要换目标方向或定目标体重和日期调用 propose_goal（出卡片，他确认才改）；只记他说了的，问话、假设、别人的不记。
-
 {slots}
-打招呼、道谢、闲聊时只写 answer（一两句自然回应），其余几段留空，不报今天的计划、打卡和数据。{skills}
-
-可以再装的规程目录：
-{catalog}"""
+打招呼、道谢、闲聊时只写 answer（一两句自然回应），其余几段留空，不报今天的计划、打卡和数据。{skills}"""
 
 _ASK_FIRST = (
     "- 用户明确要一份新计划（还没有计划、要重排），或长期条件变了（换了健身房、以后每周只能练两天）要重来：这一轮不交计划，"
@@ -231,12 +234,10 @@ async def respond(
         toolbox.actions.unlock(
             [*ALWAYS, *([ASK_TERMS] if training else []), *(t for x in skills for t in x.toolset)]
         )
-    tools = "、".join(str(s["function"]["name"]) for s in toolbox.schemas()) or "（没有可用的工具）"
     actions = actions_prompt(has_plan=has_plan, confirmed=confirmed, just_asked=just_asked)
     toolbox.actions_held = "" if training else actions
     system = _PROMPT.format(
         framework=framework_for(),
-        tools=tools,
         actions=actions if training else ACTIONS_SHORT,
         slots=slots_prompt(text, None),
         skills=prompt_of(skills, flags),
@@ -281,8 +282,15 @@ async def respond(
     trace: dict[str, Any] = {"rounds": 0, "checks": [], "fixed": False, "repaired": False,
                              "exhausted": False, "forced": False, "domains": [r.value for r in domains]}  # fmt: skip
     start = time.perf_counter()
-    try:
-        opinion = await _loop(GENERAL, messages, toolbox, llm, said, today, trace, question=text)
+    try:  # 一轮最多等 HARD_S 秒：到了就停下说没答上来，不等到超时重试完（§165）
+        opinion = await asyncio.wait_for(
+            _loop(GENERAL, messages, toolbox, llm, said, today, trace, question=text), HARD_S
+        )
+    except TimeoutError:
+        trace["timeout"] = True
+        silent = Opinion(role=Role.GENERAL, speak=False, reason="这次没在时限里答出来")
+        trace["ms"] = int((time.perf_counter() - start) * 1000)
+        return Consultation(silent, toolbox.evidence, "failed", trace)
     except ModelUnavailable:
         silent = Opinion(role=Role.GENERAL, speak=False, reason="这次没能调用模型")
         trace["ms"] = int((time.perf_counter() - start) * 1000)

@@ -7,9 +7,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -19,17 +21,39 @@ from pydantic import ValidationError
 
 from ironm_agent.actions import ALWAYS, Desk
 from ironm_agent.answer_format import assemble, is_slots
-from ironm_agent.checks import EXPERIENCE, check_text, cited_ids, merge_echoes, repair, sentences
+from ironm_agent.checks import (
+    EXPERIENCE,
+    autocite,
+    check_text,
+    cited_ids,
+    merge_echoes,
+    repair,
+    sentences,
+)
 from ironm_agent.common import ContractModel
 from ironm_agent.harness import problem_kinds
-from ironm_agent.llm import LLM, parse_json
+from ironm_agent.llm import LLM, ModelUnavailable, parse_json
 from ironm_agent.roles import Role, RoleSpec
-from ironm_agent.tools import Evidence, Toolbox
+from ironm_agent.tools import (
+    EXERCISES,
+    HEALTH,
+    KNOWLEDGE,
+    MEDICAL,
+    MEDS,
+    METRICS,
+    Evidence,
+    Toolbox,
+)
 
 _log = logging.getLogger("ironm_agent.experts")
 
 MAX_QUERIES = 3  # 每个 Agent 每轮最多查询几次
 MAX_ROUNDS = 5  # 每个 Agent 每轮最多和模型往返几次（含查询）
+SOFT_S = 20.0  # 作答过了这么多秒不再给查询工具，用已经查到的作答（§165）；交计划、记录的动作工具照给
+# 占查询次数的查询（专业工具、装规程不占）；同时跑会撞编号的（联网、医学资料：等写完才定编号）照旧一个个跑
+COUNTED = frozenset({HEALTH, KNOWLEDGE, METRICS, EXERCISES, MEDS, MEDICAL, "search_web"})
+ONE_BY_ONE = frozenset({"search_web", MEDICAL})
+LATE = "时间不多了，不再查：用已经查到的直接作答（JSON）；要交的计划、记录照常用动作工具交。"
 _FIELDS = ("answer",)  # 管家直接写给用户的回答（单 Agent，§68 起只有这一项）
 
 
@@ -99,6 +123,18 @@ def problems_of(opinion: Opinion, evidence: Evidence, text: str) -> list[str]:
     )
 
 
+def _cited(opinion: Opinion, evidence: Evidence, text: str, trace: dict[str, Any]) -> Opinion:
+    """能对上的出处由代码补上（§165），省一次退回模型。"""
+    if not opinion.speak or not opinion.answer:
+        return opinion
+    answer = autocite(opinion.answer, support=evidence.support, entries=evidence.entries,
+                      question=text, calcs=evidence.calcs)  # fmt: skip
+    if answer == opinion.answer:
+        return opinion
+    trace["autocited"] = trace.get("autocited", 0) + 1
+    return opinion.model_copy(update={"answer": answer, "basis": tuple(cited_ids(answer))})
+
+
 def _repaired(opinion: Opinion, evidence: Evidence, text: str) -> Opinion:
     """repair 回答：对不上的个人数据句删掉，其余对不上出处的句子改标〔经验〕。"""
     fields = {
@@ -130,9 +166,25 @@ def _salvage(content: str, fields: Sequence[str]) -> dict[str, Any] | None:
     return out or None
 
 
+def _prose(content: str) -> dict[str, Any] | None:
+    """没按 JSON 写、但写的就是一段回答（§165）：照正文用，不退回整段重写。像 JSON 的残片不算。"""
+    text = content.strip()
+    if text.startswith("```"):
+        text = text.strip("`").removeprefix("json").strip()
+    if len(text) < 6 or "{" in text[:40] or '"answer"' in text or _NOT_ANSWER.match(text):
+        return None
+    cjk = sum("\u4e00" <= ch <= "\u9fff" for ch in text)
+    if cjk < 4 or cjk < len(text.replace(" ", "")) * 0.4 or text.rstrip().endswith(("：", ":")):
+        return None  # 英文报错、代码、只说了"接下来要做什么"的半句：不算回答
+    return {"answer": text}
+
+
+_NOT_ANSWER = re.compile(r"(?:我先|让我|我来|先查|查一下|稍等|正在|好的，我(?:先|来)|error|Error|ERROR|Traceback)")
+
+
 def _parse(role: Role, content: str, question: str = "") -> Opinion | None:
     fields = _FIELDS
-    raw = parse_json(content) or _salvage(content, fields)
+    raw = parse_json(content) or _salvage(content, fields) or _prose(content)
     if raw is None:
         return None
     if is_slots(raw):  # 按分段写的：由代码拼成正文、按问题类型限长（§38）
@@ -150,6 +202,38 @@ def _parse(role: Role, content: str, question: str = "") -> Opinion | None:
         return None
 
 
+_PATCH_ASK = (
+    "（系统核对，不是用户说的；用户看不到你上一版和这条。直接改正，回答里不提格式、不道歉）"
+    "下面这些句子要改。只把要改的句子改好交回来，不用重写整段，"
+    '只输出 JSON：{"fixes": [{"old": "照抄回答里要改的那一整句", "new": "改好的整句"}]}。'
+    "改法照核对说的：数字照资料、计算或数据写，句末补上出处；说不准的删掉（new 写空字符串）。要改的："
+)
+
+
+def _patched(role: Role, opinion: Opinion, content: str, question: str) -> Opinion | None:
+    """核对退回后交回的改句（§156）：逐句替换进原回答；交回的是整段回答时照整段用；什么都没用上时返回 None。"""
+    raw = parse_json(content)
+    if raw is None:
+        return None
+    if "fixes" not in raw:  # 又整段写了：照整段处理（和整段重写时一样，先合并写了两遍的）
+        whole = _parse(role, content, question)
+        return (
+            whole.model_copy(update={f: merge_echoes(getattr(whole, f)) for f in _FIELDS})
+            if whole
+            else None
+        )
+    answer = opinion.answer
+    for fix in raw.get("fixes") or []:
+        if not isinstance(fix, dict):
+            continue
+        old, new = str(fix.get("old") or ""), str(fix.get("new") or "")
+        if old and old in answer:
+            answer = answer.replace(old, new, 1)
+    if answer == opinion.answer:
+        return None
+    return opinion.model_copy(update={"answer": answer, "basis": tuple(cited_ids(answer))})
+
+
 def _settled(opinion: Opinion, desk: Desk | None, trace: dict[str, Any]) -> Opinion:
     """提醒过还是说了改却没改：去掉说已经改了、记下了的那几句（§120）。"""
     if desk is None or not opinion.speak or not opinion.answer:
@@ -164,6 +248,32 @@ def experience_share(text: str) -> float:
     """标〔经验〕的句子占比（运行框架用：过半说明知识库缺这块）。"""
     all_ = sentences(text)
     return round(sum(EXPERIENCE in x for x in all_) / len(all_), 2) if all_ else 0.0
+
+
+async def _run_calls(calls: Sequence[Any], toolbox: Toolbox, trace: dict[str, Any]) -> list[str]:
+    """执行一次回复里的全部工具调用（§165）：查询同时跑，交计划、记录这类动作按先后跑；结果按调用的顺序交回。
+    查询次数不够全部同时跑时照原来一个个跑（用完了的那几个告诉它查询次数已用完）。"""
+    out: list[str | None] = [None] * len(calls)
+    lookups = [i for i, c in enumerate(calls) if not toolbox.is_action(c.name)]
+    if trace.get("late"):
+        for i in lookups:
+            out[i] = LATE
+        lookups = []
+    looks = [i for i in lookups if calls[i].name not in ONE_BY_ONE]
+    counted = sum(1 for i in looks if calls[i].name in COUNTED)  # 占查询次数的
+    if len(looks) > 1 and toolbox.evidence.queries + counted <= MAX_QUERIES:
+        trace["parallel"] = trace.get("parallel", 0) + len(looks)
+        for i, got in zip(looks, await asyncio.gather(*(toolbox.run(calls[i]) for i in looks)), strict=True):
+            out[i] = got
+    for i, call in enumerate(calls):
+        if out[i] is not None:
+            continue
+        if not toolbox.is_action(call.name) and toolbox.evidence.queries >= MAX_QUERIES:
+            trace["exhausted"] = True
+            out[i] = "查询次数已用完。请根据已有依据作答，直接输出 JSON。"
+        else:
+            out[i] = await toolbox.run(call)
+    return [x or "" for x in out]
 
 
 async def _loop(
@@ -183,9 +293,14 @@ async def _loop(
     desk = toolbox.actions
     offered = bool(toolbox.schemas())  # 有工具才提供；装了规程会多出动作工具，所以每轮重新取
     only_actions = False  # 往返到上限后：不再查，只留动作工具，查好的计划、记录还能交上来
+    began = time.perf_counter()
     while True:
         rounds += 1
         trace["rounds"] = rounds
+        if not trace.get("late") and offered and time.perf_counter() - began > SOFT_S:
+            trace["late"] = True  # 慢了：只留动作工具（没有就不给工具），逼它作答（§165）
+            only_actions = desk is not None and bool(desk.schemas())
+            offered = only_actions
         offer = desk.schemas() if only_actions and desk is not None else toolbox.schemas()
         tools = (offer or None) if offered else None
         reply = await llm.chat("expert", messages, tools=tools, json_mode=tools is None)
@@ -210,12 +325,7 @@ async def _loop(
                 offered = only_actions  # 只留动作工具；再往后不提供工具，逼它作答
                 continue
             messages.append(reply.as_message())
-            for call in reply.tool_calls:
-                if toolbox.evidence.queries >= MAX_QUERIES and not toolbox.is_action(call.name):
-                    trace["exhausted"] = True
-                    result = "查询次数已用完。请根据已有依据作答，直接输出 JSON。"
-                else:
-                    result = await toolbox.run(call)
+            for call, result in zip(reply.tool_calls, await _run_calls(reply.tool_calls, toolbox, trace), strict=True):
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
             continue
         opinion = _parse(spec.role, reply.content, question)
@@ -223,6 +333,7 @@ async def _loop(
             opinion = opinion.model_copy(
                 update={f: merge_echoes(getattr(opinion, f)) for f in _FIELDS}
             )
+            opinion = _cited(opinion, toolbox.evidence, text, trace)
         if opinion is not None and desk is not None and rounds < limit:  # 提醒后还要留一轮能调工具
             # 刚确认了条件却没交计划、说了改却没改：提醒一次，让它调用工具或改口（§120）
             nudge = desk.followup(opinion.body())
@@ -252,6 +363,29 @@ async def _loop(
             return _settled(_repaired(opinion, toolbox.evidence, text), desk, trace)
         fixes += 1
         messages.append({"role": "assistant", "content": reply.content})
+        # 回答读得出来：只让它把被指出的那几句改好交回来，不整段重写（§156）
+        if opinion is not None:
+            ask = _PATCH_ASK + json.dumps(problems, ensure_ascii=False)
+            messages.append({"role": "user", "content": ask})
+            sid = toolbox.step("核对出处和数字")
+            try:
+                patch = await llm.chat("expert", messages, json_mode=True)
+            except ModelUnavailable:  # 改句没要到：照原来改不好时的做法由代码修正
+                patch = None
+            finally:
+                toolbox.step_done(sid, ok=True)
+            rounds += 1
+            trace["rounds"] = rounds
+            fixed = _patched(spec.role, opinion, patch.content, question) if patch else None
+            trace["patched"] = fixed is not None and fixed is not opinion
+            opinion = _cited(fixed or opinion, toolbox.evidence, text, trace)
+            if not problems_of(opinion, toolbox.evidence, text):
+                return _settled(opinion, desk, trace)
+            trace["repaired"] = True
+            _log.info(
+                "expert opinion repaired: role=%s problems=%d", spec.role.value, len(problems)
+            )
+            return _settled(_repaired(opinion, toolbox.evidence, text), desk, trace)
         messages.append(
             {
                 "role": "user",

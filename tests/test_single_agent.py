@@ -31,6 +31,7 @@ class Solo:
         self.route: Callable[[str], Reply] = lambda _: Reply("不是 JSON")
         self.system = ""
         self.user = ""
+        self.offered: list[str] = []  # 最近一次作答给它的工具名
 
     def __call__(self, stage: Stage, messages: Sequence[Mapping[str, Any]], tools: bool) -> Reply:
         if stage == "route":  # 按意图选规程（§75）：默认给不出合格的结果，退回按关键词
@@ -167,7 +168,9 @@ def test_new_plan_is_confirmed_first_then_built(monkeypatch: Any) -> None:
 
 
 def test_plan_written_before_confirming_is_held_back(monkeypatch: Any) -> None:
-    a, _ = single(acting(NEW_PLAN, {"plan": NEW, "changes": ""}, {"answer": "给你排好了。"}), monkeypatch)
+    a, _ = single(
+        acting(NEW_PLAN, {"plan": NEW, "changes": ""}, {"answer": "给你排好了。"}), monkeypatch
+    )
     blocks, seen = run(a, "帮我做个计划")
     assert seen["path"] == "clarify" and HEAD in text_of(blocks) and not cards(blocks)
 
@@ -249,7 +252,9 @@ def test_data_risk_drops_an_edit_without_claiming_it_was_done(monkeypatch: Any) 
                   seeded=True, snapshot=snapshot_of(BP))  # fmt: skip
     blocks, seen = run(a, "周三那次挪到周四")  # 规则认不出是训练问题：模型给了改动
     assert seen["action_dropped"] == "risk" and seen["path"] == "risk"
-    assert {x["result"] for x in seen["actions"]} == {"locked"}  # 危急情况这一轮没有改计划工具（§120）
+    assert {x["result"] for x in seen["actions"]} == {
+        "locked"
+    }  # 危急情况这一轮没有改计划工具（§120）
     assert "已经把" not in text_of(blocks) and "186/114" in text_of(blocks) and not cards(blocks)
 
 
@@ -286,7 +291,9 @@ def test_reply_right_after_a_plan_preview_is_read_as_about_the_preview(monkeypat
 
     a._history = previewed
     run(a, "都不好")
-    assert "他这句如果是在回应这份预览" in s.user and "他问的是别的事，就只答他问的" in s.user  # §108
+    assert (
+        "他这句如果是在回应这份预览" in s.user and "他问的是别的事，就只答他问的" in s.user
+    )  # §108
     a._history = lambda *_: _empty()
     run(a, "都不好")
     assert "他这句先当成对这份预览的回应" not in s.user  # 上一轮没给预览时不加
@@ -294,3 +301,46 @@ def test_reply_right_after_a_plan_preview_is_read_as_about_the_preview(monkeypat
 
 async def _empty() -> list[str]:
     return []
+
+
+# ---- §156 问答提速 ----------------------------------------------------------------------------
+
+
+def test_prompt_asks_to_query_several_things_at_once() -> None:
+    from ironm_agent import agent as agent_mod
+
+    assert (
+        "要查几样（几个动作、几条资料）就在同一次里一起调用，不要查一样等一样" in agent_mod._PROMPT
+    )
+
+
+def _retry(monkeypatch: Any, second: str) -> tuple[str, int]:
+    calls: list[int] = []
+
+    def answer(system: str, user: str, results: list[str]) -> Any:
+        calls.append(1)
+        if len(calls) == 1:  # 第一版引了不存在的编号：核对不过
+            return jsonr({"answer": "一周练 3 次就够〔K999〕。睡够 7 小时〔经验〕。"})
+        return second
+
+    a, _ = single(answer, monkeypatch, old=True)
+    blocks, _ = run(a, "一周练几次")
+    return text_of(blocks), len(calls)
+
+
+def test_check_retry_only_patches_the_flagged_sentence(monkeypatch: Any) -> None:
+    fix = jsonr(
+        {"fixes": [{"old": "一周练 3 次就够〔K999〕。", "new": "一周练 3 次就够〔经验〕。"}]}
+    )
+    text, n = _retry(monkeypatch, fix)
+    assert n == 2 and "一周练 3 次就够" in text and "睡够 7 小时" in text and "K999" not in text
+
+
+def test_patch_that_does_not_apply_falls_back_to_code_repair(monkeypatch: Any) -> None:
+    text, n = _retry(monkeypatch, jsonr({"fixes": [{"old": "原文里没有的句子", "new": "x"}]}))
+    assert n == 2 and "K999" not in text and "睡够 7 小时" in text  # 不再多要一轮，由代码修正
+
+
+def test_whole_answer_sent_back_is_used_as_before(monkeypatch: Any) -> None:
+    text, n = _retry(monkeypatch, jsonr({"answer": "一周练 3 次就够〔经验〕。"}))
+    assert n == 2 and text.startswith("一周练 3 次就够")

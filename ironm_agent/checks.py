@@ -227,6 +227,101 @@ def repair(
     return repaired.strip()
 
 
+# 数字后面跟的单位：补出处时要求资料里同一个数后面也是这个单位，免得"3 组"对上资料里不相干的 3（审查 11-05）
+_UNIT = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(?:[–\-~～至到]\s*(\d+(?:\.\d+)?)\s*)?([%％]|[a-zA-Z]{1,4}|[\u4e00-\u9fff]{1,2})"
+)
+_ABOUT_HIM = re.compile(r"你|您")
+
+
+def _units(text: str) -> set[tuple[float, str]]:
+    out: set[tuple[float, str]] = set()
+    for a, b, u in _UNIT.findall(text):  # 范围"3–4 周"：两头都算带这个单位
+        out |= {(float(x), u.lower()) for x in (a, b) if x}
+    return out
+
+
+def _source_for(sentence: str, loose: Sequence[float], *, cited: Sequence[str], entries: Mapping[str, Entry],
+                calcs: Mapping[str, str], support: Mapping[str, Sequence[float]]) -> str | None:  # fmt: skip
+    """这几个数字全都能对上、又不会认错的那一处出处（§165）：回答别处引过的资料优先；
+    其次正好一个计算结果；再次这一轮查到的资料里正好一条；最后健康数据里正好一行。都不行返回 None。
+    资料和计算要数字连同单位都对得上（"5 克"对"5 克"）；健康数据只补说他自己的句子（有"你"）。"""
+    want = {(v, u) for v, u in _units(sentence) if any(abs(v - x) < 1e-9 for x in loose)}
+    if {v for v, _ in want} != {float(x) for x in loose}:
+        return None  # 有的数没带单位：说不准是哪来的
+
+    def same(text: str) -> bool:
+        have = _units(text)
+        return all(any(abs(v - hv) < 1e-9 and u[:1] == hu[:1] for hv, hu in have) for v, u in want)
+
+    def kb(ids: Sequence[str]) -> list[str]:
+        return [r for r in ids if r in entries and same(entries[r].as_evidence())]
+
+    if hit := kb(cited):
+        return f"〔{hit[0]}〕"
+    if len(hit := [c for c in calcs if same(calcs[c])]) == 1:
+        return f"〔{hit[0]}〕"
+    if len(hit := kb([r for r in entries if r not in cited])) == 1:
+        return f"〔{hit[0]}〕"
+    if _ABOUT_HIM.search(sentence) and len(
+        hit := [r for r, vals in support.items() if all(traced(v, list(vals)) for v in loose)]
+    ) == 1:
+        return f"<cite>[{hit[0]}]</cite>"
+    return None
+
+
+_LEAD = re.compile(r"\s*(?:[-•*]|\d+[.、)])?\s*")
+
+
+def autocite(
+    text: str,
+    *,
+    support: Mapping[str, Sequence[float]],
+    entries: Mapping[str, Entry],
+    question: str,
+    calcs: Mapping[str, str] | None = None,
+) -> str:
+    """没写出处、数字却都能在这一轮的资料、计算、健康数据里对上的句子，由代码在句末补上出处（§165），
+    省一次退回模型。只补没写任何出处的句子；对不上、或可能认错（几处都对得上）的不动，照旧退回。"""
+    calcs = calcs or {}
+    own = written_numbers(question)
+    cited = [r for r in dict.fromkeys(KB_REF.findall(text)) if r in entries]
+    changed = False
+
+    def fix(m: re.Match[str]) -> str:
+        nonlocal changed
+        sentence = m.group(0)
+        if not sentence.strip() or ANY_REF.search(sentence) or "<" in sentence or "⟦" in sentence:
+            return sentence
+        loose = [v for v in written_numbers(sentence) if not traced(v, own)]
+        if not loose:
+            return sentence
+        mark = _source_for(sentence, loose, cited=cited, entries=entries, calcs=calcs, support=support)
+        if mark is None:
+            return sentence
+        changed = True
+        body = sentence.rstrip("\n")
+        tail = sentence[len(body) :]
+        if mark.startswith("<cite>"):
+            lead = _LEAD.match(body)
+            n = lead.end() if lead else 0  # 列表的"- "、"1. "留在标记外面
+            return f"{body[:n]}<statement>{body[n:]}{mark}</statement>{tail}"
+        return body + mark + tail
+
+    held: list[str] = []
+
+    def hold(m: re.Match[str]) -> str:
+        held.append(m.group(0))
+        return _tag(len(held) - 1)
+
+    body = _SENTENCE.sub(fix, _STATEMENT.sub(hold, text))  # 带数据编号的句子不动
+    if not changed:
+        return text
+    for i, whole in enumerate(held):
+        body = body.replace(_tag(i), whole, 1)
+    return body
+
+
 def _tag(i: int) -> str:
     """占位符里不能有数字（会被当成句子里的数字），用字母编号：⟦Sa⟧、⟦Sb⟧ … ⟦Sba⟧。"""
     letters = ""

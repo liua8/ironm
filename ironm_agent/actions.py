@@ -139,11 +139,19 @@ NEW_PLAN_SCHEMA: dict[str, Any] = {
             "（有伤病的动作在 note 里写明限制或换掉）、今天的身体状态；每次最多 6 个动作。"
             "kind 写 new（他要新排一份：没有计划、要重来、长期条件变了）或 rewrite（在现有计划上换分化、整份重排）；"
             "new 而本会话还没确认过排新计划的条件时，系统不会出预览，会让你先列条件请他确认。"
+            "照 plan_templates 给的草稿排的：不用抄整份 plan，写 template（草稿的方案编号）和 ops（要改的地方，"
+            "写法同 propose_plan_edit 的操作，不用改就不写），系统套到草稿上再检查。交的时候系统会检查，不用先调 check_plan。"
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "plan": _PLAN,
+                "template": {"type": "string", "description": "照方案库草稿交时：草稿的方案编号（写了就不用写 plan）"},
+                "ops": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "照草稿交时要改的地方，写法同 propose_plan_edit；不用改就不写",
+                },
                 "changes": {
                     "type": "string",
                     "description": '一句话：这份计划是怎么排的、改了什么（如"周三从上肢推改成练背"）',
@@ -154,7 +162,7 @@ NEW_PLAN_SCHEMA: dict[str, Any] = {
                     "description": "new：新排一份（要先确认条件）；rewrite：在现有计划上换分化、整份重排",
                 },
             },
-            "required": ["plan", "changes", "kind"],
+            "required": ["changes", "kind"],  # plan 和 template 二选一（§165）
         },
     },
 }
@@ -619,6 +627,7 @@ class Desk:
         None  # 检查没过被退回的那份：没再交时用它出预览
     )
     ask_new_plan: bool = False  # 交了新计划但条件还没确认
+    template_plans: dict[str, Any] = field(default_factory=dict)  # 这一轮方案库给的草稿：方案编号 → 计划（§165）
     nudged: bool = False
     unacted: bool = False  # 说了改却没改，删了那几句
     trace: list[dict[str, str]] = field(default_factory=list)

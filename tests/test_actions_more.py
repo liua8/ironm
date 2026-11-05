@@ -386,7 +386,7 @@ def test_turn_that_fails_still_says_what_was_done(monkeypatch: pytest.MonkeyPatc
     def answer(system: str, user: str, results: list[str]) -> Any:
         if not results:
             return call(LOG_BODY, kind="weight", value=72)
-        return Reply("不是 JSON")
+        return Reply('{"answer": "断了')  # 断掉的 JSON（正常的一段话会照正文用，§165）
 
     a, _ = single(answer, monkeypatch, old=True)
     a._readings = ReadingBook()

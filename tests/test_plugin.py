@@ -118,8 +118,10 @@ def test_emergency_answers_without_reading_data_or_tools(monkeypatch: Any) -> No
 def test_data_question_answers_plainly_and_attaches_sources(monkeypatch: Any) -> None:
     answer = "你近 30 天静息心率很稳。<statement>平均 58 次/分<cite>[r1]</cite></statement>，在正常范围。"
     blocks = collect(agent(Scripted(answer), monkeypatch=monkeypatch), "我最近的静息心率怎么样")
-    names = [b["name"] for b in blocks if b["type"] == "tool_call"]
+    names = [b["name"] for b in blocks if b["type"] == "tool_call" and not b["id"].startswith("step-")]
     assert names == ["管家", "依据与来源"]
+    steps = [b["name"] for b in blocks if b["type"] == "tool_call" and b["id"].startswith("step-")]
+    assert steps == ["看你的健康数据"]  # 每开始一步告诉页面（§165）
     text = text_of(blocks)
     assert (
         "平均 58 次/分" in text
@@ -272,7 +274,8 @@ def test_single_mode_answers_in_one_pass_without_routing_or_composing(monkeypatc
     assert (
         set(stages) == {"route", "expert"} and stages.count("route") == 1
     )  # 不整合（没有 compose）
-    assert [b["name"] for b in blocks if b["type"] == "tool_call"] == ["管家", "依据与来源"]
+    assert [b["name"] for b in blocks
+            if b["type"] == "tool_call" and not b["id"].startswith("step-")] == ["管家", "依据与来源"]  # fmt: skip
     assert "平均 58 次/分" in text_of(blocks) and "<statement>" not in text_of(blocks)
 
 

@@ -13,7 +13,15 @@ import os
 import re
 import time
 import uuid
-from collections.abc import AsyncGenerator, Awaitable, Callable, Coroutine, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Coroutine,
+    Mapping,
+    Sequence,
+)
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from functools import cache, partial
@@ -406,6 +414,29 @@ _WEEKDAY = re.compile(r"(?:周|星期|礼拜)[一二三四五六日天]")
 def _no_day(problem: str) -> str:
     """去掉星期几再比较：挪了天的同一个老问题不算新问题。"""
     return _WEEKDAY.sub("", problem)
+
+
+async def _steps_until(
+    task: asyncio.Task[Any], steps: asyncio.Queue[tuple[str, str, str, bool | None]]
+) -> AsyncIterator[dict[str, Any]]:
+    """作答进行时，把每一步的开始和结束发给页面（§165）；作答完了把剩下的发完。"""
+    while True:
+        getting = asyncio.ensure_future(steps.get())
+        try:
+            done, _ = await asyncio.wait({task, getting}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            if not getting.done():
+                getting.cancel()
+        if getting not in done:
+            break
+        yield _step_block(getting.result())
+    while not steps.empty():
+        yield _step_block(steps.get_nowait())
+
+
+def _step_block(e: tuple[str, str, str, bool | None]) -> dict[str, Any]:
+    sid, name, detail, ok = e
+    return started(sid, name, detail) if ok is None else finished(sid, "", ok=ok)
 
 
 class IronMAgent:
@@ -1099,6 +1130,7 @@ class IronMAgent:
     ) -> AsyncGenerator[dict[str, Any]]:
         run: dict[str, Any] = {"turn": uuid.uuid4().hex[:12], "path": "error", "agent": "single"}
         start = time.perf_counter()
+        run["_t0"] = start
         llm = TurnLLM(self._models, self._environ)
         said: dict[str, Any] = {}  # 这一轮的回答（交给后台提取记忆，不进日志）
         # 这一轮的编号：页面上点"有用 / 没用"时带回来，评价记到这一轮的轨迹上（spec [2026-10-23] §31）
@@ -1141,6 +1173,10 @@ class IronMAgent:
             run["ms"] = int((time.perf_counter() - start) * 1000)
             run["model_calls"] = len(llm.calls)
             run["model_failures"] = sum(1 for c in llm.calls if not c.ok)
+            # 每次调用模型各用了多少毫秒、输入多少、命中缓存多少（§165）
+            run["calls_ms"] = [f"{c.stage}:{c.ms}" for c in llm.calls]
+            run["prompt_tokens"] = sum(c.prompt for c in llm.calls)
+            run["cache_hit"] = sum(c.cached for c in llm.calls)
             run["budget_hit"] = len(llm.calls) >= self._models.turn_budget
             # 耗时放在前面：mirobody 会截断过长的日志行；各环节明细（_ 开头）只进轨迹，不进日志
             first = (
@@ -1345,11 +1381,13 @@ class IronMAgent:
         risk_notes = [x.note for x in case.risks if x.note not in seen and x is not blocked]
         ask_ill = await self._illness_followup(user_id, run)
         # 模型先判断、关键词兜底（§114）：下面几样先看路由（模型）的结果，路由出错才按关键词
+        waited = time.perf_counter()
         try:
             routed = await routing
         except Exception as e:  # 路由出错：退回按关键词
             _log.warning("skill route failed: error_type=%s", type(e).__name__)
             routed = None
+        run["route_wait_ms"] = int((time.perf_counter() - waited) * 1000)  # 等选规程等了多久（§165）
         run["judged_by"] = "model" if routed is not None else "keyword"
         if routed is not None:  # 涉及训练：路由说的领域或选的规程里有训练
             training_ask = Role.TRAINER in routed.domains or any(
@@ -1501,13 +1539,24 @@ class IronMAgent:
             )
         toolbox.actions = desk
         run["_desk"] = desk  # 这一轮出了异常时作废它存下的预览（generate_response 里）
-        c = await respond(
+        if "_t0" in run:  # 作答前的准备（读数据、选规程……）用了多少毫秒（§165）
+            run["pre_ms"] = int((time.perf_counter() - run["_t0"]) * 1000)
+        steps: asyncio.Queue[tuple[str, str, str, bool | None]] = asyncio.Queue()
+        toolbox.progress = lambda *e: steps.put_nowait(e)  # 每开始、做完一步告诉页面（§165）
+        answering = asyncio.create_task(respond(
             text, history, concerns_of(text), toolbox, llm, personal, recall, case=case, skills=loaded,
             note="" if chatting else note, with_case=not chatting,
             has_plan=plan is not None, confirmed=confirmed, just_asked=confirmed_now,
             today=snapshot.today, training=on_training,
             images=[x.part() for x in files.images], known=known, memory_block=memory_block,
-        )  # fmt: skip
+        ))  # fmt: skip
+        try:
+            async for block in _steps_until(answering, steps):
+                yield block
+        finally:
+            if not answering.done():  # 他断开了：这一轮不再往下答
+                answering.cancel()
+        c = answering.result()
         yield finished("agent", consultation_summary(c), ok=c.status != "failed")
         run["_judged_state"] = c.status != "failed"  # 作答了：没调 record_state 就是没说（§122）
         run["_said_state"] = dict(desk.said)
@@ -1747,8 +1796,10 @@ class IronMAgent:
             if fresh and not confirmed:
                 return Outcome(False, f"本会话还没确认过排新计划的条件：这一轮不出计划，回答以「{HEAD}」开头，"
                                "把条件列给他确认。", "confirm")  # fmt: skip
-            raw = args.get("plan")
-            new, why = parse_plan(raw)
+            if not args.get("plan") and args.get("template"):  # 照方案库草稿交：代码套改法（§165）
+                new, why = self._from_template(desk, args, tools)
+            else:
+                new, why = parse_plan(args.get("plan"))
             if new is None:
                 return Outcome(False, f"计划没写对（{why}），按工具说明的格式改好再交。", "format")
             new = annotate_plan(new, ctx)
@@ -2185,6 +2236,29 @@ class IronMAgent:
         run["preview"] = "temp"
         return Outcome(True, "已出临时调整的预览卡片，等他确认（确认前计划没改，到期自动回到原计划）。", kind="temp",
                        cards=tuple(temp_card(draft, content)), draft=draft.id, what="temp")  # fmt: skip
+
+    @staticmethod
+    def _from_template(desk: Desk, args: Mapping[str, Any], tools: ToolContext | None) -> tuple[Plan | None, str]:
+        """照方案库草稿交的新计划（§165）：这一轮 plan_templates 给过的那份草稿，套上改法。"""
+        from ironm_agent.plan_ops import Conflict, apply, parse_ops
+
+        base = desk.template_plans.get(str(args.get("template") or ""))
+        if base is None:
+            return None, "这一轮方案库没给过这个方案编号的草稿：先调 plan_templates，或者交完整的 plan"
+        raw = args.get("ops")
+        if not raw:
+            return base, ""
+        ops = parse_ops(raw)
+        if not ops:
+            return None, "ops 要是改法列表，写法同 propose_plan_edit"
+        try:
+            got = apply(base, ops, equipment=tools.equipment if tools else None,
+                        injured=tools.injured if tools else ())  # fmt: skip
+        except Conflict as e:
+            return None, f"改法互相矛盾：{e}"
+        if not got.done or got.skipped:  # 有没套上的：不悄悄丢掉，告诉它哪几条，改了再交（审查 11-05）
+            return None, "这几条改法没套上：" + "；".join(got.skipped or ["一条都没套上"])
+        return got.plan, ""
 
     async def _drop_drafts(self, user_id: str, ids: Sequence[str]) -> None:
         """这一轮没给他看到的预览作废。"""

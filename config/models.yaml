@@ -15,7 +15,7 @@ stages:
     model: deepseek-flash
     api_key_env: DEEPSEEK_API_KEY
     extra_body: {thinking: {type: disabled}}
-    timeout_s: 45
+    timeout_s: 30 # §165：单次最长等 30 秒（中位 2.4 秒）
     max_retries: 1
   compose: # 主教练：整合与直接回答
     base_url: https://api.deepseek.com

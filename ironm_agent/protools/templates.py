@@ -488,6 +488,7 @@ def plan_templates(
     findings: list[Finding] = []
     notes = [f"条件：{cond}。", *said]
     entries: list[str] = []
+    drafts: list[tuple[str, object]] = []
     for i, c in enumerate(picked, start=1):
         t = c.template
         plan, changes = draft(t, c.days, goal=goal, equipment=equipment, injured=injured,
@@ -527,7 +528,8 @@ def plan_templates(
             *(_blogger(t)),
             *(f"- {x}" for x in changes),
             f"- 计划检查：{verdict}",
-            f"- 草稿（照这个人改好后写进 plan）：{as_json(plan)}",
+            f"- 草稿（可以直接交，propose_new_plan 写 template={t.id}，要改的写进 ops）：{as_json(plan)}",
         ]
         entries += [e for e in checked.entries if e not in entries]
-    return Result(tuple(findings), tuple(notes), tuple(entries))
+        drafts.append((t.id, plan))
+    return Result(tuple(findings), tuple(notes), tuple(entries), plans=tuple(drafts))

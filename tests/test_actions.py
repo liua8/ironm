@@ -61,7 +61,7 @@ def test_data_risk_turn_has_no_plan_tools_but_can_still_log(monkeypatch: Any) ->
     a, s = single(lambda *_: jsonr({"answer": "好。"}), monkeypatch, seeded=True, old=True,
                   snapshot=snapshot_of(BP))  # fmt: skip
     run(a, "帮我排个计划")
-    offered = s.system.split("需要信息就调用工具（")[1].split("）")[0]  # 这一轮给它的工具
+    offered = s.offered  # 这一轮给它的工具
     assert "plan_templates" in offered and PLAN_EDIT not in offered and NEW_PLAN not in offered
     from ironm_agent.constraints import Context
     from tests.test_plan_ops import plan as seeded_plan
@@ -294,7 +294,7 @@ def test_last_turns_preview_survives_a_turn_that_fails_to_answer(monkeypatch: An
             return call(PLAN_EDIT, ops=MOVE if state["turn"] == 1 else DROP_FRI)
         if state["turn"] == 1:
             return jsonr({"answer": "周三那次挪到周四了。"})
-        return Reply("不是 JSON")  # 第二轮答不出来
+        return Reply('{"answer": "断了')  # 断掉的 JSON（正常的一段话会照正文用，§165）  # 第二轮答不出来
 
     a, _ = single(answer, monkeypatch, seeded=True, old=True)
     first, _ = run(a, "把周三挪到周四")
@@ -421,7 +421,7 @@ def test_terms_tool_is_offered_on_training_turns_without_plan_build(monkeypatch:
     a, s = single(lambda *_: jsonr({"answer": "好。"}), monkeypatch, old=True)
     s.route = routed(["readiness-adjust"], ["train"])
     run(a, "今天练什么")
-    offered = s.system.split("需要信息就调用工具（")[1].split("）")[0]
+    offered = s.offered
     assert ASK_TERMS in offered and NEW_PLAN not in offered  # 先确认条件的给，交计划的跟着规程
     a, s = single(lambda *_: jsonr({"answer": "你好！"}), monkeypatch, old=True)
     run(a, "你好")

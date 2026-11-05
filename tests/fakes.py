@@ -30,6 +30,8 @@ class FakeLLM:
     ) -> Reply:
         self.calls.append(CallRecord(stage, "fake", 0, True))
         self.seen.append((stage, list(messages)))
+        if hasattr(self.handler, "offered") and stage != "route":  # 这一次给模型的工具名（§165 起不再写进提示）
+            self.handler.offered = [str(t["function"]["name"]) for t in tools or ()]  # type: ignore[attr-defined]
         return self.handler(stage, messages, bool(tools))
 
 

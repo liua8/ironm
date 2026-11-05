@@ -32,6 +32,7 @@ class Result:
     notes: tuple[str, ...] = ()  # 不领编号的说明：缺什么、怎么用、动作清单等
     entries: tuple[str, ...] = ()  # 用到的动作库条目编号（K9..），记为这一轮可以引用的依据
     problems: tuple[str, ...] = ()  # 必须改的问题（计划检查用；系统据此退回重写）
+    plans: tuple[tuple[str, object], ...] = ()  # 方案库做好的草稿：方案编号 → 计划（交新计划时可以直接用，§165）
 
     @classmethod
     def note(cls, *lines: str) -> Result:

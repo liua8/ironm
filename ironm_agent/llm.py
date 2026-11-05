@@ -86,6 +86,8 @@ class CallRecord:
     ms: int
     ok: bool
     error_type: str | None = None
+    prompt: int = 0  # 输入多少 token（§165）
+    cached: int = 0  # 其中命中提示缓存的（DeepSeek 的 prompt_cache_hit_tokens）
 
 
 class LLM(Protocol):
@@ -127,20 +129,22 @@ class TurnLLM:
                 raise ModelUnavailable("budget")
             start = time.perf_counter()
             try:
-                reply = await _request(route, key, messages, tools, json_mode)
+                reply, usage = await _request(route, key, messages, tools, json_mode)
             except Exception as e:  # 超时、网络、服务端出错：重试一次
                 self.calls.append(_record(stage, route, start, e))
                 last = e
                 continue
-            self.calls.append(_record(stage, route, start, None))
+            self.calls.append(_record(stage, route, start, None, usage))
             return reply
         raise ModelUnavailable(type(last).__name__ if last else "unknown")
 
 
-def _record(stage: Stage, route: StageModel, start: float, error: Exception | None) -> CallRecord:
+def _record(
+    stage: Stage, route: StageModel, start: float, error: Exception | None, usage: tuple[int, int] = (0, 0)
+) -> CallRecord:
     ms = int((time.perf_counter() - start) * 1000)
     return CallRecord(
-        stage, route.model, ms, error is None, type(error).__name__ if error else None
+        stage, route.model, ms, error is None, type(error).__name__ if error else None, *usage
     )
 
 
@@ -150,7 +154,7 @@ async def _request(
     messages: Sequence[Mapping[str, Any]],
     tools: Sequence[Mapping[str, Any]] | None,
     json_mode: bool,
-) -> Reply:
+) -> tuple[Reply, tuple[int, int]]:
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(
@@ -173,7 +177,9 @@ async def _request(
         for c in (msg.tool_calls or [])
         if c.type == "function"
     )
-    return Reply(msg.content or "", calls)
+    u = resp.usage
+    usage = (int(getattr(u, "prompt_tokens", 0) or 0), int(getattr(u, "prompt_cache_hit_tokens", 0) or 0)) if u else (0, 0)
+    return Reply(msg.content or "", calls), usage
 
 
 def _arguments(raw: str) -> dict[str, Any]:
