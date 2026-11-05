@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections import defaultdict
 from collections.abc import Collection, Sequence
@@ -232,8 +233,12 @@ def detect(
 
 
 class PainStore(Protocol):
-    async def add(self, user_id: str, part: str, day: date) -> None: ...
+    async def add(self, user_id: str, part: str, day: date, **detail: str) -> None: ...
     async def since(self, user_id: str, start: date) -> list[tuple[str, date]]: ...
+    async def details(self, user_id: str, start: date) -> list[dict[str, Any]]: ...
+
+
+PAIN_DETAIL = ("side", "exercise", "level")  # 管家记疼时一起交的：左右、在做哪个动作、轻重（§163）
 
 
 class PainBook:
@@ -241,12 +246,23 @@ class PainBook:
 
     def __init__(self) -> None:
         self.rows: dict[str, list[tuple[str, date]]] = {}
+        self.more: dict[str, list[dict[str, str]]] = {}  # 和 rows 一一对应的细节
 
-    async def add(self, user_id: str, part: str, day: date) -> None:
+    async def add(self, user_id: str, part: str, day: date, **detail: str) -> None:
         self.rows.setdefault(user_id, []).append((part, day))
+        self.more.setdefault(user_id, []).append({k: str(detail.get(k) or "") for k in PAIN_DETAIL})
 
     async def since(self, user_id: str, start: date) -> list[tuple[str, date]]:
         return _coded([x for x in self.rows.get(user_id, []) if x[1] >= start])
+
+    async def details(self, user_id: str, start: date) -> list[dict[str, Any]]:
+        rows, more = self.rows.get(user_id, []), self.more.get(user_id, [])
+        out = []
+        for i, (part, day) in enumerate(rows):
+            code = joint_code(part)
+            if code is not None and day >= start:
+                out.append({"part": code, "day": day, **(more[i] if i < len(more) else {})})
+        return out
 
 
 def _coded(rows: list[tuple[str, date]]) -> list[tuple[str, date]]:
@@ -285,20 +301,45 @@ class PgPain:
         rows = await execute_query(sql, params, log_sql=False)
         return rows if isinstance(rows, list) else []
 
-    async def add(self, user_id: str, part: str, day: date) -> None:
+    async def add(self, user_id: str, part: str, day: date, **detail: str) -> None:
+        extra = {k: str(detail.get(k) or "") for k in PAIN_DETAIL if detail.get(k)}
+        content = json.dumps({"part": part, **extra}, ensure_ascii=False) if extra else part  # 细节和部位一起加密
         await self._q(
             "INSERT INTO ironm_pain_events (id, user_id, content, day)"
             " VALUES (:id, :uid, encrypt_content(:part), :day)",
-            {"id": uuid.uuid4().hex, "uid": user_id, "part": part, "day": day},
+            {"id": uuid.uuid4().hex, "uid": user_id, "part": content, "day": day},
         )
 
-    async def since(self, user_id: str, start: date) -> list[tuple[str, date]]:
+    async def _rows(self, user_id: str, start: date) -> list[dict[str, Any]]:
         rows = await self._q(
             "SELECT decrypt_content(content) AS part, day FROM ironm_pain_events"
             " WHERE user_id = :uid AND day >= :start ORDER BY day",
             {"uid": user_id, "start": start},
         )
-        return _coded([(str(r["part"]), r["day"]) for r in rows])
+        return [{**_unpack(str(r["part"])), "day": r["day"]} for r in rows]
+
+    async def since(self, user_id: str, start: date) -> list[tuple[str, date]]:
+        return _coded([(x["part"], x["day"]) for x in await self._rows(user_id, start)])
+
+    async def details(self, user_id: str, start: date) -> list[dict[str, Any]]:
+        out = []
+        for x in await self._rows(user_id, start):
+            code = joint_code(x["part"])
+            if code is not None:
+                out.append({**x, "part": code})
+        return out
+
+
+def _unpack(content: str) -> dict[str, Any]:
+    """存的是部位，或部位和细节的 JSON（§163 之后）。"""
+    if content.startswith("{"):
+        try:
+            got = json.loads(content)
+            if isinstance(got, dict) and got.get("part"):
+                return {"part": str(got["part"]), **{k: str(got.get(k) or "") for k in PAIN_DETAIL}}
+        except ValueError:
+            pass
+    return {"part": content, **dict.fromkeys(PAIN_DETAIL, "")}
 
 
 _default: PainStore | None = None

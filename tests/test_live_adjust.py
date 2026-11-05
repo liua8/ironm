@@ -174,6 +174,16 @@ def test_pain_is_recorded_and_blocks_heavier(monkeypatch: pytest.MonkeyPatch) ->
     reply = {"say": "先停深蹲，换成箱式深蹲，蹲到不疼的高度。",
              "changes": [{"kind": "all", "item": 1, "weight_kg": 85}]}  # fmt: skip
     monkeypatch.setattr(spoken, "default_llm", lambda: FakeLLM(lambda *_: jsonr(reply)))
+    from ironm_agent import web_live
+
+    read: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        web_live, "body_later", lambda uid, text, day, where: read.append((text, where))
+    )
     r = c.post("/iron/api/live/adjust", json={"id": live["id"], "said": "膝盖有点疼"}).json()
-    assert [s["weight_kg"] for s in r["live"]["items"][0]["sets"][1:]] == [80, 80]  # 说疼：不加重
-    assert asyncio.run(pains.since("42", date.today()))  # 记进疼痛记录
+    assert [s["weight_kg"] for s in r["live"]["items"][0]["sets"][1:]] == [
+        80,
+        80,
+    ]  # 说疼：不加重（安全护栏）
+    assert read == [("膝盖有点疼", "训练中")]  # 疼在哪由管家读出来再记（§163），不按关键词记
+    assert not asyncio.run(pains.since("42", date.today()))

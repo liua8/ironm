@@ -197,8 +197,12 @@ def test_chat_triggers_daily_and_pain_reevaluation(
     from ironm_agent.memory_store import MemoryBook
     from tests.test_turn_flow import Coach, agent
 
-    a = agent(Coach(said={"pain": ["左膝"]}), monkeypatch=monkeypatch, memory=MemoryBook())
-    a._pain = PainBook()  # 管家判断他说了左膝疼（§114）
+    a = agent(
+        Coach(said={"pain": [{"part": "膝", "side": "左"}]}),
+        monkeypatch=monkeypatch,
+        memory=MemoryBook(),
+    )
+    a._pain = PainBook()  # 管家判断他说了左膝疼（§114、§163）
 
     async def go(text: str) -> None:
         [
@@ -211,7 +215,8 @@ def test_chat_triggers_daily_and_pain_reevaluation(
 
     asyncio.run(go("我左膝最近又疼了，深蹲要注意什么"))
     reasons = [r for _, r in coach_in_memory]
-    assert "每天第一次提问" in reasons and "说疼" in reasons
+    assert "每天第一次提问" in reasons and "说了今天的状态" in reasons
+    assert a._pain.rows["42"] and a._pain.more["42"][0]["side"] == "左"
 
 
 # ---- 对话里的管家消息（spec [2026-10-23] §26）--------------------------------------------------

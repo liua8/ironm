@@ -27,7 +27,6 @@ from ironm_agent.healthdata import read_all
 from ironm_agent.illness import active as illness_active
 from ironm_agent.illness import doctor, due, question, recurring, sick_days
 from ironm_agent.illness import recent as recent_illness
-from ironm_agent.illness import trained as illness_trained
 from ironm_agent.memory_extract import MAX_CONTENT
 from ironm_agent.memory_prefs import refresh as refresh_prefs
 from ironm_agent.memory_store import CATEGORIES, ORIGINS, Item, MemoryStore, default_store
@@ -43,7 +42,6 @@ from ironm_agent.training import (
     WorkoutLog,
     default_training,
 )
-from ironm_agent.triggers import pain_parts
 from ironm_agent.web_more import FEEL, GOAL, ILLNESS, PAIN, PHOTOS, coach_later, plan_change_later
 
 _log = logging.getLogger("ironm_agent.web")
@@ -403,10 +401,6 @@ async def confirm_draft(
     if out.get("draft", {}).get("kind") == "log":  # 记下了一次训练：后台更新训练记录得出的偏好
         refresh_later(user_id, memory, store)
         log = out["draft"].get("log") or {}
-        if log.get("done", True):  # 对话里记的训练同样算练过（§46）
-            await illness_trained(
-                illness, user_id, date.fromisoformat(str(log.get("day") or date.today()))
-            )
         try:  # 对话里记的训练确认后也叫醒管家定下次（§132）
             _targets_later(user_id, WorkoutLog.model_validate(log))
         except ValueError:
@@ -507,18 +501,11 @@ async def after_workout(
     pain: Any,
     illness: Any,
 ) -> None:
-    """记下一次训练之后（打卡、训练记录器结束，§71）：生病期间练了算好了、备注说疼、偏好、管家重新评估。"""
-    if log.done:  # 生病期间打卡练了：当作已经好了（spec [2026-10-23] §46）
-        await illness_trained(illness, user_id, log.day)
-    if parts := pain_parts(
-        log.note
-    ):  # 打卡备注里说疼：触发型调整用（spec [2026-10-23] §18 需求 5）
-        try:
-            if not await memory.paused(user_id):
-                for part in parts:
-                    await pain.add(user_id, part, date.today())
-        except Exception as e:
-            _log.warning("pain record failed: error_type=%s", type(e).__name__)
+    """记下一次训练之后（打卡、训练记录器结束，§71）：备注由管家读、偏好、管家重新评估、定下次。
+    不再按关键词从备注里记疼，也不再"练了一次就算病好了"（§163 规则不要）。"""
+    from ironm_agent.web_more import body_later
+
+    body_later(user_id, log.note, log.day, "打卡备注")  # 说了疼、病、累由管家读出来再记
     refresh_later(user_id, memory, store)  # 后台更新训练记录得出的偏好（spec [2026-10-23] §17）
     coach_later(user_id, "打卡")  # 管家重新评估当前方案（spec [2026-10-23] §23）
     _targets_later(user_id, log)  # 叫醒管家定下次怎么练（§132）

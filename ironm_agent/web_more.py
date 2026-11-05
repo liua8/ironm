@@ -1375,6 +1375,31 @@ def targets_later(user_id: str, log: Any) -> None:
         _log.warning("next targets schedule failed: error_type=%s", type(e).__name__)
 
 
+def body_later(user_id: str, text: str, day: date, where: str) -> None:
+    """他在打卡备注、训练中说的话由管家读一遍：说了疼、病、累就记下，再叫醒管家（§163 规则不要）。
+    在后台跑，不耽误这次请求；没说身体的事或模型失败就什么都不写。"""
+    import asyncio
+
+    from ironm_agent.body_state import read_text
+    from ironm_agent.coach_state import _BACKGROUND
+    from ironm_agent.llm import TurnLLM, load_models
+
+    if not str(text or "").strip():
+        return
+
+    async def go() -> None:
+        try:
+            got = await read_text(user_id, text, day, where, coach_deps(), TurnLLM(load_models(), os.environ))
+            if got is not None and (got.pain or got.illness or got.day):
+                coach_later(user_id, f"{where}说了身体的事")
+        except Exception as e:
+            _log.warning("body note read failed: error_type=%s", type(e).__name__)
+
+    task = asyncio.create_task(go())
+    _BACKGROUND.add(task)
+    task.add_done_callback(_BACKGROUND.discard)
+
+
 def coach_later(user_id: str, reason: str) -> None:
     """有新情况时在后台重新评估当前方案（打卡、记饮食、说疼、改目标、确认或撤销方案）。"""
     from ironm_agent.coach_state import evaluate_later

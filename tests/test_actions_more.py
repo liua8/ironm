@@ -187,7 +187,9 @@ def test_adjust_today_refuses_rest_days_no_plan_and_bad_ratios(
 
 def test_adjust_today_is_not_given_on_a_data_risk_turn(monkeypatch: pytest.MonkeyPatch) -> None:
     _, desk, _, _ = harness(monkeypatch, "今天轻点", current=seeded_plan(), blocked=True)
-    assert ADJUST_TODAY not in desk.handlers and set(ALWAYS) - {"remember"} <= set(desk.handlers)  # 记忆另测（§145）
+    assert ADJUST_TODAY not in desk.handlers and set(ALWAYS) - {"remember"} <= set(
+        desk.handlers
+    )  # 记忆另测（§145）
 
 
 # ---- 调热量 ------------------------------------------------------------------------------------
@@ -306,15 +308,13 @@ def test_logs_have_tool_names_and_results_only(
     assert all("米饭" not in x and "72" not in x for x in lines)
 
 
-def test_stomach_ache_written_as_pain_still_starts_an_illness(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """真实模型回放（11-03）："肚子疼"被写进了"哪里疼"，生病记录没开；不是练的部位的归到 sick。"""
+def test_what_the_coach_hands_in_is_kept_as_is(monkeypatch: pytest.MonkeyPatch) -> None:
+    """§163 规则不要：代码不再把"哪里疼"里的肚子疼改判成生病，管家交什么就是什么（肚子疼由它写进 sick）。"""
     a, desk, _, _ = harness(monkeypatch, "肚子疼，今天能练吗")
-    go(a, desk, RECORD_STATE, pain=["肚子"])
-    assert desk.said == {"sick": "肚子疼"}
-    go(a, desk, RECORD_STATE, pain=["左膝"])
-    assert desk.said["pain"] == ["左膝"]  # 练的部位照旧是疼
+    go(a, desk, RECORD_STATE, sick="肚子疼", sick_level="颈部以下")
+    assert desk.said == {"sick": "肚子疼", "sick_level": "颈部以下"}
+    go(a, desk, RECORD_STATE, pain=[{"part": "膝", "side": "左", "exercise": "深蹲"}])
+    assert desk.said["pain"] == [{"part": "膝", "side": "左", "exercise": "深蹲"}]
 
 
 # ---- 独立审查（11-03）提的问题 ----------------------------------------------------------------

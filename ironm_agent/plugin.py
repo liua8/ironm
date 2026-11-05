@@ -54,7 +54,6 @@ from ironm_agent.constraints import Context, Violation, annotate, annotate_plan
 from ironm_agent.constraints import check as check_constraints
 from ironm_agent.day_state import DayState, DayStore, default_day
 from ironm_agent.day_state import lines as day_lines
-from ironm_agent.day_state import note as note_day
 from ironm_agent.day_state import signals as day_signals
 from ironm_agent.exercises import named_in
 from ironm_agent.goal import GoalStore, default_goal
@@ -67,15 +66,12 @@ from ironm_agent.illness import (
     detect,
     due,
     mentions,
-    merge,
     question,
     recovering_days,
-    reply_of,
     state_line,
     today_mode,
 )
 from ironm_agent.illness import active as active_illness
-from ironm_agent.illness import answer as answer_illness
 from ironm_agent.illness import (
     recent as recent_illness,
 )
@@ -199,6 +195,7 @@ REVIEW_MAX_DAYS = 2  # 按复盘调整每次最多改几天
 SCOPES = ("once", "always", "unclear")  # 改计划只改这次、以后都这样、没说清（§114）
 STATE_FIELDS = (
     "sick",
+    "sick_level",
     "better",
     "tired",
     "sleep",
@@ -253,30 +250,6 @@ def _in_jin(raw: str, unit: Any, text: str) -> bool | None:
     if jin and kg:
         return None
     return jin
-
-
-def _sick_from_pain(told: dict[str, Any]) -> dict[str, Any]:
-    """ "哪里疼"里写了不是练的部位、是生病症状的（肚子疼、头疼），归到 sick（真实模型回放 11-03）。"""
-    from ironm_agent.casefile import PARTS
-    from ironm_agent.illness import detect
-
-    pain = told.get("pain")
-    if not isinstance(pain, list):
-        return told
-    words = [str(x) for x in pain]
-    ill = [
-        w
-        for w in words
-        if not any(p.search(w) for p in PARTS.values()) and detect(w.removesuffix("疼") + "疼")
-    ]
-    if not ill:
-        return told
-    out = {**told, "pain": [w for w in words if w not in ill]}
-    if not out["pain"]:
-        del out["pain"]
-    named = [w if w.endswith("疼") else w + "疼" for w in ill]
-    out["sick"] = "、".join(x for x in (str(out.get("sick") or ""), *named) if x)
-    return out
 
 
 def _metric_value(snapshot: Snapshot | None, key: str) -> float | None:
@@ -859,76 +832,26 @@ class IronMAgent:
             return None
 
     async def _settle_state(self, user_id: str, text: str, run: dict[str, Any]) -> None:
-        """作答后写他这句说了自己什么（§114）：管家这一轮作答了就按它给的 said（没给就是没说），
-        管家失败或走了别的路才按关键词兜底。由谁判断在作答结束时就记进运行记录（state_by）。"""
+        """作答后写他这句说了自己什么（§114）：只按管家这一轮交的 record_state 写；管家失败或走了别的路就不写，
+        不再按关键词兜底（§163 规则不要）。"""
         if run.get("state_by") == "model":
             await self._apply_said(user_id, run.get("_said_state") or {}, run)
-            return
-        await self._track_illness(user_id, text, run)
-        await self._note_day(user_id, text, run)
-        if parts := pain_parts(text):
-            run["pain_parts"] = len(parts)
-            await self._record_pain(user_id, parts)
 
     async def _apply_said(self, user_id: str, told: Mapping[str, Any], run: dict[str, Any]) -> None:
-        """管家判断的他这句说了自己什么：写生病记录、今日状态、疼痛记录（字段不对的跳过）。"""
-        from ironm_agent.casefile import PARTS
-        from ironm_agent.day_state import Entry
+        """管家交的他这句说了自己什么：写生病记录、今日状态、说疼记录（§163：只按交的写，字段不对的跳过）。"""
+        from ironm_agent import body_state
 
-        today, at = date.today(), run.get("_at") or datetime.now(UTC)
-        sick = str(told.get("sick") or "").strip()[:20]
-        better = _BETTER_WORDS.get(str(told.get("better") or "").strip())
-        if sick or better:
-            try:
-                store = self._illness_store()
-                eps = await recent_illness(store, user_id, today)
-                now = active_illness(eps, today)
-                changed: Episode | None = None
-                if better is not None and now:
-                    changed, _ = answer_illness(now[0], better, today)
-                elif sick:  # 管家写的症状归到哪一类（只是给它的话归类）
-                    found = detect(sick) or (["身体不适"], "vague")
-                    changed = merge(eps, found[0], found[1], today)
-                if changed is not None:
-                    await store.save(user_id, changed)
-                    run["illness"] = f"said:{changed.status}"
-            except Exception as e:
-                _log.warning("illness save failed: error_type=%s", type(e).__name__)
-        entries: list[Any] = []
-        if told.get("tired") is True:
-            entries.append(Entry(kind="tired", at=at))
-        sleep = told.get("sleep")
-        if isinstance(sleep, int | float) and not isinstance(sleep, bool) and 0 <= sleep <= 16:
-            entries.append(Entry(kind="sleep", at=at, hours=float(sleep) or None))
-        minutes = told.get("minutes")
-        if isinstance(minutes, int) and not isinstance(minutes, bool) and 5 <= minutes <= 240:
-            entries.append(Entry(kind="minutes", at=at, minutes=minutes))
-        if told.get("good") is True:
-            entries.append(Entry(kind="good", at=at))
-        if entries:
-            try:
-                await self._day_store().add(user_id, today, entries)
-                run["day_noted"] = len(entries)
-                await self._coach(user_id, "说了今天的状态", True)  # 首页今天的版本跟着变
-            except Exception as e:
-                _log.warning("day state save failed: error_type=%s", type(e).__name__)
-        pain = told.get("pain")
-        words = [str(x) for x in pain] if isinstance(pain, list) else []
-        if parts := [k for k, p in PARTS.items() if any(p.search(w) for w in words)]:
-            run["pain_parts"] = len(parts)
-            await self._record_pain(user_id, parts)
-
-    async def _note_day(self, user_id: str, text: str, run: dict[str, Any]) -> DayState | None:
-        """这句话里说到今天的状态（累、没睡好、只有多少分钟）：作答前写进今日状态（规则，spec [2026-10-23] §54）。"""
-        at = datetime.now(UTC)
-        run["_at"] = at
-        state, new = await note_day(self._day_store(), user_id, text, at)
-        if new:
-            run["day_noted"] = len(new)  # 只记条数，不记内容
-            self._later(
-                user_id, self._coach(user_id, "说了今天的状态", True)
-            )  # 首页今天的版本跟着变
-        return state
+        got = await body_state.apply(user_id, told, illness=self._illness_store(), days=self._day_store(),
+                                     pain=self._pain_store(), memory=self._memory_store(),
+                                     at=run.get("_at") or datetime.now(UTC))  # fmt: skip
+        if got.illness:
+            run["illness"] = f"said:{got.illness}"
+        if got.day:
+            run["day_noted"] = got.day
+        if got.pain:
+            run["pain_parts"] = len(got.pain)
+        if got.day or got.pain or got.illness:
+            await self._coach(user_id, "说了今天的状态", True)  # 首页今天的版本跟着变
 
     async def _coach_state(self, user_id: str) -> Any:
         """管家的当前方案（读不到当作没有）；同一轮读一次，每轮开始时清掉。"""
@@ -993,31 +916,6 @@ class IronMAgent:
             )
         return out
 
-    async def _track_illness(self, user_id: str, text: str, run: dict[str, Any]) -> list[Episode]:
-        """这句话里说生病了、或在回答"好了没"：更新生病记录（规则，不调用模型；spec [2026-10-23] §46）。
-        返回更新后的记录；读写失败时当作没有记录。日志只记级别和状态。"""
-        store, today = self._illness_store(), date.today()
-        eps = await recent_illness(store, user_id, today)
-        now = active_illness(eps, today)
-        reply = reply_of(text) if now else None
-        found = detect(text)
-        changed: Episode | None = None
-        if now and reply is not None:
-            changed, _ = answer_illness(now[0], reply, today)
-            run["illness"] = f"answered:{reply}"
-        elif found is not None:
-            changed = merge(eps, found[0], found[1], today)
-            run["illness"] = f"noted:{changed.level}"
-        if changed is not None:
-            try:
-                await store.save(user_id, changed)
-            except Exception as e:
-                _log.warning("illness save failed: error_type=%s", type(e).__name__)
-            eps = [changed if e.id == changed.id else e for e in eps]
-            if all(e.id != changed.id for e in eps):
-                eps.append(changed)
-        return eps
-
     async def _illness_followup(self, user_id: str, run: dict[str, Any]) -> str:
         """今天还没问过、也还没回答的生病：返回追问的一句，并记下今天问过了。"""
         today = date.today()
@@ -1057,11 +955,7 @@ class IronMAgent:
                 items = await store.items(user_id)
                 llm = TurnLLM(self._models, self._environ)
                 out = await extract(llm, items, text, answer, context, held)
-                await store.apply(user_id, out.changes)
-            # 推测的说对了换成的那条，推测时已经看过一次生病，不再算（复核 11-03）
-            await self._illness_from_memory(
-                user_id, [c for c in out.changes if c.item is None or c.item.id not in out.confirmed]
-            )
+                await store.apply(user_id, out.changes)  # 生病记录不再从记忆里补记（§163）
         except Exception as e:  # 提取失败不影响已经发出的回答
             _log.warning("memory extraction failed: error_type=%s", type(e).__name__)
             return
@@ -1104,33 +998,6 @@ class IronMAgent:
             _log.warning("memory write failed: error_type=%s", type(e).__name__)
             return False
         return True
-
-    async def _illness_from_memory(self, user_id: str, changes: Sequence[Any]) -> None:
-        """词表认不出、后台提取记忆的模型记成身体不适的，也记成一次生病；模型记下"已经好了"的，
-        结束正在进行的那次（spec [2026-10-23] §46）。"""
-        events = [c.item.content for c in changes if c.kind == "insert" and c.item is not None
-                  and c.item.category in ("event", "injury")]  # fmt: skip
-        ended_by = {c.item.content for c in changes if c.kind == "insert" and c.item is not None
-                    and c.item.category == "event"}  # 只有近况能结束、续上生病，伤病不动它（§158）  # fmt: skip
-        if not events:
-            return
-        store, today = self._illness_store(), date.today()
-        eps = await recent_illness(store, user_id, today)
-        now = active_illness(eps, today)
-        for text in events:
-            reply = reply_of(text) if now and text in ended_by else None
-            found = detect(text)
-            if now and reply is not None:
-                changed, _ = answer_illness(now[0], reply, today)
-            elif found is not None and not now:
-                changed = merge(eps, found[0], found[1], today)
-            else:
-                continue
-            try:
-                await store.save(user_id, changed)
-            except Exception as e:  # 记不了不影响已经发出的回答
-                _log.warning("illness save failed: error_type=%s", type(e).__name__)
-            return
 
     async def _refresh_prefs(self, user_id: str) -> None:
         try:
@@ -1932,7 +1799,6 @@ class IronMAgent:
 
         async def record_state(desk: Desk, args: Mapping[str, Any]) -> Outcome:
             told = {k: v for k, v in args.items() if k in STATE_FIELDS and v not in (None, "", [])}
-            told = _sick_from_pain(told)
             if not told:
                 return Outcome(False, "没写他说了什么状态；他没说就不用调用。", "format")
             desk.said.update(told)  # 作答后按原来的规则写（§46、§54、§114）

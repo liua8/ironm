@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from ironm_agent.body_state import STATE_SCHEMA_PROPS  # 只按管家交的写（§163）
 from ironm_agent.checks import sentences
 
 _log = logging.getLogger("ironm_agent.actions")
@@ -319,35 +320,11 @@ RECORD_STATE_SCHEMA: dict[str, Any] = {
     "function": {
         "name": RECORD_STATE,
         "description": (
-            "他这句话说了自己今天的状况时调用（只写他说了的；问话、假设、别人的不写）：生病的症状、病好了没有、累、"
-            "昨晚睡了几小时、今天能练多少分钟、状态好、哪里疼。系统作答后写进今天的状态，今天的版本跟着变。"
+            "他这句话说了自己今天的状况时调用（只写他说了的；问话、假设、别人的不写）：生病的症状和轻重、病好了没有、累、"
+            "昨晚睡了几小时、今天能练多少分钟、状态好、哪里疼（部位、左右、在做哪个动作、多疼）。"
+            "系统只按你交的写，不再自己从他的话里认；他说了却没交，就当没说。"
         ),
-        "parameters": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "sick": {
-                    "type": "string",
-                    "description": '生病、身体不舒服的症状，如"感冒、喉咙痛""肚子疼、拉肚子""发烧 38 度"',
-                },
-                "better": {
-                    "type": "string",
-                    "enum": ["好了", "好些", "没好"],
-                    "description": "病好了没有",
-                },
-                "tired": {"type": "boolean", "description": "说累"},
-                "sleep": {"type": "number", "description": "昨晚睡了几小时"},
-                "minutes": {"type": "integer", "description": "今天能练多少分钟"},
-                "good": {"type": "boolean", "description": "说状态好"},
-                "pain": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": (
-                        '练的部位哪里疼（关节、肌肉），如["左膝", "腰"]；肚子疼、头疼这类不舒服写进 sick'
-                    ),
-                },
-            },
-        },
+        "parameters": {"type": "object", "additionalProperties": False, "properties": STATE_SCHEMA_PROPS},
     },
 }
 

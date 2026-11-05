@@ -26,7 +26,7 @@ from ironm_agent.live import (
 from ironm_agent.memory_store import MemoryStore
 from ironm_agent.training import SORE_PARTS, Feeling, TrainingStore, WorkoutLog
 from ironm_agent.web import _verify, after_workout, memory_store, record_sore, training_store
-from ironm_agent.web_more import DAY, FEEL, ILLNESS, PAIN, today_edits
+from ironm_agent.web_more import DAY, FEEL, ILLNESS, PAIN, body_later, today_edits
 
 _log = logging.getLogger("ironm_agent.live")
 router = APIRouter()
@@ -386,7 +386,6 @@ async def adjust_live(
     from ironm_agent import spoken
     from ironm_agent.live_adjust import adjust, context_lines, current
     from ironm_agent.triggers import pain_parts
-    from ironm_agent.web_more import coach_later
 
     now = datetime.now()
     live = await lives.get(user_id)
@@ -408,18 +407,10 @@ async def adjust_live(
     if got.kinds:
         live = got.live.model_copy(update={"updated": now})
         await lives.save(user_id, live)
-    if parts := pain_parts(body.said):  # 说疼的部位记进疼痛记录，和对话里一样（§90 需求 5）
-        live = live.model_copy(
-            update={"no_heavier": True, "updated": now}
-        )  # 这次说过疼：后面不加重（§104）
+    if pain_parts(body.said):  # 安全护栏：这次说过疼，后面不加重（§104）
+        live = live.model_copy(update={"no_heavier": True, "updated": now})
         await lives.save(user_id, live)
-        try:
-            if not await memory.paused(user_id):
-                for part in parts:
-                    await pain.add(user_id, part, date.today())
-                coach_later(user_id, "说疼")
-        except Exception as e:
-            _log.warning("live pain record failed: error_type=%s", type(e).__name__)
+    body_later(user_id, body.said, date.today(), "训练中")  # 疼在哪、哪个动作由管家读出来再记（§163）
     _log.info("live adjusted: kinds=%s dropped=%d urgent=%s",
               ",".join(got.kinds) or "-", got.dropped, got.urgent)  # fmt: skip
     return {**_out(live, now), "say": got.say, "end": got.end, "urgent": got.urgent,

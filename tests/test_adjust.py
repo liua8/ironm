@@ -560,9 +560,18 @@ def test_trigger_endpoints_and_pain_records(monkeypatch: pytest.MonkeyPatch) -> 
     app.dependency_overrides[web_more.pain_store] = lambda: pain
     monkeypatch.setattr(web, "refresh_later", lambda *a: None)
     c = TestClient(app)
+    read: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        web_more, "body_later", lambda uid, text, day, where: read.append((text, where))
+    )
     c.post("/iron/api/workouts", json={"session": "下肢", "note": "膝盖有点疼"})
-    assert pain.rows["42"] == [("joint.knee", real)]  # 打卡备注里说疼：记下部位和日期
-    pain.rows["42"].append(("joint.knee", real - timedelta(days=4)))
+    assert read == [("膝盖有点疼", "打卡备注")] and not pain.rows.get(
+        "42"
+    )  # 备注由管家读，不按关键词记（§163）
+    pain.rows["42"] = [
+        ("joint.knee", real),
+        ("joint.knee", real - timedelta(days=4)),
+    ]  # 管家读出来记下的
     kinds = [t["kind"] for t in c.get("/iron/api/triggers").json()["triggers"]]
     assert "pain" in kinds
     seen: dict[str, Any] = {}

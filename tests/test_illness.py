@@ -151,21 +151,27 @@ def _agent(
 
 def test_saying_sick_in_chat_starts_an_episode(monkeypatch: Any) -> None:
     ill = IllnessBook()
-    run(_agent(Coach(said={"sick": "肚子疼"}), monkeypatch, ill), "我今天肚子疼，还能练吗")
+    run(
+        _agent(Coach(said={"sick": "肚子疼", "sick_level": "颈部以下"}), monkeypatch, ill),
+        "我今天肚子疼，还能练吗",
+    )
     eps = list(ill.rows["42"].values())
     assert eps[0].symptoms == ["肚子疼"] and eps[0].level == "below" and eps[0].started == TODAY
+    vague = IllnessBook()  # 轻重由管家交；没交就是说不清，代码不按词表猜（§163）
+    run(_agent(Coach(said={"sick": "发烧 38 度"}), monkeypatch, vague), "我发烧了")
+    assert [e.level for e in vague.rows["42"].values()] == ["vague"]
 
 
 def test_model_judgment_first_keywords_only_as_fallback(monkeypatch: Any) -> None:
     """§114：管家作答了就按它的判断——没写 said 就是没说，"我的生病记录""如果发烧了能练吗"不开记录；
-    管家这一轮失败了才按关键词兜底。"""
+    管家这一轮失败了也不按关键词兜底（§163 规则不要）。"""
     ill = IllnessBook()
     for asked in ("如果发烧了能练吗", "生病期间吃什么"):
         run(_agent(Coach(), monkeypatch, ill), asked)
     assert "42" not in ill.rows or not ill.rows["42"]
     down = IllnessBook()
     run(_agent(Coach(down=True), monkeypatch, down), "我今天发烧了")
-    assert [e.symptoms for e in down.rows["42"].values()] == [["发烧"]]  # 管家失败：关键词兜底
+    assert not down.rows.get("42")  # 管家失败：不写，不再按关键词猜
 
 
 def test_chat_asks_once_a_day_and_text_replies_count(monkeypatch: Any) -> None:
@@ -287,7 +293,8 @@ def test_never_answering_counts_the_rest_days_and_eases_back() -> None:
     assert (start + timedelta(days=5)) in recovering_days([e], TODAY)  # 之后两天也不触发减重量
 
 
-def test_training_during_illness_ends_it(monkeypatch: Any) -> None:
+def test_training_during_illness_no_longer_ends_it(monkeypatch: Any) -> None:
+    """§163：练了一次不等于病好了，好没好由他说（管家记）或首页按钮。"""
     ill = IllnessBook()
     e = ep()
     asyncio.run(ill.save("42", e))
@@ -296,9 +303,8 @@ def test_training_during_illness_ends_it(monkeypatch: Any) -> None:
 
     monkeypatch.setattr(web, "refresh_later", lambda *a: None)
     assert c.post("/iron/api/workouts", json={"session": "全身"}).status_code == 200
-    done = ill.rows["42"][e.id]
-    assert done.status == "resolved" and done.ended == TODAY
-    assert c.get("/iron/api/brief").json()["checkin"] is None
+    still = ill.rows["42"][e.id]
+    assert still.status == "open" and still.ended is None
 
 
 def test_asking_about_it_is_not_being_sick() -> None:

@@ -141,26 +141,42 @@ def test_saying_an_injury_healed_ends_it(text: str, kind: str, op: str) -> None:
         assert got.data["parts"] == ["joint.knee"] and got.key == old.key
 
 
-def test_an_injury_memory_does_not_end_a_cold(monkeypatch: Any) -> None:
-    from ironm_agent.illness import IllnessBook
+def test_cough_is_better_does_not_start_another_illness(monkeypatch: Any) -> None:
+    """两周模拟（§162）：管家记"好了"，后台又从记忆里认出"咳嗽"开了一次新的生病。§163 起生病只按管家交的写。"""
+    from ironm_agent.actions import RECORD_STATE
+    from ironm_agent.illness import Episode, IllnessBook
+    from tests.fakes import call, jsonr
     from tests.test_single_agent import single
+    from tests.test_turn_flow import run as run_turn
 
-    a, _ = single(lambda *_: None, monkeypatch)  # type: ignore[arg-type, return-value]
+    better = {
+        "op": "add",
+        "category": "event",
+        "content": "咳嗽也好了",
+        "quote": "咳嗽也好了",
+        "lasting": "short",
+    }
+
+    def answer(system: str, user: str, results: list[str]) -> Any:
+        if not results:
+            return call(RECORD_STATE, better="好了")
+        if len(results) == 1:
+            return call("remember", items=[better])
+        return jsonr({"answer": "好了就好，明天按七成练〔经验〕。"})
+
+    a, _ = single(answer, monkeypatch)
     ill = IllnessBook()
-    a._illness = ill
-    asyncio.run(a._illness_from_memory("42", [Change("insert", item=item("x", "event", "感冒了"))]))
-    [ep] = asyncio.run(ill.since("42", date.today() - timedelta(days=3)))
-    assert ep.status == "open"
-    asyncio.run(a._illness_from_memory("42", [Change("insert", item=knee("active", 0))]))
-    hurt = replace(item("y", "injury", "左膝好了"), data=dict(KNEE))
-    asyncio.run(a._illness_from_memory("42", [Change("insert", item=hurt)]))
-    [ep] = asyncio.run(ill.since("42", date.today() - timedelta(days=3)))
-    assert ep.status == "open"  # 膝盖好了不是感冒好了
     asyncio.run(
-        a._illness_from_memory("42", [Change("insert", item=item("z", "event", "感冒好了"))])
+        ill.save(
+            "42",
+            Episode(symptoms=["发烧", "嗓子疼"], level="fever", started=date.today() - timedelta(days=1)),
+        )
     )
-    [ep] = asyncio.run(ill.since("42", date.today() - timedelta(days=3)))
-    assert ep.status != "open"
+    a._illness = ill
+    run_turn(a, "咳嗽也好了，今天一点症状都没有了")
+    asyncio.run(a.settle())
+    [only] = ill.rows["42"].values()
+    assert only.status == "resolved"  # 只有原来那一次，结束了；没有新开"咳嗽"
 
 
 def test_risks_follow_the_latest_word() -> None:
