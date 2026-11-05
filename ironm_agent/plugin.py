@@ -1161,6 +1161,33 @@ class IronMAgent:
                             workouts=workouts, changes=changes)  # fmt: skip
         return {timeline.SCHEMA["function"]["name"]: (timeline.SCHEMA, run)}
 
+    def _weather_tool(self, user_id: str) -> dict[str, Any]:
+        """查天气（§173）：不写城市查他设的地方，写了查那个城市；数登记成计算结果，回答能引。日志不记位置。"""
+        from ironm_agent import weather as wx
+
+        async def run(box: Any, args: Mapping[str, Any]) -> str:
+            city = str(args.get("city") or "").strip()[:30]
+            try:
+                if city:
+                    place = await wx.geocode(city)
+                    if place is None:
+                        return f"没找到「{city}」这个地方，问他换个写法（比如杭州、北京朝阳）。"
+                else:
+                    _, place = await wx.load_place(user_id)
+                    if place is None:
+                        return ("他还没设地方：请他在「我 → 城市和天气」填城市或点「用当前位置」；"
+                                "也可以问他在哪个城市，再按城市查。")  # fmt: skip
+                w = await wx.fetch(place)
+            except Exception as e:
+                _log.warning("weather tool failed: error_type=%s", type(e).__name__)
+                box._outcome = "error"
+                return "这次没取到天气，如实跟他说过一会儿再查。"
+            text = wx.report(w)
+            cid = box.add_calc(f"{place.name}的天气：" + text.replace("\n", "；"))
+            return f"{place.name}的天气（引用这些数时句末写〔{cid}〕）：\n{text}"
+
+        return {wx.QUERY: (wx.QUERY_SCHEMA, run)}
+
     def _web_tools(self, today: date) -> dict[str, Any]:
         """联网搜索（§91）：配了密钥才给管家；查询词和网址记进待审清单。"""
         from ironm_agent.web_search import SCHEMA, configured, default_log, web_tool
@@ -1575,7 +1602,8 @@ class IronMAgent:
             session_id=session_id, calcs=case.calcs, context=tools_ctx,
             meds=self._meds_source(), medical=self._medical_source(),
             extra={**EXTRA_TOOLS, RECALL: (RECALL_SCHEMA, recall_tool(raw, snapshot.today, load=everything)),
-                   **self._web_tools(snapshot.today), **self._timeline_tool(user_id, everything, snapshot.today)},
+                   **self._web_tools(snapshot.today), **self._timeline_tool(user_id, everything, snapshot.today),
+                   **self._weather_tool(user_id)},
         )  # fmt: skip
         if checked is not None:
             toolbox.evidence.absorb(checked)

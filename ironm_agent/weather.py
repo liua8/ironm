@@ -18,6 +18,8 @@ _log = logging.getLogger("ironm_agent.weather")
 GEO_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 AIR_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
+REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"  # 定位后认城市（§173）：只给粗到约 10 公里的经纬度
+AGENT = "iron-m-weather/1.0"  # OpenStreetMap 要求写明是哪个应用在查
 TIMEOUT_S = 6.0
 CACHE_S = 600  # 同一个地方 10 分钟内不重复取
 
@@ -251,11 +253,11 @@ class Place:
 _cache: dict[tuple[float, float], tuple[float, Weather]] = {}
 
 
-async def _get(url: str, params: dict[str, Any]) -> dict[str, Any]:
+async def _get(url: str, params: dict[str, Any], headers: dict[str, str] | None = None) -> dict[str, Any]:
     import httpx
 
     async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
-        r = await client.get(url, params=params)
+        r = await client.get(url, params=params, headers=headers)
         r.raise_for_status()
         data = r.json()
         return data if isinstance(data, dict) else {}
@@ -280,6 +282,88 @@ async def geocode(city: str) -> Place | None:
     )
     label = best.get("admin2") or best.get("name") or name
     return Place(str(label), float(best["latitude"]), float(best["longitude"]))
+
+
+_names: dict[tuple[float, float], str | None] = {}
+
+
+async def reverse(lat: float, lon: float) -> str | None:
+    """经纬度 → 城市名（§173）：先粗到小数点后一位（约 10 公里）再去 OpenStreetMap 查；查不到、出错返回 None。"""
+    key = (round(lat, 1), round(lon, 1))
+    if key in _names:
+        return _names[key]
+    try:
+        data = await _get(REVERSE_URL, {"lat": key[0], "lon": key[1], "format": "jsonv2", "zoom": 10,
+                                        "accept-language": "zh"}, headers={"User-Agent": AGENT})  # fmt: skip
+    except Exception as e:
+        _log.warning("reverse geocode failed: error_type=%s", type(e).__name__)
+        return None
+    addr = data.get("address") if isinstance(data.get("address"), dict) else {}
+    name = next((str(addr[k]) for k in ("city", "county", "town", "state_district") if addr.get(k)), None)
+    state = str(addr.get("state") or "")
+    if name and state and state not in name:  # 国内常只认到区：带上省（浙江省上城区、上海市浦东新区）
+        name = state + name
+    name = name or (state or None)
+    _names[key] = name
+    return name
+
+
+def valid_point(lat: float, lon: float) -> bool:
+    return -90 <= lat <= 90 and -180 <= lon <= 180 and not (lat == 0 and lon == 0)
+
+
+async def locate(lat: float, lon: float) -> Place:
+    """浏览器给的位置 → 他的地方（§173）：经纬度只留两位小数（约 1 公里），城市名认不出写"当前位置"。"""
+    lat, lon = round(lat, 2), round(lon, 2)
+    return Place(await reverse(lat, lon) or "当前位置", lat, lon)
+
+
+QUERY = "query_weather"
+QUERY_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": QUERY,
+        "description": (
+            "查天气：现在的天气、体感、湿度、风、空气质量和对户外训练的影响，以及今天起 7 天每天的天气、"
+            "最高最低温、降水概率、风和适不适合户外。他问天气、明天或这周哪天能在外面跑、要不要改室内时调用。"
+            "不写城市查他设的地方；他说了别的城市才写 city。"
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"city": {"type": "string", "description": "他说的城市，如杭州；查他自己的地方不写"}},
+        },
+    },
+}
+
+
+def day_line(d: Day) -> str:
+    """一天的预报，一行（管家查天气用，§173）。"""
+    from datetime import date
+
+    try:
+        when = date.fromisoformat(d.day)
+        name = f"{when.month}月{when.day}日 周{'一二三四五六日'[when.weekday()]}"
+    except ValueError:
+        name = d.day
+    bits = [f"{d.text} {d.tmin:.0f}–{d.tmax:.0f}℃"]
+    if d.rain is not None:
+        bits.append(f"降水概率 {d.rain}%")
+    if d.wind_kmh is not None:
+        bits.append(f"风 {d.wind_kmh:.0f} 公里/小时")
+    return f"{name}：{'，'.join(bits)}；{assess_day(d).line()}"
+
+
+def report(w: Weather) -> str:
+    """管家查天气时拿到的一段（§173）：现在、对户外训练的影响、今天起 7 天。"""
+    now = [summary(w)]
+    if w.humidity is not None:
+        now.append(f"湿度 {w.humidity:.0f}%")
+    if w.wind_kmh is not None:
+        now.append(f"风 {w.wind_kmh:.0f} 公里/小时")
+    lines = [f"现在（{w.observed or '刚取到'}）：{'，'.join(now)}；对户外训练：{assess(w).line()}"]
+    lines += [day_line(d) for d in w.days]
+    return "\n".join(lines)
 
 
 async def fetch(place: Place) -> Weather:

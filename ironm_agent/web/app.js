@@ -3759,14 +3759,31 @@ function summary(box, data) {
 // 城市：用来取实时天气（spec [2026-10-23] §13）
 function citySection() {
   const box = h("div", { class: "card" });
-  const draw = (place) => box.replaceChildren(h("div", { class: "kv" }, h("span", {}, "城市"),
-    h("span", {}, place.label || place.city || "未设置", " ", h("button", { class: "link", type: "button", onclick: () => edit(place) }, icon("edit", "xs"), place.city ? "修改" : "设置"))));
+  // 用当前位置（spec [2026-10-23] §173）：只在他点了才取，经纬度留两位小数（约 1 公里）交给服务端认城市
+  const locate = (place, msg) => {
+    if (!navigator.geolocation) { msg.textContent = "这个浏览器不能定位，手填城市就行"; return; }
+    msg.textContent = "正在定位…";
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const spot = { lat: Number(pos.coords.latitude.toFixed(2)), lon: Number(pos.coords.longitude.toFixed(2)) };
+      try { draw(await api("/iron/api/place/locate", { method: "POST", body: JSON.stringify(spot) })); }
+      catch (err) { msg.textContent = err.message; }
+    }, (err) => {
+      msg.textContent = err && err.code === 1 ? "没有同意定位，可以手填城市" : "这次没取到位置，可以手填城市";
+    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 });
+  };
+  const draw = (place) => {
+    const msg = h("div", { class: "error" });
+    box.replaceChildren(h("div", { class: "kv" }, h("span", {}, "城市"),
+      h("span", {}, place.label || place.city || "未设置", " ", h("button", { class: "link", type: "button", onclick: () => edit(place) }, icon("edit", "xs"), place.city ? "修改" : "设置"),
+        " ", h("button", { class: "link", type: "button", onclick: () => locate(place, msg) }, "用当前位置"))), msg);
+  };
   const edit = (place) => {
     const input = h("input", { type: "text", maxlength: "30", value: place.city || "", placeholder: "比如：杭州、北京朝阳" });
     const msg = h("div", { class: "error" });
     const form = h("form", {}, h("label", {}, "所在城市", input), msg,
       h("div", { class: "form-actions" },
         h("button", { class: "btn ghost", type: "button", onclick: () => draw(place) }, "取消"),
+        h("button", { class: "btn ghost", type: "button", onclick: () => locate(place, msg) }, "用当前位置"),
         h("button", { class: "btn", type: "submit" }, "保存")));
     form.addEventListener("submit", async (e) => {
       e.preventDefault(); msg.textContent = "正在查找…";
@@ -3776,7 +3793,7 @@ function citySection() {
     box.replaceChildren(form); input.focus();
   };
   api("/iron/api/place").then(draw).catch(() => draw({}));
-  return section("天气", null, box, h("p", { class: "caption", style: "padding:0 2px" }, "按城市取实时天气和空气质量，首页和 IronM 安排训练、饮食时会用上。"));
+  return section("天气", null, box, h("p", { class: "caption", style: "padding:0 2px" }, "按城市取实时天气和空气质量，首页和 IronM 安排训练、饮食时会用上；问 IronM 天气也按这里。用当前位置只在你点了才取，只留到约 1 公里。"));
 }
 
 function profileForm(box, data, done, show) {

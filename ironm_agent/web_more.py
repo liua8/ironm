@@ -178,6 +178,23 @@ async def put_place(body: PlaceIn, user_id: str = Depends(_verify())) -> dict[st
     return {"city": body.city.strip(), "label": place.name}
 
 
+class SpotIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lat: float
+    lon: float
+
+
+@router.post("/iron/api/place/locate")
+async def locate_place(body: SpotIn, user_id: str = Depends(_verify())) -> dict[str, Any]:
+    """"用当前位置"（§173）：浏览器给的经纬度只留两位小数，认出城市名存成他的地方；日志不记位置。"""
+    if not weather.valid_point(body.lat, body.lon):
+        raise HTTPException(422, "位置不对，换成手填城市试试")
+    place = await weather.locate(body.lat, body.lon)
+    await weather.save_place(user_id, place.name, place)
+    return {"city": place.name, "label": place.name}
+
+
 def weather_json(w: weather.Weather | None, has_city: bool) -> dict[str, Any]:
     if not has_city:
         return {"status": "no_city"}
