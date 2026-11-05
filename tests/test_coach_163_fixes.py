@@ -272,6 +272,6 @@ def test_an_undone_kcal_change_is_not_undone_again_on_a_rerun() -> None:
     asyncio.run(review.run("42", dp, llm, force=True))
     asyncio.run(review.undo("42", dp, "review:kcal"))
     assert asyncio.run(dp.diet.current("42")).kcal == -100  # type: ignore[union-attr]
-    again, seen2 = model({"type": "kcal", "delta": -200, "why": "x", "basis": ["F999"]})  # 依据不对：不执行
+    again, _ = model({"type": "kcal", "delta": -200, "why": "x", "basis": ["F999"]})  # 依据不对：不执行
     asyncio.run(review.run("42", dp, again, force=True))
     assert asyncio.run(dp.diet.current("42")).kcal == -100  # type: ignore[union-attr]  # 上个月的没被撤、撤掉的没回来

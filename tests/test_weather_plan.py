@@ -65,7 +65,6 @@ def test_forecast_line_for_case_file() -> None:
 def test_coach_plan_has_weather_item() -> None:
     from ironm_agent.casefile import Snapshot
     from ironm_agent.coach_state import Inputs, compute
-
     from ironm_agent.weather import Advice
 
     inp = Inputs(snapshot=Snapshot(), plan=PLAN, forecast=days(fri=(65, 20.0, 90)))
