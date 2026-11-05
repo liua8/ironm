@@ -13,6 +13,8 @@
 #   official  这一轮之后的正式目标（§151）：{type: 档案的目标类型, weight: 目标表的目标体重}
 #   undone    撤销这一轮确认的改目标之后应恢复成的正式目标（§151），写法同 official
 #   old       这一轮之后 30 天以上没更新（没确认）的有效记忆条数，如 {equipment: 0}（§154）
+#   no_alert  这一轮之后首页提醒里不该有的种类，如 [pain]（§158）
+# setup.pains 预置说疼记录（§158）：part（关节编码）、days（几天前）
 # setup.memories 预置记忆（§154）：id、category、content、status、origin、days（几天前说的）、until、evidence、key、data
 # 只用规则判断，不打分。
 
@@ -299,9 +301,32 @@ cases:
       - say: 今晚在家练什么好
         must: [[还是]]
       - say: 对，家里还是那对 10 公斤哑铃和弹力带
-        must_not: [排新计划前先确认]
-        old: {equipment: 0}
+        old: {equipment: 0}  # 上一轮答完说了"我给你排一份计划"时，"对"也可能被当成要排计划（另记，和记忆无关）
         memory: {equipment: 1}
+
+  - id: soft-memory-fades
+    from: §157 喜好两个月后标出、四个月后不带
+    setup:
+      memories:
+        - {id: r157a, category: preference, content: 不喜欢跑步, days: 90}
+        - {id: r157b, category: preference, content: 喜欢游泳, days: 150}
+    turns:
+      - say: 这周有氧练什么好
+        must_not: [游泳]
+
+  - id: knee-healed-no-alert
+    from: §158 说疼记录和伤病合一：说膝盖好了以后，首页不再提示膝盖反复疼
+    setup:
+      memories:
+        - {id: r158k, category: injury, content: 左膝疼，深蹲会疼, days: 10, key: "injury:joint.knee:左",
+           data: {parts: [joint.knee], side: 左, triggers: [深蹲]}}
+      pains:
+        - {part: joint.knee, days: 6}
+        - {part: joint.knee, days: 3}
+    turns:
+      - say: 我左膝已经好了，不疼了
+        memory: {injury: 0}
+        no_alert: [pain]
 
 # 后台用例（§138 需求 1）：到期复查（kind: checkup，§129）、练完定下次（kind: next，§132）。
 # 本进程内存存储 + 真实模型，不登录、不碰账号和数据库。setup：

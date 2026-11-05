@@ -209,6 +209,19 @@ def seed_memories(user_id: str, rows: list[dict[str, Any]]) -> None:
             )  # fmt: skip
 
 
+def seed_pains(user_id: str, rows: list[dict[str, Any]]) -> None:
+    """预置说疼记录（§158）：part 是关节编码，days 是几天前。"""
+    import uuid
+
+    with db() as c:
+        for r in rows:
+            c.execute(
+                "INSERT INTO ironm_pain_events (id, user_id, content, day) VALUES"
+                " (%s, %s, encrypt_content(%s), CURRENT_DATE - %s::int)",
+                (uuid.uuid4().hex, user_id, r["part"], int(r.get("days", 0))),
+            )
+
+
 def old_memories(user_id: str) -> dict[str, int]:
     """有效记忆里 30 天以上没更新（没确认）的，按类别数条数（§154），不读内容。"""
     with db() as c:
@@ -248,6 +261,7 @@ def judge(
     official: dict[str, Any] | None = None,
     undone: dict[str, Any] | None = None,
     old: dict[str, int] | None = None,
+    alerts: set[str] | None = None,
 ) -> list[str]:
     """不符合的地方；空列表就是符合。"""
     bad = []
@@ -286,6 +300,7 @@ def judge(
         got = (old or {}).get(cat, 0)
         if got != n:
             bad.append(f"30 天以上没确认的 {cat} 记忆应有 {n} 条，实际 {got} 条")
+    bad += [f"首页提醒不该有 {k}" for k in turn.get("no_alert") or [] if k in (alerts or set())]
     lack = [g for g in turn.get("gear") or [] if g not in (gear or set())]
     if lack:
         bad.append("器械页少了 " + "、".join(lack))
@@ -307,6 +322,9 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
     if "memories" in setup:
         seed_memories(user_id, setup["memories"])
         print(f"  准备：预置 {len(setup['memories'])} 条记忆")
+    if "pains" in setup:
+        seed_pains(user_id, setup["pains"])
+        print(f"  准备：预置 {len(setup['pains'])} 条说疼记录")
     session_id = str(json.load(call("POST", "/api/session", {}, token))["data"]["session_id"])
     made["sessions"].append(session_id)
     rows: list[Row] = made.setdefault("rows", [])  # 跑完一轮记一轮：中途出错时前面的轮照样进报告
@@ -333,6 +351,10 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
         events = active_events(user_id) if "events" in turn else None
         mem = memories(user_id) if "memory" in turn else None
         old = old_memories(user_id) if "old" in turn else None
+        alerts = None
+        if "no_alert" in turn:  # 首页提醒里不该有的（§158）
+            time.sleep(3)
+            alerts = {t["kind"] for t in json.load(call("GET", "/iron/api/triggers", token=token))["triggers"]}
         keys = memory_keys(user_id) if "memory_keys" in turn else None
         gear = None
         if "gear" in turn:  # 器械页看到的（§150：读字段，和他在页面上看到的一样）
@@ -345,7 +367,7 @@ def run_case(case: dict[str, Any], profile: dict[str, Any], token: str, user_id:
                 if c["kind"] == "goal" and c["draft"]:
                     call("POST", f"/iron/api/drafts/{c['draft']}/undo", {}, token)
             undone = official_of(token)
-        bad = judge(turn, answer, cards, ill, events, mem, keys, gear, official, undone, old)
+        bad = judge(turn, answer, cards, ill, events, mem, keys, gear, official, undone, old, alerts)
         rows.append(Row(case=case["id"], turn=n, say=turn["say"], ok=not bad, bad=bad, secs=round(secs, 1),
                         answer=answer, cards=[c["kind"] for c in cards], tools=steps))  # fmt: skip
         print(f"{'-' * 72}\n问：{turn['say']}（{secs:.1f} 秒）")

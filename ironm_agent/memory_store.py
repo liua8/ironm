@@ -122,7 +122,9 @@ class Change:
 
 
 class MemoryStore(Protocol):
-    async def items(self, user_id: str, *, current_only: bool = True) -> list[Item]: ...
+    async def items(
+        self, user_id: str, *, current_only: bool = True, recent: date | None = None
+    ) -> list[Item]: ...  # recent：给今天的日期时不取归档了的历史（§157）
     async def apply(self, user_id: str, changes: Sequence[Change]) -> None: ...
     async def edit(self, user_id: str, item_id: str, content: str) -> Item | None: ...
     async def confirm(self, user_id: str, item_id: str) -> Item | None: ...
@@ -152,12 +154,16 @@ class MemoryBook:
         self._items: dict[str, list[Item]] = {}
         self._paused: set[str] = set()
 
-    async def items(self, user_id: str, *, current_only: bool = True) -> list[Item]:
+    async def items(
+        self, user_id: str, *, current_only: bool = True, recent: date | None = None
+    ) -> list[Item]:
+        from ironm_agent.memory_view import archived
+
         rows = self._items.get(user_id, [])
         for i, x in enumerate(rows):  # 读到还没补字段的伤病、特殊情况：当场补上（§148 迁移）
             if (got := _filled(x)) is not None:
                 rows[i] = got
-        rows = list(rows)
+        rows = [x for x in rows if recent is None or not archived(x, recent)]
         return [x for x in rows if x.status != "superseded"] if current_only else rows
 
     async def apply(self, user_id: str, changes: Sequence[Change]) -> None:
@@ -243,6 +249,14 @@ CREATE TABLE IF NOT EXISTS ironm_memory_state (
 )
 
 # content、evidence 是加密后的文字；加密失败时 encrypt_content 返回 NULL，NOT NULL 约束让这一条写不进去
+ARCHIVED = (
+    " AND NOT ((status = 'superseded' AND updated_at < :cut)"
+    " OR (status = 'resolved' AND category NOT IN ('injury', 'special') AND updated_at < :cut)"
+    " OR (category IN ('event', 'followup') AND ((until IS NOT NULL AND until < :cut_day)"
+    " OR (until IS NULL AND created_at < :cut_events)))"
+    " OR (category = 'advice' AND created_at < :cut)"
+    " OR (origin = 'data' AND updated_at < :cut))"
+)
 _SELECT = (
     "SELECT id, category, decrypt_content(content) AS content, decrypt_content(evidence) AS evidence,"
     " origin, status, supersedes, until, created_at, updated_at,"
@@ -316,9 +330,19 @@ class PgMemory:
         rows = await execute_query(sql, params or {}, log_sql=False)
         return rows if isinstance(rows, list) else []
 
-    async def items(self, user_id: str, *, current_only: bool = True) -> list[Item]:
+    async def items(
+        self, user_id: str, *, current_only: bool = True, recent: date | None = None
+    ) -> list[Item]:
         where = " WHERE user_id = :uid" + (" AND status <> 'superseded'" if current_only else "")
-        rows = await self._q(_SELECT + where + " ORDER BY created_at", {"uid": user_id})
+        params: dict[str, Any] = {"uid": user_id}
+        if recent is not None:  # 不取归档了的历史（§157，和 memory_view.archived 同一个口径）
+            from ironm_agent.memory_view import ARCHIVE_DAYS, _midnight
+
+            where += ARCHIVED
+            params |= {"cut": _midnight(recent - timedelta(days=ARCHIVE_DAYS)),
+                       "cut_day": recent - timedelta(days=ARCHIVE_DAYS),
+                       "cut_events": _midnight(recent - timedelta(days=ARCHIVE_DAYS + 7))}  # fmt: skip
+        rows = await self._q(_SELECT + where + " ORDER BY created_at", params)
         out = [_row(r) for r in rows]
         for i, x in enumerate(out):  # 读到还没补字段的伤病、特殊情况：当场补上写回（§148 迁移）
             if (got := _filled(x)) is not None:

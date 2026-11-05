@@ -713,7 +713,7 @@ PAIN = Depends(pain_store)  # 测试时用 dependency_overrides 换成内存版
 
 
 async def _triggers(
-    user_id: str, training: TrainingStore, pain: Any, today: date, illness: Any = None
+    user_id: str, training: TrainingStore, pain: Any, today: date, illness: Any = None, memory: Any = None
 ) -> list[Any]:
     from ironm_agent.illness import sick_days
     from ironm_agent.triggers import PAIN_DAYS, PLATEAU_LOOKBACK, detect
@@ -723,6 +723,13 @@ async def _triggers(
         x.log for x in await training.workouts(user_id, today - timedelta(days=PLATEAU_LOOKBACK))
     ]
     pains = await pain.since(user_id, today - timedelta(days=PAIN_DAYS))
+    if memory is not None:  # 说好了的那处，之前的疼不再算（§158）
+        from ironm_agent.body_now import fresh
+
+        try:
+            pains = fresh(pains, await memory.items(user_id))
+        except Exception as e:
+            _log.info("memory unavailable for triggers: error_type=%s", type(e).__name__)
     eps = await _episodes(illness, user_id, today) if illness is not None else []
     return detect(
         stored.plan if stored else None, logs, stored.since if stored else None, pains, today,
@@ -736,8 +743,9 @@ async def get_triggers(
     training: TrainingStore = TRAINING,
     pain: Any = PAIN,
     illness: Any = ILLNESS,
+    memory: MemoryStore = MEMORY,
 ) -> dict[str, Any]:
-    found = await _triggers(user_id, training, pain, date.today(), illness)
+    found = await _triggers(user_id, training, pain, date.today(), illness, memory)
     return {"triggers": [
         {"kind": t.kind, "title": t.title, "detail": t.detail, "action": t.action} for t in found
     ]}  # fmt: skip
@@ -766,7 +774,7 @@ async def review_proposal(
         return ready  # 每日复查提的改计划：已经存成预览，直接给他看（§129 需求 3）
     snap = await _web().snapshot_for(user_id)
     if trigger:
-        found = await _triggers(user_id, training, pain, snap.today, illness)
+        found = await _triggers(user_id, training, pain, snap.today, illness, memory)
         hit = next((t for t in found if t.kind == trigger and t.action == "proposal"), None)
         if hit is None:
             return {"status": "no_change", "message": "这条提醒已经不需要处理了。"}

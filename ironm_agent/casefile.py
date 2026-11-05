@@ -283,7 +283,9 @@ def risks(r: Readings, memory: Sequence[Item], today: date) -> tuple[Risk, ...]:
         out.append(Risk("rhr_high", f"你最近 7 天平均静息心率 {statistics.fmean(hr):.0f} 次/分，偏高：先找医生看看，再加大训练。"))  # fmt: skip
     seen = {x.key for x in out}
     notes = {k: n for k, _, n in _MEMORY_RISKS}
-    for item in memory:  # 结构化的（§148）：伤病、特殊情况带的代码，伤病类型是术后
+    from ironm_agent.latest import current
+
+    for item in current(memory):  # 结构化的（§148）；同一处以最近说的为准（§158）：伤病、特殊情况带的代码，伤病类型是术后
         if item.status != "active" or not item.data or item.category not in _facts.STRUCTURED:
             continue
         codes = _facts.codes_of(item.data)
@@ -364,6 +366,7 @@ class CaseFile:
     weather: str = ""  # 现在的天气与对训练的影响（spec [2026-10-23] §13；取不到时为空）
     day: tuple[str, ...] = ()  # 今日状态（spec [2026-10-23] §54）：打卡、口头说的状态、生病、说疼
     insights: tuple[tuple[str, str], ...] = ()  # 指标解读（§84）：(编号, 一句话)，依据在 calcs 里
+    sore: tuple[str, ...] = ()  # 最近 3 天说过疼的部位（§158）：只给排计划、换动作的工具避开，不当成伤病写进回答
 
     def text(self, *, calcs: bool = True) -> str:
         lines = [
@@ -439,8 +442,10 @@ def build(
     earlier: Sequence[tuple[Level, str]] = (),
     insights: Sequence[tuple[str, str]] = (),
     target: str = "",
+    sore: Sequence[str] = (),
 ) -> CaseFile:
-    """insights：指标解读（§84），每条是 (给角色看的一句话, 追问依据时讲的详细说法)。"""
+    """insights：指标解读（§84），每条是 (给角色看的一句话, 追问依据时讲的详细说法)。
+    sore：最近 3 天说过疼的部位（§158），和记着的伤病一样避开。"""
     p, today = snapshot.profile, snapshot.today
     metrics = list(snapshot.metrics)
     calcs: dict[str, str] = {}
@@ -498,6 +503,7 @@ def build(
         today=today,
         day=tuple(day),
         insights=tuple(found),
+        sore=tuple(dict.fromkeys(sore)),
     )
 
 

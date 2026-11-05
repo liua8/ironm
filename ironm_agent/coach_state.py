@@ -657,6 +657,10 @@ async def _gather(user_id: str, deps: Deps, today: date) -> Inputs:
     )
     inp.logs = [x.log for x in rows or []]
     inp.pains = await safely("pain", deps.pain.since(user_id, today - timedelta(days=14))) or []
+    if inp.memory:  # 说好了的那处，之前的疼不再算（§158）
+        from ironm_agent.body_now import fresh
+
+        inp.pains = fresh(inp.pains, inp.memory)
     inp.goal = await safely("goal", deps.goals.get(user_id))
     inp.diet = await safely("diet", deps.diet.current(user_id))
     if deps.meals is not None:  # 和饮食页同一个算法，管家和饮食页的提议一致（§118）

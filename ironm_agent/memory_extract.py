@@ -284,7 +284,9 @@ def _problem(
         older = same_advice(content, items.values())
         if older is not None:  # 同一件事（蛋白质每天多少）的新建议：取代旧的那条
             kind, target = "update", older
-    ended = category == "event" and bool(_ENDED.search(content))
+    ended = (category == "event" and bool(_ENDED.search(content))) or (
+        category == "injury" and bool(_HEALED.search(content)) and not _STILL.search(content)
+    )  # 伤病说好了也按结束（§158）
     if kind == "update" and ended:
         kind = "resolve"  # 更新成"已经结束"就是已解决
     if (
@@ -317,6 +319,8 @@ def _problem(
         if (kind == "add" and same is not None and norm(same.content) != norm(content)
                 and not (inferred and same.status == "active")):  # fmt: skip
             kind, target = "update", same
+        if kind == "update" and ended and target is not None:  # 新增撞上同一处、说的是好了：结束那一条（复核 11-04）
+            kind, data, key = "resolve", dict(target.data), target.key
         if target is not None and target.category == category:  # 更新时没再交的字段沿用原来那条
             for name in ("kind", "severity", "triggers", "avoid", "codes", "since",  # 伤病（§148）
                          "per_week", "days", "minutes"):  # 可练时间（§150）
@@ -585,6 +589,8 @@ def _one_per_code(op: Op, items: Mapping[str, Item], touched: set[str]) -> list[
     return out
 
 
+_HEALED = re.compile(r"好了|已好|不疼了|不痛了|恢复了|痊愈|没事了")
+_STILL = re.compile(r"还|仍|但|有点|偶尔|没好|不太|很多|好多|多了|一些|一点|些|几成|成|差不多|大部分|基本")  # 好转不是好了（复核 11-04）
 _ENDED = re.compile(
     r"结束|取消|好了|已好|痊愈|不疼了|不痛了|没事了|恢复了|身体恢复|已恢复|恢复正常|不出差|回来了|不再"
 )

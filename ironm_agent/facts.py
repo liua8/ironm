@@ -63,6 +63,27 @@ def parts_in(text: str) -> list[str]:
     return [k for k, p in PARTS.items() if p.search(text)]
 
 
+# 否定的说法（§159）："没有杠铃""哑铃卖了"里的器械不算有；"膝盖没问题，肩疼"里的膝盖不算伤处
+# 否定词紧挨着器械（中间最多一个量词）才算："不用杠铃用哑铃""没想到哑铃这么好用""以前没买过哑铃现在有了"里的哑铃都算有（复核 11-04）
+_NOT_BEFORE = re.compile(r"(?:没有|没买|没|不再用|不用|还没买|还没有)(?:一对|一副|一个|个|副|对)?$")
+_GONE_AFTER = re.compile(r"^(?:都|也|已经|全|早就)?(?:坏了|卖了|扔了|送人了|没了|退了)")
+_FINE_AFTER = re.compile(r"^[^，。；,;\n]{0,3}(?:没问题|没事|没伤|不疼|不痛|挺好|好好的)")
+
+
+def has_gear(pattern: re.Pattern[str], text: str) -> bool:
+    """原话说有这样器械：至少一处不在否定里。"""
+    return any(not _NOT_BEFORE.search(text[max(0, m.start() - 6) : m.start()])
+               and not _GONE_AFTER.search(text[m.end() : m.end() + 6]) for m in pattern.finditer(text))  # fmt: skip
+
+
+def hurt_parts(text: str) -> list[str]:
+    """说到的伤处：说"没问题、不疼"的部位不算；全都这么说（"膝盖不疼了"）时是说好了，照样算那几处。"""
+    said = parts_in(text)
+    live = [k for k in said if any(not _FINE_AFTER.search(text[m.end() : m.end() + 6])
+                                   for m in PARTS[k].finditer(text))]  # fmt: skip
+    return live or said
+
+
 def side_in(text: str, parts: int = 1) -> str:
     """左右：约数的"左右"不算；说了"双、两边"是两侧；几个部位里有左有右（左膝、右肩）分不清是哪个，空着。"""
     t = _ABOUT.sub("", text)
@@ -101,7 +122,7 @@ def derive(category: str, content: str) -> tuple[str, dict[str, Any]]:
         return category, derive_equipment(content)
     if category == SCHEDULE:
         return category, derive_schedule(content)
-    parts = parts_in(content)
+    parts = hurt_parts(content)
     codes = specials_in(content)
     # 只说体态：去掉体态词后再没有部位（"左肩做过手术，有点圆肩"还有左肩，不算只说体态）
     posture = (bool(POSTURE.search(content)) and not PAIN.search(content)
@@ -171,7 +192,7 @@ def structured(
         picked = [_part_code(x) for x in (got if isinstance(got, list) else [got])]
         if any(c is None for c in picked):
             return category, {}, "部位要写关节：肩、手肘、手腕、颈椎、腰椎、髋、膝、踝"
-        if [c for c in picked if c and not PARTS[c].search(said)]:
+        if [c for c in picked if c and c not in hurt_parts(said)]:
             return category, {}, "部位和原话对不上"
         data["parts"] = [c for c in dict.fromkeys(picked) if c]
     side = str(raw.get("side") or "")
@@ -303,7 +324,7 @@ def place_of(content: str) -> str:
 
 def derive_equipment(content: str) -> dict[str, Any]:
     place = place_of(content)
-    gear = [g for g, p in GEAR_WORDS.items() if p.search(_GYM.sub("", content))]
+    gear = [g for g, p in GEAR_WORDS.items() if has_gear(p, _GYM.sub("", content))]
     data: dict[str, Any] = {}
     if place:
         data["place"] = place
@@ -357,7 +378,7 @@ def structured_more(
             gear = [str(x) for x in (got if isinstance(got, list) else [got])]
             if any(g not in GEAR_WORDS for g in gear):
                 return {}, "器械写哑铃、壶铃、弹力带、杠铃、单杠或器械；别的写进 custom"
-            if any(not GEAR_WORDS[g].search(said) for g in gear):
+            if any(not has_gear(GEAR_WORDS[g], said) for g in gear):
                 return {}, "器械和原话对不上"
             data["gear"] = list(dict.fromkeys(gear))
         custom = [str(x).strip()[:12] for x in raw.get("custom") or [] if str(x).strip()]

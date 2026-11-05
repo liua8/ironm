@@ -15,7 +15,7 @@ from ironm_agent.memory_store import MemoryStore
 from ironm_agent.plan_edit import alternatives, apply_today, edit, today_session
 from ironm_agent.training import Plan, PlanEdit, TrainingStore, plan_content
 from ironm_agent.web import _draft_action, _verify, memory_store, training_store
-from ironm_agent.web_more import DAY, coach_later, plan_change_later, today_edits
+from ironm_agent.web_more import DAY, PAIN, coach_later, plan_change_later, today_edits
 
 _log = logging.getLogger("ironm_agent.plan_edit")
 router = APIRouter()
@@ -33,7 +33,7 @@ class EditIn(BaseModel):
 
 
 async def _limits(
-    user_id: str, memory: MemoryStore
+    user_id: str, memory: MemoryStore, pain: Any = None
 ) -> tuple[frozenset[Equipment] | None, tuple[str, ...], frozenset[str]]:
     """他的器械、伤处、特殊情况（和对话里改计划用的同一份）；读不到当作不知道。"""
     from ironm_agent.casefile import injured_parts
@@ -47,7 +47,16 @@ async def _limits(
         _log.warning("memory unavailable: error_type=%s", type(e).__name__)
         items = ()
     equipment = equipment_in(items)  # 读字段（§150）
-    return equipment, injured_parts(items, ""), await _special(user_id, memory)
+    injured = injured_parts(items, "")
+    if pain is not None:  # 最近 3 天说过疼的部位也避开（§158）
+        from ironm_agent.body_now import SORE_DAYS, sore
+
+        try:
+            pains = await pain.since(user_id, date.today() - timedelta(days=SORE_DAYS))
+            injured = tuple(dict.fromkeys([*injured, *sore(pains, items, date.today())]))
+        except Exception as e:
+            _log.warning("pain unavailable: error_type=%s", type(e).__name__)
+    return equipment, injured, await _special(user_id, memory)
 
 
 async def _plan(store: TrainingStore, user_id: str, day: int) -> Plan:
@@ -74,12 +83,13 @@ async def get_alternatives(
     store: TrainingStore = TRAINING,
     memory: MemoryStore = STORE,
     days: Any = DAY,
+    pain: Any = PAIN,
 ) -> dict[str, Any]:
     plan = await _plan(store, user_id, day)
     today = date.today()
     if day == today.isoweekday():  # 今天改过的：在改过的上面找
         plan = _today_plan(plan, await today_edits(days, user_id, today), today)
-    equipment, injured, special = await _limits(user_id, memory)
+    equipment, injured, special = await _limits(user_id, memory, pain)
     logs = [x.log for x in await store.workouts(user_id, today - timedelta(days=90))]
     found = alternatives(plan, day, exercise[:30], equipment=equipment, injured=injured,
                          special=special, logs=logs)  # fmt: skip
@@ -93,12 +103,13 @@ async def edit_plan(
     store: TrainingStore = TRAINING,
     memory: MemoryStore = STORE,
     days: Any = DAY,
+    pain: Any = PAIN,
 ) -> dict[str, Any]:
     plan = await _plan(store, user_id, body.day)
     today = date.today()
     if body.scope == "today" and body.day != today.isoweekday():
         raise HTTPException(422, "只改今天只能改今天那天")
-    equipment, injured, special = await _limits(user_id, memory)
+    equipment, injured, special = await _limits(user_id, memory, pain)
     e = body.edit.model_copy(update={"line": ""})
     before = await today_edits(days, user_id, today) if body.scope == "today" else []
     base = _today_plan(plan, before, today) if body.scope == "today" else plan

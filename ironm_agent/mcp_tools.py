@@ -69,7 +69,9 @@ async def _context(user_id: str, src: Sources) -> pro.ToolContext:
     from ironm_agent.casefile import injured_parts
 
     snap = await src.snapshot(user_id)
-    items = [x for x in await src.memory.items(user_id) if x.status == "active"]
+    from ironm_agent.latest import current
+
+    items = [x for x in current(await src.memory.items(user_id)) if x.status == "active"]  # 最近说的为准（§158）
     weight = snap.readings.weight
 
     async def workouts(since: date) -> list[Any]:

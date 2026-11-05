@@ -30,6 +30,13 @@ KEEP_ORDER: tuple[Category, ...] = (
     "event",
 )  # fmt: skip
 RESOLVED_KEEP = 5  # 记忆多时，已解决的最多留几条
+# 记忆衰减（§157）：软的慢慢淡，历史两个月后归档；伤病、器械这类不淡，到期问（§154）
+SOFT: frozenset[str] = frozenset({"preference", "diet", "style", "goal"})
+FADE_DAYS = 60  # 软的多少天没再提，带给管家时标"两个月前说的"
+GONE_DAYS = 120  # 软的多少天没再提就不带了（查旧记忆还查得到）
+ARCHIVE_DAYS = 60  # 历史多少天后不再每轮取出（库里不删）
+_KEEP_DIET = re.compile(r"过敏|不耐受|不能吃|吃了(?:会|就)")  # 饮食里关系到身体的，不淡
+_DATED = re.compile(r"明年|今年|年底|年初|\d{1,2}\s*月|\d{4}\s*年")  # 带日子的目标（明年 5 月跑半马）不淡
 
 EVERYONE: tuple[Category, ...] = ("preference", "style")
 ORDER = tuple(CATEGORIES)
@@ -62,8 +69,50 @@ def _date_in(said: date, month: int, day: int) -> date | None:
     return got if got >= said - timedelta(days=31) else date(said.year + 1, month, day)
 
 
+def _soft(item: Item) -> bool:
+    """会慢慢淡的：他说的喜好、饮食习惯（过敏、不耐受除外）、回答风格、目标类记忆（§157）。"""
+    return (item.category in SOFT and item.origin != "data" and item.status == "active"
+            and not (item.category == "diet" and _KEEP_DIET.search(item.content))
+            and not (item.category == "goal" and _DATED.search(item.content)))  # fmt: skip
+
+
+def _quiet(item: Item, today: date) -> int:
+    """多少天没再提（更新日期就是上次说或确认的日子）。"""
+    return (today - item.updated.astimezone().date()).days
+
+
+def fading(item: Item, today: date) -> bool:
+    """软的、两个月到四个月没再提：带给管家时标出来（§157）。"""
+    return _soft(item) and FADE_DAYS <= _quiet(item, today) < GONE_DAYS
+
+
+def faded(item: Item, today: date) -> bool:
+    """软的、四个月没再提：不再带（§157）。"""
+    return _soft(item) and _quiet(item, today) >= GONE_DAYS
+
+
+def _midnight(day: date) -> datetime:
+    return datetime(day.year, day.month, day.day).astimezone()
+
+
+def archived(item: Item, today: date, days: int = ARCHIVE_DAYS) -> bool:
+    """归档了的历史（§157）：不再每轮取出，查旧记忆时才查。和库里的查询（memory_store.ARCHIVED）同一个口径。"""
+    cut = _midnight(today - timedelta(days=days))
+    old_events = _midnight(today - timedelta(days=days + 7))  # 没写结束日的近况、跟进按 7 天算
+    return bool(
+        (item.status == "superseded" and item.updated < cut)
+        or (item.status == "resolved" and item.category not in ("injury", "special") and item.updated < cut)
+        or (item.category in ("event", "followup")
+            and (item.until < today - timedelta(days=days) if item.until is not None else item.created < old_events))
+        or (item.category == "advice" and item.created < cut)
+        or (item.origin == "data" and item.updated < cut)
+    )  # fmt: skip
+
+
 def expired(item: Item, at: datetime | None = None) -> bool:
     at = at or now()
+    if faded(item, at.astimezone().date()):  # 软的四个月没再提（§157）
+        return True
     if item.origin == "data":  # 训练记录得出的偏好：每次还被数据支持时会刷新 updated
         return at - item.updated > timedelta(days=DATA_DAYS)
     if item.category == "advice":

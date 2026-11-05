@@ -14,15 +14,16 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
 from ironm_agent.memory_extract import norm
 from ironm_agent.memory_store import CATEGORIES, Category, Change, Item, absolute, new_id, now
-from ironm_agent.memory_view import advice_expired
+from ironm_agent.memory_view import advice_expired, faded, fading
 from ironm_agent.protools.movement import JOINT_NAMES
 from ironm_agent.training import Plan, WorkoutLog
 
@@ -54,6 +55,15 @@ ASK_MAX = 3  # 每轮最多带几条该问的
 ADVICE_KEEP = 3  # 情景里带最近几条给过的建议
 SEMANTIC_MIN = 0.42  # 语义召回的最低相似度（fastembed 余弦）
 SEMANTIC_MAX = 5  # 一次最多补几条语义命中
+COVER_MIN = 0.5  # 查询词的两字片段有一半出现在记忆里，算说法相近（§159，不加依赖）
+# 查旧记忆时同一类的说法（§159）：查"出差"也找"去上海开会"，查"睡眠"也找"熬夜"
+_RECALL_KINDS = tuple(re.compile(p) for p in (
+    r"出差|酒店|外地|回老家|开会|培训|外出", r"旅游|旅行|度假",
+    r"感冒|发烧|咳嗽|生病|病了|拉肚子|嗓子|不舒服|难受",
+    r"加班|很忙|太忙|没空|没时间", r"失眠|没睡好|睡不好|熬夜|睡眠|睡觉", r"经期|月经|生理期|大姨妈",
+    r"器械|哑铃|壶铃|弹力带|杠铃|单杠|健身房",
+))  # fmt: skip
+RELATED_MAX = 8  # 同一处身体、同一类事最多补几条（复核 11-04：别把关键词命中的挤出去）
 PAIN_DAYS, PAIN_TIMES = 30, 3  # 30 天里说疼 3 天以上，问要不要记成长期的
 GAP_WEEKS = 3  # 连续几周都练不到计划的一半，问要不要改得更现实
 AUTO = "auto:"  # 系统生成的该问的：evidence 里放这个前缀加去重键
@@ -89,6 +99,7 @@ class Layers:
     profile: list[str] = field(default_factory=list)
     episodes: list[str] = field(default_factory=list)
     asks: list[str] = field(default_factory=list)
+    stale: list[tuple[Item, Item]] = field(default_factory=list)  # 给管家看到的"还是这样吗"：(那条记忆, 该问的)（§160）
 
     def text(self, today: date, summaries: Sequence[str] = ()) -> str:
         """日期在档案里已经写了，这里不再重复（§96）。"""
@@ -143,13 +154,16 @@ def layers(items: Sequence[Item], today: date, focus: Collection[str] | None = N
             continue  # 旧伤好了还带着（写明已好），别的已解决的长期情况不带
         if x.status == "pending" and (today - _day(x)).days > PENDING_DAYS:
             continue  # 推测的过了几天没确认：不再当事实带（§154），查记忆还查得到
+        if faded(x, today):
+            continue  # 喜好这类四个月没再提：不带了（§157），查记忆还查得到
         mark = "？" if x.status == "pending" else ""
         state = "（已好）" if x.status == "resolved" else ""
         src = "推测的" if x.status == "pending" else "你说的" if x.origin != "data" else "训练记录"
         h = handle(x)
         old = (x.status == "active" and x.category in STALE_DAYS and x.origin not in ("data", "system")
                and (today - x.updated.astimezone().date()).days >= STALE_DAYS[x.category])  # fmt: skip
-        stale = "，很久没确认：用到它时答完问一句还是不是这样" if old else ""  # 和该问的同一个口径（§154）
+        stale = ("，很久没确认：用到它时答完问一句还是不是这样" if old  # 和该问的同一个口径（§154）
+                 else "，两个月前说的：用到时可以顺带问一句还是不是这样" if fading(x, today) else "")  # §157  # fmt: skip
         out.profile.append(f"{h}｜{CATEGORIES[x.category]}{state}：{said(x)}{mark}"
                            f"（{_md(x.updated.astimezone().date())}，{src}{stale}）")  # fmt: skip
         if x.status == "pending":
@@ -180,10 +194,13 @@ def layers(items: Sequence[Item], today: date, focus: Collection[str] | None = N
             if fact is None or about not in shown or fact.updated > x.created:
                 continue
             out.asks.append(f"{handle(x)}｜{said(x)}（是 {shown[about]} 那条）")
+            out.stale.append((fact, x))
             continue
         out.asks.append(f"{handle(x)}｜{said(x)}（{_md(x.until or today)}到期）")
     out.asks += guesses  # 到期的跟进（他要的提醒）排在推测的前面（复核 11-03）
     out.asks = out.asks[:ASK_MAX]
+    asked = {out.handles[a.split("｜", 1)[0]].id for a in out.asks}
+    out.stale = [(f, x) for f, x in out.stale if x.id in asked]  # 截掉的那几条管家没看到，代码也不补（复核 11-04）
     return out
 
 
@@ -208,10 +225,11 @@ def daily_asks(
     seen = {x.evidence for x in items if x.category == "followup" and x.evidence.startswith(AUTO)
             and (today - _day(x)).days <= 30}  # fmt: skip
     out: list[Change] = []
+    # 已经记着的只算还在的伤病：好了以后又反复疼，照样问要不要记成长期的（§158）
     profile = " ".join(
-        x.content for x in items if x.category == "injury" and x.status != "superseded"
+        x.content for x in items if x.category == "injury" and x.status in ("active", "pending")
     )
-    recorded = {p for x in items if x.category == "injury" and x.status != "superseded"
+    recorded = {p for x in items if x.category == "injury" and x.status in ("active", "pending")
                 for p in (x.data.get("parts") or [])}  # 结构化的部位（§148）  # fmt: skip
     days = Counter(code for code, _ in {(c, d) for c, d in pains if (today - d).days < PAIN_DAYS})
     for code, n in days.items():
@@ -250,6 +268,34 @@ def daily_asks(
                 )
             )
     return out + _stale_asks(items, seen, today)
+
+
+ASKED_STILL = re.compile(r"还是(?:不是)?(?:这样|那样|那些|那对|那个)|还在|还有|变了|有变化|换了")
+_SOLID = re.compile(r"\d+\s*(?:分钟|次|天|小时)|周[一二三四五六日]")
+_QUESTION = re.compile(r"[^。！？!?\n]*[？?]")
+
+
+def _marks(fact: Item) -> list[str]:
+    """回答里出现这些，就是用到了那条：器械看器械名；可练时间看次数、分钟、星期，要对上两样。"""
+    if fact.category == "equipment":
+        return [*(fact.data.get("gear") or []), *(fact.data.get("custom") or [])]
+    return list(dict.fromkeys(_SOLID.findall(said(fact)))) if fact.category == "schedule" else []
+
+
+def stale_question(lay: Layers, answer: str) -> tuple[str, Item | None]:
+    """这一轮回答用到了很久没确认的器械、可练时间，又没问还是不是这样：补一句（§160），并返回那条该问的
+    （补了就算问过）。管家换了说法问过（问句里提到那条或问"还在、还有、变了"）不补。不调用模型。"""
+    text = norm(answer)
+    asks = [norm(q) for q in _QUESTION.findall(answer)]
+    for fact, ask in lay.stale:
+        marks = [norm(m) for m in _marks(fact) if m]
+        used = [m for m in marks if m in text]
+        if len(used) < (2 if fact.category == "schedule" else 1):
+            continue
+        if any(ASKED_STILL.search(q) or any(m in q for m in marks) for q in asks):
+            return "", None
+        return f"顺便问一下：你之前说「{said(fact)}」，现在还是这样吗？", ask
+    return "", None
 
 
 def _stale_asks(items: Sequence[Item], seen: Collection[str], today: date) -> list[Change]:
@@ -303,6 +349,9 @@ def search(
     start = today - timedelta(days=max(1, min(days, 365)))
     hits = [x for x in items if _day(x) >= start and (not q or q in norm(x.content)
                                                        or q in norm(CATEGORIES[x.category]))]  # fmt: skip
+    hits.sort(key=lambda x: x.created, reverse=True)  # 关键词命中的排前面，补的跟在后面（复核 11-04）
+    if q:  # 关键词没对上的：同一处身体、同一类事、说法相近的也算（§159）
+        hits += _related(query, [x for x in items if _day(x) >= start and x not in hits])
     if q and similar is not None:
         pool = [x for x in items if _day(x) >= start]
         if pool:
@@ -313,7 +362,6 @@ def search(
             extra = [x for x, score in sorted(zip(pool, sims, strict=True), key=lambda t: -t[1])
                      if score >= SEMANTIC_MIN and x not in hits]  # fmt: skip
             hits += extra[:SEMANTIC_MAX]
-    hits.sort(key=lambda x: x.created, reverse=True)
     if not hits:
         return "没有查到。"
     state = {
@@ -324,6 +372,26 @@ def search(
     }
     return "\n".join(f"{_md(_day(x))}｜{CATEGORIES[x.category]}：{said(x)}{until(x)}{state.get(x.status, '')}"
                      for x in hits[:limit])  # fmt: skip
+
+
+def _related(query: str, pool: Sequence[Item]) -> list[Item]:
+    from ironm_agent.facts import parts_in
+
+    codes = set(parts_in(query))
+    kinds = [k for k in _RECALL_KINDS if k.search(query)]
+    near = sorted((x for x in pool
+                   if (codes and codes & {*(x.data.get("parts") or []), *parts_in(x.content)})
+                   or any(k.search(x.content) for k in kinds)), key=lambda x: x.created, reverse=True)[:RELATED_MAX]  # fmt: skip
+    grams = _grams(query)
+    rest = [x for x in pool if x not in near]
+    fuzzy = sorted(((len(grams & _grams(x.content)) / len(grams), x) for x in rest if grams),
+                   key=lambda t: -t[0])  # fmt: skip
+    return near + [x for score, x in fuzzy if score >= COVER_MIN][:SEMANTIC_MAX]
+
+
+def _grams(text: str) -> set[str]:
+    t = norm(text)
+    return {t[i : i + 2] for i in range(len(t) - 1)} if len(t) > 1 else set(t)
 
 
 def until(x: Item) -> str:
@@ -354,12 +422,21 @@ def recall_tool(
     items: Sequence[Item],
     today: date,
     similar: Callable[[str, Sequence[str]], Sequence[float]] | None = None,
+    load: Callable[[], Awaitable[Sequence[Item]]] | None = None,
 ) -> Any:
+    """load：查的时候才去库里取全部（含归档了的历史，§157）；取不到就用这一轮已经取的。"""
+
     async def run(box: Any, args: Mapping[str, Any]) -> str:
         try:
             days = int(args.get("days") or 90)
         except (TypeError, ValueError):
             days = 90
-        return search(items, str(args.get("query") or ""), days, today, similar=similar)
+        pool = items
+        if load is not None:
+            try:
+                pool = await load()
+            except Exception:  # 库读不到：用这一轮已经取的
+                pool = items
+        return search(pool, str(args.get("query") or ""), days, today, similar=similar)
 
     return run

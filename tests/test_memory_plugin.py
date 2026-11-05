@@ -116,7 +116,7 @@ def test_extraction_failure_does_not_touch_the_answer(monkeypatch: Any) -> None:
 
 def test_broken_store_means_no_memory_not_no_answer(monkeypatch: Any) -> None:
     class Broken(MemoryBook):
-        async def items(self, user_id: str, *, current_only: bool = True) -> list[Item]:
+        async def items(self, user_id: str, *, current_only: bool = True, recent: Any = None) -> list[Item]:
             raise ConnectionError("db down")
 
     blocks = collect(agent(Script(), monkeypatch=monkeypatch, memory=Broken()), QUESTION)

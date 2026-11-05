@@ -108,7 +108,7 @@ from ironm_agent.memory_layers import (
 )
 from ironm_agent.memory_prefs import due as prefs_due
 from ironm_agent.memory_prefs import refresh as refresh_prefs
-from ironm_agent.memory_store import Item, MemoryStore, default_store
+from ironm_agent.memory_store import Change, Item, MemoryStore, default_store
 from ironm_agent.memory_view import Recall
 from ironm_agent.metrics import GOALS
 from ironm_agent.personal import Personal, personal_basics
@@ -558,7 +558,7 @@ class IronMAgent:
                 (m.value for m in snapshot.metrics if m.key == "kcal_target" and m.value), None
             ),
             readings=snapshot.readings,
-            injured=case.injuries,
+            injured=tuple(dict.fromkeys([*case.injuries, *case.sore])),  # 最近说疼的：排计划、换动作也避开（§158）
             equipment_items=recall.items,  # 读字段（§150）
             plan=lambda: store.plan(user_id),
             workouts=workouts,
@@ -640,9 +640,9 @@ class IronMAgent:
         return self._summaries
 
     async def _memory_items(self, user_id: str) -> list[Item]:
-        """这个人的全部记忆（含被取代、已结束的），四层记忆和查记忆工具用；读不到时当作没有。"""
+        """这个人的记忆（含被取代、已结束的，归档了的不取，§157），四层记忆用；读不到时当作没有。"""
         try:
-            return await self._memory_store().items(user_id, current_only=False)
+            return await self._memory_store().items(user_id, current_only=False, recent=date.today())
         except Exception as e:
             _log.warning("memory unavailable: error_type=%s", type(e).__name__)
             return []
@@ -656,8 +656,11 @@ class IronMAgent:
             store = self._memory_store()
             if await store.paused(user_id):
                 return
-            items = await store.items(user_id, current_only=False)
+            items = await store.items(user_id, current_only=False, recent=today)
             pains = await self._pain_store().since(user_id, today - timedelta(days=PAIN_DAYS))
+            from ironm_agent.body_now import fresh
+
+            pains = fresh(pains, items)  # 说好了的那处，之前的疼不再算（§158）
             training = self._training_store()
             plan = await training.plan(user_id)
             logs = await training.workouts(user_id, today - timedelta(days=28))
@@ -940,6 +943,17 @@ class IronMAgent:
         self._coach_cache[user_id] = (date.today(), state)
         return state
 
+    async def _sore(self, user_id: str, today: date, memory: Sequence[Any]) -> list[str]:
+        """最近 3 天说过疼（好了之后说的）的部位：排计划时和记着的伤病一样避开（§158）；读不到当作没有。"""
+        from ironm_agent.body_now import SORE_DAYS, sore
+
+        try:
+            pains = await self._pain_store().since(user_id, today - timedelta(days=SORE_DAYS))
+        except Exception as e:
+            _log.warning("pain unavailable: error_type=%s", type(e).__name__)
+            return []
+        return sore(pains, memory, today)
+
     async def _today_lines(
         self,
         user_id: str,
@@ -947,6 +961,7 @@ class IronMAgent:
         today: date,
         state: DayState | None,
         ill: list[Episode],
+        memory: Sequence[Any] = (),
     ) -> list[str]:
         """共享档案第一段"今天"：计划、打卡（带时间）、今天说过的状态、生病、最近说疼的部位，
         以及"今天的版本"（和首页、管家消息同一份，§97）。"""
@@ -961,6 +976,9 @@ class IronMAgent:
             pains = await self._pain_store().since(user_id, today - timedelta(days=3))
         except Exception as e:
             _log.warning("pain unavailable: error_type=%s", type(e).__name__)
+        from ironm_agent.body_now import fresh
+
+        pains = fresh(pains, memory)  # 说好了的那处，之前的疼不进"今天"（§158）
         from ironm_agent.protools.movement import JOINT_NAMES
 
         named = [(JOINT_NAMES.get(p, p), d) for p, d in pains]
@@ -1092,13 +1110,15 @@ class IronMAgent:
         结束正在进行的那次（spec [2026-10-23] §46）。"""
         events = [c.item.content for c in changes if c.kind == "insert" and c.item is not None
                   and c.item.category in ("event", "injury")]  # fmt: skip
+        ended_by = {c.item.content for c in changes if c.kind == "insert" and c.item is not None
+                    and c.item.category == "event"}  # 只有近况能结束、续上生病，伤病不动它（§158）  # fmt: skip
         if not events:
             return
         store, today = self._illness_store(), date.today()
         eps = await recent_illness(store, user_id, today)
         now = active_illness(eps, today)
         for text in events:
-            reply = reply_of(text) if now else None
+            reply = reply_of(text) if now and text in ended_by else None
             found = detect(text)
             if now and reply is not None:
                 changed, _ = answer_illness(now[0], reply, today)
@@ -1161,7 +1181,7 @@ class IronMAgent:
             _log.warning("medical knowledge unavailable: error_type=%s", type(e).__name__)
             return None
 
-    def _timeline_tool(self, user_id: str, raw: Sequence[Any], today: date) -> dict[str, Any]:
+    def _timeline_tool(self, user_id: str, raw: Any, today: date) -> dict[str, Any]:
         """时间线（§97）：生病、伤病和近期的事、说疼、训练、管家的调整按日期排在一起，只读。"""
         from ironm_agent import timeline
 
@@ -1544,6 +1564,15 @@ class IronMAgent:
             raw = [
                 x for x in raw if not (x.category in ("event", "advice") and mentions(x.content))
             ]
+        sick_now = bool(active_illness(run.get("_ill") or [], snapshot.today))
+
+        async def everything() -> list[Any]:
+            """查旧记忆、时间线用到时才取全部（含归档了的，§157），照样去掉没生病时的生病内容（复核 11-04）。"""
+            rows = await self._memory_store().items(user_id, current_only=False)
+            return list(rows) if sick_now else [
+                x for x in rows if not (x.category in ("event", "advice") and mentions(x.content))
+            ]
+
         lay = layers(raw, snapshot.today)
         try:
             earlier_sessions = await self._summary_store().latest(user_id, session_id, SHOW)
@@ -1559,8 +1588,8 @@ class IronMAgent:
             GENERAL, kb=self._kb, health=self._health_source(), user_id=user_id,
             session_id=session_id, calcs=case.calcs, context=tools_ctx,
             meds=self._meds_source(), medical=self._medical_source(),
-            extra={**EXTRA_TOOLS, RECALL: (RECALL_SCHEMA, recall_tool(raw, snapshot.today)),
-                   **self._web_tools(snapshot.today), **self._timeline_tool(user_id, raw, snapshot.today)},
+            extra={**EXTRA_TOOLS, RECALL: (RECALL_SCHEMA, recall_tool(raw, snapshot.today, load=everything)),
+                   **self._web_tools(snapshot.today), **self._timeline_tool(user_id, everything, snapshot.today)},
         )  # fmt: skip
         if checked is not None:
             toolbox.evidence.absorb(checked)
@@ -1709,6 +1738,17 @@ class IronMAgent:
                 x for x in (extra, *(CONFIRM_NOTE[k] for k in desk.kinds)) if x
             )
             composed = replace(composed, text=composed.text.rstrip() + "\n\n" + extra_note)
+        if not (kinds or ask_ill or cards or pain_parts(text) or detect(text) or sick_now):
+            from ironm_agent.memory_layers import stale_question
+
+            still, due_ask = stale_question(lay, composed.text)  # 很久没确认的那条：管家没问就补一句（§160）
+            if still and due_ask is not None:
+                composed = replace(composed, text=composed.text.rstrip() + "\n\n" + still)
+                run["stale_ask"] = "fixed"
+                try:  # 补问过了：这条该问的结束，他不答也不再每轮补（30 天后到期再问，复核 11-04）
+                    await self._memory_store().apply(user_id, [Change("status", id=due_ask.id, status="resolved")])
+                except Exception as e:
+                    _log.warning("stale ask close failed: error_type=%s", type(e).__name__)
         blocks = self._answer(composed, prefix, run, said)
         tail = 2 if blocks[-1].get("tool_call_id") == SOURCES_ID else 0
         for block in [*blocks[: len(blocks) - tail], *cards, *blocks[len(blocks) - tail :]]:
@@ -2389,7 +2429,9 @@ class IronMAgent:
         signal = (level, state) if mode is not None else None  # 病后第一次也告诉角色：按约七成
         day = (run or {}).get("_day")
         at = (run or {}).get("_at")
-        today_lines = await self._today_lines(user_id, plan, snapshot.today, day, ill)
+        body = await self._memory_items(user_id)  # 没截过的（截过的可能丢了"已好"那条，复核 11-04）
+        today_lines = await self._today_lines(user_id, plan, snapshot.today, day, ill, body)
+        sore_parts = await self._sore(user_id, snapshot.today, body)
         found, insight_lines = await self._insights(user_id, snapshot, logs, ill, recall)
         if run is not None:
             run["_found"] = found
@@ -2399,7 +2441,7 @@ class IronMAgent:
         case = build_case(
             snapshot, recall, text, plan=lines + target_lines(plan, steady, snapshot.today, decided),
             illness=signal, day=today_lines, earlier=day_signals(day, before=at),
-            insights=insight_lines, target=target,
+            insights=insight_lines, target=target, sore=sore_parts,
         )  # fmt: skip
         current = await wx if wx is not None else None
         if current is not None:

@@ -113,7 +113,7 @@ def tool(
     today: date,
     *,
     illness: Callable[[date], Awaitable[Sequence[Any]]] | None = None,
-    memory: Sequence[Any] = (),
+    memory: Sequence[Any] | Callable[[], Awaitable[Sequence[Any]]] = (),
     pains: Callable[[date], Awaitable[Sequence[tuple[str, date]]]] | None = None,
     workouts: Callable[[date], Awaitable[Sequence[Any]]] | None = None,
     changes: Callable[[], Awaitable[Sequence[Any]]] | None = None,
@@ -129,7 +129,7 @@ def tool(
         lines = build(
             today, days,
             illness=(await _safely("illness", illness(start)) if illness else None) or (),
-            memory=memory,
+            memory=(await _safely("memory", memory()) or () if callable(memory) else memory),  # 用到才取全部（§157）
             pains=(await _safely("pain", pains(start)) if pains else None) or (),
             workouts=(await _safely("workouts", workouts(start)) if workouts else None) or (),
             changes=(await _safely("coach", changes()) if changes else None) or (),
