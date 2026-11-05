@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "IronM",
+    "slug": "ironm",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-secure-store",
+      "expo-localization",
+      "expo-font",
+      "expo-sharing",
+      "expo-asset",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "IronM 需要读取相册，用来记一餐、认器械、发给 IronM 看。",
+          "cameraPermission": "IronM 需要用相机，拍一餐、拍器械、拍打卡照片。",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#3d7a1c"
+        }
+      ]
+    ],
+    "scheme": "ironm"
+  }
+}
