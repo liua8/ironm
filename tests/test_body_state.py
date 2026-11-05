@@ -116,3 +116,11 @@ def test_a_note_is_read_by_the_coach_not_by_keywords() -> None:
     assert (
         asyncio.run(read_text("42", "  ", TODAY, "打卡备注", failed, FakeLLM(down))) is None
     )  # 没写备注不叫醒
+
+
+def test_soreness_after_training_is_not_an_illness() -> None:
+    """两周模拟 11-05："昨天练完腿特别酸"被记成生病、开着两周没关。"""
+    from ironm_agent.body_state import _READ_PROMPT, STATE_SCHEMA_PROPS
+
+    assert "练后酸痛，不是生病也不算疼，不记" in _READ_PROMPT
+    assert "练完肌肉酸不是生病" in STATE_SCHEMA_PROPS["sick"]["description"]

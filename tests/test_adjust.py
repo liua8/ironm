@@ -199,6 +199,21 @@ def test_propose_limits() -> None:
         assert "下限" in why3
 
 
+def test_no_tiny_proposals_at_the_floor() -> None:
+    """两周模拟 11-05：目标已经贴着下限时，减 200 被卡成每天少几千卡，不再提。"""
+    from ironm_agent.diet_adjust import MIN_STEP, _apply
+
+    woman = snap_with("fat_loss", 0.0, sex="female", start=60.0).profile
+    p, why = _apply(-200, "体重没降", "x", target_now=1354, bmr=1350, profile=woman, current=None)
+    assert p is None and "下限" in why  # 只剩 4 千卡
+    man = snap_with("fat_loss", 0.0).profile
+    flip, _ = _apply(-200, "体重没降", "x", target_now=1354, bmr=1350, profile=man, current=None)
+    assert flip is None  # 下限比现在的目标还高：要减却成了多吃，不提
+    ok, _ = _apply(-200, "体重没降", "x", target_now=2200, bmr=1600, profile=snap_with("fat_loss", 0.0).profile,
+                   current=None)  # fmt: skip
+    assert ok is not None and abs(ok.delta) >= MIN_STEP
+
+
 def test_target_includes_adjustment() -> None:
     adj = KcalAdjust(-200, TODAY, "减脂期体重这几周没有下降")
     base = next(m for m in snap_with("fat_loss", 0.0).metrics if m.key == "kcal_target")
@@ -330,6 +345,8 @@ def test_today_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
 
     rerun: list[str] = []
     monkeypatch.setattr(review_mod, "rerun_later", lambda uid, deps, reason: rerun.append(reason))
+    woke: list[str] = []
+    monkeypatch.setattr(review_mod, "daily_later", lambda uid, deps: woke.append(uid))
     seen: dict[str, Any] = {"review": None}
 
     async def today_review(_: str) -> Any:
@@ -340,6 +357,7 @@ def test_today_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     assert (
         r["status"] == "reviewing" and r["original"]["items"][0]["sets"] == 4
     )  # 管家还没看：如实说（§163）
+    assert woke == ["42"]  # 只开了首页也叫醒管家跑当天的复盘（两周模拟 11-05）
     seen["review"] = Review(day=real_today, failed=True)
     assert c.get("/iron/api/today").json()["status"] == "coach_error"  # 管家出错了：不按规则替它定
     seen["review"] = Review(day=real_today, summary="睡得少，照计划练，留点余力")

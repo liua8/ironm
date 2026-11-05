@@ -980,6 +980,10 @@ async def get_today(
     if v.status == "review_rest":  # 管家复盘定了今天休息
         return {"status": "rest_today", "original": v.original, "message": v.title}
     if v.status in ("reviewing", "coach_error"):  # 管家还在看、出错了：如实说，可以重试（§163）
+        if v.status == "reviewing":  # 今天还没人叫醒管家（只开了首页、没开对话）：后台跑当天的复盘（两周模拟 11-05）
+            from ironm_agent.review import daily_later
+
+            daily_later(user_id, coach_deps())
         return {"status": v.status, "original": v.original, "message": v.title, "why": v.why}
     return {"status": "ok", "original": v.original, "today": v.today, "changed": v.changed,
             "changes": list(v.changes), "reasons": list(v.reasons)}  # fmt: skip
@@ -1314,6 +1318,9 @@ async def get_coach(user_id: str = Depends(_verify())) -> dict[str, Any]:
     except Exception as e:
         _log.error("coach failed: error_type=%s", type(e).__name__)
         raise HTTPException(503, "管家的方案暂时算不出来，请稍后再试") from e
+    from ironm_agent.review import daily_later
+
+    daily_later(user_id, deps)  # 首页也算每天第一次打开：后台跑当天的复盘（今天做过就不再跑；两周模拟 11-05）
     order = {
         x.key: i for i, x in enumerate(state.items)
     }  # 按方案里的顺序：今天、提醒、待确认、饮食、目标……

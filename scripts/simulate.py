@@ -4,8 +4,12 @@
 按剧本逐日把时钟拨到那一天，像真用户一样建档、要计划、打卡、说累了、说疼、生病又好了、问进展；
 每天先像打开首页一样让管家评估一次。每一步的输入、回答、计划和下次目标的变化记进报告。
 
-    uv run --with time-machine python scripts/simulate.py            # 跑两周
-    uv run --with time-machine python scripts/simulate.py --days 2   # 只跑前两天（调试）
+    uv run --with time-machine python scripts/simulate.py                   # 三个剧本各跑两周
+    uv run --with time-machine python scripts/simulate.py --only B --days 2 # 只跑剧本 B 的前两天（调试）
+
+剧本（§163 验收要多剧本）：A 增肌、健身房，睡得少、膝盖疼、感冒、出差；B 新手减脂、在家，加班漏练、
+体重不动、出差没器械；C 有基础、健身房，次数做满看进阶，肩不舒服、只有 30 分钟、想多练一天。
+每个剧本一个模拟用户，填好自己的模型（§167），管家后台复查才会跑。
 
 报告写到 evals/sim/reports/（不进仓库）。要调用真实模型，先查余额。
 """
@@ -33,6 +37,18 @@ START = date(2026, 10, 19)  # 第一天是周一
 OUT = ROOT / "evals" / "sim" / "reports"
 
 PROFILE = {"height_cm": 175, "birth": "1998-05-01", "sex": "male", "goal": "muscle", "activity": "moderate"}
+# 每个剧本的人和身体数据（体重起点、每天变化；哪几天睡得少、心率高）
+SCENES: dict[str, dict[str, Any]] = {
+    "A": {"uid": "sim-a", "profile": PROFILE, "kg": 72.0, "per_day": 0.02, "short_sleep": {2: 5.0, 8: 6.0, 9: 6.0},
+          "high_hr": (8, 9)},
+    "B": {"uid": "sim-b", "profile": {"height_cm": 162, "birth": "1993-03-12", "sex": "female", "goal": "fat_loss",
+                                      "activity": "light"},
+          "kg": 66.0, "per_day": 0.0, "short_sleep": {3: 5.5, 4: 5.5}, "high_hr": ()},
+    "C": {"uid": "sim-c", "profile": {"height_cm": 178, "birth": "1995-08-20", "sex": "male", "goal": "muscle",
+                                      "activity": "moderate"},
+          "kg": 75.0, "per_day": 0.03, "short_sleep": {}, "high_hr": ()},
+}  # fmt: skip
+SCENE: dict[str, Any] = SCENES["A"]
 
 
 def load_env() -> None:
@@ -53,12 +69,13 @@ def readings_until(today: date) -> Any:
     rng = random.Random(7)
     days = [START - timedelta(days=27) + timedelta(days=i) for i in range((today - START).days + 28)]
     weight, sleep, hr, steps = [], [], [], []
+    short, high = SCENE["short_sleep"], SCENE["high_hr"]
     for d in days:
         n = (d - START).days
-        weight.append((d, round(72.0 + 0.02 * max(n, -27) + rng.uniform(-0.25, 0.25), 1)))
-        sleep.append((d, 5.0 if n == 2 else 6.0 if n in (8, 9) else round(7.2 + rng.uniform(-0.4, 0.4), 1)))
-        hr.append((d, 72 if n in (8, 9) else 62 + rng.randint(-2, 2)))
-        steps.append((d, 3000 if n in (8, 9) else 8000 + rng.randint(-1500, 1500)))
+        weight.append((d, round(SCENE["kg"] + SCENE["per_day"] * max(n, -27) + rng.uniform(-0.25, 0.25), 1)))
+        sleep.append((d, short[n] if n in short else round(7.2 + rng.uniform(-0.4, 0.4), 1)))
+        hr.append((d, 72 if n in high else 62 + rng.randint(-2, 2)))
+        steps.append((d, 3000 if n in high else 8000 + rng.randint(-1500, 1500)))
     return Readings(weight=tuple(weight), sleep_hours=tuple(sleep), resting_hr=tuple(hr), steps=tuple(steps))
 
 
@@ -150,7 +167,7 @@ class Sim:
     agent: Any
     log: list[dict[str, Any]] = field(default_factory=list)
     history: list[str] = field(default_factory=list)
-    session: str = f"{UID}:s1"
+    session: str = ""
     day: dict[str, Any] = field(default_factory=dict)
     runs: list[dict[str, Any]] = field(default_factory=list)  # 每轮的运行记录（走了哪条路、调了哪些工具）
 
@@ -207,13 +224,21 @@ class Sim:
         """每天第一次打开：管家评估、首页今天、提醒。"""
         coach = await self.get("/iron/api/coach")
         await self.drain()
+        coach = await self.get("/iron/api/coach")  # 后台复查跑完了再看一次（§163：今天怎么练由管家定）
         today = await self.get("/iron/api/today")
-        triggers = await self.get("/iron/api/triggers")
-        self.day["coach"] = [{"title": x.get("title"), "detail": x.get("detail"), "action": x.get("action"),
-                              "key": x.get("key")} for x in coach.get("items", [])]  # fmt: skip
+        self.day["coach"] = [{"title": x.get("title"), "detail": x.get("why") or x.get("detail"),
+                              "action": x.get("action"), "key": x.get("key")} for x in coach.get("items", [])]  # fmt: skip
         self.day["coach_changes"] = coach.get("changes", [])
         self.day["today"] = today
-        self.day["triggers"] = triggers.get("triggers", [])
+
+    async def accept(self) -> None:
+        """他照管家提的确认（改计划、临时调整的预览卡片），看确认后计划怎么变。"""
+        coach = await self.get("/iron/api/coach")
+        for x in coach.get("pending", []):
+            draft = (x.get("value") or {}).get("draft")
+            if draft:
+                await self.confirm([{"kind": (x.get("value") or {}).get("type"), "draft": draft}],
+                                   "管家提的：" + str(x.get("title"))[:40])  # fmt: skip
 
     async def illness(self) -> list[dict[str, Any]]:
         """生病记录（取证用）：开始、状态、症状、好了的那天。"""
@@ -359,15 +384,9 @@ async def day_script(sim: Sim, n: int) -> None:
     elif n == 6:  # 周日：看周报
         await sim.open_app()
         sim.day["brief"] = await sim.get("/iron/api/brief")
-    elif n == 7:  # 周一：状态好、次数做满，但膝盖又疼 → 看管家怎么一边加重一边护膝；提醒 → 按提醒改计划
+    elif n == 7:  # 周一：状态好、次数做满，但膝盖又疼 → 看管家怎么一边加重一边护膝（§163：没有规则提醒，管家自己提）
         await sim.open_app()
         await sim.workout(rpe=6, hard=True, note="左膝又有点疼，蹲下去的时候", energy="good", slept="good")
-        triggers = (await sim.get("/iron/api/triggers")).get("triggers", [])
-        sim.day["triggers_after"] = triggers
-        if any(t.get("kind") == "pain" and t.get("action") == "proposal" for t in triggers):
-            got = await sim.proposal("pain")
-            if (got.get("draft") or {}).get("id"):
-                await sim.confirm([{"kind": "plan", "draft": got["draft"]["id"]}], "按膝盖疼的提醒改计划")
     elif n == 8:  # 周二：感冒
         await sim.open_app()
         await sim.say("感冒了，嗓子疼，有点低烧，37度8")
@@ -388,12 +407,97 @@ async def day_script(sim: Sim, n: int) -> None:
         await sim.open_app()
         await sim.say("这两周我练得怎么样？下周怎么安排？")
         sim.day["brief"] = await sim.get("/iron/api/brief")
-        got = await sim.proposal()
-        if (got.get("draft") or {}).get("id"):
-            await sim.confirm([{"kind": "plan", "draft": got["draft"]["id"]}], "每周复盘的调整")
 
 
-async def main(days: int) -> Path:
+async def say_and_confirm(sim: Sim, text: str, what: str) -> None:
+    got = await sim.say(text)
+    await sim.confirm(got["cards"], what)
+
+
+async def day_script_b(sim: Sim, n: int) -> None:
+    """新手减脂、在家（一对 5 公斤哑铃），加班漏练、体重不动、出差没器械。"""
+    await sim.open_app()
+    if n == 0:
+        await sim.client.put("/iron/api/profile", json=SCENE["profile"])
+        first = await sim.say("我想减脂，没怎么练过，在家练，有一对 5 公斤的哑铃，一周能练三次，每次 40 分钟左右，"
+                              "帮我排个计划")  # fmt: skip
+        if not first["cards"]:
+            first = await sim.say("可以，就按这个排")
+        await sim.confirm(first["cards"], "训练计划")
+        await sim.workout(rpe=7, energy="ok", slept="ok")
+    elif n == 2:
+        await sim.workout(rpe=7)
+    elif n == 3:
+        await sim.say("这周三晚上要加班，今天练不了了")
+        await sim.rest("busy")
+    elif n == 4:
+        await sim.say("今天只有 20 分钟，昨晚也没睡好，还练吗")
+        await sim.workout(rpe=8, energy="poor", slept="poor")
+    elif n == 6:
+        await sim.say("练了一周，体重一点没动，是不是要再少吃点？")
+    elif n == 7:
+        await sim.workout(rpe=6, energy="good", slept="good")
+    elif n == 8:
+        await sim.rest("busy")
+    elif n == 9:
+        await say_and_confirm(sim, "下周三到周五去上海出差，酒店没有健身房，房间里什么器械都没有", "出差的安排")
+    elif n == 11:
+        await sim.workout(rpe=7, energy="ok", slept="ok")
+    elif n == 13:
+        await sim.say("这两周我练得怎么样？体重还是没怎么掉，下周怎么安排？")
+        sim.day["brief"] = await sim.get("/iron/api/brief")
+
+
+async def day_script_c(sim: Sim, n: int) -> None:
+    """有基础、健身房，每次都做满次数（看进阶）；卧推时肩不舒服；只有 30 分钟；想多练一天。"""
+    await sim.open_app()
+    if n == 0:
+        await sim.client.put("/iron/api/profile", json=SCENE["profile"])
+        first = await sim.say("我练了一年多，想继续增肌，健身房器械都有，一周练三次，每次一个小时，帮我排个计划")
+        if not first["cards"]:
+            first = await sim.say("按这个排")
+        await sim.confirm(first["cards"], "训练计划")
+        await sim.workout(rpe=7, hard=True, energy="good", slept="good")
+    elif n in (2, 9, 11):
+        await sim.workout(rpe=7, hard=True, energy="good", slept="good")
+    elif n == 4:
+        await sim.workout(rpe=7, hard=True, note="卧推的时候右肩前面有点不舒服，不算疼", energy="good")
+    elif n == 6:
+        await sim.say("这周每个动作次数都做满了，下周要加重吗？")
+    elif n == 7:
+        await sim.say("今天只有 30 分钟，怎么练？")
+        await sim.workout(rpe=7, hard=True, energy="good", slept="good")
+    elif n == 10:
+        await sim.say("最近状态特别好，想一周多练一天，可以吗？")
+    elif n == 13:
+        await sim.say("这两周练得怎么样？下周怎么安排？")
+        sim.day["brief"] = await sim.get("/iron/api/brief")
+
+
+SCRIPTS = {"A": day_script, "B": day_script_b, "C": day_script_c}
+
+
+async def main(days: int, only: list[str] | None = None) -> list[Path]:
+    """每个剧本一个模拟用户，按顺序各跑一遍；报告一个剧本一份。"""
+    out = []
+    for key in only or list(SCRIPTS):
+        out.append(await run_scene(key, days))
+    return out
+
+
+async def seed_model(uid: str) -> None:
+    """模拟用户填好自己的模型（§167）：用 .env 里的 DeepSeek 密钥，对话模型和线上默认一样。"""
+    from ironm_agent import user_models
+
+    await user_models.default_models().put(uid, user_models.UserModel(
+        provider="deepseek", base_url="https://api.deepseek.com", api_key=os.environ["DEEPSEEK_API_KEY"],
+        chat_model="deepseek-flash"))  # fmt: skip
+
+
+async def run_scene(key: str, days: int) -> Path:
+    global UID, SCENE
+    SCENE, UID = SCENES[key], SCENES[key]["uid"]
+    print(f"\n######## 剧本 {key}（{UID}）")
     import logging
 
     import httpx
@@ -434,9 +538,10 @@ async def main(days: int) -> Path:
 
     agent = IronMAgent(health=NoHealth(), models=load_models(), environ=os.environ, history=history,
                        earlier=empty, sources=nothing, weather=nothing, observe=observe)  # fmt: skip
-    report: dict[str, Any] = {"start": START.isoformat(), "profile": PROFILE, "days": []}
+    report: dict[str, Any] = {"scene": key, "start": START.isoformat(), "profile": SCENE["profile"], "days": []}
+    await seed_model(UID)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://sim") as client:
-        sim = Sim(client, agent)
+        sim = Sim(client, agent, session=f"{UID}:s1")
         sim_holder["sim"] = sim
         for n in range(days):
             day = START + timedelta(days=n)
@@ -447,7 +552,8 @@ async def main(days: int) -> Path:
                 before = plan_lines(await sim.plan())
                 sim.day = {"n": n + 1, "date": day.isoformat(), "steps": [], "plan_before": before}
                 try:
-                    await day_script(sim, n)
+                    await SCRIPTS[key](sim, n)
+                    await sim.accept()  # 管家今天提的改动，他照着确认
                 except Exception as e:  # 记下来接着跑
                     sim.day["error"] = f"{type(e).__name__}: {e}"[:300]
                     print("  出错：", sim.day["error"])
@@ -459,7 +565,7 @@ async def main(days: int) -> Path:
             finally:
                 traveller.stop()
     OUT.mkdir(parents=True, exist_ok=True)
-    path = OUT / f"sim-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+    path = OUT / f"sim-{key}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
     path.write_text(json.dumps(report, ensure_ascii=False, indent=1, default=str))
     print(f"\n报告：{path}")
     return path
@@ -468,4 +574,6 @@ async def main(days: int) -> Path:
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="两周快进模拟（假数据、内存存储、真实模型）")
     p.add_argument("--days", type=int, default=14)
-    asyncio.run(main(p.parse_args().days))
+    p.add_argument("--only", nargs="*", choices=sorted(SCRIPTS), help="只跑这几个剧本（默认全部）")
+    a = p.parse_args()
+    asyncio.run(main(a.days, a.only))

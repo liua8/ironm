@@ -32,6 +32,7 @@ MIN_WEIGHINS = 6
 MIN_SPAN = 10  # 称重的跨度至少几天
 KCAL_PER_KG = 7700  # 每公斤体重约 7700 千卡，粗算（经验）
 GAP = 300  # 和公式算的差这么多才提议
+MIN_STEP = 50  # 被基础代谢和安全下限卡住、只剩几十千卡以内的变化：不提（两周模拟 11-05：每天建议少吃 4–6 千卡）
 
 
 @dataclass(frozen=True)
@@ -168,7 +169,7 @@ def _apply(
     before = round(target_now)
     formula = before - now_total  # 公式算出的目标（不含调整量）
     after = round(max(formula + total, safe_floor(bmr, profile)))
-    if after == before:
+    if abs(after - before) < MIN_STEP or (after - before) * delta < 0:  # 只剩几十千卡、或者被下限推成反方向：不提
         return None, "热量目标已经到了基础代谢和安全下限，不能再减；可以多活动或找营养师看看。"
     return Proposal(after - before, after - formula, before, after, reason, basis), ""
 

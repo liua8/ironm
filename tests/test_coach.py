@@ -160,11 +160,16 @@ def test_coach_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     dp = deps(training=with_plan(), pain=PainBook())
     dp.pain.rows["42"] = [("joint.knee", TODAY), ("joint.knee", TODAY - timedelta(days=1))]
     monkeypatch.setattr(web_more, "coach_deps", lambda: dp)
+    from ironm_agent import review
+
+    woke: list[str] = []
+    monkeypatch.setattr(review, "daily_later", lambda uid, deps: woke.append(uid))
     app = FastAPI()
     app.include_router(web.router)
     app.dependency_overrides[verify_token] = lambda: "42"
     c = TestClient(app)
     r = c.get("/iron/api/coach").json()
+    assert woke == ["42"]  # 首页打开也叫醒管家跑当天的复盘（两周模拟 11-05）
     assert r["version"] == 1 and r["items"][0]["key"] == "today"
     assert {x["key"] for x in r["pending"]} >= {"proposal:diet"} and "alert:pain" not in {
         x["key"] for x in r["items"]
