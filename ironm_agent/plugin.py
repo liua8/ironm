@@ -2009,9 +2009,19 @@ class IronMAgent:
             foods = [f for f in args.get("foods") or [] if isinstance(f, Mapping)]
             if len(foods) > MAX_FOODS:
                 return Outcome(False, f"一餐最多记 {MAX_FOODS} 样，合并一下再交。", "format")
-            lines, missed, bad = [], [], []
+            lines, missed, bad, by_portion = [], [], [], []
             for f in foods:
                 name, grams = str(f.get("name") or "").strip()[:30], f.get("grams")
+                n = f.get("portions")
+                if not isinstance(grams, int | float) and isinstance(n, int | float) and 0 < float(n) <= 10:
+                    from ironm_agent.foods import find as find_food
+
+                    known = find_food(name)  # 说的是几碗、几个：按食物库里一份的克数（复核 11-05）
+                    if known is None:
+                        bad.append(f"{name}（库里没有，写克数）")
+                        continue
+                    grams = float(n) * known.unit_g
+                    by_portion.append(f"{name} {float(n):g} {known.unit}按 {round(grams)} 克")
                 if not name or not isinstance(grams, int | float) or not 0 < float(grams) <= 3000:
                     bad.append(name or "没写名字的")
                     continue
@@ -2051,11 +2061,14 @@ class IronMAgent:
             )
             skipped = "；".join(x for x in (f"{'、'.join(missed)}库里没有又没给估值" if missed else "",
                                             f"{'、'.join(bad)}没记" if bad else "") if x)  # fmt: skip
-            return Outcome(True, f"已记下{kind}：{meal.name}，约 {round(meal.macros.kcal)} 千卡、蛋白质 "
+            portions = f"（{'、'.join(by_portion)}）" if by_portion else ""
+            return Outcome(True, f"已记下{kind}：{meal.name}{portions}，约 {round(meal.macros.kcal)} 千卡、蛋白质 "
                            f"{round(meal.macros.protein_g)} 克（今天的{kind}只留这一份）；今天一共约 "
                            f"{round(day_total)} 千卡{left}{'；' + skipped + '，没算进去' if skipped else ''}"
                            "（饮食页能改份量、删掉）。", kind="saved", what="meal",
-                           note=f"记下了{kind}：{meal.name}（约 {round(meal.macros.kcal)} 千卡）")  # fmt: skip
+                           note=f"记下了{kind}：{meal.name}（约 {round(meal.macros.kcal)} 千卡）",
+                           calc=f"{kind}{meal.name}按食物库算约 {round(meal.macros.kcal)} 千卡、蛋白质 "
+                                f"{round(meal.macros.protein_g)} 克；今天一共约 {round(day_total)} 千卡{left}")  # fmt: skip
 
         async def adjust_today(desk: Desk, args: Mapping[str, Any]) -> Outcome:
             from ironm_agent.plan_edit import edit as edit_today
@@ -2190,7 +2203,8 @@ class IronMAgent:
             note = "" if prop.delta == round(float(delta)) else "（按上下限调到这里）"
             return Outcome(True, f"已调好：每日热量目标 {prop.before} → {prop.after} 千卡{note}"
                            "（饮食页能撤销）。", kind="changed", what="kcal",
-                           note=f"每日热量目标调到 {prop.after} 千卡")  # fmt: skip
+                           note=f"每日热量目标调到 {prop.after} 千卡",
+                           calc=f"每日热量目标 {prop.before} → {prop.after} 千卡{note}")  # fmt: skip
 
         async def remember(desk: Desk, args: Mapping[str, Any]) -> Outcome:
             """记忆（§145）：按 §68 的规则先核一遍，没通过的退回原因；跟进类的原话可能出自管家自己的回答，

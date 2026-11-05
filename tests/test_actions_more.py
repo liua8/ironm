@@ -539,3 +539,39 @@ def test_second_different_reading_on_a_day_says_one_per_day(
     a._readings.add = one_per_day  # type: ignore[method-assign]
     said = go(a, desk, LOG_BODY, kind="weight", value=73)
     assert "一天只记一个" in said and "72.5 公斤" in said
+
+
+def test_a_meal_can_be_said_in_portions_and_its_numbers_can_be_cited(monkeypatch: pytest.MonkeyPatch) -> None:
+    """复核 11-05：说"一碗""两个"的按食物库一份算；算出来的数登记成计算结果，回答里能引〔C…〕。"""
+    from ironm_agent.checks import check_text
+    from ironm_agent.foods import find
+    from ironm_agent.meals import food_line
+
+    a, desk, _, _ = harness(monkeypatch, "中午吃了一碗米饭两个包子", snapshot=snapshot_with_target())
+    calcs: dict[str, str] = {}
+
+    def add(detail: str) -> str:
+        calcs[f"C{len(calcs) + 1}"] = detail
+        return f"C{len(calcs)}"
+
+    desk.on_calc = add
+    said = go(a, desk, LOG_MEAL, kind="午餐", foods=[{"name": "米饭", "portions": 1}, {"name": "肉包", "portions": 2}])
+    rice, bun = find("米饭"), find("肉包")
+    assert rice is not None and bun is not None
+    want = round(food_line("米饭", rice.unit_g).macros.kcal + food_line("肉包", 2 * bun.unit_g).macros.kcal)
+    assert f"约 {want} 千卡" in said and f"米饭 1 {rice.unit}按 {round(rice.unit_g)} 克" in said
+    assert "〔C1〕" in said and str(want) in calcs["C1"]
+    answer = f"这一餐约 {want} 千卡〔C1〕。"
+    assert check_text(answer, support={}, entries={}, question="", calcs=calcs) == []  # 能引、核对过得了
+    assert "库里没有" in go(a, desk, LOG_MEAL, kind="晚餐", foods=[{"name": "外星菜", "portions": 1}])
+
+
+def test_new_calc_numbers_do_not_collide_with_the_case_file() -> None:
+    from types import SimpleNamespace
+
+    from ironm_agent.tools import Evidence, Toolbox
+
+    box = SimpleNamespace(evidence=Evidence())
+    box.evidence.calcs.update({"C1": "基础代谢", "C7": "热量目标"})
+    assert Toolbox.add_calc(box, "一餐 500 千卡") == "C8"  # type: ignore[arg-type]
+    assert box.evidence.calcs["C8"] == "一餐 500 千卡"

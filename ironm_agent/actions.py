@@ -393,13 +393,17 @@ LOG_MEAL_SCHEMA: dict[str, Any] = {
                         "properties": {
                             "name": {"type": "string", "description": "常见叫法，如米饭、番茄炒蛋"},
                             "grams": {"type": "number", "description": "吃下去的克数"},
+                            "portions": {
+                                "type": "number",
+                                "description": "他说的是几碗、几个、几盘时写份数（如米饭 1、包子 2），系统按食物库里一份的克数算，不用写 grams",
+                            },
                             "oil": {"type": "string", "enum": ["少油", "正常", "多油"]},
                             "per100": {
                                 "type": "object",
                                 "description": "每 100 克的估值 {kcal, protein_g, carbs_g, fat_g}，库里没有时才用",
                             },
                         },
-                        "required": ["name", "grams"],
+                        "required": ["name"],  # grams 和 portions 写一个（复核 11-05）
                     },
                 },
             },
@@ -591,6 +595,7 @@ class Outcome:
     note: str = ""  # 给他看的一句（没答出来时告诉他这一轮已经做了什么）
     cards: tuple[dict[str, Any], ...] = ()
     draft: str = ""  # 存下的预览编号
+    calc: str = ""  # 系统算出来的数（一餐的热量、新的热量目标）：登记成计算结果，回答里能引〔C编号〕（复核 11-05）
 
 
 type Handler = Callable[["Desk", Mapping[str, Any]], Awaitable[Outcome]]
@@ -629,6 +634,7 @@ class Desk:
     )
     ask_new_plan: bool = False  # 交了新计划但条件还没确认
     template_plans: dict[str, Any] = field(default_factory=dict)  # 这一轮方案库给的草稿：方案编号 → 计划（§165）
+    on_calc: Callable[[str], str] | None = None  # 把系统算出来的数登记成计算结果，返回编号（Toolbox 接上）
     withheld: frozenset[str] = frozenset()  # 这一轮不给的（§166：记状态、记忆放到回答后），装规程也不开
     nudged: bool = False
     unacted: bool = False  # 说了改却没改，删了那几句
@@ -727,6 +733,8 @@ class Desk:
             return out.text
         self.accept(out)
         self._note(name, "ok")
+        if out.calc and self.on_calc is not None:  # 登记成这一轮的计算结果，告诉它编号
+            return f"{out.text}（引用这些数时句末写〔{self.on_calc(out.calc)}〕）"
         return out.text
 
     def accept(self, out: Outcome) -> None:

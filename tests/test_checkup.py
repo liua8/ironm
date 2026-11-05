@@ -431,3 +431,33 @@ def test_second_kcal_failure_restores_the_first_and_undo_goes_back_to_before() -
     assert [d.why for d in got.done] == ["a"] and asyncio.run(dp.diet.current("42")).kcal == -350  # type: ignore[union-attr]
     asyncio.run(review.undo("42", dp, "review:kcal"))
     assert asyncio.run(dp.diet.current("42")).kcal == -200  # type: ignore[union-attr]
+
+
+def test_a_second_proposal_is_given_when_the_first_was_handled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """复核 11-05：一天有改计划、临时调整两份时，第一份处理过了照样给第二份，并说还剩几份。"""
+    from ironm_agent import web_more
+    from ironm_agent.coach_state import Done, Review
+    from ironm_agent.training import plan_content
+
+    dp = setup()
+    base = asyncio.run(dp.training.plan("42"))
+    assert base is not None
+    plan = asyncio.run(dp.training.add_draft("42", "plan", {**plan_content(base.plan), "base": base.id}))
+    temp = asyncio.run(dp.training.add_draft("42", "temp", {"temp": {"start": TODAY.isoformat(), "end": TODAY.isoformat(),
+                                                                    "ops": []}, "base": base.id}))  # fmt: skip
+    done = [Done(key="review:propose", type="propose", title="改计划", why="a", basis="F1", value={"draft": plan.id}),
+            Done(key="review:temp", type="propose", title="临时调整", why="b", basis="F1", value={"draft": temp.id})]  # fmt: skip
+    state = asyncio.run(dp.store.get("42"))
+    if state is None:
+        from ironm_agent.coach_state import evaluate
+
+        state, _ = asyncio.run(evaluate("42", dp, reason="x", today=TODAY))
+    asyncio.run(dp.store.save("42", state.model_copy(update={"review": Review(day=TODAY, done=done)}), []))
+    monkeypatch.setattr(web_more, "coach_deps", lambda: dp)
+    monkeypatch.setattr(web_more, "date", type("D", (), {"today": staticmethod(lambda: TODAY)}))
+    first = asyncio.run(web_more._checkup_proposal("42", dp.training))
+    assert first is not None and first["draft"]["id"] == plan.id and first["more"] == 1
+    asyncio.run(dp.training.cancel("42", plan.id))
+    second = asyncio.run(web_more._checkup_proposal("42", dp.training))
+    assert second is not None and second["status"] == "ok" and second["draft"]["id"] == temp.id
+    assert second["more"] == 0

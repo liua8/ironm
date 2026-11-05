@@ -210,12 +210,37 @@ _PATCH_ASK = (
 )
 
 
-def _patched(role: Role, opinion: Opinion, content: str, question: str) -> Opinion | None:
-    """核对退回后交回的改句（§156）：逐句替换进原回答；交回的是整段回答时照整段用；什么都没用上时返回 None。"""
+_MARKS = re.compile(r"〔[^〔〕]{1,12}〕|</?statement>|<cite>.*?</cite>|\s")
+
+
+def _bare(text: str) -> str:
+    return _MARKS.sub("", text).rstrip("…。；！？.")
+
+
+def _locate(answer: str, old: str) -> str | None:
+    """改句里的原句在回答里是哪一句：先找一字不差的；再去掉出处标记、空白比（复核 11-05：
+    核对只给了句子开头 30 个字，模型可能照着抄、或抄时漏了出处标记），开头对得上 8 个字以上才算。"""
+    if old and old in answer:
+        return old
+    key = _bare(old)
+    if len(key) < 8:
+        return None
+    hits = [x for x in sentences(answer) if _bare(x) == key or _bare(x).startswith(key)]
+    return hits[0].rstrip("\n") if len(hits) == 1 else None
+
+
+def _patched(
+    role: Role, opinion: Opinion, content: str, question: str, trace: dict[str, Any] | None = None
+) -> Opinion | None:
+    """核对退回后交回的改句（§156）：逐句替换进原回答；交回的是整段回答时照整段用；什么都没用上时返回 None。
+    trace["patch"] 记下结果：读不出、整段、套上了、一句都没对上（以后查硬改的原因用）。"""
+    trace = trace if trace is not None else {}
     raw = parse_json(content)
     if raw is None:
+        trace["patch"] = "unreadable"
         return None
     if "fixes" not in raw:  # 又整段写了：照整段处理（和整段重写时一样，先合并写了两遍的）
+        trace["patch"] = "whole"
         whole = _parse(role, content, question)
         return (
             whole.model_copy(update={f: merge_echoes(getattr(whole, f)) for f in _FIELDS})
@@ -223,14 +248,15 @@ def _patched(role: Role, opinion: Opinion, content: str, question: str) -> Opini
             else None
         )
     answer = opinion.answer
-    for fix in raw.get("fixes") or []:
-        if not isinstance(fix, dict):
-            continue
+    fixes = [x for x in raw.get("fixes") or [] if isinstance(x, dict)]
+    for fix in fixes:
         old, new = str(fix.get("old") or ""), str(fix.get("new") or "")
-        if old and old in answer:
-            answer = answer.replace(old, new, 1)
+        if (found := _locate(answer, old)) is not None:
+            answer = answer.replace(found, new, 1)
     if answer == opinion.answer:
+        trace["patch"] = "no_match" if fixes else "empty"
         return None
+    trace["patch"] = "applied"
     return opinion.model_copy(update={"answer": answer, "basis": tuple(cited_ids(answer))})
 
 
@@ -376,11 +402,15 @@ async def _loop(
                 toolbox.step_done(sid, ok=True)
             rounds += 1
             trace["rounds"] = rounds
-            fixed = _patched(spec.role, opinion, patch.content, question) if patch else None
+            if patch is None:
+                trace["patch"] = "no_reply"
+            fixed = _patched(spec.role, opinion, patch.content, question, trace) if patch else None
             trace["patched"] = fixed is not None and fixed is not opinion
             opinion = _cited(fixed or opinion, toolbox.evidence, text, trace)
-            if not problems_of(opinion, toolbox.evidence, text):
+            still = problems_of(opinion, toolbox.evidence, text)
+            if not still:
                 return _settled(opinion, desk, trace)
+            trace["still"] = problem_kinds(still)  # 改完还剩哪类问题（只留类别）
             trace["repaired"] = True
             _log.info(
                 "expert opinion repaired: role=%s problems=%d", spec.role.value, len(problems)

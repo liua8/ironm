@@ -756,7 +756,8 @@ async def review_proposal(
 
 
 async def _checkup_proposal(user_id: str, training: TrainingStore) -> dict[str, Any] | None:
-    """今天的复查提了改计划、预览还没确认：把那份预览交给页面（不再重新生成）。"""
+    """今天的复查提了改计划、临时调整、预览还没确认：把还在等他确认的那份交给页面（不再重新生成）。
+    一天可能有两份（改计划一份、临时调整一份）：处理过的、过时的跳过，给下一份，more 是还剩几份（复核 11-05）。"""
     try:
         state = await coach_deps().store.get(user_id)
     except Exception as e:
@@ -765,25 +766,30 @@ async def _checkup_proposal(user_id: str, training: TrainingStore) -> dict[str, 
     review = state.review if state is not None else None
     if review is None or review.day != date.today():
         return None
-    d = next((x for x in review.done if x.type == "propose" and not x.undone), None)
-    draft = await training.draft(user_id, str(d.value.get("draft"))) if d is not None else None
-    if d is None:
+    proposed = [x for x in review.done if x.type == "propose" and not x.undone]
+    if not proposed:
         return None
-    if (
-        draft is None or draft.state != "pending"
-    ):  # 确认过、作废了或过期了：不再生成另一份（复核 11-03）
-        return {"status": "no_change", "message": "这条建议已经处理过了；想再调可以直接告诉我。"}
     stored = await training.plan(user_id)
-    if stored is None or draft.content.get("base") != stored.id:  # 计划后来改过：这份预览过时了
-        from ironm_agent.review import undo
+    waiting: list[tuple[Any, Any]] = []
+    stale = False
+    for d in proposed:
+        draft = await training.draft(user_id, str(d.value.get("draft")))
+        if draft is None or draft.state != "pending":  # 确认过、作废了或过期了：不再生成另一份（复核 11-03）
+            continue
+        if stored is None or draft.content.get("base") != stored.id:  # 计划后来改过：这份预览过时了
+            from ironm_agent.review import undo
 
-        await undo(user_id, coach_deps(), d.key, today=review.day)  # 作废预览，这条待确认也一并收起
-        return {
-            "status": "no_change",
-            "message": "计划后来改过了，这条建议不再适用；想再调可以直接告诉我。",
-        }
+            await undo(user_id, coach_deps(), d.key, today=review.day)  # 作废预览，这条待确认也一并收起
+            stale = True
+            continue
+        waiting.append((d, draft))
+    if not waiting:
+        message = ("计划后来改过了，这条建议不再适用；想再调可以直接告诉我。" if stale
+                   else "这条建议已经处理过了；想再调可以直接告诉我。")  # fmt: skip
+        return {"status": "no_change", "message": message}
+    d, draft = waiting[0]
     return {"status": "ok", "tips": [d.why], "answer": f"{d.title}。{d.why}", "draft": draft.json(),
-            "changed_days": 0, "warning": ""}  # fmt: skip
+            "changed_days": 0, "warning": "", "more": len(waiting) - 1}  # fmt: skip
 
 
 # ---- 两周饮食复盘（spec [2026-10-23] §18 需求 2）------------------------------------------------

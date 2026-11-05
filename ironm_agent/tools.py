@@ -372,6 +372,13 @@ class Toolbox:
     def _outcome(self, value: str) -> None:
         _OUTCOME.set(value)
 
+    def add_calc(self, detail: str) -> str:
+        """系统算出来的一段数（动作工具的结果）登记成计算结果，返回新的编号 C…（复核 11-05）。"""
+        used = [int(k[1:]) for k in self.evidence.calcs if k[1:].isdigit()]
+        cid = f"C{max(used, default=0) + 1}"
+        self.evidence.calcs[cid] = detail
+        return cid
+
     def step(self, name: str, detail: str = "") -> str | None:
         """告诉页面开始了一步，返回这一步的编号（没接页面时 None）。"""
         if self.progress is None:
@@ -403,6 +410,8 @@ class Toolbox:
 
     async def _dispatch(self, call: ToolCall) -> str:
         if self.actions is not None and call.name in ACTION_TOOLS:
+            if self.actions.on_calc is None:
+                self.actions.on_calc = self.add_calc
             return await self.actions.run(call.name, call.arguments)
         if call.name in self.extra:
             return await self.extra[call.name][1](self, call.arguments)
