@@ -8,3 +8,4 @@ __pycache__/
 config/local.yaml
 
 evals/replay/reports/
+evals/sim/reports/
