@@ -2305,3 +2305,28 @@ html { -webkit-font-smoothing: antialiased; font-smooth: auto; }
 .plan-lib { display: flex; flex-direction: column; gap: 10px; }
 .plan-lib-card { display: flex; flex-direction: column; gap: 4px; cursor: pointer; }
 .plan-lib-card .chip { align-self: flex-start; }
+
+/* §163 管家看今天：正在看、出错了（能重试）、定了休息；临时调整的预览 */
+.today-coach { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; font-size: 14px; line-height: 1.5;
+  background: var(--sunken); border: 2px solid var(--wood); color: var(--ink); }
+.today-coach[hidden] { display: none; }
+.today-coach > span:not(.typing) { flex: 1; min-width: 0; }
+.today-coach .typing { flex: none; }
+.today-coach.err { background: var(--heat-soft); border-color: var(--heat); }
+.today-coach.err .i { color: var(--heat); flex: none; }
+.today-coach.adj, .today-coach.rest { background: var(--gold-soft); border-color: var(--gold-line); }
+.tv-coach { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: var(--sunken); border: 2px solid var(--wood); }
+.tv-coach > div:not(.typing) { flex: 1; min-width: 0; }
+.tv-coach b { display: block; font-size: 15px; }
+.tv-coach p { margin: 2px 0 0; font-size: 13.5px; }
+.tv-coach .i { flex: none; margin-top: 2px; color: var(--wood-dark); }
+.tv-coach.err { background: var(--heat-soft); border-color: var(--heat); }
+.tv-coach.err .i { color: var(--heat); }
+.tv-orig { display: flex; flex-direction: column; gap: 4px; }
+.tv-orig .label { color: var(--muted); font-size: 13px; }
+.tv-orig .plan-items { color: var(--ink-2); }
+.temp-box, .hc-draft { display: flex; flex-direction: column; gap: 6px; }
+.hc-draft:empty { display: none; }
+.temp-span { margin: 0; font-size: 14.5px; }
+.temp-lines { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 1.5; }
+.buddy-say .hc-draft p { font-size: 13.5px; }

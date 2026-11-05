@@ -484,7 +484,9 @@ function trainCard(brief, tr, week, lib, photos = {}) {
   const parts = [...new Set(v.items.map((it) => partOf(lib, it.exercise)).filter(Boolean))].slice(0, 3);
   const adjusted = today.version || today.changes.length;
   const main = v.items.map((it) => partOf(lib, it.exercise)).find((x) => photos[x]) || "";
+  const coachNote = h("div", { class: "today-coach", role: "status", hidden: true });  // 管家对今天的说法（§163）
   const hero = top(v.name, `${today.weekday}，练${parts.length ? parts.join("和") : "全身"}${adjusted ? "。IronM 按你今天的状态调整过" : ""}。`,
+    coachNote,
     h("div", { class: "figs" }, fig(v.minutes, "分钟"), fig(v.items.length, "个动作"),
       today.burn ? fig(`${today.burn.low}–${today.burn.high}`, "千卡") : null),
     h("p", { class: "reward" }, "完成奖励：一颗星，连续打卡 +1"));
@@ -493,7 +495,7 @@ function trainCard(brief, tr, week, lib, photos = {}) {
   // 被减掉的组：和计划本身比，少了几组就标出来（§121 需求 4）
   const planned = Object.fromEntries(today.session.items.map((it) => [it.exercise, it.sets]));
   const detail = h("div", { class: "hc-detail", hidden: true },
-    todayVersion(today.session, { compact: true }),
+    todayVersion(today.session, { compact: true, onStatus: (tv, ctl) => heroCoach(coachNote, tv, ctl) }),
     h("a", { class: "link hc-more", href: "#plan" }, "完整计划", icon("chevron", "xs")));
   const toggle = h("button", { class: "link hc-toggle", type: "button", "aria-expanded": "false" }, "更多");
   toggle.addEventListener("click", () => {
@@ -515,6 +517,19 @@ function trainCard(brief, tr, week, lib, photos = {}) {
     h("button", { class: "btn block go", type: "button", onclick: () => startLive({ today_plan: true }) }, liveNow ? "继续训练" : "开练"),
     toggle, detail);
   return [hero, list];
+}
+
+// 首页大卡片上管家对今天的说法（§163）：正在看、出错了（能重试）、调整过、定了休息；按原计划的不多说。
+// 下面列的动作是原计划：管家没看完、出错时不按规则替它减量
+function heroCoach(el, v, ctl) {
+  const line = (cls, ...kids) => { el.className = `today-coach ${cls}`; el.replaceChildren(...kids); el.hidden = false; };
+  if (v.status === "reviewing") line("wait", h("span", {}, "IronM 正在看今天的情况，下面先列原计划"), h("span", { class: "typing" }, h("i"), h("i"), h("i")));
+  else if (v.status === "coach_error") {
+    line("err", icon("alert", "sm"), h("span", {}, "IronM 出错了，还没看今天的情况，下面是原计划"),
+      h("button", { class: "btn small", type: "button", onclick: (e) => ctl.retry(e.currentTarget) }, "重试"));
+  } else if (v.status === "rest_today") line("rest", icon("coach", "sm"), h("span", {}, v.message));
+  else if (v.status === "ok" && v.changed) line("adj", icon("coach", "sm"), h("span", {}, `IronM 调整了今天：${v.changes.join("；") || "点「更多」看今天的版本"}`));
+  else el.hidden = true;
 }
 
 // 睡眠、静息心率、天气小格（§121 需求 4）：有数据的才显示，读不到不编
@@ -546,15 +561,31 @@ function coachCard() {
     };
     for (const x of r.pending) {
       const row = h("div", { class: "hc-msg" });
-      row.append(h("p", {}, x.title), h("div", { class: "btn-row" },
-        h("button", { class: "btn small", type: "button", onclick: decide(x.key, "accept", row, "好的，已经按这个安排。") }, "好"),
-        h("button", { class: "btn quiet small", type: "button", onclick: decide(x.key, "later", row, "先不调。") }, "暂不")));
+      const id = x.value?.draft;
+      const later = h("button", { class: "btn quiet small", type: "button", onclick: decide(x.key, "later", row, "先不调。") }, "暂不");
+      const yes = h("button", { class: "btn small", type: "button", disabled: !!id }, "好");
+      const detail = h("div", { class: "hc-draft" });
+      row.append(h("p", {}, x.title), detail, h("div", { class: "btn-row" }, yes, later));
+      if (id) {  // IronM 提的改计划、临时调整已经存成预览（§163）：列出改了什么，点"好"就确认这份预览，和对话里的卡片一样
+        api(`/iron/api/drafts/${encodeURIComponent(id)}`).then(({ draft }) => {
+          if (draft.state === "pending" && !draft.expired) {
+            if (draft.kind === "temp") detail.replaceChildren(tempBody(draft), h("p", { class: "caption" }, `${TEMP_RULE}${tempExpire(draft.temp)}`));
+            else if (draft.changes) detail.replaceChildren(h("p", { class: "muted" }, `改了什么：${draft.changes}`), h("p", { class: "caption" }, "确认后替换现在的计划，之后可以撤销。"));
+            yes.disabled = false;
+            yes.addEventListener("click", () => confirmPending(x, draft, row));
+          } else {
+            row.replaceChildren(h("p", { class: "muted" }, draft.state === "confirmed" ? `${x.title}：已经确认过了。`
+              : draft.expired ? `${x.title}：没确认，已经作废了；想调可以再跟 IronM 说。` : `${x.title}：已经处理过了。`));
+          }
+        }).catch(() => { detail.replaceChildren(h("p", { class: "muted" }, "预览没读到，可以到对话里看看。")); });
+      } else yes.addEventListener("click", () => acceptPending(x, row));
       rows.push(row);
     }
-    for (const c of r.changes.filter((c) => c.after).slice(0, 3)) {
+    // 今天正在看、出错了这类不是调整，大卡片上已经写了（§163）；只有自动生效的能"不用这样调"
+    for (const c of r.changes.filter((c) => c.after && (c.kind !== "today" || c.status === "auto")).slice(0, 3)) {
       const row = h("div", { class: "hc-msg" });
-      row.append(h("p", {}, c.after), h("div", { class: "btn-row" },
-        h("button", { class: "btn quiet small", type: "button", onclick: decide(c.key, "undo", row, "好的，已经恢复原来的安排。") }, "不用这样调")));
+      row.append(h("p", {}, c.after), c.status === "auto" ? h("div", { class: "btn-row" },
+        h("button", { class: "btn quiet small", type: "button", onclick: decide(c.key, "undo", row, "好的，已经恢复原来的安排。") }, "不用这样调")) : null);
       rows.push(row);
     }
     if (!rows.length) return;
@@ -563,6 +594,51 @@ function coachCard() {
     box.hidden = false;
   }).catch(() => {});
   return box;
+}
+
+// 首页点"好"确认一份预览（§163）：先确认预览（真正生效），再把这条待确认收起；刷新首页，撤销放在提示里
+async function confirmPending(x, draft, row) {
+  for (const b of row.querySelectorAll("button")) b.disabled = true;
+  try {
+    await api(`/iron/api/drafts/${encodeURIComponent(draft.id)}/confirm`, { method: "POST", body: "{}" });
+  } catch (err) {
+    row.append(h("p", { class: "msg-note" }, err.message));
+    for (const b of row.querySelectorAll("button")) b.disabled = false;
+    return;
+  }
+  await api("/iron/api/coach/decide", { method: "POST", body: JSON.stringify({ key: x.key, decision: "accept" }) }).catch(() => {});  // 收不起也不影响已确认的
+  cache.metrics = null;
+  render();
+  const undo = h("button", { class: "link", type: "button", onclick: async () => {
+    undo.disabled = true;
+    try { await api(`/iron/api/drafts/${encodeURIComponent(draft.id)}/undo`, { method: "POST", body: "{}" }); flash(draftUndone(draft)); render(); }
+    catch (err) { flash(err.message); }
+  } }, "撤销");
+  flash(h("span", { class: "flash-row" }, h("span", {}, draftDone(draft)), undo), 8000);
+}
+// 没带预览的待确认（饮食热量、要现出方案的）：和对话里一样，点了再调热量或出方案，方案确认后才生效
+async function acceptPending(x, row) {
+  for (const b of row.querySelectorAll("button")) b.disabled = true;
+  const out = h("div", { class: "inbox-result" });
+  try {
+    await api("/iron/api/coach/decide", { method: "POST", body: JSON.stringify({ key: x.key, decision: "accept" }) });
+    row.replaceChildren(h("p", {}, x.title), out);
+    if (x.key === "proposal:diet") {
+      const d = await api("/iron/api/diet/adjust", { method: "POST" });
+      cache.metrics = null;
+      out.append(h("p", { class: "muted" }, `已调整：每日热量目标约 ${Math.round(d.target)} 千卡。想撤销可以在饮食页撤销。`));
+      return;
+    }
+    if (x.kind !== "proposal" && x.kind !== "alert") { out.append(h("p", { class: "muted" }, "好的，已经按这个安排。")); return; }
+    out.append(h("p", { class: "muted" }, "正在拿 IronM 的方案…"));
+    const trigger = x.kind === "alert" && x.value?.trigger ? `?trigger=${encodeURIComponent(x.value.trigger)}` : "";
+    const p = await api(`/iron/api/review/proposal${trigger}`, { method: "POST" });
+    if (p.status === "ok") draftView(out, p.draft, p.answer, p.warning);
+    else out.replaceChildren(h("p", { class: "muted" }, p.message || "这次没能生成方案，可以直接告诉 IronM 想怎么改。"));
+  } catch (err) {
+    row.append(h("p", { class: "msg-note" }, err.message));
+    for (const b of row.querySelectorAll("button")) b.disabled = false;
+  }
 }
 
 // "＋"快捷记录（§104 需求 7）：补打卡、记一餐、记体重（直接填）、记腰围体脂
@@ -1489,28 +1565,85 @@ function weatherSheet(wx) {
 }
 
 let planSessions = [], planTargets = {};
-// 今天的版本（spec [2026-10-23] §18 需求 3）：按状态、天气、可用时间用规则改，原计划不变
+// 今天的版本（spec [2026-10-23] §18 需求 3；§163 起由管家定，不再按规则改），原计划不变
 const setsText = (it, lib) => (partOf(lib ?? cache.exercises, it.exercise) === "有氧" || /分钟/.test(it.reps) ? it.reps : `${it.sets}×${it.reps}`);  // 有氧写时长（§130）
 const itemLine = (it) => `${it.exercise} ${setsText(it)}${it.load || it.note ? `（${[it.load, it.note].filter(Boolean).join("，")}）` : ""}`;
-function todayVersion(session, { compact = false } = {}) {
+// §163：今天怎么练只由管家定。管家还没看完 → 说"正在看"、列原计划、过几秒再取一次；出错 → 说"管家出错了"、
+// 列原计划、可以重试；都不按规则替管家减量。onStatus 把状态告诉首页大卡片（那里也要看得到、能重试）
+const TODAY_POLL_MS = 5000, TODAY_POLL_MAX = 24;  // 最多自动看 2 分钟，之后让他自己点刷新
+const TODAY_WAIT_MAX = 9;  // 点了重试、"有点累"后最多等 45 秒管家看完（后台重看，看完前服务端还是旧的）
+function todayVersion(session, { compact = false, onStatus = null } = {}) {
   const box = h("div", { class: "tv" });
-  const ask = { minutes: null, tired: false };
+  const ask = { minutes: null, tired: false, sent: {} };  // 点过的：写进今日状态、叫醒管家重看，只发一次（§163）
+  let timer = 0, polls = 0, last = null;
+  let wait = null;  // 刚点了重试 / "有点累"：看完之前服务端给的还是出错、原来的版本，先当作正在看
+  const sig = (v) => JSON.stringify([v.status, v.today, v.changes, v.reasons, v.message]);
+  const poll = () => {
+    clearTimeout(timer);
+    if (polls >= TODAY_POLL_MAX) return false;
+    timer = setTimeout(() => { if (box.isConnected) { polls += 1; draw(); } }, TODAY_POLL_MS);
+    return true;
+  };
+  const retry = async (btn) => {
+    if (btn) btn.disabled = true;
+    try {
+      const r = await api("/iron/api/coach/retry", { method: "POST", body: "{}" });
+      polls = 0;
+      wait = r.status === "reviewing" ? { error: true, left: TODAY_WAIT_MAX } : null;
+      if (wait) show({ status: "reviewing", original: last?.original });
+      await draw();
+    } catch (err) { flash(err.message); if (btn) btn.disabled = false; }
+  };
+  const ctl = { retry, refresh: () => { polls = 0; draw(); } };
+  const originalList = (o) => o?.items?.length ? h("div", { class: "tv-orig" },
+    h("span", { class: "label" }, `原计划 · ${o.name}`),
+    h("ol", { class: "plan-items tv-list" }, o.items.map((it) => h("li", {}, itemLine(it))))) : null;
+  const show = (v) => {  // IronM 正在看、出错了、定了今天休息：不按规则替它定，列原计划
+    if (v.status !== "reviewing") last = v;
+    onStatus?.(v, ctl);
+    const err = v.status === "coach_error", waiting = v.status === "reviewing", resting = v.status === "rest_today";
+    const going = waiting && poll();
+    const head = h("div", { class: `tv-coach${err ? " err" : ""}`, role: "status" },
+      icon(err ? "alert" : "coach", "sm"),
+      h("div", {}, h("b", {}, resting ? v.message : waiting ? "IronM 正在看今天的情况" : "IronM 出错了，还没看今天的情况"),
+        h("p", { class: "muted" }, resting ? "IronM 看过你今天的情况，定了今天休息。"
+          : waiting ? (going ? "看完会告诉你今天怎么练，这里会自己更新。" : "看得有点久，过一会儿点刷新看看。")
+          : "可以点重试，或者直接问 IronM 今天怎么练。")),
+      going ? h("div", { class: "typing" }, h("i"), h("i"), h("i")) : null);
+    const btns = err
+      ? [h("button", { class: "btn small", type: "button", onclick: (e) => retry(e.currentTarget) }, "重试"),
+        h("button", { class: "btn quiet small", type: "button", onclick: () => askCoach("今天练什么？按我的计划和今天的状态说") }, icon("coach", "sm"), "问 IronM")]
+      : waiting && !going ? [h("button", { class: "btn ghost small", type: "button", onclick: () => ctl.refresh() }, "刷新")] : [];
+    box.replaceChildren(head, btns.length ? h("div", { class: "btn-row" }, btns) : null, originalList(v.original));
+  };
   const draw = async () => {
+    clearTimeout(timer);
     const q = new URLSearchParams();
-    if (ask.minutes) q.set("minutes", ask.minutes);
-    if (ask.tired) q.set("tired", "true");
+    if (ask.minutes && !ask.sent.minutes) q.set("minutes", ask.minutes);
+    if (ask.tired && !ask.sent.tired) q.set("tired", "true");
+    if (q.size) {  // 自动刷新时不再带：带了会一直叫醒 IronM 重看
+      ask.sent = { minutes: !!ask.minutes, tired: ask.tired };
+      wait = { before: last?.status === "ok" ? sig(last) : null, left: TODAY_WAIT_MAX }; polls = 0;
+    }
     let v;
     try { v = await api(`/iron/api/today${q.size ? `?${q}` : ""}`); }
     catch (err) { box.replaceChildren(failed(err, draw)); return; }
+    if (wait) {
+      const stale = wait.error ? v.status === "coach_error" : v.status === "reviewing" || (wait.before && sig(v) === wait.before);
+      if (stale && wait.left > 0) { wait.left -= 1; show({ status: "reviewing", original: v.original || last?.original }); return; }
+      wait = null;
+    }
+    if (["reviewing", "coach_error", "rest_today"].includes(v.status)) { show(v); return; }
+    last = v; onStatus?.(v, ctl);
     if (v.status !== "ok") { box.replaceChildren(); return; }
-    const toggle = (label, on, flip) => h("button", { type: "button", class: `pill${on ? " on" : ""}`, "aria-pressed": String(on), onclick: () => { flip(); draw(); } }, label);
+    const toggle = (label, on, flip) => h("button", { type: "button", class: `pill${on ? " on" : ""}`, "aria-pressed": String(on), disabled: on, title: on ? "说过了，IronM 会按这个重看今天" : null, onclick: () => { flip(); draw(); } }, label);
     const items = (v.changed ? v.today : v.original).items;
     box.replaceChildren(
       compact ? null : h("div", { class: "tv-head" },
         h("div", {}, h("h3", {}, `今天 · ${v.today.name}`), h("p", { class: "muted" }, `约 ${v.today.minutes || session.minutes} 分钟 · ${items.length} 个动作`)),
         h("button", { class: "icon-btn", type: "button", "aria-label": "问教练怎么练", onclick: () => askCoach("今天练什么？按我的计划和今天的状态说") }, icon("coach", "sm"))),
       v.changed ? h("details", { class: "tv-adjusted" },
-        h("summary", {}, icon("alert", "xs"), h("span", {}, "今天的版本按状态和天气调整过"), h("em", {}, "为什么"), icon("chevron", "xs")),
+        h("summary", {}, icon("alert", "xs"), h("span", {}, "IronM 按你今天的情况调整过"), h("em", {}, "为什么"), icon("chevron", "xs")),
         h("p", {}, v.changes.join("；")),
         h("p", { class: "muted" }, `原因：${v.reasons.join("；")}`),
         h("p", { class: "muted" }, `原计划：${v.original.items.map(itemLine).join("、")}`)) : null,
@@ -1661,7 +1794,25 @@ function weekCard(w) {
     w.tips.length && w.planned ? h("p", { class: "caption" }, "想改计划，咨询 IronM。") : null);  // 复盘只给建议（§146）
 }
 
+// 临时调整（§163，kind "temp"）：哪几天这样练、改了什么、为什么；确认才生效，到期回到原计划，
+// 没确认的过了开始日期作废（expires）。对话里的卡片、确认弹窗、首页"IronM 说"都用这几句
+const tempSpan = (t) => !t?.start ? "" : t.end && t.end !== t.start ? `${md(t.start)}到${md(t.end)}` : md(t.start);
+const TEMP_RULE = "这几天这样练，到期自动回到原计划；点确认才生效，确认后也能提前撤销。";
+const tempExpire = (t) => t?.start ? `没确认的过了开始日期（${md(t.start)}）就作废。` : "没确认的过了开始日期就作废。";
+function tempBody(d) {
+  const t = d.temp || {};
+  const lines = (d.items || []).length ? d.items : t.lines || [];
+  return [
+    t.start ? h("p", { class: "temp-span" }, h("b", {}, `${tempSpan(t)}这样练`), "，到期回到原计划") : null,
+    lines.length ? h("ul", { class: "temp-lines" }, lines.map((x) => h("li", {}, x))) : null,
+    t.why ? h("p", { class: "muted" }, `为什么：${t.why}`) : null,
+  ];
+}
+const draftDone = (d) => d.kind === "temp" ? `已确认：${tempSpan(d.temp) || "这几天"}这样练，到期回到原计划。` : "已保存，新的计划从今天起生效。";
+const draftUndone = (d) => d.kind === "temp" ? "已撤销，回到原计划。" : "已撤销，计划回到改之前的样子。";
+
 function draftView(box, d, answer, warning) {
+  const temp = d.kind === "temp";
   const msg = h("p", { class: "muted", role: "status" });
   const actions = h("div", { class: "btn-row" });
   const act = async (action, done) => {
@@ -1669,18 +1820,24 @@ function draftView(box, d, answer, warning) {
     try { await api(`/iron/api/drafts/${d.id}/${action}`, { method: "POST" }); done(); cache.metrics = null; }
     catch (err) { msg.className = "error"; msg.textContent = err.message; for (const b of actions.querySelectorAll("button")) b.disabled = false; }
   };
-  const undo = h("button", { class: "btn ghost", type: "button", onclick: () => act("undo", () => { msg.textContent = "已撤销，计划回到改之前的样子。"; actions.replaceChildren(); }) }, "撤销");
-  actions.append(
-    h("button", { class: "btn", type: "button", onclick: () => act("confirm", () => { msg.textContent = "已保存，新的计划从今天起生效。"; actions.replaceChildren(undo); }) }, icon("check", "sm"), "确认"),
-    h("button", { class: "btn ghost", type: "button", onclick: () => act("cancel", () => { msg.textContent = "已取消，计划没有改动。"; actions.replaceChildren(); }) }, "取消"));
+  const undo = h("button", { class: "btn ghost", type: "button", onclick: () => act("undo", () => { msg.textContent = draftUndone(d); actions.replaceChildren(); }) }, "撤销");
+  if (d.state === "confirmed") { actions.append(undo); msg.textContent = draftDone(d); }
+  else if (d.state && d.state !== "pending") msg.textContent = CARD_STATE[d.state] || d.state;
+  else if (d.expired) msg.textContent = temp ? "这份临时调整过了开始日期还没确认，已经作废；想调可以再跟 IronM 说。" : "这份方案已经过期，想调可以再跟 IronM 说。";
+  else {
+    actions.append(
+      h("button", { class: "btn", type: "button", onclick: () => act("confirm", () => { msg.textContent = draftDone(d); actions.replaceChildren(undo); }) }, icon("check", "sm"), temp ? "确认这样练" : "确认"),
+      h("button", { class: "btn ghost", type: "button", onclick: () => act("cancel", () => { msg.textContent = "已取消，计划没有改动。"; actions.replaceChildren(); }) }, "取消"));
+  }
   const sessions = d.plan?.sessions || [];
   box.replaceChildren(
     answer ? h("p", { class: "lede" }, answer) : null,
-    d.changes ? h("div", { class: "notice-line" }, icon("info", "xs"), `改了什么：${d.changes}`) : null,
+    !temp && d.changes ? h("div", { class: "notice-line" }, icon("info", "xs"), `改了什么：${d.changes}`) : null,
     warning ? h("div", { class: "notice-line" }, icon("alert", "xs"), warning) : null,
-    h("ol", { class: "plan-items" }, sessions.map((x) => h("li", {}, `${weekdayName(x.day)} ${x.name}（约 ${x.minutes} 分钟）：${x.items.map((it) => `${it.exercise} ${it.sets}×${it.reps}`).join("、")}`))),
+    temp ? h("div", { class: "temp-box" }, tempBody(d))
+      : h("ol", { class: "plan-items" }, sessions.map((x) => h("li", {}, `${weekdayName(x.day)} ${x.name}（约 ${x.minutes} 分钟）：${x.items.map((it) => `${it.exercise} ${it.sets}×${it.reps}`).join("、")}`))),
     actions, msg,
-    h("p", { class: "caption" }, "确认后才会替换现在的计划，之后可以撤销；这份方案 24 小时内有效。"));
+    h("p", { class: "caption" }, temp ? `${TEMP_RULE}${tempExpire(d.temp)}` : "确认后才会替换现在的计划，之后可以撤销；这份方案 24 小时内有效。"));
 }
 
 // ---- 动作：卡片流，官方视频，"没看懂"请训练教练用大白话讲（spec [2026-10-23] §13）--------------------
@@ -3922,7 +4079,7 @@ function applyBlock(msg, b) {
 
 function coachMsg() { return { role: "coach", turn: "", steps: [], text: "", notices: [], sources: "", cards: [], id: "", error: "", done: false, open: false, srcOpen: false, rating: 0, el: null }; }
 
-// 预览卡片（计划、训练记录）：确认才写入，写入后能撤销；状态从服务端取（刷新后也对）
+// 预览卡片（计划、训练记录、临时调整）：确认才写入，写入后能撤销；状态从服务端取（刷新后也对）
 const CARD_STATE = { pending: "", confirmed: "已保存", cancelled: "已取消", undone: "已撤销" };
 function cardView(msg, card) {
   const d = card.data;
@@ -3930,8 +4087,12 @@ function cardView(msg, card) {
   if (!card.state && !card.busy) { card.busy = true; loadCard(msg, card); }
   const state = card.state || "pending";
   const expired = state === "pending" && Date.parse(d.expires) < Date.now();
-  const plan = card.kind === "plan";
-  const body = plan && d.rows
+  const plan = card.kind === "plan", temp = card.kind === "temp";  // temp：临时调整（§163），到期回到原计划
+  const body = temp
+    ? [(d.items || []).length ? h("ul", { class: "temp-lines" }, d.items.map((it) => h("li", {}, it))) : null,
+      state === "pending" && !expired ? h("p", { class: "caption" }, `${TEMP_RULE}没确认的过了开始日期就作废。`)
+        : state === "confirmed" ? h("p", { class: "caption" }, "到了结束日期自动回到原计划，也可以提前撤销。") : null]
+    : plan && d.rows
     ? [d.changes ? h("p", { class: "card-changes" }, d.changes) : null,  // 按操作改的：只列变化的行（spec [2026-10-23] §45）
       h("ul", { class: "pv-rows" }, d.rows.map((r) => h("li", {}, h("b", {}, r.what), " ",
         r.before ? h("span", { class: "muted" }, r.before) : null, r.before ? " → " : "", r.after))),
@@ -3948,13 +4109,13 @@ function cardView(msg, card) {
       d.rpe ? h("p", { class: "muted" }, `感受 ${d.rpe} 分`) : null, d.note ? h("p", { class: "muted" }, d.note) : null];
   const act = (action) => cardAction(msg, card, action);
   const buttons = state === "pending" && !expired
-    ? [h("button", { class: "btn small", type: "button", disabled: card.busy, onclick: () => act("confirm") }, plan ? "确认，保存计划" : "确认，记下"),
+    ? [h("button", { class: "btn small", type: "button", disabled: card.busy, onclick: () => act("confirm") }, plan ? "确认，保存计划" : temp ? "确认，这几天这样练" : "确认，记下"),
       h("button", { class: "btn quiet small", type: "button", disabled: card.busy, onclick: () => act("cancel") }, "取消")]
     : state === "confirmed"
-      ? [h("span", { class: "chip good" }, plan ? "计划已保存" : "已记下"), h("button", { class: "btn quiet small", type: "button", disabled: card.busy, onclick: () => act("undo") }, "撤销")]
-      : [h("span", { class: "chip" }, expired ? "已过期，让教练重新生成" : CARD_STATE[state] || state)];
+      ? [h("span", { class: "chip good" }, plan ? "计划已保存" : temp ? "已生效，到期回到原计划" : "已记下"), h("button", { class: "btn quiet small", type: "button", disabled: card.busy, onclick: () => act("undo") }, "撤销")]
+      : [h("span", { class: "chip" }, expired ? (temp ? "已作废：过了开始日期还没确认" : "已过期，让教练重新生成") : temp && state === "undone" ? "已撤销，回到原计划" : CARD_STATE[state] || state)];
   return h("div", { class: `preview ${state}` },
-    h("div", { class: "pv-title" }, icon(plan ? "dumbbell" : "check", "sm"), h("b", {}, d.title), h("span", { class: "muted" }, d.headline || "")),
+    h("div", { class: "pv-title" }, icon(plan ? "dumbbell" : temp ? "timer" : "check", "sm"), h("b", {}, d.title), h("span", { class: "muted" }, d.headline || "")),
     ...body,
     h("div", { class: "pv-actions" }, buttons),
     card.error ? h("p", { class: "msg-note" }, card.error) : null);
