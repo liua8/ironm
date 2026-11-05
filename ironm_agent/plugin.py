@@ -68,8 +68,6 @@ from ironm_agent.illness import (
     mentions,
     question,
     recovering_days,
-    state_line,
-    today_mode,
 )
 from ironm_agent.illness import active as active_illness
 from ironm_agent.illness import (
@@ -292,6 +290,9 @@ def default_coach_store() -> Any:
     return coach_deps().store
 
 
+RETHINK = ("说了今天的状态",)  # 这些事之后管家重看今天（§163 需求 3）
+
+
 async def default_coach_eval(user_id: str, reason: str, force: bool) -> None:
     """管家重新评估当前方案，用线上的存储（测试里换掉）。"""
     from ironm_agent.coach_state import evaluate
@@ -299,10 +300,17 @@ async def default_coach_eval(user_id: str, reason: str, force: bool) -> None:
 
     deps = coach_deps()
     await evaluate(user_id, deps, reason=reason, force=force)
-    if not force:  # 每天第一次提问：后台跑一次管家复盘，由模型决定调不调（§85）
-        from ironm_agent.review import daily_later
+    wake_review(user_id, deps, reason, force)
 
-        daily_later(user_id, deps)
+
+def wake_review(user_id: str, deps: Any, reason: str, force: bool) -> None:
+    """评估之后要不要叫醒管家复盘：每天第一次提问跑当天的（§85）；他说了身体的事重看今天，不按规则改（§163）。"""
+    from ironm_agent import review
+
+    if not force:
+        review.daily_later(user_id, deps)
+    elif reason in RETHINK:
+        review.rerun_later(user_id, deps, reason)
 
 
 RISK_BLOCK = "这一轮先不给训练安排。饮食、睡眠或者你的数据，可以照常问我。"
@@ -356,19 +364,14 @@ class Prepared:
 
 
 def _weather_case(w: Weather, plan: Plan | None, today: date) -> str:
-    """共享档案里的天气（spec [2026-10-23] §34）：现在的天气、未来几天的预报、按天气对本周训练的调整。"""
-    from ironm_agent.weather import assess
-    from ironm_agent.weather_plan import forecast_line, line, week_plan
+    """共享档案里的天气（spec [2026-10-23] §34）：现在的天气、未来几天的预报。代码不再按天气改本周的训练
+    （§163），要不要改由管家看这些自己定。"""
+    from ironm_agent.weather_plan import forecast_line
 
     parts = [weather_line(w)]
     ahead = forecast_line(w.days, today)
     if ahead:
         parts.append(f"未来几天：{ahead}")
-    moved = [
-        line(p) for p in week_plan(plan, w.days, today, assess(w)) if p.day > today and p.adjusted
-    ]
-    if moved:
-        parts.append("按天气对本周训练的调整：" + "；".join(moved))
     return "。".join(parts)
 
 
@@ -2288,11 +2291,9 @@ class IronMAgent:
         lines = case_lines(plan, logs, snapshot.today, since)
         recovering = recovering_days(ill, snapshot.today)  # 生病期间的组次不触发减重量（§46）
         steady = [x for x in logs if x.day not in recovering]
-        mode = today_mode(ill, snapshot.today, trained_since=[x.day for x in logs if x.done])
-        # 交给模型的是"今天怎么练"那句（相对的说法、带做法），不给日期和"现在还没好"，免得照着念（§82）
-        state = (mode[1] if mode else "") or state_line(ill, snapshot.today)
-        level: Literal["poor", "fair"] = "poor" if mode and mode[0] == "rest" else "fair"
-        signal = (level, state) if mode is not None else None  # 病后第一次也告诉角色：按约七成
+        # 生病只交事实（哪天说的什么、好没好），今天怎么练由管家定，代码不再算"休息、轻松、七成"（§163）
+        state = illness_line(ill, snapshot.today, within=14).removeprefix("生病：")
+        signal: tuple[Literal["poor", "fair"], str] | None = ("fair", state) if state else None
         day = (run or {}).get("_day")
         at = (run or {}).get("_at")
         body = await self._memory_items(user_id)  # 没截过的（截过的可能丢了"已好"那条，复核 11-04）

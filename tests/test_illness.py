@@ -221,7 +221,9 @@ def test_two_day_story_sick_then_better(monkeypatch: Any) -> None:
     t.extra = {}
     run(a, "深蹲怎么做")  # 下一轮：档案里已经是好了
     assert "还没好" not in t.input
-    assert "病后第一次训练按平时的七成" in t.input  # 刚好：告诉角色按约七成练
+    assert (
+        "肚子疼今天好了" in t.input and "七成" not in t.input
+    )  # 只给事实，病后怎么练由管家定（§163）
 
 
 def test_case_file_dates_events() -> None:
@@ -264,20 +266,54 @@ def client(monkeypatch: Any, ill: IllnessBook) -> TestClient:
     return TestClient(app)
 
 
+def test_recovery_within_two_weeks_reaches_the_coach_as_a_fact(monkeypatch: Any) -> None:
+    """病好了 5 天：档案里还写着哪天好的，病后第一次怎么练由管家看着定（§163）。"""
+    from ironm_agent.casefile import Snapshot
+    from ironm_agent.metrics import Profile, Readings
+
+    async def now(_: str) -> Snapshot:  # 档案和生病记录用同一个今天
+        return Snapshot(Profile(goal="muscle"), Readings(), (), TODAY)
+
+    ill = IllnessBook()
+    asyncio.run(
+        ill.save(
+            "42",
+            ep(
+                status="resolved",
+                started=TODAY - timedelta(days=8),
+                ended=TODAY - timedelta(days=5),
+            ),
+        )
+    )
+    t = Coach()
+    a = agent(t, monkeypatch=monkeypatch, snapshot=now)
+    a._illness = ill
+    run(a, "深蹲怎么做")
+    assert "肚子疼5 天前好了" in t.input and "七成" not in t.input
+
+
 def test_home_check_in_and_buttons(monkeypatch: Any) -> None:
     ill = IllnessBook()
     e = ep()
     asyncio.run(ill.save("42", e))
     c = client(monkeypatch, ill)
+    from ironm_agent import review as review_mod
+
+    rerun: list[str] = []
+    monkeypatch.setattr(review_mod, "rerun_later", lambda uid, deps, reason: rerun.append(reason))
     checkin = c.get("/iron/api/brief").json()["checkin"]
     assert checkin["id"] == e.id and checkin["text"] == "昨天说肚子疼，今天好些了吗？"
-    assert c.get("/iron/api/today").json()["status"] == "sick"
-    assert c.get("/iron/api/week").json()["sick"]["mode"] == "rest"
+    assert c.get("/iron/api/today").json()["status"] == "reviewing"  # 生病也不由代码定休息（§163）
+    assert c.get("/iron/api/week").json()["sick"] is None
     r = c.post(f"/iron/api/illness/{e.id}/check", json={"answer": "resolved"}).json()
-    assert r["status"] == "resolved" and "七成" in r["message"]
+    assert r["status"] == "resolved" and "七成" not in r["message"] and rerun == ["回答了好些了吗"]
     assert c.get("/iron/api/brief").json()["checkin"] is None  # 回答过了：不再问
-    today = c.get("/iron/api/today").json()
-    assert today["status"] == "ok" and any("七成" in x for x in today["reasons"])
+    long = ep(
+        level="fever", started=TODAY - timedelta(days=5)
+    )  # 发烧好几天：就医提示照旧（安全护栏）
+    asyncio.run(ill.save("42", long))
+    r = c.post(f"/iron/api/illness/{long.id}/check", json={"answer": "unwell"}).json()
+    assert "看医生" in r["message"]
     assert c.post("/iron/api/illness/nope/check", json={"answer": "resolved"}).status_code == 404
 
 

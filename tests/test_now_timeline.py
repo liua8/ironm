@@ -61,9 +61,11 @@ def home(monkeypatch: pytest.MonkeyPatch, review: Review | None, sleep: float = 
 
 def test_home_today_follows_the_daily_review(monkeypatch: pytest.MonkeyPatch) -> None:
     plain = home(monkeypatch, None)
+    assert plain["status"] == "reviewing"  # 没复盘：管家正在看，不按"状态差减半"的规则改（§163）
+    nothing = home(monkeypatch, Review(day=TODAY, summary="照计划练"))
     assert (
-        plain["status"] == "ok" and plain["today"]["items"][0]["sets"] == 2
-    )  # 没复盘：状态差照旧减半
+        nothing["status"] == "ok" and nothing["today"]["items"][0]["sets"] == 4
+    )  # 复盘没调今天：按原计划
     ratio = Review(day=TODAY, done=[Done(key="review:today", type="today", title="今天按约7成练",
                                          why="这周练多了", value={"ratio": 0.7})])  # fmt: skip
     got = home(monkeypatch, ratio)

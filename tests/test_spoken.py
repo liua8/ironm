@@ -141,24 +141,20 @@ def test_risk_reminders_are_requirements_not_a_tail(monkeypatch: Any) -> None:
     assert "164/102" not in text_of(blocks) and seen["_tail"] == ""
 
 
-def test_illness_button_reply_is_said_by_the_model(monkeypatch: Any) -> None:
+def test_illness_button_reply_no_longer_says_how_to_train(monkeypatch: Any) -> None:
+    """§163：按钮的回话只说收到、管家会重看今天；"按七成练"这类由管家复盘定，不由规则说。"""
+    from ironm_agent import review as review_mod
     from ironm_agent.illness import IllnessBook
     from tests.test_illness import client, ep
 
-    said = "好了就好！第一次回来按平时七成练，下次再回原计划。"
-    monkeypatch.setattr(spoken, "default_llm", lambda: FakeLLM(plain_reply(said)))
+    monkeypatch.setattr(review_mod, "rerun_later", lambda *a: None)
+    monkeypatch.setattr(spoken, "default_llm", lambda: FakeLLM(plain_reply("不该被调用")))
     ill = IllnessBook()
     e = ep()
     asyncio.run(ill.save("42", e))
     c = client(monkeypatch, ill)
     r = c.post(f"/iron/api/illness/{e.id}/check", json={"answer": "resolved"}).json()
-    assert r["message"] == said and r["status"] == "resolved"
-    # 没说到"七成"：用规则那句
-    monkeypatch.setattr(spoken, "default_llm", lambda: FakeLLM(plain_reply("好了就好！")))
-    e2 = ep()
-    asyncio.run(ill.save("42", e2))
-    r = c.post(f"/iron/api/illness/{e2.id}/check", json={"answer": "resolved"}).json()
-    assert "七成" in r["message"] and r["message"] != "好了就好！"
+    assert r["message"] == "好了就好，管家会按这个重看今天怎么练。" and r["status"] == "resolved"
 
 
 def test_illness_follow_up_is_a_requirement_not_a_tail(monkeypatch: Any) -> None:

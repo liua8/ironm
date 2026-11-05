@@ -106,12 +106,25 @@ def test_home_and_chat_use_the_same_state(monkeypatch: Any) -> None:
     app.dependency_overrides[web_more.illness_store] = IllnessBook
     app.dependency_overrides[web_more.day_store] = lambda: book
     c = TestClient(app)
+    from ironm_agent import review as review_mod
+    from ironm_agent.coach_state import Review
+
+    async def reviewed(_: str) -> Any:
+        return Review(day=today, summary="照计划练")
+
+    monkeypatch.setattr(web_more, "review_today", reviewed)
+    rerun: list[str] = []
+    monkeypatch.setattr(review_mod, "rerun_later", lambda uid, deps, reason: rerun.append(reason))
     assert c.get("/iron/api/today").json()["changed"] is False
     asyncio.run(book.add("42", today, detect("今天只有30分钟，还有点累", datetime.now(UTC))))
-    r = c.get("/iron/api/today").json()  # 对话里说的，首页不点也按这个来
-    assert r["changed"] and r["today"]["minutes"] == 30 and any("有点累" in x for x in r["reasons"])
-    c.get("/iron/api/today?tired=true")  # 首页点的也写进同一份
-    assert book.rows[("42", today)].entries[-1].source == "home"
+    r = c.get(
+        "/iron/api/today"
+    ).json()  # 对话里说的累和 30 分钟：代码不再自己删减，由管家重看（§163）
+    assert r["status"] == "ok" and not r["changed"] and r["today"]["items"][0]["sets"] == 4
+    assert (
+        c.get("/iron/api/today?tired=true").json()["status"] == "reviewing"
+    )  # 首页点的：写进同一份、叫醒管家
+    assert book.rows[("42", today)].entries[-1].source == "home" and rerun == ["首页点了今天的状态"]
 
 
 def test_illness_line_in_today_block() -> None:

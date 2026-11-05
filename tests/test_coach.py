@@ -52,8 +52,9 @@ def test_compute_lists_each_item_with_reason_and_basis() -> None:
                  goal=Goal(72, TODAY + timedelta(days=90), TODAY - timedelta(days=30), start=80))  # fmt: skip
     items = {x.key: x for x in compute(inp, TODAY)}
     today = items["today"]
-    assert today.action == "auto" and "组数减半" in today.title and "4" in today.why
-    assert "〔K07〕" in today.basis
+    assert (
+        today.title == "管家正在看今天的情况" and "组数减半" not in today.title
+    )  # 只睡 4 小时也不按规则减半（§163）
     assert (
         items["target:杠铃深蹲"].title.startswith("杠铃深蹲 下次 62.5 公斤")
         and "〔K03〕" in items["target:杠铃深蹲"].basis
@@ -264,6 +265,9 @@ def test_inbox_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
     pain.rows["42"] = [("joint.knee", TODAY), ("joint.knee", TODAY - timedelta(days=1))]
     dp = deps(training=with_plan(), pain=pain)
     monkeypatch.setattr(web_more, "coach_deps", lambda: dp)
+    from ironm_agent import review as review_mod
+
+    monkeypatch.setattr(review_mod, "daily_later", lambda *a: None)  # 不在测试里叫真实模型
     app = FastAPI()
     app.include_router(web.router)
     app.dependency_overrides[verify_token] = lambda: "42"

@@ -339,14 +339,32 @@ def test_today_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     app.dependency_overrides[verify_token] = lambda: "42"
     app.dependency_overrides[web_more.training_store] = lambda: book
     c = TestClient(app)
+    from ironm_agent import review as review_mod
+    from ironm_agent.coach_state import Review
+
+    rerun: list[str] = []
+    monkeypatch.setattr(review_mod, "rerun_later", lambda uid, deps, reason: rerun.append(reason))
+    seen: dict[str, Any] = {"review": None}
+
+    async def today_review(_: str) -> Any:
+        return seen["review"]
+
+    monkeypatch.setattr(web_more, "review_today", today_review)
     r = c.get("/iron/api/today").json()
-    assert r["status"] == "ok" and r["changed"] and r["readiness"] == "差"
-    assert r["today"]["items"][0]["sets"] == 2 and r["original"]["items"][0]["sets"] == 4
-    assert any("只睡了 4" in x for x in r["reasons"])
-    sleep["h"] = 7.5
-    assert not c.get("/iron/api/today").json()["changed"]  # 睡得好、没有天气问题：按原计划
+    assert (
+        r["status"] == "reviewing" and r["original"]["items"][0]["sets"] == 4
+    )  # 管家还没看：如实说（§163）
+    seen["review"] = Review(day=real_today, failed=True)
+    assert c.get("/iron/api/today").json()["status"] == "coach_error"  # 管家出错了：不按规则替它定
+    seen["review"] = Review(day=real_today, summary="睡得少，照计划练，留点余力")
+    r = c.get("/iron/api/today").json()
+    assert (
+        r["status"] == "ok" and not r["changed"] and r["today"]["items"][0]["sets"] == 4
+    )  # 只睡 4 小时也不减半
     r2 = c.get("/iron/api/today?minutes=30").json()
-    assert any("30 分钟" in x for x in r2["reasons"]) and r2["today"]["minutes"] == 30
+    assert r2["status"] == "reviewing" and rerun == [
+        "首页点了今天的状态"
+    ]  # 点了：叫醒管家重看，不当场删减
     assert c.get("/iron/api/today?minutes=5").status_code == 422
     assert asyncio.run(book.plan("42")).plan.sessions[0].items[0].sets == 4  # 原计划不变
     # 按今天的版本打卡：动作和组数一起记下

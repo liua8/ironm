@@ -305,16 +305,17 @@ def state_line(eps: Sequence[Episode], today: date) -> str:
     return f"{e.started.month} 月 {e.started.day} 日开始{e.what()}，现在{how}"
 
 
-def summary_line(eps: Sequence[Episode], today: date) -> str:
+def summary_line(eps: Sequence[Episode], today: date, within: int = 2) -> str:
     """今日状态里的生病一行（spec [2026-10-23] §54）：交给模型，用相对的说法（"昨天说肚子疼"），
-    不写日期、不写"现在还没好"这类判断，免得回答照着念（§82）；两天内好了的写哪天好的。"""
+    不写日期、不写"现在还没好"这类判断，免得回答照着念（§82）；within 天内好了的写哪天好的。
+    只是事实：今天怎么练由管家定（§163）。"""
     now = active(eps, today)
     if now:
         e = now[0]
-        return f"生病：{ago(e.started, today)}说{e.what()}" + (
+        return f"生病：{ago(e.started, today)}说{e.what()}" + ("（没说哪里）" if e.level == "vague" else "") + (
             "，后来说好一些了" if e.status == "better" else ""
         )
-    done = [e for e in eps if e.status == "resolved" and e.ended and (today - e.ended).days <= 2]
+    done = [e for e in eps if e.status == "resolved" and e.ended and (today - e.ended).days <= within]
     if not done:
         return ""
     e = max(done, key=lambda x: x.ended or x.started)

@@ -60,8 +60,11 @@ def week_plan(
     days: Sequence[Day],
     today: date,
     now: Advice | None = None,
+    *,
+    adjust: bool = True,
 ) -> list[DayPlan]:
-    """本周一到周日每天的计划和天气；days 是预报（今天起），now 是今天实时天气的判断。"""
+    """本周一到周日每天的计划和天气；days 是预报（今天起），now 是今天实时天气的判断。
+    adjust=False：只给天气和对户外的判断，不按天气改出版本（§163：改不改由管家定）。"""
     monday = today - timedelta(days=today.isoweekday() - 1)
     by_day = {d.day: d for d in days}
     out: list[DayPlan] = []
@@ -74,7 +77,7 @@ def week_plan(
         outdoor = (
             tuple(i.exercise for i in session.items if is_outdoor(i.exercise)) if session else ()
         )
-        if session is None or x < today or adv is None:
+        if session is None or x < today or adv is None or not adjust:
             out.append(DayPlan(x, session, f, adv, outdoor=outdoor))
             continue
         changes: list[str] = []

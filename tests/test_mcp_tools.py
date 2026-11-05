@@ -122,7 +122,7 @@ def test_coach_plan_tool(data: mcp_tools.Sources) -> None:
                 diet=__import__("ironm_agent.diet_adjust", fromlist=["DietBook"]).DietBook(), store=data.coach)  # fmt: skip
     asyncio.run(evaluate("42", deps, reason="打卡"))
     out = text(call("query_coach_plan"))
-    assert "当前方案第 1 版" in out and "今天练下肢" in out and "最近的调整经历" in out
+    assert "当前方案第 1 版" in out and "管家正在看今天的情况" in out and "最近的调整经历" in out
 
 
 def test_catalog_matches_what_is_registered() -> None:

@@ -130,6 +130,7 @@ def facts(
 ) -> tuple[dict[str, str], tuple[str, ...]]:
     """编好号的事实（F1…）和这些事实用到的资料编号；extra 是以前调整的效果和阶段事实（§89）。"""
     from ironm_agent.illness import active, ago
+    from ironm_agent.protools.movement import JOINT_NAMES
     from ironm_agent.protools.patterns import training_patterns
 
     snap = inp.snapshot
@@ -157,9 +158,16 @@ def facts(
     if inp.diet is not None:
         lines.append(f"现在的热量调整：每天 {inp.diet.kcal:+d} 千卡（{inp.diet.reason}）")
     lines += [f"生病：{x}" for x in ill]
-    said = inp.day.tired() if inp.day is not None else None
-    if said is not None:
-        lines.append(f"今天他说：{said.text()}")
+    for e in inp.illness:  # 好了的也给：病后第一次怎么练由管家定（§163）
+        if not e.active and e.ended is not None and (today - e.ended).days <= 14:
+            lines.append(f"生病经过：{ago(e.started, today)}说{e.what()}，{ago(e.ended, today)}好了")
+    for e in (inp.day.entries if inp.day is not None else []):  # 今天说的累、睡了几小时、只有几分钟、状态好
+        lines.append(f"今天他说：{e.text()}")
+    for p in getattr(inp, "pain_details", None) or []:  # 近两周说疼：哪处、左右、在做哪个动作（§163）
+        bits = [x for x in (p.get("side"), p.get("exercise") and f"做{p['exercise']}时", p.get("level")) if x]
+        lines.append(f"说疼：{ago(p['day'], today)} {JOINT_NAMES.get(p['part'], p['part'])}" + (f"（{'，'.join(bits)}）" if bits else ""))
+    if inp.advice is not None and inp.advice.reasons:  # 天气：户外练不练由管家定
+        lines.append(f"今天的天气：{inp.advice.name}（{'；'.join(inp.advice.reasons)}）")
     lines += extra
     return {f"F{i}": x for i, x in enumerate(lines, start=1)}, tuple(dict.fromkeys(refs))
 
@@ -565,6 +573,21 @@ async def daily(user_id: str, deps: Deps) -> None:
 
 
 _BACKGROUND: set[asyncio.Task[None]] = set()
+
+
+def rerun_later(user_id: str, deps: Deps, reason: str) -> None:
+    """他说了身体或安排上的事、首页点了"累了""只有几分钟"、回答了"好些了吗"：叫醒管家重看今天（§163 需求 3）。
+    今天做过也重做；在后台跑，出错只记错误类型。"""
+
+    async def go() -> None:
+        try:
+            await run(user_id, deps, TurnLLM(load_models(), os.environ), force=True)
+        except Exception as e:
+            _log.warning("review rerun failed: error_type=%s reason=%s", type(e).__name__, reason[:20])
+
+    task = asyncio.create_task(go())
+    _BACKGROUND.add(task)
+    task.add_done_callback(_BACKGROUND.discard)
 
 
 def daily_later(user_id: str, deps: Deps) -> None:

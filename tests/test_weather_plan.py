@@ -66,17 +66,21 @@ def test_coach_plan_has_weather_item() -> None:
     from ironm_agent.casefile import Snapshot
     from ironm_agent.coach_state import Inputs, compute
 
+    from ironm_agent.weather import Advice
+
     inp = Inputs(snapshot=Snapshot(), plan=PLAN, forecast=days(fri=(65, 20.0, 90)))
-    items = compute(inp, MON)
-    weather = next(x for x in items if x.kind == "weather")
-    assert weather.action == "auto" and "周五" in weather.title and "户外慢跑" in weather.title
-    assert weather.value["days"][0]["better"] == "周六"
-    assert [x.kind for x in items][:2] == ["today", "weather"]
     assert not [
-        x
-        for x in compute(Inputs(snapshot=Snapshot(), plan=PLAN, forecast=days()), MON)
-        if x.kind == "weather"
-    ]
+        x for x in compute(inp, MON) if x.kind == "weather"
+    ]  # 预报下雨：不再自动改本周（§163）
+    hot = Inputs(snapshot=Snapshot(), plan=PLAN, advice=Advice("avoid", ("气温 38℃，有中暑风险",)))
+    weather = next(
+        x for x in compute(hot, MON) if x.kind == "weather"
+    )  # 极端天气：固定提醒一句（§163 已定）
+    assert weather.action == "info" and "中暑" in weather.title and "days" not in weather.value
+    rainy = Inputs(snapshot=Snapshot(), plan=PLAN, advice=Advice("indoor", ("小雨",)))
+    assert not [
+        x for x in compute(rainy, MON) if x.kind == "weather"
+    ]  # 只是下雨：不提醒，管家看天气事实自己定
 
 
 def test_case_file_weather_includes_forecast_and_adjustments() -> None:
@@ -85,7 +89,7 @@ def test_case_file_weather_includes_forecast_and_adjustments() -> None:
     w = Weather("上海", 22, 21, 50, 0, 9, days=days(fri=(65, 20.0, 90)))
     text = _weather_case(w, PLAN, MON)
     assert "现在的天气" in text and "未来几天：周二晴" in text
-    assert "按天气对本周训练的调整：周五雨：全身" in text and "周六" in text
+    assert "按天气对本周训练的调整" not in text  # 只给天气，改不改由管家定（§163）
 
 
 def test_cheer_lines() -> None:
@@ -133,5 +137,5 @@ def test_week_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     assert got["days"][0]["date"] == monday.isoformat()
     fri = got["days"][4]
     assert fri["session"]["name"] == "全身" and fri["outdoor"] == ["户外慢跑"]
-    if not fri["past"]:
-        assert fri["changes"] and fri["version"] and fri["weather"]["level"] == "indoor"
+    if not fri["past"]:  # 只给天气和对户外的判断，不再按天气改出版本（§163）
+        assert not fri["changes"] and fri["version"] is None and fri["weather"]["level"] == "indoor"

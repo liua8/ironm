@@ -18,7 +18,6 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from ironm_agent import spoken as spoken_mod
 from ironm_agent import weather
 from ironm_agent.exercises import library
 from ironm_agent.llm import TurnLLM, load_models
@@ -1045,33 +1044,21 @@ class CheckIn(BaseModel):
 async def illness_check(
     episode_id: str, body: CheckIn, user_id: str = Depends(_verify()), illness: Any = ILLNESS
 ) -> dict[str, Any]:
-    """首页"好些了吗"的按钮：好了 / 好一些 / 还不舒服。状态由规则更新；回给他的话由模型说，
-    没说到今天怎么安排（休息、轻松版、七成、看医生）或模型失败时用规则的那句（spec [2026-10-23] §86）。"""
-    from ironm_agent.casefile import readiness
-    from ironm_agent.illness import answer
+    """首页"好些了吗"的按钮：好了 / 好一些 / 还不舒服——他自己点的，照记。今天怎么练由管家重看（§163），
+    这里不再按规则说"休息、轻松版、七成"；病了好几天的就医提示照旧（安全护栏，§163 已定）。"""
+    from ironm_agent.illness import answer, doctor
+    from ironm_agent.review import rerun_later
 
     today = date.today()
     eps = await _episodes(illness, user_id, today)
     ep = next((e for e in eps if e.id == episode_id), None)
     if ep is None:
         raise HTTPException(404, "这条记录不存在")
-    hr_poor = False
-    if body.answer == "resolved":  # 说好了也看一眼心率（§46 需求 4）
-        try:
-            snap = await _web().snapshot_for(user_id)
-            hr_poor = readiness(snap.readings, "", today).level == "poor"
-        except Exception as e:
-            _log.warning("check snapshot unavailable: error_type=%s", type(e).__name__)
-    ep, message = answer(ep, body.answer, today, hr_poor=hr_poor)
+    ep, _ = answer(ep, body.answer, today)
     await illness.save(user_id, ep)
-    reply = {"resolved": "好了", "better": "好一些了", "unwell": "还不舒服"}[body.answer]
-    needs = [w for w in ("休息", "轻松", "七成", "医生") if w in message]
-    spoken = await spoken_mod.say(
-        spoken_mod.default_llm(), spoken_mod.ILLNESS, f"系统定好的：{message}",
-        f"{ep.what()}，今天{reply}", needs,
-    )  # fmt: skip
-    message = spoken or message
-    coach_later(user_id, "身体状况")
+    reply = {"resolved": "好了就好", "better": "好一些了就好", "unwell": "知道了，多休息"}[body.answer]
+    message = "\n".join(x for x in (f"{reply}，管家会按这个重看今天怎么练。", doctor(ep, today)) if x)
+    rerun_later(user_id, coach_deps(), "回答了好些了吗")
     return {"message": message, "status": ep.status}
 
 
@@ -1087,9 +1074,10 @@ async def get_today(
     illness: Any = ILLNESS,
     day: Any = DAY,
 ) -> dict[str, Any]:
-    """今天的版本：和管家消息里的"今天"同一个算法（§97：生病、管家复盘、今天说过的累和可用时间、
-    天气、中断后降量、状态差）；原计划不变。首页点了"有点累""只有 N 分钟"先写进今日状态（§54）。"""
+    """今天的版本：和管家消息里的"今天"同一个（§163：只套"只改今天"的改动和管家复盘的决定）；原计划不变。
+    首页点了"有点累""只有 N 分钟"：写进今日状态（§54），叫醒管家重看今天，这一下返回"管家正在看"。"""
     from ironm_agent.coach_state import Inputs, today_version
+    from ironm_agent.review import rerun_later
 
     if minutes is not None and not 10 <= minutes <= 180:
         raise HTTPException(422, "可用时间要在 10 到 180 分钟之间")
@@ -1100,18 +1088,20 @@ async def get_today(
     if stored.plan.session_on(today) is None:
         return {"status": "rest"}
     said, _ = await _day_said(day, user_id, today, tired=tired, minutes=minutes)
+    if tired or minutes is not None:  # 首页点了：管家重看今天（§163），不按规则当场减半、删减
+        rerun_later(user_id, coach_deps(), "首页点了今天的状态")
+        session = stored.plan.session_on(today)
+        return {"status": "reviewing", "original": session.model_dump(mode="json") if session else None,
+                "message": "管家正在看今天的情况"}  # fmt: skip
     snap = await _web().snapshot_for(user_id)
-    wx = await weather.for_user(user_id)
-    inp = Inputs(snapshot=snap, plan=stored.plan, since=stored.since,
-                 logs=[x.log for x in await training.workouts(user_id, today - timedelta(days=60))],
-                 illness=await _episodes(illness, user_id, today), day=said,
-                 advice=weather.assess(wx) if wx else None, review=await review_today(user_id))  # fmt: skip
-    v = today_version(inp, today, tired=tired, minutes=minutes)
-    if v.status in ("sick", "review_rest"):  # 生病还没好、管家复盘定了今天休息
-        return {"status": "sick" if v.status == "sick" else "rest_today", "original": v.original,
-                "message": v.title}  # fmt: skip
+    inp = Inputs(snapshot=snap, plan=stored.plan, since=stored.since, day=said, review=await review_today(user_id))
+    v = today_version(inp, today)
+    if v.status == "review_rest":  # 管家复盘定了今天休息
+        return {"status": "rest_today", "original": v.original, "message": v.title}
+    if v.status in ("reviewing", "coach_error"):  # 管家还在看、出错了：如实说，可以重试（§163）
+        return {"status": v.status, "original": v.original, "message": v.title, "why": v.why}
     return {"status": "ok", "original": v.original, "today": v.today, "changed": v.changed,
-            "changes": list(v.changes), "reasons": list(v.reasons), "readiness": v.readiness}  # fmt: skip
+            "changes": list(v.changes), "reasons": list(v.reasons)}  # fmt: skip
 
 
 async def review_today(user_id: str) -> Any:
@@ -1707,9 +1697,8 @@ async def get_week(
     illness: Any = ILLNESS,
     day: Any = DAY,
 ) -> dict[str, Any]:
-    """本周一到周日：每天练什么、练过没有、天气和对训练的影响、按天气改出的版本（原计划不变）；
-    今天生病时按症状改（spec [2026-10-23] §46）。"""
-    from ironm_agent.illness import today_mode
+    """本周一到周日：每天练什么、练过没有、天气（原计划不变）。今天的版本由管家定（§163），
+    这里不再按生病、天气自己改出版本；今天那一行写管家定的。"""
     from ironm_agent.weather_plan import week_plan, weekday
 
     today = date.today()
@@ -1717,8 +1706,6 @@ async def get_week(
     stored = await training.plan(user_id)
     rows = await training.workouts(user_id, today - timedelta(days=14))
     done = {x.log.day for x in rows if x.log.done and x.log.day >= monday}
-    mode = today_mode(await _episodes(illness, user_id, today), today,
-                      trained_since=[x.log.day for x in rows if x.log.done])  # fmt: skip
     status, wx = "no_city", None
     try:
         _, place = await weather.load_place(user_id)
@@ -1733,7 +1720,7 @@ async def get_week(
     plan = with_today(stored.plan, edits, today) if stored else None  # 今天改过的按改过的（§106）
     first = stored.plan.session_on(today) if stored else None
     edits = apply_today(first, edits)[1] if first is not None else []  # 只列还套得上的
-    days = week_plan(plan, wx.days if wx else (), today, now)
+    days = week_plan(plan, wx.days if wx else (), today, now, adjust=False)  # 只要天气，不按天气改版本（§163）
     weight = await _weight_now(user_id) if plan is not None else None
 
     def wx_json(p: Any) -> dict[str, Any] | None:
@@ -1752,7 +1739,7 @@ async def get_week(
     return {
         "weather": status,
         "place": wx.place if wx is not None else "",
-        "sick": {"mode": mode[0], "why": mode[1]} if mode else None,
+        "sick": None,  # 生病时今天怎么练由管家定（§163），看首页"今天"
         "days": [
             {
                 "date": p.day.isoformat(),

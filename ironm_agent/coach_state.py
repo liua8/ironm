@@ -21,7 +21,7 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
-from ironm_agent.casefile import Snapshot, readiness
+from ironm_agent.casefile import Snapshot
 from ironm_agent.metrics import KcalAdjust
 from ironm_agent.training import Plan, WorkoutLog, weekday_name
 
@@ -149,6 +149,7 @@ class Inputs:
     since: date | None = None  # 计划从哪天开始用
     logs: list[WorkoutLog] = field(default_factory=list)
     pains: list[tuple[str, date]] = field(default_factory=list)
+    pain_details: list[dict[str, Any]] = field(default_factory=list)  # 说疼的细节：左右、动作、轻重（§163）
     goal: Any = None  # goal.Goal
     diet: KcalAdjust | None = None
     advice: Any = None  # weather.Advice（今天的实时天气）
@@ -177,14 +178,11 @@ class TodayVersion:
     readiness: str = ""
 
 
-def today_version(
-    inp: Inputs, today: date, *, tired: bool = False, minutes: int | None = None
-) -> TodayVersion:
-    """按生病、管家复盘、今天说过的累和可用时间、天气、中断后降量、状态差，改出今天的版本；原计划不变。
-    tired、minutes：首页这一下刚点的（存今日状态失败时也照用）。"""
-    from ironm_agent.illness import EASE, today_mode
+def today_version(inp: Inputs, today: date) -> TodayVersion:
+    """今天的版本（§163 需求 3，规则不要）：原计划先套上"只改今天"的改动（对话里管家调的、计划页他自己改的），
+    再套上管家复盘对今天的决定（休息、按几成）。代码不再按生病、累、睡眠、中断、天气自己改。
+    复盘还没跑完：管家正在看；复盘失败、没就今天做决定：管家出错了（可以重试）。原计划不变。"""
     from ironm_agent.today import build
-    from ironm_agent.triggers import gap_scale
 
     name = weekday_name(today.isoweekday())
     if inp.plan is None:
@@ -192,70 +190,36 @@ def today_version(
     session = inp.plan.session_on(today)
     if session is None:
         return TodayVersion("rest", f"今天（{name}）按计划休息", why="恢复也是训练的一部分")
-    if inp.day is not None and getattr(inp.day, "edits", None):  # 计划页"只改今天"的先套上（§106）
+    edits = list(getattr(inp.day, "edits", None) or []) if inp.day is not None else []
+    if edits:  # 计划页"只改今天"、对话里管家调的只改今天（§106、§122）先套上
         from ironm_agent.plan_edit import today_session
 
-        session = today_session(session, inp.day.edits)
-    state = readiness(inp.snapshot.readings, "", today)
+        session = today_session(session, edits)
     original = session.model_dump(mode="json")
-    gap = gap_scale(inp.logs, today)
-    adv = inp.advice
-    sick = today_mode(inp.illness, today, trained_since=[x.day for x in inp.logs if x.done])
-    if sick is not None and sick[0] == "rest":  # 生病还没好：今天休息（§46）
-        return TodayVersion("sick", f"今天先休息：{sick[1]}", why="病好了再练，第一次按平时的七成",
-                            basis="生病时练不练〔K23〕", original=original, readiness=state.name)  # fmt: skip
-    if sick is not None and sick[0] == "ease":
-        gap = (min(EASE, gap[0]) if gap else EASE, sick[1])
-    told = inp.review.today() if inp.review is not None else None  # 管家复盘：模型决定的今天（§85）
+    review = inp.review
+    told = review.today() if review is not None else None  # 管家复盘：模型决定的今天（§85）
+    if told is None and review is None:
+        return TodayVersion("reviewing", "管家正在看今天的情况", why="看完会告诉你今天怎么练",
+                            original=original, today=original)  # fmt: skip
+    if told is None and review is not None and review.failed:
+        return TodayVersion("coach_error", "管家出错了，还没看今天的情况", why="可以点重试，或者直接问管家今天怎么练",
+                            original=original)  # fmt: skip
     if told is not None and told.value.get("rest"):
         return TodayVersion("review_rest", f"今天休息：{told.why}", why=told.why, basis=told.basis,
-                            original=original, readiness=state.name)  # fmt: skip
+                            original=original)  # fmt: skip
     if told is not None and told.value.get("ratio"):
-        ratio = float(told.value["ratio"])
-        gap = (min(ratio, gap[0]) if gap else ratio, told.why)
-    light = sick is not None and sick[0] == "light"
-    said = inp.day.tired() if inp.day is not None else None  # 今天说过累或没睡好（§54）
-    # 今天复盘过（§85）：身体数据怎么影响今天由模型决定，不再按"状态差就减半"的规则套；
-    # 他今天亲口说累、生病的规则（安全底线）照旧
-    reviewed = inp.review is not None and not inp.review.failed
-    poor = state.level == "poor" and not reviewed
-    version = build(
-        session,
-        tired=poor or light or said is not None or tired,
-        tired_why="；".join(
-            x
-            for x in (
-                (sick[1] if light and sick else ""),
-                said.text() if said else ("你说今天有点累" if tired else ""),
-                *(state.reasons if poor else ()),
-            )
-            if x
-        ),
-        indoor=adv is not None and adv.level in ("indoor", "avoid"),
-        indoor_why=adv.reasons[0] if adv is not None and adv.reasons else "",
-        minutes=minutes or (inp.day.minutes() if inp.day is not None else None),
-        scale=gap[0] if gap else None,
-        scale_why=gap[1] if gap else "",
-    )
-    if not version.changed:
-        return TodayVersion("ok", f"今天练{session.name}，按原计划",
-                            why=f"今天的状态{state.name}，天气不影响训练", original=original,
-                            today=original, readiness=state.name)  # fmt: skip
-    basis = []
-    if poor:
-        basis.append("睡眠〔K07〕、和自己的基线比〔K18〕")
-    if adv is not None and adv.level in ("indoor", "avoid"):
-        basis.append("空气质量 HJ 633、高温预警分级")
-    if gap and told is not None and gap[1] == told.why:
-        basis.append(told.basis)
-    elif gap:
-        basis.append("中断后降量（经验）")
-    return TodayVersion(
-        "ok", f"今天练{session.name}：" + "；".join(version.changes), why="；".join(version.reasons),
-        basis="；".join(basis), original=original, today=version.session.model_dump(mode="json"),
-        changed=True, changes=tuple(version.changes), reasons=tuple(version.reasons),
-        readiness=state.name,
-    )  # fmt: skip
+        version = build(session, scale=float(told.value["ratio"]), scale_why=told.why)
+        if version.changed:
+            return TodayVersion(
+                "ok", f"今天练{session.name}：" + "；".join(version.changes), why=told.why, basis=told.basis,
+                original=original, today=version.session.model_dump(mode="json"), changed=True,
+                changes=tuple(version.changes), reasons=(told.why,),
+            )  # fmt: skip
+    why = (review.summary if review is not None else "") or "管家看过今天的情况"
+    if edits:
+        return TodayVersion("ok", f"今天练{session.name}（只改了今天）", why=why, original=original,
+                            today=original, changed=True)  # fmt: skip
+    return TodayVersion("ok", f"今天练{session.name}，按原计划", why=why, original=original, today=original)
 
 
 def _today_item(inp: Inputs, today: date) -> Item:
@@ -270,6 +234,9 @@ def _today_item(inp: Inputs, today: date) -> Item:
     if v.status == "review_rest":
         return Item(key="today", kind="today", title=v.title, why=v.why, basis=v.basis,
                     action="auto", value={"rest": True, "review": True})  # fmt: skip
+    if v.status in ("reviewing", "coach_error"):  # 管家还在看、出错了：如实写，不按规则替它定（§163）
+        return Item(key="today", kind="today", title=v.title, why=v.why,
+                    value={"original": v.original, v.status: True})  # fmt: skip
     if not v.changed:
         return Item(key="today", kind="today", title=v.title, why=v.why, value={"today": v.today})
     return Item(key="today", kind="today", title=v.title, why=v.why, basis=v.basis, action="auto",
@@ -277,30 +244,12 @@ def _today_item(inp: Inputs, today: date) -> Item:
 
 
 def _weather_items(inp: Inputs, today: date) -> list[Item]:
-    """天气是训练安排的一部分（spec [2026-10-23] §34）：本周以后几天按预报改出的版本，自动生效。"""
-    from ironm_agent.weather_plan import line, week_plan, weekday
-
-    if inp.plan is None or not inp.forecast:
+    """极端天气只固定提醒一句（§163 已定：高温中暑风险、重度污染），改不改训练由管家看天气事实定，代码不再自动改。"""
+    adv = inp.advice
+    if adv is None or adv.level != "avoid":
         return []
-    days = [
-        p
-        for p in week_plan(inp.plan, inp.forecast, today, inp.advice)
-        if p.day > today and p.adjusted
-    ]
-    if not days:
-        return []
-    first = days[0]
-    title = (
-        line(first)
-        if len(days) == 1
-        else f"这周有 {len(days)} 天按天气调整：" + "；".join(line(p) for p in days)
-    )
-    return [Item(key="weather", kind="weather", title=title[:160], action="auto",
-                 why="；".join(dict.fromkeys(r for p in days for r in p.reasons)),
-                 basis="天气预报（Open-Meteo）；高温预警分级；户外运动的天气规则（经验）",
-                 value={"days": [{"date": p.day.isoformat(), "weekday": weekday(p.day),
-                                  "session": p.session.name if p.session else "", "changes": list(p.changes),
-                                  "better": weekday(p.better) if p.better else ""} for p in days]})]  # fmt: skip
+    return [Item(key="weather", kind="weather", title="今天的天气不适合在户外练" + (f"：{adv.reasons[0]}" if adv.reasons else ""),
+                 why="；".join(adv.reasons), basis="高温预警分级、空气质量 HJ 633", value={"level": adv.level})]  # fmt: skip
 
 
 def _target_items(inp: Inputs) -> list[Item]:
@@ -661,6 +610,10 @@ async def _gather(user_id: str, deps: Deps, today: date) -> Inputs:
         from ironm_agent.body_now import fresh
 
         inp.pains = fresh(inp.pains, inp.memory)
+    if hasattr(deps.pain, "details"):  # 细节给管家复盘看（§163）；和上面同样去掉好了以前的
+        kept = set(inp.pains)
+        rows = await safely("pain details", deps.pain.details(user_id, today - timedelta(days=14))) or []
+        inp.pain_details = [x for x in rows if (x["part"], x["day"]) in kept]
     inp.goal = await safely("goal", deps.goals.get(user_id))
     inp.diet = await safely("diet", deps.diet.current(user_id))
     if deps.meals is not None:  # 和饮食页同一个算法，管家和饮食页的提议一致（§118）
