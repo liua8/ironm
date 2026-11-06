@@ -1,5 +1,6 @@
-"""读懂指标趋势（spec [2026-10-23] §84、§85）：每个指标和他自己比、也和标准比；认出是哪种情况，
-列出同期发生的、可能有关的事。这里只算事实，不决定怎么调——调不调、调什么由管家复盘里的模型决定（§85）。
+"""读懂指标趋势（spec [2026-10-23] §84、§85）：每个指标和他自己比、也和标准比；列出最近 7 天和之前比的变化，
+和同期发生的事（练的次数、生病、出差）。这里只算事实，不贴"恢复不够、睡得少"这类标签（§182 需求 7），
+也不决定怎么调——调不调、调什么由管家复盘里的模型决定（§85）。
 
 每条都带依据：用到的他的数据、计算和资料编号（依据库 K..）；回答正文里不显示，追问时讲得出来。
 只说"同时发生、可能有关"，不说成因果，不诊断。阈值写明出处，没有出处的标〔经验〕，待审定。
@@ -8,7 +9,7 @@
 from __future__ import annotations
 
 import statistics
-from collections.abc import Collection, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
@@ -29,15 +30,26 @@ from ironm_agent.metrics import (
 from ironm_agent.training import WorkoutLog
 
 type Tone = Literal["good", "attention", "neutral"]
-type Kind = Literal["recovery", "sleep", "activity", "fast_loss", "fast_gain", "thin"]
+type Kind = Literal[
+    "resting_hr",
+    "hrv_sdnn",
+    "hrv_rmssd",
+    "sleep",
+    "steps",
+    "weight",
+    "training",
+    "illness",
+    "event",
+    "thin",
+]
 
 WEEK = 7
 BEFORE = 21  # 和前三周比
 SLEEP_ENOUGH = 7.0  # 小时（K07）
-SLEEP_MIN_NIGHTS = 4  # 最近一周至少这么多晚的记录才判断睡得少
-LOAD_UP = 1.3  # 这周练的次数比前三周的周平均多三成以上算突然变多〔经验〕
-STEPS_DROP = 0.8  # 这周步数不到前三周平均的八成算掉了〔经验〕
-STEPS_FLOOR = 3000  # 前三周平均太少的不判断〔经验〕
+USUAL = 60  # "平常"取之前最多 60 天（和数据页同样的取法）
+CONTEXT: frozenset[str] = frozenset(
+    {"training", "illness", "event"}
+)  # 同期发生的事（不是指标本身）
 
 
 @dataclass(frozen=True)
@@ -56,13 +68,12 @@ class Reading:
 
 
 @dataclass(frozen=True)
-class Situation:
-    """认出的一种情况、同期可能有关的原因和调整。"""
+class Observation:
+    """一条事实：哪个指标、最近和之前各是多少、差多少、哪段时间；或者同期发生的一件事。不下结论（§182）。"""
 
     kind: Kind
-    title: str  # 恢复不够
-    seen: str  # 看到了什么（带数）
-    reasons: tuple[str, ...] = ()  # 同期发生的、可能有关的
+    name: str  # 静息心率
+    seen: str  # 看到了什么（带数和时间段）
     refs: tuple[str, ...] = ()
     data: str = ""
 
@@ -71,11 +82,10 @@ class Situation:
         return f"insight:{self.kind}"
 
     def line(self) -> str:
-        why = f"；同期发生的：{'；'.join(self.reasons)}" if self.reasons else ""
-        return f"{self.title}（{self.seen}{why}）"
+        return f"{self.name}：{self.seen}"
 
     def detail(self) -> str:
-        """追问依据时讲得出来：看到了什么、同期发生的、用了哪些数据和资料。"""
+        """追问依据时讲得出来：看到了什么、用了哪些数据和资料。"""
         parts = [self.line()]
         if self.data:
             parts.append(f"数据：{self.data}")
@@ -103,10 +113,6 @@ def _week_and_before(points: Sequence[Point], today: date) -> tuple[list[float],
 
 def _f(x: float, places: int = 1) -> str:
     return f"{x:.{places}f}".rstrip("0").rstrip(".") if places else str(round(x))
-
-
-def _flag(m: Metric, words: Collection[str]) -> bool:
-    return m.ok and m.brief in words
 
 
 # ---- 两种比较 -------------------------------------------------------------------------------
@@ -190,18 +196,41 @@ def _rate(trend: Metric, weight: float, goal: str | None) -> str:
         return ""
     pct = trend.value / weight * 100
     if goal == "fat_loss":
-        word = "偏快" if pct < -1 else "在合理范围" if pct <= -0.5 else "偏慢或没在降"
-        return f"每周 {pct:+.1f}%，减脂每周减体重的 0.5–1% 比较合理，{word}"
+        return f"每周 {pct:+.1f}%（减脂每周减体重的 0.5–1% 比较合理）"
     if goal == "muscle":
-        word = "偏快" if pct > 0.5 else "在合理范围" if pct >= 0.25 else "偏慢"
-        return f"每周 {pct:+.1f}%，增肌每周涨体重的 0.25–0.5% 比较合理，{word}"
+        return f"每周 {pct:+.1f}%（增肌每周涨体重的 0.25–0.5% 比较合理）"
     return ""
 
 
-# ---- 认出情况、找原因、给调整 -------------------------------------------------------------------
+# ---- 最近的变化和同期发生的事（只是事实，§182）------------------------------------------------------
 
 
-def situations(
+def _change(points: Sequence[Point], today: date, unit: str, places: int, *, pct: bool = False,
+            usual_days: int = USUAL, usual_name: str = "") -> str:  # fmt: skip
+    """ "最近 7 天平均 66 次/分，之前 40 天平均 58 次/分，高 8"：最近 7 天没有记录时为空。"""
+    week = _days(points, today - timedelta(days=WEEK - 1), today)
+    if not week:
+        return ""
+    before = _days(
+        points, today - timedelta(days=WEEK + usual_days - 1), today - timedelta(days=WEEK)
+    )
+    now = statistics.fmean(week)
+    few = "" if len(week) >= WEEK else f"（有 {len(week)} 天记录）"
+    out = f"最近 7 天{few}平均 {_f(now, places)}{unit}"
+    if not before:
+        return out + "，之前还没有记录可比"
+    was = statistics.fmean(before)
+    diff = (now - was) / was * 100 if pct and was else now - was
+    size = f"{abs(diff):.0f}" if pct else _f(abs(diff), places)
+    word = (
+        "和之前一样"
+        if size == "0"
+        else f"{'高' if diff > 0 else '低'} {size}{'%' if pct else unit}"
+    )
+    return out + f"，{usual_name or f'之前 {len(before)} 天'}平均 {_f(was, places)}{unit}，{word}"
+
+
+def observations(
     readings: Readings,
     profile: Profile,
     today: date,
@@ -209,16 +238,36 @@ def situations(
     logs: Sequence[WorkoutLog] = (),
     illness: Sequence[str] = (),
     events: Sequence[str] = (),
-) -> list[Situation]:
-    """认出的情况。illness：正在生病的说法（"昨天说感冒"）；events：近期事件（出差等）。"""
-    out: list[Situation] = []
-    rhr, sdnn, rmssd = (resting_hr(readings.resting_hr, today), hrv(readings.hrv_sdnn, "SDNN", today),
-                        hrv(readings.hrv_rmssd, "RMSSD", today))  # fmt: skip
-    high = _flag(rhr, ("明显偏高",))
-    low = _flag(sdnn, ("明显偏低",)) or _flag(rmssd, ("明显偏低",))
-    nights, _ = _week_and_before(readings.sleep_hours, today)
-    slept = _avg(nights) if len(nights) >= SLEEP_MIN_NIGHTS else None
-    short = slept is not None and slept < SLEEP_ENOUGH
+) -> list[Observation]:
+    """最近 7 天和他自己之前比的变化，和同期发生的事。illness：正在生病的说法（"昨天说感冒"）；
+    events：近期事件（出差等）。只列数和差，不判断是不是"恢复不够、睡得少、减得太快"（§182）。"""
+    out: list[Observation] = []
+    body: tuple[tuple[Kind, str, Sequence[Point], str, bool, tuple[str, ...]], ...] = (
+        ("resting_hr", "静息心率", readings.resting_hr, " 次/分", False, ("K18",)),
+        ("hrv_sdnn", "心率变异性（SDNN）", readings.hrv_sdnn, " 毫秒", True, ("K18", "K19")),
+        ("hrv_rmssd", "心率变异性（RMSSD）", readings.hrv_rmssd, " 毫秒", True, ("K18", "K19")),
+    )
+    for kind, name, pts, unit, pct, refs in body:
+        seen = _change(pts, today, unit, 0, pct=pct)
+        if seen:
+            out.append(Observation(kind, name, seen, refs, f"最近 {WEEK + USUAL} 天的{name}"))
+    seen = _change(readings.sleep_hours, today, " 小时", 1, usual_days=BEFORE, usual_name="前三周")
+    if seen:
+        out.append(Observation("sleep", "睡眠", f"{seen}（成年人建议每晚 {_f(SLEEP_ENOUGH)} 小时以上）",
+                               ("K07",), "最近 4 周的睡眠记录"))  # fmt: skip
+    seen = _change(
+        readings.steps, today, " 步", 0, pct=True, usual_days=BEFORE, usual_name="前三周"
+    )
+    if seen:
+        out.append(Observation("steps", "步数", seen, ("K21",), "最近 4 周的步数记录"))
+    trend = weight_trend(readings.weight, today)
+    if trend.ok and trend.value is not None and readings.weight:
+        rate = _rate(trend, max(readings.weight)[1], profile.goal)
+        refs = {"fat_loss": ("K37", "K87", "K16"), "muscle": ("K88", "K89")}.get(
+            profile.goal or "", ()
+        )
+        out.append(Observation("weight", "体重", f"{trend.text}" + (f"；{rate}" if rate else ""), refs,
+                               trend.data))  # fmt: skip
     done = [x for x in logs if x.done]
     this_week = sum(1 for x in done if today - timedelta(days=WEEK - 1) <= x.day <= today)
     earlier = sum(
@@ -226,73 +275,13 @@ def situations(
         for x in done
         if today - timedelta(days=WEEK + BEFORE - 1) <= x.day < today - timedelta(days=WEEK - 1)
     )
-    per_week = earlier / (BEFORE / WEEK)
-    load_up = per_week > 0 and this_week >= per_week * LOAD_UP and this_week - per_week >= 1
-
-    reasons: list[str] = []
-    if short and slept is not None:
-        few = "" if len(nights) >= WEEK else f"有 {len(nights)} 晚记录，"
-        reasons.append(f"最近 7 天{few}平均只睡 {_f(slept)} 小时，不到 {_f(SLEEP_ENOUGH)} 小时")
-    if load_up:
-        reasons.append(f"这周练了 {this_week} 次，前三周平均每周 {_f(per_week)} 次")
-    reasons += list(illness) + [f"近期：{e}" for e in events]
-
-    # 恢复不够：身体信号偏离平常，再加上同期有能解释的原因，或两个信号同时偏离
-    if (high or low) and (reasons or (high and low)):
-        hrv_pts = readings.hrv_sdnn if _flag(sdnn, ("明显偏低",)) else readings.hrv_rmssd
-        seen = "；".join(
-            x for x in (_usual("静息心率", readings.resting_hr, "高", 0) if high else "",
-                        _usual("心率变异性", hrv_pts, "低", 0) if low else "") if x
-        )  # fmt: skip
-        out.append(Situation(
-            "recovery", "恢复不够", seen, tuple(reasons),
-            refs=("K18", "K81", "K82", "K31"),
-            data="最近 7 天和之前的静息心率、心率变异性、睡眠；最近 4 周的训练记录",
-        ))  # fmt: skip
-    if short and slept is not None:
-        out.append(Situation(
-            "sleep", "睡得少", f"{week_text(len(nights), _f(slept), '小时', nights=True)}，成年人建议每晚 {_f(SLEEP_ENOUGH)} 小时以上", refs=("K07", "K34", "K113"),
-            data=f"最近 7 天的睡眠记录 {len(nights)} 晚",
-        ))  # fmt: skip
-    week, before = _week_and_before(readings.steps, today)
-    prev = _avg(before)
-    if (
-        week
-        and prev is not None
-        and prev >= STEPS_FLOOR
-        and statistics.fmean(week) < prev * STEPS_DROP
-    ):
-        now = statistics.fmean(week)
-        why = tuple([*illness, *(f"近期：{e}" for e in events)])
-        out.append(Situation(
-            "activity", "活动量掉了", f"最近 7 天平均 {round(now)} 步，前三周平均 {round(prev)} 步", why,
-            refs=("K21", "K64"), data=f"最近 4 周的步数记录 {len(week) + len(before)} 天",
-        ))  # fmt: skip
-    trend = weight_trend(readings.weight, today)
-    if trend.ok and trend.value is not None and readings.weight:
-        weight = max(readings.weight)[1]
-        pct = trend.value / weight * 100
-        if profile.goal == "fat_loss" and pct < -1:
-            out.append(Situation(
-                "fast_loss", "减得太快", f"体重每周 {pct:+.1f}%，减脂每周 0.5–1% 比较合理", refs=("K37", "K87", "K16"),
-                data=trend.data,
-            ))  # fmt: skip
-        if profile.goal == "muscle" and pct > 0.5:
-            out.append(Situation(
-                "fast_gain", "增重太快", f"体重每周 {pct:+.1f}%，增肌每周 0.25–0.5% 比较合理", refs=("K88", "K89"),
-                data=trend.data,
-            ))  # fmt: skip
+    if done:
+        out.append(Observation("training", "训练次数",
+                               f"最近 7 天练了 {this_week} 次，前三周平均每周 {_f(earlier / (BEFORE / WEEK))} 次",
+                               data="最近 4 周的训练记录"))  # fmt: skip
+    out += [Observation("illness", "生病", x) for x in illness]
+    out += [Observation("event", "近期", e) for e in events]
     if not any((readings.resting_hr, readings.hrv_sdnn, readings.hrv_rmssd, readings.sleep_hours,
                 readings.steps, readings.weight)):  # fmt: skip
-        out.append(Situation("thin", "数据不够", "还没有心率、睡眠、步数、体重的记录",))  # fmt: skip
+        out.append(Observation("thin", "数据不够", "还没有心率、睡眠、步数、体重的记录"))
     return out
-
-
-def _usual(name: str, points: Sequence[Point], word: str, places: int) -> str:
-    """ "静息心率这周平均 66，比平常（58）高"：平常是之前最多 60 天的平均（和数据页同样的取法）。"""
-    end = max(d for d, _ in points)
-    week = _days(points, end - timedelta(days=WEEK - 1), end)
-    usual = _days(points, end - timedelta(days=WEEK + 60 - 1), end - timedelta(days=WEEK))
-    if not week or not usual:
-        return ""
-    return f"{name}这周平均 {_f(statistics.fmean(week), places)}，比平常（{_f(statistics.fmean(usual), places)}）{word}"

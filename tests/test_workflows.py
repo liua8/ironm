@@ -82,7 +82,8 @@ def test_injury_memory_does_not_force_the_pain_skill(monkeypatch: pytest.MonkeyP
     assert "pain-injury" not in ids(seen) and "diet-plan" in ids(seen)
 
 
-def test_poor_readiness_does_not_force_the_today_skill(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_poor_sleep_does_not_force_the_today_skill(monkeypatch: pytest.MonkeyPatch) -> None:
+    """§182：没有"状态差"这一档，也不按它自动装今天练不练；管家看档案里的数自己装。"""
     tired = Readings(sleep_hours=steady(7.3, last=[4.6, 4.8, 4.5]),
                      resting_hr=steady(58, last=[65, 66, 67]))  # fmt: skip
     a, s = single(lambda *_: jsonr({"answer": "好。"}), monkeypatch, old=True,
@@ -90,7 +91,7 @@ def test_poor_readiness_does_not_force_the_today_skill(monkeypatch: pytest.Monke
     a._memory = book(("equipment", "在健身房练"))
     s.route = routed(["diet-plan"], ["food"])
     _, seen = run(a, "早餐吃什么")  # 不是问数据：旧做法这里会强装今天练不练
-    assert seen["readiness"] == "poor"
+    assert "readiness" not in seen and not seen["sick"]
     assert "readiness-adjust" not in ids(seen) and "diet-plan" in ids(seen)
 
 

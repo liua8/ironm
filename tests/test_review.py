@@ -62,7 +62,7 @@ def test_the_model_decides_today_and_a_note_and_it_takes_effect() -> None:
     dp = setup()
     probe, seen = model()
     asyncio.run(review.run("42", dp, probe))
-    f = facts_id(seen, "认出的情况：恢复不够")
+    f = facts_id(seen, "静息心率：和你自己比")
     assert "和标准比" in seen[0] and "K18" in seen[0]  # 事实带两种比较，资料带编号
     llm, _ = model(
         {"type": "today", "ratio": 0.5, "why": "这周练多了、睡得少", "basis": [f, "K18"],

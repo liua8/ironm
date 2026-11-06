@@ -62,7 +62,7 @@ beforeEach(() => {
     if (path === "/iron/api/my-model") return reply({ model: null, presets: { deepseek: { name: "DeepSeek", chat: ["deepseek-chat"], vision: [] } } });
     if (path === "/iron/api/metrics") return reply(metrics);
     if (path === "/iron/api/muscles") return reply({ muscles: [{ name: "股四头肌", tier: "high", recovery: 40, last: "2026-11-04" }], sessions: 2, untrained: [], note: "恢复度是估算" });
-    if (path === "/iron/api/brief") return reply({ week: { planned: 3, done: 1, tips: ["睡眠少，降一点强度"] } });
+    if (path === "/iron/api/brief") return reply({ week: { planned: 3, done: 1 } });
     if (path.startsWith("/iron/api/readings?kind=")) return reply({ kind: "body_fat", title: "体脂率", unit: "%", low: 3, high: 60, rows: [] });
     if (path === "/iron/api/readings" && method === "POST") return reply({ ok: true, rows: [] });
     return reply({ detail: "没有这个接口" }, 404);
@@ -113,8 +113,8 @@ it("body: weight with weekly change, BMI, body fat to record; folds closed until
   await fireEvent.press(screen.getByText("全部指标"));
   expect(screen.getByText("基础代谢")).toBeTruthy();
   await fireEvent.press(screen.getByText("这周训练"));
-  expect(screen.getByText("睡眠少，降一点强度")).toBeTruthy();
   expect(screen.getByText("想改计划，咨询 IronM。")).toBeTruthy();
+  expect(screen.queryByText("这周没有需要调整的地方，照计划来。")).toBeNull();  // 规则建议不再有（§182）
   expect(screen.getByText("股四头肌")).toBeTruthy();
 
   await fireEvent.press(screen.getByLabelText("体重，点开看怎么算的"));

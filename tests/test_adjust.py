@@ -254,14 +254,18 @@ def leg_day(minutes: int = 60) -> Session:
     )  # fmt: skip
 
 
-def test_today_tired_halves_sets_and_says_why() -> None:
+def test_today_applies_the_ratio_the_coach_chose() -> None:
+    """§182：代码不再按"状态差"组数减半；按几成由管家定，代码只把它套到今天这一次上。"""
+    import inspect
+
     s = leg_day()
-    v = today_mod.build(s, tired=True, tired_why="最近一晚只睡了 4.5 小时")
-    assert [x.sets for x in v.session.items] == [2, 1, 1, 1, 1]  # 减半、至少 1 组
-    assert today_mod.TIRED_NOTE in v.changes[0] and not v.session.items[0].note  # 备注只写一次
-    assert v.changed and "组数减半" in v.changes[0] and v.reasons == ("最近一晚只睡了 4.5 小时",)
+    v = today_mod.build(s, scale=0.7, scale_why="睡了 4.5 小时，比平时少 2.8 小时")
+    assert [x.sets for x in v.session.items] == [3, 2, 2, 2, 1]  # 约七成、至少 1 组
+    assert v.changes == ("每个动作的组数按原来的约 7 成",)
+    assert v.reasons == ("睡了 4.5 小时，比平时少 2.8 小时",)
     assert [x.sets for x in s.items] == [4, 3, 3, 3, 1]  # 原计划不变
     assert not today_mod.build(s).changed
+    assert "tired" not in inspect.signature(today_mod.build).parameters  # 减半的规则去掉了
 
 
 def test_today_indoor_swaps_outdoor_cardio() -> None:
@@ -648,11 +652,3 @@ def test_goal_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
     assert not c.post("/iron/api/goal/retest").json()["progress"]["retest"]["due"]
     assert c.delete("/iron/api/goal").json()["goal"] is None
     assert c.post("/iron/api/goal/retest").status_code == 404
-
-
-def test_today_tired_and_gap_do_not_stack() -> None:
-    v = today_mod.build(
-        leg_day(), tired=True, tired_why="没睡好", scale=0.7, scale_why="上次训练是 9 天前"
-    )
-    assert [x.sets for x in v.session.items] == [2, 1, 1, 1, 1]  # 只减半，不再乘七成
-    assert "已包含中断后的降量" in v.changes[0] and v.reasons == ("没睡好", "上次训练是 9 天前")

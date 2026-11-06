@@ -25,7 +25,7 @@ from collections.abc import (
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from functools import cache, partial
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from ironm_agent.actions import (
     ADJUST_TODAY,
@@ -63,7 +63,6 @@ from ironm_agent.constraints import Context, Violation, annotate, annotate_plan
 from ironm_agent.constraints import check as check_constraints
 from ironm_agent.day_state import DayState, DayStore, default_day
 from ironm_agent.day_state import lines as day_lines
-from ironm_agent.day_state import signals as day_signals
 from ironm_agent.exercises import named_in
 from ironm_agent.goal import GoalStore, default_goal
 from ironm_agent.goal import line as target_line
@@ -608,7 +607,7 @@ class IronMAgent:
             workouts=workouts,
             age=snapshot.profile.age(snapshot.today),
             profile=snapshot.profile,
-            found=found,  # 这一轮已经认出的情况（§84），和档案里的指标解读一致
+            found=found,  # 这一轮已经算好的事实（§84），和档案里的指标解读一致
             special=special_flags(snapshot.profile, case.risks, snapshot.today),  # §95
         )
 
@@ -1451,7 +1450,7 @@ class IronMAgent:
         snapshot, plan, case = prep.snapshot, prep.plan, prep.case
         _, logs, _ = await train
         run.update(intent="pro", route_by="single", roles=[Role.GENERAL.value],
-                   readiness=case.readiness.level, risks=[x.key for x in case.risks])  # fmt: skip
+                   sick=case.readiness.sick, risks=[x.key for x in case.risks])  # fmt: skip
         run["snapshot_failed"] = snapshot.failed
         run["_missing"] = missing_readings(snapshot.readings)
         if snapshot.failed:
@@ -1543,14 +1542,15 @@ class IronMAgent:
         asks_data = bool(records) and not _HURT.search(text)
         job_hint = task_of(text) if routed is None else None
         # 有伤病记忆、今天状态差不再强装伤痛处理、今天练不练（§111）：这两种情况写在各工作流的步骤里，
-        # 档案照旧带着；路由按他问的选。规程上的 injury / poor 标记留着，问数据时去掉误选的伤痛规程（§37）
+        # 档案照旧带着；路由按他问的选。规程上的 injury 标记留着，问数据时去掉误选的伤痛规程（§37）；
+        # 今天练不练不再按"状态差"自动装（§182 不定级），管家看档案里的数自己装
         triggers = {name for name, on in (
             ("plan", job_hint == "plan"), ("log", job_hint == "log"),
             ("image", bool(files.images)), ("move", bool(named_in(text))),
             ("new", plan is None and not logs and not recall.items),  # 新用户：一定装初次评估（§76）
             *((k, True) for k in records),
         ) if on}  # fmt: skip
-        drop = {"injury", "poor"} if asks_data else set()
+        drop = {"injury"} if asks_data else set()
         if routed is not None:
             if routed.fit == "outside":  # 和健身无关的事（写周报）：新用户也不拉去评估
                 triggers.discard("new")
@@ -2499,18 +2499,18 @@ class IronMAgent:
         ill: Sequence[Episode],
         recall: Recall,
     ) -> tuple[list[Any], list[tuple[str, str]]]:
-        """读懂指标趋势（§84）：代码算好的事实；再加上管家今天复盘后已经做了的调整（§85，读不到当作没有）。
-        返回（认出的情况, 给档案的 (一句话, 依据) 列表）。"""
+        """读懂指标趋势（§84）：代码算好的事实（最近 7 天和之前比的变化、同期发生的事，不贴标签，§182）；
+        再加上管家今天复盘后已经做了的调整（§85，读不到当作没有）。返回（事实, 给档案的 (一句话, 依据) 列表）。"""
         from ironm_agent.illness import active as active_ill
         from ironm_agent.illness import ago
-        from ironm_agent.insights import situations
+        from ironm_agent.insights import observations
 
         today = snapshot.today
         events = [x.content for x in recall.items if x.category == "event" and x.status == "active"]
         sick = [f"{ago(e.started, today)}说{e.what()}" for e in active_ill(ill, today)]
-        found = situations(snapshot.readings, snapshot.profile, today, logs=logs, illness=sick,
-                           events=events)  # fmt: skip
-        lines = [(f"看到的：{s.line()}", s.detail()) for s in found]
+        found = observations(snapshot.readings, snapshot.profile, today, logs=logs, illness=sick,
+                             events=events)  # fmt: skip
+        lines = [(s.line(), s.detail()) for s in found]
         state = await self._coach_state(user_id)
         review = state.review if state is not None else None
         if review is not None and review.day == today:
@@ -2547,9 +2547,7 @@ class IronMAgent:
         steady = [x for x in logs if x.day not in recovering]
         # 生病只交事实（哪天说的什么、好没好），今天怎么练由管家定，代码不再算"休息、轻松、七成"（§163）
         state = illness_line(ill, snapshot.today, within=14).removeprefix("生病：")
-        signal: tuple[Literal["poor", "fair"], str] | None = ("fair", state) if state else None
         day = (run or {}).get("_day")
-        at = (run or {}).get("_at")
         body = await self._memory_items(user_id)  # 没截过的（截过的可能丢了"已好"那条，复核 11-04）
         today_lines = await self._today_lines(user_id, plan, snapshot.today, day, ill, body)
         sore_parts = await self._sore(user_id, snapshot.today, body)
@@ -2561,7 +2559,7 @@ class IronMAgent:
         target = await self._target(user_id, snapshot)  # 目标体重和日期：档案里目标一行带上（§151）
         case = build_case(
             snapshot, recall, text, plan=lines + target_lines(plan, steady, snapshot.today, decided),
-            illness=signal, day=today_lines, earlier=day_signals(day, before=at),
+            illness=state, day=today_lines,
             insights=insight_lines, target=target, sore=sore_parts,
         )  # fmt: skip
         current = await wx if wx is not None else None

@@ -1,7 +1,9 @@
-"""首页的今日简报与每周复盘（spec [2026-10-23] §10）：全部用规则生成，打开首页就能看到，不调用模型。
+"""首页的今日简报与每周复盘（spec [2026-10-23] §10）：只给事实，打开首页就能看到，不调用模型。
 
-- 今日简报：今天的身体状态、今天按计划练什么（状态差时怎么练由管家定，§163）、今日营养目标、一条最该注意的提醒；
-- 每周复盘：本周（周一到今天）计划完成几次、体重变化、平均睡眠、静息心率与心率变异性的变化，按规则给 1–3 条建议。
+- 今日简报：今天按计划练什么、今日营养目标、一条最该注意的安全提醒；身体状态不由代码定级，
+  今天怎么练看管家的"今天"（§163、§182）；
+- 每周复盘：本周（周一到今天）计划完成几次、体重变化、平均睡眠、静息心率与心率变异性的变化；
+  要不要调、怎么调由管家复盘提，代码不再给规则建议（§182）。
 """
 
 from __future__ import annotations
@@ -11,12 +13,9 @@ from datetime import date
 from typing import Any
 
 from ironm_agent.casefile import Snapshot, readiness, risks
-from ironm_agent.illness import RECUR_TIMES
 from ironm_agent.memory_store import Item
 from ironm_agent.metrics import Metric
 from ironm_agent.training import Plan, WorkoutLog, week_of, week_start, weekday_name
-
-MAX_TIPS = 3
 
 
 def _metric(metrics: Sequence[Metric], key: str) -> Metric | None:
@@ -58,14 +57,14 @@ def today_brief(
     kcal, protein = _metric(snap.metrics, "kcal_target"), _metric(snap.metrics, "protein_target")
     if found:
         alert = found[0].note
-    elif state.level == "unknown":
-        alert = "连接手表或导入苹果健康的最新数据，这里就能判断你今天的状态。"
+    elif not state.current:
+        alert = "连接手表或导入苹果健康的最新数据，管家就能看到你最近的睡眠和心率。"
     else:
         alert = ""
     return {
         "date": today.isoformat(),
         "weekday": weekday_name(today.isoweekday()),
-        "readiness": {"level": state.level, "name": state.name, "reasons": list(state.reasons)},
+        "body": list(state.facts),  # 今天的身体数据：数值和与他自己平时的差，不定级（§182）
         "training": training,
         "nutrition": {
             "kcal": kcal.value if kcal else None,
@@ -85,42 +84,14 @@ def weekly_review(
     since: date | None = None,
     *,
     sick: Collection[date] = (),
-    sick_times: int = 0,
 ) -> dict[str, Any]:
-    """sick：生病的日子（不算应练）；sick_times：最近 4 周病了几次（spec [2026-10-23] §46）。"""
+    """sick：生病的日子（不算应练）。只给事实（§182）：规则的建议（减到几天、整体七成、少吃 200 千卡）去掉了。"""
     today = snap.today
     week = week_of(plan, logs, today, since, sick)
     weight = _metric(snap.metrics, "weight_trend")
     sleep = _metric(snap.metrics, "sleep")
     rhr = _metric(snap.metrics, "resting_hr")
     hrv = _metric(snap.metrics, "hrv_sdnn") or _metric(snap.metrics, "hrv_rmssd")
-    tips: list[str] = []
-    actions: list[dict[str, Any]] = []  # 生成调整方案时由规则变成操作（§45）
-    if plan is not None and week.due >= 2 and week.done * 2 < week.due:
-        head = f"这周计划 {week.due} 次只练了 {week.done} 次，不到一半："
-        if plan.days_per_week > 2:
-            fewer = max(2, min(plan.days_per_week - 1, week.done + 1))
-            tips.append(head + f"可以把每周训练减到 {fewer} 天，更容易坚持。")
-            actions.append({"kind": "fewer_days", "days": fewer, "why": "这周完成不到一半"})
-        else:  # 已经只有两练了：不再减天数，减每次的量
-            tips.append(head + "每次少做一两个动作、缩短时间，先保证每周练到。")
-            actions.append({"kind": "lighter", "why": "这周完成不到一半"})
-    goal = snap.profile.goal
-    if goal == "fat_loss" and weight is not None and weight.brief in ("基本持平", "在上升"):
-        tips.append("减脂期体重这几周没有下降：建议每天少吃约 200 千卡，两周后再看体重趋势。")
-    if sleep is not None and sleep.value is not None and sleep.value < 7:
-        tips.append(
-            f"最近 7 天平均只睡 {_fmt(sleep.value)} 小时：先把睡眠补到每晚 7 小时以上，比加练更有用。"
-        )
-    tired = [m.name for m in (rhr, hrv) if m is not None and m.tone == "attention"]
-    if sick_times >= RECUR_TIMES:
-        tips.append(
-            f"最近 4 周病了 {sick_times} 次，可能是训练量偏大或休息不够：下周减量，必要时体检。"
-        )
-        actions.append({"kind": "lighter", "why": f"最近 4 周病了 {sick_times} 次"})
-    if tired:
-        tips.append(f"{'、'.join(tired)}比你平时差：这周适当减量，多休息。")
-        actions.append({"kind": "lighter", "why": f"{'、'.join(tired)}比平时差"})
     return {
         "from": week_start(today).isoformat(),
         "to": today.isoformat(),
@@ -136,8 +107,6 @@ def weekly_review(
         "sleep": {"value": sleep.value, "brief": sleep.brief} if sleep else None,
         "resting_hr": {"value": rhr.value, "brief": rhr.brief} if rhr else None,
         "hrv": {"name": hrv.name, "value": hrv.value, "brief": hrv.brief} if hrv else None,
-        "tips": tips[:MAX_TIPS],
-        "actions": actions,
     }
 
 
@@ -181,15 +150,12 @@ CHEERS = (
 def cheer(today: dict[str, Any], week: dict[str, Any], *, rainy: bool = False, hot: bool = False,
           on: date | None = None) -> str:  # fmt: skip
     t = today.get("training") or {}
-    level = (today.get("readiness") or {}).get("level")
     planned, done = week.get("planned") or 0, week.get("done") or 0
     kind = t.get("kind")
     if kind == "session" and t.get("done"):
         return "今天的训练完成了，干得漂亮！"
     if planned and done >= planned:
         return "本周目标已经拿下，接下来每一练都是加分。"
-    if kind == "session" and level == "poor":
-        return "状态差也来了，就已经赢了一半。"
     if kind == "session" and rainy:
         return "下雨也挡不住你，室内一样练出汗。"
     if kind == "session" and hot:

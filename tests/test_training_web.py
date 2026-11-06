@@ -102,7 +102,9 @@ def test_brief_gives_no_rule_advice(monkeypatch: Any) -> None:
     session = PLAN.session_on(today)
     assert t["kind"] == ("session" if session else "rest")
     assert data["today"]["nutrition"]["kcal"] is not None
-    assert data["week"]["tips"] == [] and data["week"]["actions"] == []  # 要不要调由管家复盘提（§163）
+    assert "tips" not in data["week"] and "actions" not in data["week"]  # 要不要调由管家复盘提（§163、§182）
+    assert "readiness" not in data["today"] and data["today"]["body"]  # 身体只给数，不定级（§182）
+    assert "恢复偏慢" not in str(data) and "状态差" not in str(data)
     assert "planned" in data["week"] and "done" in data["week"]  # 事实照给
 
 

@@ -53,7 +53,7 @@ def test_routed_pain_skills_are_dropped_on_data_questions() -> None:
 
     pain = [x for i in ("pain-injury", "comeback") if (x := by_id(i)) is not None]
     got = pick_routed(pain, (), "帮我解读我的一些健康指标", {"lab", "metric"},
-                      drop={"injury", "poor"})  # fmt: skip
+                      drop={"injury"})  # fmt: skip
     ids = [x.id for x in got if not x.style and not x.core]
     assert ids[0] == "data-read"
     assert "pain-injury" not in ids

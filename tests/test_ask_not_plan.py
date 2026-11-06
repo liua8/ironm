@@ -83,11 +83,7 @@ def test_plan_identical_to_the_current_one_gives_no_preview(monkeypatch: Any) ->
 def test_what_he_asked_is_not_crowded_out_by_situation_skills() -> None:
     data = by_id("data-read")
     assert data is not None
-    got = [
-        x.id
-        for x in pick_routed([data], (), "我身体咋样", {"injury", "poor", "plan"})
-        if not x.core
-    ]
+    got = [x.id for x in pick_routed([data], (), "我身体咋样", {"injury", "plan"}) if not x.core]
     assert got[0] == "data-read" and len(got) == 3  # 他问的先装，情况要求的跟着
 
 

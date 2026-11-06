@@ -1,11 +1,11 @@
-"""读懂指标趋势（spec [2026-10-23] §84）：和自己比也和标准比、找原因、自动调整、依据可追问。"""
+"""读懂指标趋势（spec [2026-10-23] §84）：和自己比也和标准比、同期发生的事、依据可追问；只给事实不贴标签（§182）。"""
 
 import asyncio
 from datetime import date, timedelta
 from typing import Any
 
 from ironm_agent.casefile import Snapshot
-from ironm_agent.insights import compare, situations
+from ironm_agent.insights import compare, observations
 from ironm_agent.metrics import Profile, Readings, compute_all
 from ironm_agent.protools.registry import ToolContext, run
 from ironm_agent.training import LogItem, SetDone, WorkoutLog
@@ -53,38 +53,37 @@ def test_each_reading_is_compared_with_himself_and_a_standard() -> None:
     assert "低于成年人每晚 7 小时" in got["sleep"].standard and "前三周平均" in got["sleep"].mine
     assert "低于成年人每天 8000 步" in got["steps"].standard
     assert "正常高值" in got["blood_pressure"].standard
-    assert "减脂每周减体重的 0.5–1%" in got["weight"].standard and "偏快" in got["weight"].standard
+    assert (
+        "减脂每周减体重的 0.5–1%" in got["weight"].standard and "偏快" not in got["weight"].standard
+    )
     older = Profile(
         height_cm=170, birth=date(1956, 1, 1), sex="female", goal="health", activity="light"
     )
     assert "每天 6000 步" in {r.key: r for r in compare(tired(), older, TODAY)}["steps"].standard
 
 
-def test_situations_with_reasons_that_really_happened() -> None:
-    found = {s.kind: s for s in situations(tired(), ME, TODAY, logs=BUSY)}
-    rec = found["recovery"]
-    assert "静息心率这周平均 66，比平常（58）高" in rec.seen and "心率变异性" in rec.seen
-    assert any("只睡 6 小时" in r for r in rec.reasons) and any(
-        "这周练了 5 次" in r for r in rec.reasons
-    )
-    assert rec.refs and "sleep" in found and "activity" in found and "fast_loss" in found
+LABELS = ("恢复不够", "睡得少", "活动量掉了", "减得太快", "增重太快", "偏快", "好", "一般", "差")
+
+
+def test_observations_are_numbers_against_his_own_past_not_labels() -> None:
+    """§182 需求 7：只给数、和他自己之前比的差、时间段；不贴"恢复不够、睡得少"这类标签。"""
+    found = {o.kind: o for o in observations(tired(), ME, TODAY, logs=BUSY, illness=["昨天说感冒"],
+                                             events=["去上海开会"])}  # fmt: skip
     assert (
-        "怎么调" not in rec.line() and "已自动调整" not in rec.line()
-    )  # 只是事实，调不调由模型决定（§85）
-    calm = situations(tired(), ME, TODAY, logs=workouts(2, 9, 16, 23))
-    assert not any("这周练了" in r for s in calm for r in s.reasons)  # 没多练就不说多练
-
-
-def test_one_signal_without_a_reason_is_not_called_poor_recovery() -> None:
-    r = Readings(resting_hr=tired().resting_hr, sleep_hours=days(30, lambda i: 7.5))
-    assert "recovery" not in {s.kind for s in situations(r, ME, TODAY)}
-
-
-def test_while_sick_the_illness_is_listed_and_no_data_says_so() -> None:
-    found = {s.kind: s for s in situations(tired(), ME, TODAY, illness=["昨天说感冒"])}
-    assert "昨天说感冒" in found["activity"].reasons
-    empty = situations(Readings(), ME, TODAY)
-    assert [s.kind for s in empty] == ["thin"]
+        "最近 7 天平均 66 次/分" in found["resting_hr"].seen
+        and "高 8 次/分" in found["resting_hr"].seen
+    )
+    assert "最近 7 天平均 38 毫秒" in found["hrv_sdnn"].seen and "低 27%" in found["hrv_sdnn"].seen
+    assert "前三周平均 7.4 小时，低 1.4 小时" in found["sleep"].seen
+    assert "前三周平均 9000 步，低 44%" in found["steps"].seen
+    assert "减脂每周减体重的 0.5–1% 比较合理" in found["weight"].seen
+    assert found["training"].seen == "最近 7 天练了 5 次，前三周平均每周 2 次"
+    assert found["illness"].seen == "昨天说感冒" and found["event"].seen == "去上海开会"
+    assert found["resting_hr"].refs == ("K18",)
+    for o in found.values():
+        assert not any(w in o.line() for w in LABELS), o.line()
+        assert "怎么调" not in o.line()  # 只是事实，调不调由模型决定（§85）
+    assert [o.kind for o in observations(Readings(), ME, TODAY)] == ["thin"]
 
 
 def snapshot_of(r: Readings) -> Snapshot:
@@ -95,17 +94,21 @@ def test_case_file_and_tools_carry_sources_for_follow_up_questions() -> None:
     from ironm_agent.casefile import build as build_case
     from ironm_agent.memory_view import Recall
 
-    found = situations(tired(), ME, TODAY, logs=BUSY)
+    found = observations(tired(), ME, TODAY, logs=BUSY)
     case = build_case(snapshot_of(tired()), Recall(()), "我最近怎么样",
                       insights=[(s.line(), s.detail()) for s in found])  # fmt: skip
     text = case.text()
-    assert "指标解读" in text and "恢复不够" in text and "不说成因果" in text
+    assert (
+        "指标解读" in text and "静息心率：最近 7 天平均 66 次/分" in text and "不说成因果" in text
+    )
+    assert "恢复不够" not in text and "睡得少" not in text
     cid = case.insights[0][0]
     assert "依据：K18" in case.calcs[cid] and "数据：" in case.calcs[cid]
     ctx = ToolContext(TODAY, goal="fat_loss", readings=tired(), profile=ME, found=tuple(found))
     got = asyncio.run(run("explain_trends", ctx, {}))
     names = [f.name for f in got.findings]
-    assert "静息心率（两种比较）" in names and "认出的情况：恢复不够" in names
+    assert "静息心率（两种比较）" in names and "同期：训练次数" in names
+    assert not any("认出的情况" in n for n in names)
     rhr = next(f for f in got.findings if f.name == "静息心率（两种比较）")
     assert "静息心率的正常范围" in rhr.source  # 追问依据时讲得出资料名称
     trend = asyncio.run(run("trend_analysis", ctx, {"indicator": "resting_hr", "days": 28}))

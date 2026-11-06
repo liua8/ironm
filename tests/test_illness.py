@@ -126,16 +126,14 @@ def test_sick_days_do_not_count_as_missed() -> None:
     assert plateau_triggers(PLAN, logs, TODAY) and not plateau_triggers(PLAN, logs, TODAY, days)
 
 
-def test_getting_sick_twice_in_four_weeks_suggests_lighter_week() -> None:
+def test_getting_sick_twice_in_four_weeks_is_counted_without_rule_advice() -> None:
+    """病了几次是事实；"下周减量"这类规则建议去掉了（§182），要不要调由管家定。"""
     eps = [ep(started=TODAY - timedelta(days=20), status="resolved", ended=TODAY - timedelta(days=18)),
            ep(started=YESTERDAY)]  # fmt: skip
     assert recurring(eps, TODAY) == 2
     snap = Snapshot(Profile(goal="muscle"), Readings(), (), TODAY)
-    out = weekly_review(snap, PLAN, [], sick_times=2)
-    assert (
-        any("最近 4 周病了 2 次" in t for t in out["tips"])
-        and {"kind": "lighter", "why": "最近 4 周病了 2 次"} in out["actions"]
-    )
+    out = weekly_review(snap, PLAN, [])
+    assert "tips" not in out and "actions" not in out
 
 
 # ---- 对话 -----------------------------------------------------------------------------------

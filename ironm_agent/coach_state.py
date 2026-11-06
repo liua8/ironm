@@ -180,7 +180,6 @@ class TodayVersion:
     changed: bool = False
     changes: tuple[str, ...] = ()
     reasons: tuple[str, ...] = ()
-    readiness: str = ""
 
 
 def today_version(inp: Inputs, today: date) -> TodayVersion:
@@ -315,49 +314,6 @@ def _goal_items(inp: Inputs) -> list[Item]:
         out.append(Item(key="retest", kind="retest", title="该复测了", why=p["retest"]["text"],
                         basis="每 4–6 周复测一次（经验）"))  # fmt: skip
     return out
-
-
-ALERT_BASIS = {
-    "pain": "带痛训练的界限〔K33〕、就医信号〔K15〕",
-    "missed": "计划完成度规则",
-    "gap": "中断后降量（经验）",
-    "plateau": "估算最大重量（Epley）；减量周〔K31〕",
-}
-
-
-def _alert_items(inp: Inputs, today: date) -> list[Item]:
-    from ironm_agent.triggers import detect
-
-    return [
-        Item(key=f"alert:{t.kind}", kind="alert", title=t.title, why=t.detail,
-             basis=ALERT_BASIS.get(t.kind, ""),
-             action="confirm" if t.action == "proposal" else "info", value={"trigger": t.kind})
-        for t in detect(inp.plan, inp.logs, inp.since, inp.pains, today, _sick(inp, today))
-    ]  # fmt: skip
-
-
-def _review_item(inp: Inputs) -> list[Item]:
-    from ironm_agent.brief import weekly_review
-
-    if inp.plan is None:
-        return []
-    from ironm_agent.illness import recurring
-
-    today = inp.snapshot.today
-    tips = weekly_review(inp.snapshot, inp.plan, inp.logs, inp.since, sick=_sick(inp, today),
-                         sick_times=recurring(inp.illness, today))["tips"]  # fmt: skip
-    plan_tips = [t for t in tips if "千卡" not in t]  # 热量的建议由饮食复盘那一项管
-    if not plan_tips:
-        return []
-    return [Item(key="proposal:review", kind="proposal", action="confirm",
-                 title="可以按这周的复盘调整训练计划", why="".join(plan_tips)[:200],
-                 basis="每周复盘规则（睡眠〔K07〕、心率变异性〔K18〕、完成度）")]  # fmt: skip
-
-
-def _sick(inp: Inputs, today: date) -> frozenset[date]:
-    from ironm_agent.illness import sick_days
-
-    return sick_days(inp.illness, today)
 
 
 def _proposed(inp: Inputs) -> bool:

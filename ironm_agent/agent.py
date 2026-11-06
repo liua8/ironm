@@ -230,7 +230,7 @@ async def respond(
 ) -> Consultation:
     """单 Agent 作答一轮。出错时返回不发言的意见，不向外抛（和专业角色一样）。
     training：这一轮涉及训练才放计划和记录的写法；不涉及时装上训练类规程再补（§96）。"""
-    flags = flags_of([x.key for x in case.risks], bool(case.injuries), case.readiness.level)
+    flags = flags_of([x.key for x in case.risks], bool(case.injuries))
     domains = domains_of(skills)
     if (
         toolbox.actions is not None

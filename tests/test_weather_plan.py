@@ -92,14 +92,14 @@ def test_case_file_weather_includes_forecast_and_adjustments() -> None:
 
 
 def test_cheer_lines() -> None:
-    session = {"training": {"kind": "session", "name": "下肢"}, "readiness": {"level": "good"}}
+    session = {"training": {"kind": "session", "name": "下肢"}}
     assert (
         cheer({**session, "training": {**session["training"], "done": True}}, {})
         == "今天的训练完成了，干得漂亮！"
     )
-    assert "赢了一半" in cheer(
-        {**session, "readiness": {"level": "poor"}}, {"planned": 3, "done": 0}
-    )
+    assert "状态差" not in cheer(
+        session, {"planned": 3, "done": 0}, on=MON
+    )  # 不再按代码定的状态说（§182）
     assert "下雨" in cheer(session, {"planned": 3, "done": 0}, rainy=True)
     assert "已经拿下" in cheer(session, {"planned": 3, "done": 3})
     assert "休息" in cheer({"training": {"kind": "rest"}}, {"planned": 3, "done": 1})

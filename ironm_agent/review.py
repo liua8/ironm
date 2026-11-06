@@ -1,6 +1,6 @@
 """管家复盘（spec [2026-10-23] §85、§129）：代码只负责算对，调不调、调什么、调多少由管家按规程决定。
 
-每天一次叫醒管家做"到期复查"：代码把算好的事实（两种比较、认出的情况和同期发生的事、训练、今天的计划、热量目标）
+每天一次叫醒管家做"到期复查"：代码把算好的事实（两种比较、同期发生的事、训练、今天的计划、热量目标）
 编好号交给它，装上该复查的规程（今天练不练每次都装，饮食方案满 14 天没调热量才装，排训练计划满 4 周才装），
 它用工具调：今天按几成练或休息、调热量、提改计划、提醒或问一句，每条写原因、依据和预期。代码只做三件事：
 依据的编号要存在；改计划的操作套得上、检查没有必须改的问题；热量不低于基础代谢和安全下限、危急指标不调训练。
@@ -33,7 +33,7 @@ from ironm_agent.coach_state import (
     state_lock,
 )
 from ironm_agent.expect import RESULT_WORDS, judge, measure, parse_check, stage_due, stage_facts
-from ironm_agent.insights import compare, situations
+from ironm_agent.insights import compare
 from ironm_agent.kb import default_kb
 from ironm_agent.llm import LLM, parse_json
 from ironm_agent.metrics import KcalAdjust, safe_floor
@@ -43,7 +43,7 @@ from ironm_agent.user_models import pick_quiet
 _log = logging.getLogger("ironm_agent.review")
 
 TIMEOUT_S = 60.0
-# 复盘时常用的资料（模型引用时写编号）；认出的情况和两种比较用到的资料另外加进来
+# 复盘时常用的资料（模型引用时写编号）；两种比较用到的资料另外加进来
 COMMON = ("K03", "K09", "K16", "K18", "K28", "K31", "K37", "K64", "K81", "K82", "K87", "K88")
 
 _PROMPT = """你是健身 App 里的「AI 健身管家」。现在不是他在问你，是系统每天叫醒你做一次到期复查：下面是系统算好的事实（编号 F..，数都是代码算的，照用，不要自己算、不要编）和可以引用的资料（编号 K..）。
@@ -143,9 +143,6 @@ def facts(
         lines.append(r.line())
         refs += r.refs
     ill = [f"{ago(e.started, today)}说{e.what()}" for e in active(inp.illness, today)]
-    for s in situations(snap.readings, snap.profile, today, logs=inp.logs, illness=ill):
-        lines.append(f"认出的情况：{s.line()}")
-        refs += s.refs
     if inp.plan is not None:
         lines.append("当前计划：" + "；".join(s.line() for s in inp.plan.sessions))
         session = inp.plan.session_on(today)

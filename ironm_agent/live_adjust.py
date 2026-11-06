@@ -219,7 +219,7 @@ def context_lines(
     about = f"动作{target + 1} {live.items[target].exercise}" if target is not None else "整次训练"
     lines = ["这次训练：", *session_lines(live), "", f"他说（关于{about}）：{said}"]
     if state:
-        lines.append(f"今天的身体状态：{state}")
+        lines.append(state)  # "今天的身体数据：……"：数值和与他平时的差，不定级（§182）
     lines += [f"记着的伤病：{x}" for x in injuries]
     lines += [f"在生病：{x}" for x in illness]
     if coach:

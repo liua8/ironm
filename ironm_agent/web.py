@@ -25,7 +25,7 @@ from ironm_agent.exercise_images import gif_for, images_for
 from ironm_agent.exercises import EQUIPMENT, NOTE, PARTS, library
 from ironm_agent.healthdata import read_all
 from ironm_agent.illness import active as illness_active
-from ironm_agent.illness import doctor, due, question, recurring, sick_days
+from ironm_agent.illness import doctor, due, question, sick_days
 from ironm_agent.illness import recent as recent_illness
 from ironm_agent.memory_extract import MAX_CONTENT
 from ironm_agent.memory_prefs import refresh as refresh_prefs
@@ -615,9 +615,8 @@ async def get_brief(
     current = plan.plan if plan else None
     eps = await recent_illness(illness, user_id, snap.today)
     today = today_brief(snap, items, current, logs)
-    week = weekly_review(snap, current, logs, plan.since if plan else None,
-                         sick=sick_days(eps, snap.today), sick_times=recurring(eps, snap.today))  # fmt: skip
-    week.update(tips=[], actions=[])  # 规则的每周建议不给了，要不要调由管家复盘提（§163）
+    # 只给这周的事实；规则的每周建议不给了，要不要调由管家复盘提（§163、§182）
+    week = weekly_review(snap, current, logs, plan.since if plan else None, sick=sick_days(eps, snap.today))
     hero = hero_line(today, week)
     rainy = hot = False
     try:  # 鼓励的话会看今天的天气（spec [2026-10-23] §34）；取不到就不看

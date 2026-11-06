@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from ironm_agent.casefile import Snapshot
-from ironm_agent.day_state import DayBook, DayState, Entry, detect, lines, signals
+from ironm_agent.day_state import DayBook, DayState, Entry, detect, lines
 from ironm_agent.illness import Episode, IllnessBook
 from ironm_agent.memory_store import MemoryBook
 from ironm_agent.metrics import Profile, Readings
@@ -34,10 +34,9 @@ def test_rules_pick_up_todays_state() -> None:
         assert kinds(text) == [], text
 
 
-def test_tired_until_said_good_and_signals_skip_this_turn() -> None:
+def test_tired_until_said_good() -> None:
     state = DayState(day=TODAY, entries=[Entry(kind="tired", at=AT)])
-    assert state.tired() is not None and signals(state) == [("fair", "今天有点累（13:40 你说）")]
-    assert signals(state, before=AT) == []  # 这一轮刚说的由这句话本身判断，不重复算
+    assert state.tired() is not None and state.tired().text() == "今天有点累（13:40 你说）"  # type: ignore[union-attr]
     later = state.model_copy(
         update={"entries": [*state.entries, Entry(kind="good", at=AT.replace(hour=7))]}
     )
@@ -72,7 +71,7 @@ def test_said_state_is_kept_for_the_next_turn(monkeypatch: Any) -> None:
     run(a2, "深蹲还能加重吗")  # 没再说累
     shared = t2.input
     assert "今天的状态以这里为准" in shared and "今天有点累（" in shared
-    assert "今天的身体状态：一般" in shared
+    assert "今天的身体数据：" in shared and "今天的身体状态" not in shared  # 不再定级（§182）
 
 
 def test_home_and_chat_use_the_same_state(monkeypatch: Any) -> None:

@@ -149,7 +149,6 @@ def test_all_eighteen_folder_skills_and_only_cores_left_in_yaml() -> None:
 
 def test_situations_always_bring_their_skill() -> None:
     for trigger, sid, text in (("log", "log-review", "今天卧推 60 公斤 3 组"),
-                               ("poor", "readiness-adjust", "嗯"),
                                ("injury", "pain-injury", "嗯"),
                                ("image", "diet-plan", "看看这个"),
                                ("lab", "data-read", "帮我看看"),
@@ -170,7 +169,7 @@ def test_safety_floors_from_the_old_skills_are_kept() -> None:
     assert "立即停止并就医" in (train.section("特殊人群") or "")
     assert "立即停下，尽快就医" in train.text()  # 运动中胸痛头晕：每轮都在
     assert "不推荐安眠药" in next(x for x in skills() if x.id == "rest-core").text()
-    assert "状态差时不安排大重量" in body["readiness-adjust"]
+    assert "生病（发烧、全身酸痛、颈部以下的症状）时不安排大重量" in body["readiness-adjust"]
 
 
 def test_batch_three_to_five_kb_entries_wait_for_review() -> None:

@@ -54,7 +54,7 @@ def flag_refs(flags: Collection[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(r for f in flags for r in FLAG_REFS.get(f, ())))
 
 
-def flags_of(risks: Collection[str], injured: bool, readiness: str = "") -> frozenset[str]:
+def flags_of(risks: Collection[str], injured: bool) -> frozenset[str]:
     """档案里的风险和伤病 → 要加进提示词的少见情况。"""
     keys = set(risks)
     out = set()
@@ -67,6 +67,4 @@ def flags_of(risks: Collection[str], injured: bool, readiness: str = "") -> froz
         out.add("cardiac")
     if injured:
         out.add("injury")
-    if readiness == "poor":
-        out.add("poor")
     return frozenset(out)

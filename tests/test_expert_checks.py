@@ -3,7 +3,7 @@
 from ironm_agent.checks import check_text, repair
 from ironm_agent.constraints import Context, annotate, check
 
-POOR = Context(poor=True)
+SICK = Context(sick=True)
 
 
 def test_discouraging_wording_counts_as_a_limit() -> None:
@@ -11,9 +11,9 @@ def test_discouraging_wording_counts_as_a_limit() -> None:
         "这种状态下冲大重量只会加重疲劳、动作也容易变形。",
         "这种状态下做大重量和练到力竭只会加深疲劳。",
     ):
-        assert check(text, POOR) == [], text
-        assert annotate(text, POOR) == text
-    assert "（今天状态不好：先别做）" in annotate("今天可以冲大重量。", POOR)
+        assert check(text, SICK) == [], text
+        assert annotate(text, SICK) == text
+    assert "（生病时先别做）" in annotate("今天可以冲大重量。", SICK)
 
 
 def _check(text: str) -> list[str]:

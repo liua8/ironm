@@ -51,7 +51,7 @@ beforeEach(() => {
     const path = url.replace(/^https?:\/\/[^/]+/, "");
     seen.push(path);
     const reply = (body: unknown, status = 200) => Promise.resolve({ status, ok: status < 300, json: () => Promise.resolve(body) } as Response);
-    if (path === "/iron/api/brief") return reply({ week: { planned: 3, done: 1, tips: ["这周睡得少，强度降一点〔K03〕"] } });
+    if (path === "/iron/api/brief") return reply({ week: { planned: 3, done: 1 } });
     if (path === "/iron/api/calendar") return reply(cal);
     if (path.startsWith("/iron/api/calendar?month=")) return reply({ ...cal, month: path.slice(-7), days: {}, done_days: [], month_minutes: 0 });
     if (path === "/iron/api/training") return reply({ workouts });
@@ -67,7 +67,7 @@ it("record: this week, calendar, PR, timeline entry and last week's report", asy
   expect(await screen.findByText("这周表现")).toBeTruthy();  // §176 三格：已练次数 1/3
   expect(screen.getByText("1/3次")).toBeTruthy();
   expect(screen.getByText(/连续打卡 3 天，平均感受 7.0 分/)).toBeTruthy();
-  expect(screen.getByText("这周睡得少，强度降一点")).toBeTruthy();
+  expect(screen.queryByText("IronM 这周的建议")).toBeNull();  // 规则的每周建议不再有（§182）
   expect(screen.getByText("本月练了 1 天，共 40 分钟。")).toBeTruthy();
   expect(screen.getByText("70 kg × 5")).toBeTruthy();
   expect(screen.getByText("破 PR")).toBeTruthy();

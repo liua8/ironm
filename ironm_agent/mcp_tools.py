@@ -288,8 +288,8 @@ class FitnessToolsService:
         return await _run("pain_check", user_info, {"score": score, "signs": signs, "part": part})
 
     async def explain_trends(self, user_info: dict[str, Any]) -> dict[str, Any]:
-        """综合解读本人的指标：每项和自己比、和标准比，认出的情况（恢复不够、睡得少、活动量掉了、减得太快等）、
-        同期可能有关的原因和建议的调整，每条带出处。"""
+        """综合解读本人的指标：每项和自己比（最近 7 天和之前比、差多少）、和标准比，同期发生的事（练的次数、
+        生病、出差），每条带出处。只给数和差、不下结论，怎么看由你判断。"""
         return await _run("explain_trends", user_info, {})
 
     async def trend_analysis(

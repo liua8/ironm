@@ -1,11 +1,11 @@
-"""今日简报与每周复盘（spec [2026-10-23] §10）：只用规则。"""
+"""今日简报与每周复盘（spec [2026-10-23] §10）：只给事实，不定级、不给规则建议（§182）。"""
 
 from datetime import date, timedelta
 
 from ironm_agent.brief import today_brief, weekly_review
 from ironm_agent.casefile import Snapshot
 from ironm_agent.metrics import Profile, Readings, compute_all
-from ironm_agent.training import Plan, WorkoutLog
+from ironm_agent.training import Plan
 
 TODAY = date(2026, 10, 23)  # 周五
 PLAN = Plan.model_validate(
@@ -32,46 +32,38 @@ def snap(readings: Readings, goal: str = "muscle") -> Snapshot:
     return Snapshot(p, readings, tuple(compute_all(readings, p, TODAY)), TODAY)
 
 
-def test_today_brief_with_plan_and_poor_state() -> None:
+def test_today_brief_gives_body_numbers_not_a_level() -> None:
     tired = Readings(
         sleep_hours=days(7.2, last=(4.5, 4.6, 4.4)), resting_hr=days(58, last=(66, 67, 68))
     )
     b = today_brief(snap(tired), [], PLAN, [])
-    assert b["readiness"]["level"] == "poor" and b["training"]["name"] == "上肢拉"
-    assert not b["training"]["tip"] and not b["alert"]  # 状态差不再由规则建议减量、休息（§163）
+    assert "readiness" not in b and b["training"]["name"] == "上肢拉"
+    assert b["body"][0].startswith("睡眠：最近一晚（今天）4.4 小时") and "少 2.8 小时" in b["body"][0]
+    assert "你平时 58 次/分，高 9 次/分" in b["body"][1]
+    assert not b["training"]["tip"] and not b["alert"]  # 不再由规则建议减量、休息（§163）
+    text = str(b)
+    assert not any(w in text for w in ("恢复偏慢", "状态差", "一般", "'poor'", "'fair'"))
     rest = today_brief(
         snap(Readings()), [], PLAN.model_copy(update={"sessions": PLAN.sessions[:2]}), []
     )
     assert rest["training"]["kind"] == "rest"
     none = today_brief(snap(Readings()), [], None, [])
-    assert none["training"]["kind"] == "no_plan" and none["readiness"]["level"] == "unknown"
+    assert none["training"]["kind"] == "no_plan" and none["body"] == ["还没有睡眠、心率记录"]
+    assert "睡眠和心率" in none["alert"]  # 没数据时提醒连手表，不说"判断你今天的状态"
 
 
-def test_weekly_review_rules() -> None:
-    # 计划练 3 次一次没练、减脂体重不降、睡眠不足 7 小时：三条建议
+def test_weekly_review_gives_facts_without_rule_advice() -> None:
+    """§182：每周复盘只给这周的事实；减到几天、整体七成、少吃 200 千卡这类规则建议去掉。"""
     flat = Readings(weight=days(70.0, n=30), sleep_hours=days(6.3, n=10))
     w = weekly_review(snap(flat, goal="fat_loss"), PLAN, [])
-    tips = "".join(w["tips"])
     assert (w["planned"], w["due"], w["done"]) == (3, 3, 0)
-    assert "不到一半" in tips and "少吃约 200 千卡" in tips and "平均只睡 6." in tips
-    # 练够了、睡够了、增肌目标：没有要调整的
-    logs = [
-        WorkoutLog(day=TODAY - timedelta(days=4), session="下肢"),
-        WorkoutLog(day=TODAY - timedelta(days=2), session="上肢推"),
-    ]
-    good = weekly_review(snap(Readings(sleep_hours=days(7.6, n=10))), PLAN, logs)
-    assert good["tips"] == [] and good["done"] == 2
-    # 计划是今天才定的：之前没练不算没完成
+    assert "tips" not in w and "actions" not in w
+    assert w["sleep"]["value"] is not None and w["weight"] is not None
+    # 计划是今天才定的：之前没练不算该练
     fresh = weekly_review(snap(Readings()), PLAN, [], since=TODAY)
-    assert (fresh["planned"], fresh["due"]) == (1, 1) and not any(
-        "不到一半" in t for t in fresh["tips"]
-    )
-
-
-def test_two_day_plan_is_not_told_to_drop_to_two_days() -> None:
+    assert (fresh["planned"], fresh["due"]) == (1, 1)
     two = PLAN.model_copy(update={"sessions": PLAN.sessions[:2], "days_per_week": 2})
-    w = weekly_review(snap(Readings()), two, [])
-    assert w["due"] == 2 and not any("减到 2 天" in t for t in w["tips"])
+    assert weekly_review(snap(Readings()), two, [])["due"] == 2
 
 
 # ---- 今日战报（spec [2026-10-23] §19）------------------------------------------------------------
@@ -80,14 +72,14 @@ def test_two_day_plan_is_not_told_to_drop_to_two_days() -> None:
 def test_hero_line_four_cases() -> None:
     from ironm_agent.brief import hero_line
 
-    def today(kind: str, *, done: bool = False, level: str = "good") -> dict[str, object]:
+    def today(kind: str, *, done: bool = False) -> dict[str, object]:
         t = {"kind": kind, "name": "下肢", "minutes": 50, "done": done}
-        return {"training": t, "readiness": {"level": level}}
+        return {"training": t}
 
     week = {"planned": 3, "done": 1}
     assert hero_line(today("session", done=True), week)["title"] == "下肢 已拿下"
-    poor = hero_line(today("session", level="poor"), week)
-    assert poor["title"] == "今天练下肢" and "轻松" not in poor["push"]  # 不再按规则叫他轻松练（§163）
+    plain = hero_line(today("session"), week)
+    assert plain["title"] == "今天练下肢" and "轻松" not in plain["push"]  # 不再按规则叫他轻松练（§163）
     go = hero_line(today("session"), week)
     assert "50 分钟" in go["push"] and "冲" in go["push"]
     assert hero_line(today("rest"), week)["title"] == "休息日"
@@ -114,3 +106,16 @@ def test_page_does_not_show_basis_codes_in_coach_inbox() -> None:
     app = (Path(__file__).resolve().parents[1] / "ironm_agent" / "web" / "app.js").read_text()
     inbox = app[app.index("function inboxView") : app.index("function syncComposer")]
     assert "basis" not in inbox and "依据" not in inbox
+
+
+def test_home_page_has_no_code_judged_readiness_sentence() -> None:
+    """§182：首页"今天整体恢复偏慢，可以降低强度"这类代码判断的话去掉，看管家今天的版本说的。"""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    web = (root / "ironm_agent" / "web" / "app.js").read_text(encoding="utf-8")
+    assert "恢复偏慢" not in web and "readiness" not in web
+    assert "这周没有需要调整的地方" not in web and "w.tips" not in web  # 规则的每周建议也去掉
+    app = "\n".join(p.read_text(encoding="utf-8") for p in (root / "app" / "src").rglob("*.ts*")
+                     if "__tests__" not in p.parts)  # fmt: skip
+    assert "恢复偏慢" not in app and "readiness" not in app and "这周没有需要调整的地方" not in app

@@ -6,7 +6,7 @@ import { type ReactNode, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { api } from "@/api/client";
-import { BuddySay, Caption, Chip, Failed, kit, KV, Row, Sheet, Sub, useLoad } from "@/features/record/kit";
+import { Caption, Chip, Failed, kit, KV, Row, Sheet, Sub, useLoad } from "@/features/record/kit";
 import { md } from "@/features/record/logic";
 import { Button, Panel, PixelText, T } from "@/ui/pixel";
 import { color, font, space } from "@/ui/theme";
@@ -40,7 +40,6 @@ type Week = {
   sleep?: { value?: number | null; brief?: string } | null;
   resting_hr?: { value?: number | null; brief?: string } | null;
   hrv?: { name?: string; value?: number | null; brief?: string } | null;
-  tips: string[];
 };
 type Muscle = { code?: string; name: string; part?: string; tier: string; state?: string; recovery: number; last?: string | null };
 type Muscles = { muscles: Muscle[]; sessions?: number; untrained?: string[]; note?: string };
@@ -226,7 +225,7 @@ function MetricDetail({ m, onChanged, close }: { m: Metric; onChanged: () => voi
   );
 }
 
-/** 每周复盘（同网页 weekCard）：只列建议，有建议时下面一行"想改计划，咨询 IronM。"（§146 需求 3）。 */
+/** 每周复盘（同网页 weekCard）：只列这周的事实，要不要调由管家提（§182）；有计划时下面一行"想改计划，咨询 IronM。"。 */
 function WeekCard({ w }: { w: Week }) {
   const rows: [string, string, string][] = [];
   if (w.planned) rows.push(["训练", `完成 ${w.done} / ${w.planned} 次`, (w.sessions ?? []).map((x) => `${x.day}${x.name}${x.done ? " ✓" : ""}`).join("　")]);
@@ -240,12 +239,7 @@ function WeekCard({ w }: { w: Week }) {
       {rows.map(([k, v, sub], i) => (
         <Row key={k} last={i === rows.length - 1} title={k} sub={stripRefs(sub)} end={v} />
       ))}
-      {w.tips.length ? (
-        w.tips.map((t) => <BuddySay key={t} head="IronM 的建议">{stripRefs(t)}</BuddySay>)
-      ) : (
-        <T muted>这周没有需要调整的地方，照计划来。</T>
-      )}
-      {w.tips.length && w.planned ? <Caption>想改计划，咨询 IronM。</Caption> : null}
+      {w.planned ? <Caption>想改计划，咨询 IronM。</Caption> : null}
     </View>
   );
 }

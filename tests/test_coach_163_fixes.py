@@ -68,7 +68,7 @@ def test_rerun_keeps_what_was_decided_this_morning() -> None:
     dp = setup()
     probe, seen = model()
     asyncio.run(review.run("42", dp, probe))
-    f = facts_id(seen, "认出的情况：恢复不够")
+    f = facts_id(seen, "静息心率：和你自己比")
     llm, _ = model({"type": "today", "ratio": 0.6, "why": "恢复不够", "basis": [f]})
     morning = asyncio.run(review.run("42", dp, llm, force=True))
     assert morning.today() is not None
@@ -86,7 +86,7 @@ def test_a_rerun_that_fails_keeps_the_morning_decision() -> None:
     dp = setup()
     probe, seen = model()
     asyncio.run(review.run("42", dp, probe))
-    f = facts_id(seen, "认出的情况：恢复不够")
+    f = facts_id(seen, "静息心率：和你自己比")
     llm, _ = model({"type": "today", "rest": True, "why": "恢复不够", "basis": [f]})
     asyncio.run(review.run("42", dp, llm, force=True))
     got = asyncio.run(review.run("42", dp, Broken(), force=True))  # type: ignore[arg-type]
@@ -204,7 +204,7 @@ def test_reruns_do_not_record_the_same_decision_again() -> None:
     dp = setup()
     probe, seen = model()
     asyncio.run(review.run("42", dp, probe))
-    f = facts_id(seen, "认出的情况：恢复不够")
+    f = facts_id(seen, "静息心率：和你自己比")
     llm, _ = model({"type": "today", "ratio": 0.6, "why": "恢复不够", "basis": [f]})
     added = lambda: [c for c in asyncio.run(dp.store.history("42", 200))  # noqa: E731
                      if c.key == "review:today" and c.change == "added"]  # fmt: skip
@@ -223,7 +223,7 @@ def test_a_rerun_that_cannot_start_keeps_the_morning_decision(monkeypatch: pytes
     dp = setup()
     probe, seen = model()
     asyncio.run(review.run("42", dp, probe))
-    f = facts_id(seen, "认出的情况：恢复不够")
+    f = facts_id(seen, "静息心率：和你自己比")
     llm, _ = model({"type": "today", "ratio": 0.6, "why": "恢复不够", "basis": [f]})
     asyncio.run(review.run("42", dp, llm, force=True))
 
@@ -239,7 +239,7 @@ def test_a_kept_note_survives_a_failed_rerun_and_the_retry() -> None:
     dp = setup()
     probe, seen = model()
     asyncio.run(review.run("42", dp, probe))
-    f = facts_id(seen, "认出的情况：恢复不够")
+    f = facts_id(seen, "静息心率：和你自己比")
     llm, _ = model({"type": "note", "text": "这周多睡一会", "why": "恢复不够", "basis": [f]})
     asyncio.run(review.run("42", dp, llm, force=True))
     broke = asyncio.run(review.run("42", dp, Broken(), force=True))  # type: ignore[arg-type]

@@ -21,7 +21,7 @@ from ironm_agent.yamlfile import load_yaml
 
 SKILLS_PATH = Path(__file__).with_name("skills.yaml")
 SKILLS_DIR = Path(__file__).with_name("skills")  # 一份一个文件夹的新规程（spec [2026-10-23] §76）
-type Trigger = Literal["poor", "injury", "plan", "log", "image", "move", "lab", "metric", "new"]
+type Trigger = Literal["injury", "plan", "log", "image", "move", "lab", "metric", "new"]
 TRIGGER_BONUS = 2  # 这一轮的情况对得上时加的分（比问题里一个说法对得上更重要）
 
 
@@ -262,7 +262,7 @@ def with_cores(chosen: Sequence[Skill], domains: Collection[Role] = ()) -> list[
 # ---- 路由选 Skill（spec [2026-10-23] §21）------------------------------------------------------
 
 RULE_TRIGGERS: frozenset[str] = frozenset(
-    {"poor", "plan", "log", "image", "injury", "lab", "metric", "new"}
+    {"plan", "log", "image", "injury", "lab", "metric", "new"}
 )  # 路由看不到的系统情况；lab / metric：问题点到了化验指标 / 每天测的指标（spec [2026-10-23] §37）
 
 

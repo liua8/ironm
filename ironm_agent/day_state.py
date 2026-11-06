@@ -15,7 +15,7 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
-from ironm_agent.casefile import Level, said
+from ironm_agent.casefile import said
 from ironm_agent.training import PlanEdit
 
 _log = logging.getLogger("ironm_agent.day_state")
@@ -89,7 +89,7 @@ class DayState(BaseModel):
         return next((e for e in reversed(self.entries) if e.kind == kind), None)
 
     def tired(self) -> Entry | None:
-        """今天说过累或没睡好、之后没说状态好：按状态一般（轻松版）处理。"""
+        """今天说过累或没睡好、之后没说状态好的那一条（只是他说的事实，怎么练由管家定，§182）。"""
         bad = max(
             (e for e in (self.latest("tired"), self.latest("sleep")) if e is not None),
             key=lambda e: e.at,
@@ -122,18 +122,6 @@ def detect(text: str, at: datetime, source: Source = "chat") -> list[Entry]:
             out.append(Entry(kind="minutes", at=at, source=source, minutes=minutes))
     if said(_GOOD, text):
         out.append(Entry(kind="good", at=at, source=source))
-    return out
-
-
-def signals(state: DayState | None, *, before: datetime | None = None) -> list[tuple[Level, str]]:
-    """今天早些时候说过的状态，交给今天的身体状态判断（这一轮刚说的已经由这句话本身判断，不重复算）。"""
-    if state is None:
-        return []
-    out: list[tuple[Level, str]] = []
-    bad = state.tired()
-    if bad is not None and (before is None or bad.at < before):
-        level: Level = "poor" if bad.kind == "sleep" and (bad.hours or 6) < 5 else "fair"
-        out.append((level, bad.text()))
     return out
 
 

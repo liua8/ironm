@@ -183,21 +183,29 @@ def test_new_user_asking_for_a_plan_is_asked_first(monkeypatch: Any) -> None:
     assert t.stages.count("expert") == 1  # 只问不排：不出预览、不提醒交计划
 
 
-def test_poor_readiness_constrains_the_answer(monkeypatch: Any) -> None:
+def test_poor_sleep_shows_numbers_and_does_not_block_heavy_work(monkeypatch: Any) -> None:
+    """§182：档案给睡眠、心率和他平时的差，不定级；"状态差就不准大重量"去掉，按几成由管家定。"""
     tired = Readings(
         sleep_hours=steady(7.3, last=[4.6, 4.8, 4.5]), resting_hr=steady(58, last=[65, 66, 67])
     )
-    t = Coach("今天上大重量深蹲 5 组〔经验〕")  # 改写也没改掉
+    t = Coach("今天上大重量深蹲 5 组〔经验〕")
     gym = book(("equipment", "在健身房练"), ("schedule", "一周四练，每次一小时"))
     a = agent(t, monkeypatch=monkeypatch, memory=gym, snapshot=snapshot_of(tired))
     blocks, seen = run(a, "今天练什么")
-    assert "今天的身体状态：差" in t.input
-    assert (
-        seen["readiness"] == "poor"
-        and seen["constraints"] == ["readiness"]
-        and seen["constraint_fixed"]
-    )
-    assert "大重量（今天状态不好：先别做）" in text_of(blocks)
+    assert "今天的身体数据：睡眠：最近一晚（今天）4.5 小时" in t.input and "少 2.8 小时" in t.input
+    assert "今天的身体状态" not in t.input and "：差" not in t.input
+    assert not seen["sick"] and "sick" not in seen.get("constraints", [])
+    assert "先别做" not in text_of(blocks)
+
+
+def test_saying_sick_still_constrains_the_answer(monkeypatch: Any) -> None:
+    """生病是安全护栏，照旧（§182）。"""
+    t = Coach("今天上大重量深蹲 5 组〔经验〕")  # 改写也没改掉
+    gym = book(("equipment", "在健身房练"), ("schedule", "一周四练，每次一小时"))
+    a = agent(t, monkeypatch=monkeypatch, memory=gym, snapshot=snapshot_of())
+    blocks, seen = run(a, "感冒了，今天练什么")
+    assert seen["sick"] and seen["constraints"] == ["sick"] and seen["constraint_fixed"]
+    assert "大重量（生病时先别做）" in text_of(blocks)
 
 
 def test_loaded_skills_are_shown_while_answering(monkeypatch: Any) -> None:

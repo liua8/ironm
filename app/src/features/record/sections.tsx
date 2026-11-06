@@ -33,7 +33,6 @@ export type BriefWeek = {
   planned?: number;
   due?: number;
   done?: number;
-  tips?: string[];
   weight?: { brief?: string; text?: string } | null;
   sleep?: { value?: number | null; brief?: string } | null;
 };
@@ -70,7 +69,6 @@ export function WeekPanel({ logs, cal, week }: { logs: Workout[]; cal: Calendar 
       ) : null}
       <T>{compareLine(diff, before)}</T>
       {more ? <T>{more}</T> : null}
-      {week?.tips?.length ? <BuddySay head="IronM 这周的建议">{stripRefs(week.tips[0])}</BuddySay> : null}
     </Panel>
   );
 }

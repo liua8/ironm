@@ -50,7 +50,6 @@ async def report_week(
     illness: Any = ILLNESS,
 ) -> dict[str, Any]:
     """上一周（上周一到周日）的周报。"""
-    from ironm_agent.brief import weekly_review
     from ironm_agent.illness import sick_days
 
     monday = week_start(date.today()) - timedelta(days=7)
@@ -59,7 +58,7 @@ async def report_week(
     logs = [x.log for x in rows if x.log.day <= sunday]
     versions = await store.plans(user_id)
     current = next((v for v in reversed(versions) if v.since <= sunday), None)
-    # 那周日的数据：复盘建议、体重、热量目标都按那天
+    # 那周日的数据：体重、热量目标都按那天
     snap = await _web().snapshot_for(user_id, sunday)
     sick: frozenset[date] = frozenset()
     try:
@@ -68,7 +67,6 @@ async def report_week(
         _log.warning("report illness unavailable: error_type=%s", type(e).__name__)
     plan = current.plan if current else None
     since = current.since if current else None
-    tips = weekly_review(snap, plan, logs, since, sick=sick)["tips"] if plan else []
     day_kcal: dict[date, float] = {}
     try:
         for m in await meals.since(user_id, monday):
@@ -78,7 +76,7 @@ async def report_week(
         _log.warning("report meals unavailable: error_type=%s", type(e).__name__)
     target = next((m.value for m in snap.metrics if m.key == "kcal_target"), None)
     report = week_report(monday, plan, since, logs, weights=snap.readings.weight, day_kcal=day_kcal,
-                         kcal_target=target, tips=tips, sick=sick)  # fmt: skip
+                         kcal_target=target, sick=sick)  # fmt: skip
     return {**report, "seen": await _seen(user_id) == monday}
 
 

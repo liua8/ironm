@@ -1,8 +1,8 @@
 """共享档案（spec [2026-10-23] §2、§5）：每轮作答前用规则拼一份这个人的档案，被请到的专业角色都拿到同一份。
 
-档案里有基本情况、限制（来自记忆）、今天的身体状态、风险提示、指标计算结果；不调用模型。
+档案里有基本情况、限制（来自记忆）、今天的身体数据（数值和与他自己平时的差，不定级，§182）、风险提示、指标计算结果；不调用模型。
 档案里的数字都带编号（C 开头，与"依据与来源"里的计算同一套），回答引用时照常逐句核对：
-C0 是档案的基本情况，C1… 是指标计算（与数据页同一份、同样的编号），最后一个是今天的身体状态。
+C0 是档案的基本情况，C1… 是指标计算（与数据页同一份、同样的编号），最后一个是今天的身体数据。
 """
 
 from __future__ import annotations
@@ -12,17 +12,12 @@ import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Literal
 
 from ironm_agent import facts as _facts
 from ironm_agent.memory_store import Item
 from ironm_agent.memory_view import Recall, until_text
 from ironm_agent.metrics import ACTIVITY, GOALS, Metric, Point, Profile, Readings
 from ironm_agent.safety.subject import subject_of
-
-type Level = Literal["good", "fair", "poor", "unknown"]
-LEVEL_NAMES: dict[Level, str] = {"good": "好", "fair": "一般", "poor": "差", "unknown": "数据不足"}
-_RANK: dict[Level, int] = {"unknown": 0, "good": 1, "fair": 2, "poor": 3}
 
 LIMIT_CATEGORIES = ("injury", "special", "equipment", "schedule", "diet", "goal", "event")
 
@@ -38,22 +33,20 @@ class Snapshot:
     failed: bool = False  # 没读到数据（不影响作答，只是档案里没有数据）
 
 
-# ---- 今天的身体状态 ---------------------------------------------------------------------------
+# ---- 今天的身体数据 ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class Readiness:
-    level: Level
-    reasons: tuple[str, ...] = ()
-    sick: bool = False  # 这句话说生病了
+    """今天的身体数据（§182 需求 7）：只给数值和与他自己平时的差，不定级（不写好、一般、差），
+    练不练、按几成由管家看这些数和他说的自己判断。"""
 
-    @property
-    def name(self) -> str:
-        return LEVEL_NAMES[self.level]
+    facts: tuple[str, ...] = ()
+    sick: bool = False  # 这句话说生病了（安全护栏：回答里不给大重量、高强度、力竭）
+    current: bool = False  # 最近 3 天有睡眠或心率记录
 
     def line(self) -> str:
-        why = f"（{'；'.join(self.reasons)}）" if self.reasons else ""
-        return f"今天的身体状态：{self.name}{why}"
+        return "今天的身体数据：" + ("；".join(self.facts) if self.facts else "没有")
 
 
 _SICK = re.compile(r"发烧|发热|感冒|生病|拉肚子|腹泻|嗓子疼|咳嗽|流鼻涕|病了")
@@ -84,26 +77,6 @@ def _said(pattern: re.Pattern[str], text: str) -> bool:
 
 said = _said  # 生病记录也用这一套判断（spec [2026-10-23] §46）
 
-_TIRED = re.compile(r"很累|特别累|好累|太累|疲惫|疲劳|没劲|累死|没力气|浑身酸")
-_POOR_NIGHT = re.compile(r"没睡好|失眠|熬夜|通宵|睡不着")
-_SLEPT = re.compile(
-    r"睡了?(?:不到)?\s*(\d+(?:\.\d+)?|[一二两三四五六七八九半])\s*(?:个)?\s*(?:多)?小时"
-)
-_CN = {
-    "一": 1,
-    "二": 2,
-    "两": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-    "半": 0.5,
-}
-
-
 def _recent(points: Sequence[Point], today: date, days: int) -> list[float]:
     return [v for d, v in points if 0 <= (today - d).days < days]
 
@@ -120,92 +93,71 @@ def _f(x: float) -> str:
     return f"{x:.1f}".rstrip("0").rstrip(".")
 
 
-def readiness(
-    r: Readings,
-    text: str,
-    today: date,
-    *,
-    illness: tuple[Level, str] | None = None,
-    earlier: Sequence[tuple[Level, str]] = (),
-) -> Readiness:
-    """规则判断今天的状态：最近一晚睡眠、最近几天的静息心率与心率变异性对本人基线，再加上这句话里说的情况。
-    illness：正在进行的生病（spec [2026-10-23] §46），按症状级别算 poor（休息）或 fair（轻松版）。"""
-    signals: list[tuple[Level, str]] = [illness] if illness else []
-    signals += earlier  # 今天早些时候说过的状态（今日状态，spec [2026-10-23] §54）
+def _when(d: date, today: date) -> str:
+    return "今天" if d == today else f"{d.month} 月 {d.day} 日"
+
+
+def _vs(now: float, mean: float, unit: str, up: str, down: str, *, places: int = 1, pct: bool = False) -> str:
+    """和他自己平时比的差："你平时 55 次/分，高 7 次/分"；pct 时差按百分比。"""
+    num = (lambda x: f"{x:.0f}") if places == 0 else _f
+    diff = (now - mean) / mean * 100 if pct and mean else now - mean
+    size = f"{abs(diff):.0f}" if pct else num(abs(diff))
+    if size == "0":
+        return f"你平时 {num(mean)}{unit}，和平时一样"
+    return f"你平时 {num(mean)}{unit}，{up if diff > 0 else down} {size}{'%' if pct else unit}"
+
+
+def readiness(r: Readings, text: str, today: date, *, illness: str = "") -> Readiness:
+    """今天的身体数据：最近一晚睡眠、最近 3 天的静息心率与心率变异性，各自和他自己平时（7 天前往回 60 天）比，
+    带日期（不是今天的写哪天）。只算事实，不定级、不贴"恢复不够、睡得少"这类标签（§182 需求 7）。
+    illness：正在进行的生病（事实，§163）；text 只用来认这句话本人说生病了（回答核对的安全护栏）。"""
+    facts: list[str] = []
     current = False
-    nights = _recent(r.sleep_hours, today, 3)
+    nights = [(d, v) for d, v in sorted(r.sleep_hours) if 0 <= (today - d).days < 3]
     if nights:
         current = True
-        last = [v for d, v in r.sleep_hours if (today - d).days <= 1]
-        if last and last[-1] < 5:
-            signals.append(("poor", f"最近一晚只睡了 {_f(last[-1])} 小时"))
-        elif last and last[-1] < 6:
-            signals.append(("fair", f"最近一晚睡了 {_f(last[-1])} 小时"))
-        if len(nights) >= 2 and statistics.fmean(nights) < 5.5:
-            signals.append(
-                ("poor", f"最近 {len(nights)} 晚平均只睡 {_f(statistics.fmean(nights))} 小时")
-            )
-    hr = _recent(r.resting_hr, today, 3)
-    base = _baseline(r.resting_hr, today)
-    if hr and base:
-        current = True
-        now, (mean, sd) = statistics.fmean(hr), base
-        diff = now - mean
-        if diff >= max(2 * sd, 5):
-            signals.append(
-                ("poor", f"静息心率最近 {now:.0f} 次/分，比你平时（{mean:.0f}）高 {diff:.0f}")
-            )
-        elif diff >= max(sd, 3):
-            signals.append(("fair", f"静息心率最近 {now:.0f} 次/分，比你平时（{mean:.0f}）略高"))
-    for points, label in ((r.hrv_sdnn, "SDNN"), (r.hrv_rmssd, "RMSSD")):
-        hv = _recent(points, today, 3)
-        base = _baseline(points, today)
-        if not hv or not base:
+        d, v = nights[-1]
+        line = f"睡眠：最近一晚（{_when(d, today)}）{_f(v)} 小时"
+        if len(nights) >= 2:
+            line += f"，最近 {len(nights)} 晚平均 {_f(statistics.fmean(x for _, x in nights))} 小时"
+        base = _baseline(r.sleep_hours, today)
+        if base:
+            line += f"，{_vs(v, base[0], ' 小时', '多', '少')}"
+        facts.append(line)
+    for points, name, unit, pct in (
+        (r.resting_hr, "静息心率", " 次/分", False),
+        (r.hrv_sdnn, "心率变异性（SDNN）", " 毫秒", True),
+        (r.hrv_rmssd, "心率变异性（RMSSD）", " 毫秒", True),
+    ):
+        recent = [(d, v) for d, v in sorted(points) if 0 <= (today - d).days < 3]
+        if not recent:
             continue
         current = True
-        now, (mean, sd) = statistics.fmean(hv), base
-        drop = mean - now
-        if drop >= 2 * sd and drop >= 0.15 * mean:
-            signals.append(
-                ("poor", f"心率变异性（{label}）最近 {now:.0f} 毫秒，明显低于你平时（{mean:.0f}）")
-            )
-        elif drop >= sd and drop > 0:
-            signals.append(
-                ("fair", f"心率变异性（{label}）最近 {now:.0f} 毫秒，比你平时（{mean:.0f}）低")
-            )
-    mine = bool(text) and subject_of(text) == "self"  # 整句说的是旁人（"我妈只睡了 4 小时"）不算
-    sick = _said(_SICK, text) or bool(illness and illness[0] == "poor")
-    if _said(_SICK, text):
-        signals.append(("poor", "你说身体不舒服（生病）"))
-    m = _SLEPT.search(text) if mine else None
-    if m:
-        raw = m.group(1)
-        hours = float(_CN[raw]) if raw in _CN else float(raw)
-        if hours < 5:
-            signals.append(("poor", f"你说只睡了 {_f(hours)} 小时"))
-        elif hours < 6:
-            signals.append(("fair", f"你说睡了 {_f(hours)} 小时"))
-    elif _said(_POOR_NIGHT, text):
-        signals.append(("fair", "你说没睡好"))
-    if _said(_TIRED, text):
-        signals.append(("fair", "你说很累"))
-    if not signals:
-        if current:
-            return Readiness("good")
+        now = statistics.fmean(v for _, v in recent)
+        last = recent[-1][0]
+        line = f"{name}：最近 3 天平均 {now:.0f}{unit}" + (
+            "" if last == today else f"（最近一次 {_when(last, today)}）"
+        )
+        base = _baseline(points, today)
+        line += (
+            f"，{_vs(now, base[0], unit, '高', '低', places=0, pct=pct)}"
+            if base
+            else "，你平时的记录还不到 14 天，暂不比较"
+        )
+        facts.append(line)
+    if not current:
         dates = [
             d for pts in (r.sleep_hours, r.resting_hr, r.hrv_sdnn, r.hrv_rmssd) for d, _ in pts
         ]
         latest = max(dates) if dates else None
-        why = (
+        facts.append(
             f"最近 3 天没有睡眠、心率记录（最近一次是 {latest.month} 月 {latest.day} 日）"
             if latest
             else "还没有睡眠、心率记录"
         )
-        return Readiness("unknown", (why,))
-    worst = max((lv for lv, _ in signals), key=_RANK.__getitem__)
-    if worst == "fair" and sum(1 for lv, _ in signals if lv == "fair") >= 2:
-        worst = "poor"
-    return Readiness(worst, tuple(dict.fromkeys(why for _, why in signals)), sick)
+    if illness:
+        facts.append(f"生病：{illness}")
+    return Readiness(tuple(facts), _said(_SICK, text), current)
 
 
 # ---- 风险提示（数据与记忆，§5）--------------------------------------------------------------
@@ -389,11 +341,13 @@ class CaseFile:
             lines.append("- 限制与情况（他说过的，作答时要照顾到）：" + "；".join(self.limits))
         ref = f"〔{self.readiness_id}〕" if self.readiness_id else ""
         lines.append(
-            f"- {self.readiness.line()}{ref}（只在安排今天的训练或问恢复时用；状态好时不用特意说）"
+            f"- {self.readiness.line()}{ref}（代码只算数、不下结论：今天练不练、按几成，由你看这些数和他说的自己判断；"
+            "只在安排今天的训练或问恢复时用）"
         )
-        if self.insights:  # 读懂指标趋势（§84）：两种比较之外，认出的情况、可能的原因和已经做的调整
+        if self.insights:  # 读懂指标趋势（§84）：最近和之前比的变化、同期发生的事、已经做的调整（不贴标签，§182）
             lines.append(
-                "- 指标解读（代码算的事实，和管家今天已经做的调整；问到数据、状态、为什么这样调时用，只说可能有关、不说成因果）："
+                "- 指标解读（代码算的事实：最近 7 天和他自己之前比、同期发生的事，和管家今天已经做的调整；"
+                "代码不下结论，好不好由你判断；问到数据、状态、为什么这样调时用，只说可能有关、不说成因果）："
             )
             lines += [f"  [{cid}] {line}" for cid, line in self.insights]
         if self.risks:
@@ -437,9 +391,8 @@ def build(
     text: str,
     *,
     plan: Sequence[str] = (),
-    illness: tuple[Level, str] | None = None,
+    illness: str = "",
     day: Sequence[str] = (),
-    earlier: Sequence[tuple[Level, str]] = (),
     insights: Sequence[tuple[str, str]] = (),
     target: str = "",
     sore: Sequence[str] = (),
@@ -461,9 +414,9 @@ def build(
         "（这次没读到你的档案和健康数据）" if snapshot.failed else ""
     )
     calcs["C0"] = f"档案：{basics}"
-    state = readiness(snapshot.readings, text, today, illness=illness, earlier=earlier)
-    if snapshot.failed and state.level == "unknown":
-        state = Readiness("unknown", ("这次没读到你的健康数据",))
+    state = readiness(snapshot.readings, text, today, illness=illness)
+    if snapshot.failed and not state.current:
+        state = Readiness(("这次没读到你的健康数据", *state.facts[1:]), state.sick)
     rid = f"C{len(metrics) + 1}"
     calcs[rid] = state.line()
     limits = tuple(

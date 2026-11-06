@@ -49,7 +49,7 @@ class ToolContext:
     age: int | None = None  # 选初步方案时分人群（§77）
     profile: Any = None  # metrics.Profile：和标准比时用身高、性别、目标（§84）
     found: tuple[Any, ...] | None = (
-        None  # 这一轮认出的情况（§84，对话里已经算好；None 时工具自己算）
+        None  # 这一轮算好的事实（§84，对话里已经算好；None 时工具自己算）
     )
     special: frozenset[str] = frozenset()  # 特殊人群（§95）：计划检查按硬规则查
     _cache: dict[str, Any] = field(default_factory=dict)
@@ -226,15 +226,15 @@ def _standard(ctx: ToolContext, indicator: str) -> str:
 
 
 async def _explain(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
-    """综合解读（§84）：各指标和自己比、和标准比；认出的情况、同期可能有关的原因、调整；每条带出处。"""
-    from ironm_agent.insights import compare, situations
+    """综合解读（§84）：各指标和自己比、和标准比；同期发生的事；每条带出处。只给事实，不贴标签（§182）。"""
+    from ironm_agent.insights import CONTEXT, compare, observations
 
     if ctx.readings is None or ctx.profile is None:
         return Result.note("这次读不到健康数据，不能解读，也不能推测为正常。")
     found = ctx.found
     if found is None:
         logs = await ctx.workouts(ctx.today - timedelta(days=28)) if ctx.workouts else []
-        found = tuple(situations(ctx.readings, ctx.profile, ctx.today, logs=logs))
+        found = tuple(observations(ctx.readings, ctx.profile, ctx.today, logs=logs))
     readings = compare(ctx.readings, ctx.profile, ctx.today)
     if not readings and not found:
         return Result.note(
@@ -247,14 +247,13 @@ async def _explain(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
         for r in readings
     ]  # fmt: skip
     findings += [
-        Finding(f"认出的情况：{s.title}", s.line(),
-                "代码按规则对照同期的心率、睡眠、步数、体重和训练记录；只说同时发生、可能有关",
+        Finding(f"同期：{s.name}", s.line(), "代码按记录数的，只是同时发生、可能有关，不说成因果",
                 s.data, _sources(s.refs))
-        for s in found if s.kind != "thin"
+        for s in found if s.kind in CONTEXT
     ]  # fmt: skip
     notes = [s.line() for s in found if s.kind == "thin"]
     notes.append(
-        "回答时：先说结论（两种比较），再说可能的原因；他问怎么办时说已经自动做了什么调整、还能怎么做。"
+        "回答时：先说数（和他自己比、和标准比），同期发生的事只说可能有关；好不好、要不要调由你看这些数判断。"
     )
     return Result(tuple(findings), tuple(notes))
 
@@ -496,7 +495,7 @@ TOOLS: dict[str, ProTool] = {
             "explain_trends",
             frozenset({"trainer", "nutrition", "recovery", "general"}),
             "综合解读他的指标：每项和他自己比、和标准比（静息心率、心率变异性、睡眠、步数、血压、体重），"
-            "认出的情况（恢复不够、睡得少、活动量掉了、减得太快等）、同期可能有关的原因、已经自动做的调整，每条带出处。"
+            "同期发生的事（练的次数、生病、出差），每条带出处；只给数和差、不下结论，怎么看由你判断。"
             '问"我最近怎么样、这些数说明什么、为什么这样调"时用。',
             _obj({}),
             _explain,

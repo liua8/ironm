@@ -86,7 +86,7 @@ def test_lab_questions_load_the_lab_skill() -> None:
     from ironm_agent.skills import pick_any
 
     for text in ("我肌酐高嘛", "我的血糖正常吗"):
-        names = [x.name for x in pick_any(text, record_kinds(text), drop={"injury", "poor"})]
+        names = [x.name for x in pick_any(text, record_kinds(text), drop={"injury"})]
         assert "数据与化验解读" in names and "疼痛时怎么改动作" not in names, text
 
 
@@ -98,7 +98,7 @@ def test_lab_and_metric_triggers_put_data_skills_first() -> None:
     assert kinds_of(named_indicators("我肌酐高嘛")) == {"lab"}
     assert kinds_of(named_indicators("我最近心率和睡眠怎么样")) == {"metric"}
     pain = [x for i in ("pain-injury", "comeback") if (x := by_id(i)) is not None]
-    got = [x.id for x in pick_routed(pain, (), "我肌酐高嘛", {"lab"}, drop={"injury", "poor"})
+    got = [x.id for x in pick_routed(pain, (), "我肌酐高嘛", {"lab"}, drop={"injury"})
            if not x.core]  # fmt: skip
     assert got[0] == "data-read" and "pain-injury" not in got
     got = [x.id for x in pick_routed((), (), "我最近心率正常吗", {"metric"}) if not x.core]

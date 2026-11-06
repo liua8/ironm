@@ -43,7 +43,6 @@ ORDER: tuple[OpKind, ...] = (
 )  # 同一句里几条操作的套用顺序
 LIGHT = 0.7  # "轻一点"
 LIGHTER = 0.5  # "轻很多"
-REVIEW_MAX_DAYS = 2  # 复盘、提醒自动提议的改动每次最多改几天（§18）
 
 _DAY = {c: i for i, c in enumerate(WEEKDAYS, start=1)} | {"天": 7}
 
@@ -520,78 +519,6 @@ def blocked_days(text: str) -> set[int]:
 def scope_hint(text: str) -> str:
     """没说是只改这次还是以后都这样时，卡片上提醒一句（§45 需求 9）。"""
     return "" if _FOREVER.search(text) or _ONLY_NOW.search(text) else SCOPE_HINT
-
-
-# ---- 每周复盘、首页提醒的调整由规则生成（§45 需求 2；最多改两天）-------------------------------
-
-
-def review_ops(
-    actions: Sequence[dict[str, Any]],
-    plan: Plan,
-    *,
-    equipment: frozenset[Equipment] | None,
-    injured: Collection[str] = (),
-) -> list[Op]:
-    """把复盘或提醒给出的动作（种类 + 参数）变成操作；改动最多两天。"""
-    ops: list[Op] = []
-    for a in actions:
-        kind = a.get("kind")
-        if kind == "fewer_days":  # 完成不到一半：减到 n 天，从排得最靠后的那天开始删
-            keep = int(a.get("days") or plan.days_per_week - 1)
-            extra = sorted(plan.sessions, key=lambda s: -s.day)[: max(0, plan.days_per_week - keep)]
-            ops += [Op(kind="remove", day=s.day, why=str(a.get("why") or "")) for s in extra]
-        elif kind == "lighter":  # 状态差、连续没练：整体按七成
-            ops.append(Op(kind="reduce", ratio=LIGHT, why=str(a.get("why") or "")))
-        elif kind == "swap_part":  # 同一部位反复疼：把压这个部位的动作换掉
-            part = str(a.get("part") or "")
-            hurt = [*injured, part]
-            for s in plan.sessions:
-                for x in s.items:
-                    m = find(x.exercise)
-                    if m is not None and part in m.tag.stress:
-                        alt = ranked(m, equipment=equipment, injured=hurt, k=1)
-                        if alt:
-                            ops.append(Op(kind="swap", day=s.day, exercise=x.exercise,
-                                          to=alt[0].name, why=str(a.get("why") or "")))  # fmt: skip
-        elif kind == "variant":  # 平台期：换成相近的变式
-            for name in a.get("exercises") or ():
-                m = find(str(name))
-                alt = (
-                    ranked(m, equipment=equipment, injured=injured, direction="similar", k=1)
-                    if m
-                    else []
-                )
-                if alt:
-                    ops.append(Op(kind="swap", exercise=str(name), to=alt[0].name,
-                                  why=str(a.get("why") or "")))  # fmt: skip
-    return _within_days(ops, plan, REVIEW_MAX_DAYS)
-
-
-def _within_days(ops: list[Op], plan: Plan, limit: int) -> list[Op]:
-    """整份计划的减量算改了每一天：有别的操作时先保留别的；只剩减量又超过上限时只减前两天。"""
-    out: list[Op] = []
-    days: set[int] = set()
-    for op in ops:
-        if op.kind == "reduce" and op.day is None:
-            for s in sorted(plan.sessions, key=lambda s: s.day):
-                if len(days) >= limit:
-                    break
-                if s.day not in days:
-                    out.append(op.model_copy(update={"day": s.day}))
-                    days.add(s.day)
-            continue
-        hit = (
-            {d for d in (op.day, op.to_day) if d is not None}
-            if op.day
-            else {
-                s.day for s in plan.sessions if any(_same(op.exercise, x.exercise) for x in s.items)
-            }
-        )
-        if len(days | hit) > limit:
-            continue
-        days |= hit
-        out.append(op)
-    return out
 
 
 def describe(applied: Applied) -> dict[str, Any]:

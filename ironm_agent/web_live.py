@@ -364,7 +364,7 @@ class AdjustIn(BaseModel):
 async def _situation(
     user_id: str, memory: MemoryStore, illness: Any
 ) -> tuple[str, list[str], list[str], str, frozenset[str]]:
-    """今天的身体状态、记着的伤病、在生病没有、管家今天的调整、特殊情况（§95）；读不到的当作没有。"""
+    """今天的身体数据（数值和与他平时的差，不定级，§182）、记着的伤病、在生病没有、管家今天的调整、特殊情况（§95）；读不到的当作没有。"""
     from ironm_agent.casefile import readiness, risks
     from ironm_agent.illness import active
     from ironm_agent.special import flags

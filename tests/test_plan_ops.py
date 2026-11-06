@@ -9,7 +9,6 @@ from ironm_agent.plan_ops import (
     fit_time,
     impact,
     parse_ops,
-    review_ops,
     rows,
 )
 from ironm_agent.training import Plan
@@ -132,16 +131,6 @@ def test_model_operations_are_validated() -> None:
     ops = parse_ops([{"kind": "swap", "day": "周三", "exercise": "侧平举", "to": "俯卧撑"}])
     assert ops is not None and ops[0].day == 3
     assert parse_ops([{"kind": "rewrite"}]) is None and parse_ops("不是列表") is None
-
-
-def test_review_actions_become_at_most_two_days_of_change() -> None:
-    p = plan()
-    fewer = review_ops([{"kind": "fewer_days", "days": 2}], p, equipment=GEAR)
-    assert [(o.kind, o.day) for o in fewer] == [("remove", 5)]
-    light = review_ops([{"kind": "lighter"}], p, equipment=GEAR)
-    assert [o.day for o in light] == [1, 3]  # 整体减量也只改前两天
-    pain = review_ops([{"kind": "swap_part", "part": "joint.lumbar"}], p, equipment=GEAR)
-    assert [(o.kind, o.exercise) for o in pain] == [("swap", "罗马尼亚硬拉")]
 
 
 # ---- 接到对话里（§45）------------------------------------------------------------------------

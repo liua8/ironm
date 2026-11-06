@@ -38,7 +38,7 @@ def test_merged_and_moved_references_are_kept() -> None:
     today = by_id("readiness-adjust")
     rest = by_id("rest-core")
     assert today is not None and rest is not None and today.name == "今天练不练"
-    assert set(today.refs_for()) >= SICK_DAYS and "poor" in today.on
+    assert set(today.refs_for()) >= SICK_DAYS and today.on == ()  # 不再按"状态差"自动装（§182）
     assert "发烧时不运动" in today.body and "症状消失满 7 天" in today.body
     assert set(rest.refs_for()) >= RECOVERY_SLEEP
 
@@ -46,7 +46,7 @@ def test_merged_and_moved_references_are_kept() -> None:
 def test_cores_keep_only_the_conditions_code_does_not_cover() -> None:
     for x in skills():
         if x.core:
-            assert {k for k, _ in x.special} <= {"injury", "poor"}, x.id
+            assert {k for k, _ in x.special} <= {"injury"}, x.id
 
 
 def test_global_safety_lines_are_not_repeated_in_skills() -> None:

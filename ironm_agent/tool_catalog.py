@@ -50,7 +50,7 @@ CATALOG: tuple[Tool, ...] = (
          personal=True, note="运动场景分流，不做诊断"),
     Tool("指标趋势", "iron-m", "trend_analysis", EXPERTS, "trend_analysis", personal=True),
     Tool("综合解读", "iron-m", "explain_trends", EXPERTS, "explain_trends", personal=True,
-         note="和自己比、和标准比，认出的情况、可能的原因和自动调整（§84）"),
+         note="和自己比、和标准比，同期发生的事（§84；只给数，不贴标签，§182）"),
     # 动作工具（§120）：跟着规程装，只给管家；改数据都出预览、他确认才保存，不在 MCP 上
     Tool("交改计划", "iron-m", "propose_plan_edit", frozenset({"general"}), personal=True,
          note="装了排训练计划才有；只交改动，代码套用、检查后出预览"),

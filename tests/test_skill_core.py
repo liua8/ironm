@@ -15,7 +15,7 @@ from tests.test_single_agent import single
 from tests.test_turn_flow import run
 
 YAML = Path(__file__).resolve().parents[1] / "ironm_agent" / "skills.yaml"
-FLAGS = ("injury", "pregnancy", "bp", "diabetes", "cardiac", "poor")
+FLAGS = ("injury", "pregnancy", "bp", "diabetes", "cardiac")
 
 
 def test_three_core_skills_hold_the_role_rules() -> None:

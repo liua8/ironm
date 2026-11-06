@@ -1129,8 +1129,7 @@ async function recordPage(view) {
     h("div", { class: "card-title" }, h("h2", {}, h("i", { class: "dot coral" }), "这周表现"), h("span", { class: "tag" }, `${md(monday)} 起`)),
     h("div", { class: "wp-cells" }, cell("已练次数", `${days}`, planned ? `/${planned}次` : "次", "hot"), cell("累计时长", mins >= 60 ? (mins / 60).toFixed(1) : `${mins}`, mins >= 60 ? "小时" : "分钟"), cell("完成组数", `${sets}`, "组")),
     planned ? h("div", { class: "wp-goal" }, h("div", { class: "wp-goal-head" }, h("span", {}, "周目标完成度"), h("b", {}, `${pct}%`)), h("i", {}, h("b", { style: `width:${pct}%` }))) : null,
-    h("p", { class: "today-sub" }, [diff > 0 ? `比上周多 ${diff} 次` : diff < 0 ? `比上周少 ${-diff} 次` : before ? "和上周一样" : "上周没有记录", ...more].join("，") + "。"),
-    w?.tips?.length ? h("div", { class: "buddy-say" }, h("span", { class: "buddy-say-head" }, mech(20), "IronM 这周的建议"), h("p", {}, w.tips[0])) : null));
+    h("p", { class: "today-sub" }, [diff > 0 ? `比上周多 ${diff} 次` : diff < 0 ? `比上周少 ${-diff} 次` : before ? "和上周一样" : "上周没有记录", ...more].join("，") + "。")));
   if (cal) view.append(calendarCard(cal));
   view.append(await bodyCard());  // 身体数据指标（§175 从"我 → 身体数据"挪到记录页）
   // 成就：最近 30 天每个动作最好的一组（原 PR 墙）
@@ -1878,8 +1877,7 @@ function weekCard(w) {
     h("div", { class: "rows" }, rows.map(([k, v, sub]) => h("div", { class: "row-item" },
       h("div", { class: "row-main" }, h("span", { class: "row-title" }, k), sub ? h("span", { class: "row-sub" }, sub) : null),
       h("span", { class: "row-end" }, v)))),
-    w.tips.length ? h("ul", { class: "tips" }, w.tips.map((t) => h("li", {}, t))) : h("p", { class: "muted" }, "这周没有需要调整的地方，照计划来。"),
-    w.tips.length && w.planned ? h("p", { class: "caption" }, "想改计划，咨询 IronM。") : null);  // 复盘只给建议（§146）
+    w.planned ? h("p", { class: "caption" }, "想改计划，咨询 IronM。") : null);  // 只给这周的事实，要不要调由管家提（§182）
 }
 
 // 临时调整（§163，kind "temp"）：哪几天这样练、改了什么、为什么；确认才生效，到期回到原计划，
@@ -2706,7 +2704,7 @@ async function dataPart(view) {
     muscles?.sessions ? `${tired} 块肌肉恢复中` : ""].filter(Boolean).join(" · ");
   view.append(fold("这周训练", weekSub,
     brief ? weekCard(brief.week) : null,
-    muscles ? bodyMap(muscles, brief, mine?.sex) : failed(new Error("肌肉恢复暂时算不出来"), () => render())));
+    muscles ? bodyMap(muscles, mine?.sex) : failed(new Error("肌肉恢复暂时算不出来"), () => render())));
 }
 
 // ---- 打卡照片（spec [2026-10-23] §117）：挂在那次打卡记录上，在轨迹里看；只有本人能取，不交给模型 ----
@@ -3260,7 +3258,7 @@ function rankNick(btn) {
   input.focus();
 }
 
-function bodyMap(mm, brief, sex) {
+function bodyMap(mm, sex) {
   const tell = async (m, feel, btns) => {
     for (const b of btns) b.disabled = true;
     try {
@@ -3295,11 +3293,9 @@ function bodyMap(mm, brief, sex) {
   };
   const top = [...mm.muscles].filter((m) => m.tier !== "ready" || m.state === "sore").sort((a, b) => a.recovery - b.recovery);
   const untrained = mm.untrained || [];
-  const rd = brief?.today?.readiness;
   return h("div", { class: "card body-card" },
     flatBody(mm, pick, sex),
     h("div", { class: "legend" }, ...[["t-high", "刚练过"], ["t-mid", "恢复中"], ["t-ready", "可以练"], ["t-none", "最近没练"], ["mm-sore", "自述酸痛"]].map(([c, t]) => h("span", {}, h("i", { class: c }), t))),
-    rd && (rd.level === "poor" || rd.level === "fair") && rd.reasons?.length ? h("div", { class: "notice-line" }, icon("alert", "xs"), `${rd.reasons[0]}：今天整体恢复偏慢，可以降低强度。`) : null,
     mm.sessions === 0 ? h("p", { class: "muted" }, "最近还没有训练记录：在首页打卡，或在对话里说“今天练了……”就会记下来。") : h("div", { class: "muscle-rows" },
       top.length ? top.slice(0, 6).map((m) => muscleRow(m, () => pick(m)))
         : h("p", { class: "muted" }, "全部肌肉都已恢复，可以练。")),

@@ -6,7 +6,7 @@ from datetime import date, timedelta
 
 from ironm_agent import metrics as m
 from ironm_agent.agent import _PROMPT
-from ironm_agent.insights import compare, situations
+from ironm_agent.insights import compare, observations
 
 TODAY = date(2026, 11, 2)
 OLD_END = date(2026, 9, 14)  # 心率、步数最后一条：7 周前
@@ -63,12 +63,11 @@ def test_case_metrics_and_insights_no_longer_use_old_numbers() -> None:
     assert "最近 7 天没有静息心率记录" in text and "最近 7 天有 1 晚记录" in text
     readings = {x.key for x in compare(r, p, TODAY)}
     assert "resting_hr" not in readings and "steps" not in readings  # 旧的不拿来和标准比
-    sick = ("昨天说感冒",)  # 恢复不够要同期有能解释的原因
-    assert not [
-        x for x in situations(r, p, TODAY, illness=sick) if x.kind == "recovery"
-    ]  # 7 周前偏高的心率不算恢复不够
-    then = date(2026, 9, 14)  # 当时看：最后一周比基线高，照常认出
-    assert [x for x in situations(r, p, then, illness=sick) if x.kind == "recovery"]
+    sick = ("昨天说感冒",)
+    found = {x.kind for x in observations(r, p, TODAY, illness=sick)}
+    assert "resting_hr" not in found and "steps" not in found  # 7 周前的心率、步数不当成最近的变化
+    then = date(2026, 9, 14)  # 当时看：最后一周有记录，照常给最近和之前的差
+    assert "resting_hr" in {x.kind for x in observations(r, p, then, illness=sick)}
 
 
 def test_the_answer_prompt_says_old_data_needs_a_date() -> None:

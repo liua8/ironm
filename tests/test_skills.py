@@ -36,7 +36,7 @@ def test_first_batch_is_there_and_every_number_has_a_source() -> None:
         if x.body:  # 文件夹规程（§76）另有测试
             continue
         if x.core:  # 基础规程（§74）：原来角色提示词里的判断规则，引用的编号都在依据库里
-            every = ("injury", "pregnancy", "bp", "diabetes", "cardiac", "poor")
+            every = ("injury", "pregnancy", "bp", "diabetes", "cardiac")
             assert x.order and x.rules and all(kb.get(r) is not None for r in x.refs_for(every)), (
                 x.id
             )
@@ -57,7 +57,7 @@ def test_the_right_skills_are_loaded() -> None:
 
     assert "排训练计划" in names("增肌一周练几次比较好")
     assert "伤痛处理" in names("膝盖疼还能练腿吗")
-    assert names("今天练什么", frozenset({"poor"}))[1] == "今天练不练"  # 训练基础排最前
+    assert names("今天练什么")[1] == "今天练不练"  # 训练基础排最前；不再有"状态差"这个情况（§182）
     assert "饮食方案" in names("这顿多少热量", frozenset({"image"}))
     assert "训练基础" in names("跑步一周跑几次")  # 有氧在训练基础的参考段里（§110）
     assert "排训练计划" in names("停了一个月，好久没练了")  # §111 回归并进排计划
@@ -154,3 +154,20 @@ def test_every_skill_says_when_to_use_and_not() -> None:
         and f"{today.use}；不用于：" in text
         and "「伤痛处理」" in today.not_for
     )
+
+
+def test_no_poor_flag_and_no_auto_loaded_today_skill() -> None:
+    """§182：没有"状态差"这一档：不加 poor 标记、不带它的少见情况规则、也不按它自动装今天练不练。"""
+    import inspect
+
+    from ironm_agent.frameworks import flags_of
+    from ironm_agent.skills import RULE_TRIGGERS
+
+    assert "readiness" not in inspect.signature(flags_of).parameters
+    assert flags_of(["bp_high"], True) == {"bp", "injury"}
+    assert "poor" not in RULE_TRIGGERS
+    for x in skills():
+        assert "poor" not in x.on and all(k != "poor" for k, _ in x.special), x.id
+    today = next(x for x in skills() if x.id == "readiness-adjust")
+    assert "组数减半" not in today.body and "六到八成" not in today.body and "状态差" not in today.body
+    assert "自己判断" in today.body and "发烧时不运动" in today.body  # 安全的几句照旧

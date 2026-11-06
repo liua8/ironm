@@ -1,6 +1,7 @@
-"""今天的版本（spec [2026-10-23] §18 需求 3）：按今天的状态、天气、可用时间，用规则把计划里今天那次改一改。
+"""今天的版本（spec [2026-10-23] §18 需求 3）：把计划里今天那次改一改——按几成练、户外换室内、删到几分钟。
 
-不调用模型；每一处改动都写明为什么。原计划不变，用户可以按今天的版本练并打卡。
+只是机制：按几成、为什么由管家定（§163、§182），代码不再按"状态差"自己减半。不调用模型；
+每一处改动都写明为什么。原计划不变，用户可以按今天的版本练并打卡。
 """
 
 from __future__ import annotations
@@ -21,7 +22,6 @@ def is_outdoor(exercise: str) -> bool:
 
 
 INDOOR = "原地踏步或室内单车"
-TIRED_NOTE = "减轻重量、不练到力竭"
 
 
 @dataclass(frozen=True)
@@ -49,28 +49,18 @@ def _note(item: PlanItem, extra: str) -> str:
 def build(
     session: Session,
     *,
-    tired: bool = False,
-    tired_why: str = "",
     indoor: bool = False,
     indoor_why: str = "",
     minutes: int | None = None,
     scale: float | None = None,
     scale_why: str = "",
 ) -> TodayVersion:
-    """tired：今天状态差或生病；indoor：天气不宜户外；minutes：今天只有多少分钟；
-    scale：中断后回来，按原量的几成练（需求 5 用）。"""
+    """indoor：天气不宜户外；minutes：今天只有多少分钟；scale：管家定的今天按原量的几成练（scale_why 是它写的原因）。"""
     d = _Draft(list(session.items))
-    scaled = scale is not None and scale < 1
-    if scale is not None and scaled and not tired:  # 两样都有时只按减得多的（减半）来，不叠加
+    if scale is not None and scale < 1:
         d.items = [x.model_copy(update={"sets": max(1, round(x.sets * scale))}) for x in d.items]
         d.changes.append(f"每个动作的组数按原来的约 {round(scale * 10)} 成")
         d.reasons.append(scale_why)
-    if tired:
-        d.items = [x.model_copy(update={"sets": max(1, x.sets // 2)}) for x in d.items]
-        d.changes.append(  # 备注写在改动说明里一次，不在每个动作后面重复
-            f"组数减半（至少 1 组），{TIRED_NOTE}" + ("（已包含中断后的降量）" if scaled else "")
-        )
-        d.reasons += [tired_why or "今天状态差", scale_why if scaled else ""]
     if indoor:
         swapped = []
         for i, x in enumerate(d.items):

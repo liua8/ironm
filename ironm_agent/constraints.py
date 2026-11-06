@@ -3,7 +3,7 @@
 - 伤病与动作：有伤病的部位，回答不能直接安排会加重它的动作，除非写明了限制（控制深度或幅度、换成替代动作、
   先别做）：写在这个分句或紧跟的分句里，或者回答里有一句总的说明（提到这个部位并写明限制，如"膝盖有伤，
   所有蹲类动作只蹲到不疼的深度"），后面列的动作都算照顾到了；
-- 今天状态差或生病：不安排大重量、高强度间歇、冲刺、力竭；
+- 他说生病了：不安排大重量、高强度间歇、冲刺、力竭（睡眠、心率只给管家看数，不再按"状态差"拦，§182）；
 - 血压偏高、孕期：不安排大重量和憋气发力；孕期不安排仰卧和跳跃；
 - 热量下限：建议的每日摄入不低于基础代谢，也不低于 1200 千卡（女）/ 1500 千卡（男）；
 - 减重速度：不建议每周减重超过 1 公斤。
@@ -140,16 +140,30 @@ INJURY_RULES: dict[str, Rule] = {
                  "你脖子不舒服：先别做颈后推举、颈后下拉和倒立。", "（脖子不舒服先别做）", "",
                  re.compile(r"颈|脖子")),
 }  # fmt: skip
-INTENSITY = Rule(
-    "readiness",
+# 生病（他这句话说发烧、感冒、拉肚子这类）是安全护栏，照旧（§182）；"状态差就不准大重量"这条去掉了：
+# 睡眠、心率这些只给管家看数，按几成练由管家自己判断
+SICK = Rule(
+    "sick",
     re.compile(
         r"大重量|高强度间歇|HIIT|冲刺|力竭|极限|最大重量|冲重量|冲击 ?PR|测(?:试)? ?1RM|间歇跑"
     ),
-    # "等"既是"等恢复了再练"也是"深蹲、硬拉等"：只认"等状态、等恢复"这类写法
-    ("下次", "恢复后", "状态好", "改天", "明天", "等状态", "等恢复", "等睡", "等你"),
-    "他今天状态差或生病",
-    "今天状态不好：别做大重量、高强度间歇和力竭训练，改成轻松版或休息。",
-    "（今天状态不好：先别做）",
+    # "等"既是"等恢复了再练"也是"深蹲、硬拉等"：只认"等好了、等恢复"这类写法
+    (
+        "下次",
+        "恢复后",
+        "状态好",
+        "病好",
+        "好了再",
+        "改天",
+        "明天",
+        "等状态",
+        "等恢复",
+        "等睡",
+        "等你",
+    ),
+    "他说生病了",
+    "生病时别做大重量、高强度间歇和力竭训练，改成轻松活动或休息；发烧就先别练。",
+    "（生病时先别做）",
 )
 BLOOD = Rule(
     "blood_pressure",
@@ -196,13 +210,10 @@ class Violation:
 @dataclass(frozen=True)
 class Context:
     injuries: tuple[str, ...] = ()
-    poor: bool = False  # 今天状态差或生病
+    sick: bool = False  # 他这句话说生病了（安全护栏，§182 照旧）
     risks: frozenset[str] = frozenset()
     floor: int = 1200  # 每日摄入下限
-    state: str = (
-        ""  # 今天的身体状态（good / fair / poor / unknown），核对"今天状态标了差"这类说法（§49）
-    )
-    record: str = ""  # 共享档案原文，核对"档案里写了……"这类说法（§49）
+    record: str = ""  # 共享档案原文，核对"档案里写了……""状态标了差"这类说法（§49）
 
     @classmethod
     def of(cls, case: CaseFile) -> Context:
@@ -210,10 +221,9 @@ class Context:
         floor = max(sex_floor, round(case.bmr)) if case.bmr else sex_floor
         return cls(
             injuries=case.injuries,
-            poor=case.readiness.level == "poor" or case.readiness.sick,
+            sick=case.readiness.sick,
             risks=frozenset(x.key for x in case.risks),
             floor=floor,
-            state=case.readiness.level,
             record=case.text(),
         )
 
@@ -314,21 +324,14 @@ def _rate(text: str) -> Violation | None:
     return None
 
 
-# 说到他的档案、今天状态的话要和档案对得上（§49：标注发现"档案里只写了膝前痛""今天状态也标了差"都是编的）
+# 说到他的档案、今天状态的话要和档案对得上（§49：标注发现"档案里只写了膝前痛""今天状态也标了差"都是编的）。
+# 档案里只有数值、不定级（§182）："状态标成了差、显示为一般"这类说法档案里一定没有
 _STATE_CLAIM = re.compile(
-    r"状态(?:也|都|已经)?(?:被)?(?:标(?:成|了|的是|为)|显示(?:为)?|算)(很差|差|不好|一般|好|不错)"
+    r"状态(?:也|都|已经)?(?:被)?(?:标(?:成|了|的是|为)|显示(?:为)?)(?:很差|差|不好|一般|好|不错)"
 )
 _FILE_CLAIM = re.compile(
     r"(?:档案|记录|资料)(?:里|上|中)(?:只|也|还)?(?:写了|写着|记着|记了|记的是|标了|有)([^，。；,;：]{2,12})"
 )
-_BAD_STATE = {
-    "很差": "poor",
-    "差": "poor",
-    "不好": "poor",
-    "一般": "fair",
-    "好": "good",
-    "不错": "good",
-}
 _PARTS = "膝腰肩踝腕颈背髋肘"
 
 
@@ -347,9 +350,7 @@ def _false_claims(text: str, ctx: Context) -> list[str]:
     """和档案对不上的分句。"""
     out = []
     for clause in _CLAUSE.findall(text):
-        m = _STATE_CLAIM.search(clause)
-        said = _BAD_STATE.get(m.group(1)) if m else None
-        if said and ctx.state and ctx.state != "unknown" and said != ctx.state:
+        if ctx.record and _STATE_CLAIM.search(clause):
             out.append(clause)
             continue
         f = _FILE_CLAIM.search(clause)
@@ -385,8 +386,8 @@ def _record(text: str, ctx: Context) -> Violation | None:
 
 def _rules(ctx: Context) -> list[Rule]:
     rules = [INJURY_RULES[k] for k in ctx.injuries if k in INJURY_RULES]
-    if ctx.poor:
-        rules.append(INTENSITY)
+    if ctx.sick:
+        rules.append(SICK)
     if ctx.risks & _BP_RISKS:
         rules.append(BLOOD)
     if "pregnancy" in ctx.risks:
@@ -407,7 +408,7 @@ def annotate(text: str, ctx: Context) -> str:
     """改写后仍不过关时：在不过关的动作、热量、减重速度后面直接注明限制（不调用模型）。
 
     伤病、孕期、血压这类，注明的那句话本身就是总的说明，后面同类的动作不再重复注明；
-    今天状态差这类，每一处都注明。
+    生病这类当天的事，每一处都注明。
     """
     out = text
     for rule in _rules(ctx):
@@ -446,8 +447,8 @@ def annotate(text: str, ctx: Context) -> str:
 
 def annotate_plan(plan: Plan, ctx: Context) -> Plan:
     """计划里每个动作单独核对：有伤病、孕期、血压偏高时，没写限制的动作在备注里注明（限制写在前面，
-    备注再长也不会被截掉）。今天状态差是当天的事，不写进长期的周计划。"""
-    rules = [r for r in _rules(ctx) if r is not INTENSITY]
+    备注再长也不会被截掉）。生病是当天的事，不写进长期的周计划。"""
+    rules = [r for r in _rules(ctx) if r is not SICK]
     sessions = []
     for s in plan.sessions:
         items = []

@@ -1,4 +1,4 @@
-"""约束核对（spec [2026-10-23] §4）：伤病与动作、状态与强度、血压、孕期、热量下限、减重速度。"""
+"""约束核对（spec [2026-10-23] §4）：伤病与动作、生病与强度、血压、孕期、热量下限、减重速度；"状态差"不再拦（§182）。"""
 
 from datetime import date
 
@@ -46,12 +46,29 @@ def test_every_violating_clause_is_listed_for_the_rewrite() -> None:
     assert "深蹲" in v.detail and "弓步" in v.detail
 
 
-def test_poor_readiness_blocks_heavy_or_all_out_work() -> None:
-    poor = Context(poor=True)
-    assert kinds("今天可以冲一下大重量", poor) == ["readiness"]
-    assert kinds("今天做 4 组力竭", poor) == ["readiness"]
-    assert kinds("今天别上大重量，改成轻松版", poor) == []
-    assert kinds("今天可以冲一下大重量", Context()) == []  # 状态好时不限制
+def test_being_sick_blocks_heavy_or_all_out_work() -> None:
+    """生病是安全护栏，照旧（§182）。"""
+    sick = Context(sick=True)
+    assert kinds("今天可以冲一下大重量", sick) == ["sick"]
+    assert kinds("今天做 4 组力竭", sick) == ["sick"]
+    assert kinds("今天别上大重量，改成轻松版", sick) == []
+    assert kinds("今天可以冲一下大重量", Context()) == []
+
+
+def test_poor_sleep_or_heart_numbers_no_longer_block_heavy_work() -> None:
+    """§182 需求 7："状态差就不准大重量、高强度、力竭"去掉：睡得少、心率比平时高时按几成由管家判断。"""
+    case = CaseFile(
+        basics="", limits=(), risks=(), calcs={}, calc_lines=(), injuries=(), profile=Profile(), bmr=None,
+        readiness=Readiness(("睡眠：最近一晚（今天）4 小时，你平时 7.3 小时，少 3.3 小时",
+                             "静息心率：最近 3 天平均 68 次/分，你平时 58 次/分，高 10 次/分"), current=True),
+    )  # fmt: skip
+    ctx = Context.of(case)
+    assert not ctx.sick
+    assert kinds("今天可以冲一下大重量，做 4 组力竭", ctx) == []
+    # 血压、孕期、伤处照旧拦
+    assert kinds("可以试试大重量深蹲", Context(risks=frozenset({"bp_high"}))) == ["blood_pressure"]
+    assert kinds("可以做仰卧卷腹 3 组", Context(risks=frozenset({"pregnancy"}))) == ["pregnancy"]
+    assert kinds("高脚杯深蹲 3 组", KNEE) == ["knee"]
 
 
 def test_blood_pressure_and_pregnancy() -> None:
@@ -81,7 +98,7 @@ def test_calorie_floor_and_weight_loss_rate() -> None:
 
 
 def test_annotate_writes_the_limit_next_to_each_violation() -> None:
-    ctx = Context(injuries=("joint.knee", "joint.lumbar"), poor=True, floor=1500)
+    ctx = Context(injuries=("joint.knee", "joint.lumbar"), sick=True, floor=1500)
     text = "热身做开合跳。高脚杯深蹲 3 组，大重量硬拉 5 组。每天吃 1200 千卡。每周减 2 公斤。"
     marked = annotate(text, ctx)
     assert (
@@ -96,11 +113,11 @@ def test_annotate_writes_the_limit_next_to_each_violation() -> None:
 
 def test_context_from_case_file() -> None:
     case = CaseFile(
-        basics="", limits=(), readiness=Readiness("poor"), risks=(Risk("bp_high", "…"),), calcs={},
+        basics="", limits=(), readiness=Readiness(sick=True), risks=(Risk("bp_high", "…"),), calcs={},
         calc_lines=(), injuries=("joint.knee",), profile=Profile(sex="male", birth=date(1990, 1, 1)), bmr=1699.4,
     )  # fmt: skip
     ctx = Context.of(case)
-    assert ctx.poor and ctx.injuries == ("joint.knee",) and ctx.risks == {"bp_high"} and ctx.floor == 1699
+    assert ctx.sick and ctx.injuries == ("joint.knee",) and ctx.risks == {"bp_high"} and ctx.floor == 1699
     assert (
         Context.of(case.__class__(**{**case.__dict__, "bmr": None, "profile": Profile()})).floor
         == 1200
@@ -110,24 +127,22 @@ def test_context_from_case_file() -> None:
 
 def test_vague_words_elsewhere_do_not_count_as_a_limit() -> None:
     """独立审查：同一分句或下一分句里出现"不、别、等"就算写了限制，会漏判。"""
-    poor = Context(poor=True)
-    assert kinds("今天做深蹲、硬拉等大重量动作，5 组", poor) == ["readiness"]
+    sick = Context(sick=True)
+    assert kinds("今天做深蹲、硬拉等大重量动作，5 组", sick) == ["sick"]
     assert kinds("深蹲 4 组，别忘了喝水", KNEE) == ["knee"]
     assert kinds("每周减重约 1.5 公斤", Context()) == ["weight_rate"]
     # 具体的写法在紧跟的分句里仍然算；泛泛的词在动作前面或紧跟在后面也算
     assert kinds("深蹲 3 组，蹲到不疼的深度", KNEE) == []
     assert kinds("深蹲先别做", KNEE) == [] and kinds("先别做深蹲", KNEE) == []
-    assert kinds("等恢复了再上大重量", poor) == []
+    assert kinds("等恢复了再上大重量", sick) == []
 
 
 def test_annotate_inserts_where_the_violation_is() -> None:
-    poor = Context(poor=True)
+    sick = Context(sick=True)
     text = "今天别冲刺。热身后，冲刺，4 组"
-    marked = annotate(text, poor)
-    assert (
-        marked.startswith("今天别冲刺。") and "热身后，冲刺（今天状态不好：先别做），4 组" in marked
-    )
-    assert check(marked, poor) == []
+    marked = annotate(text, sick)
+    assert marked.startswith("今天别冲刺。") and "热身后，冲刺（生病时先别做），4 组" in marked
+    assert check(marked, sick) == []
 
 
 def test_plan_notes_keep_the_limit_and_skip_todays_state() -> None:
@@ -144,7 +159,7 @@ def test_plan_notes_keep_the_limit_and_skip_todays_state() -> None:
             ]}],
         }
     )  # fmt: skip
-    marked = annotate_plan(plan, Context(injuries=("joint.knee",), poor=True))
+    marked = annotate_plan(plan, Context(injuries=("joint.knee",), sick=True))
     squat, deadlift = marked.sessions[0].items
     assert squat.note.startswith("膝盖有伤") and len(squat.note) == 80
-    assert "今天状态不好" not in deadlift.note  # 当天的状态不写进长期的周计划
+    assert "生病" not in deadlift.note  # 当天生病不写进长期的周计划
