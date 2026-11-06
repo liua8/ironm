@@ -3748,9 +3748,96 @@ async function me(view) {
     group("user", "账号与模型",
       row("coach", "模型和 API", "可以用自己的模型", modelSheet),
       row("info", "说明", "", () => openSheet("说明", h("p", { class: "muted" }, ABOUT)))),
+    group("file", "账号与隐私",
+      row("download", "导出我的数据", "下载成文件", exportSheet),
+      row("book", "隐私政策", "", "#privacy"),
+      row("note", "用户协议", "", "#terms"),
+      row("x", "注销账号", "删掉 IronM 里你的数据", deleteSheet)),
     h("button", { class: "btn danger block", type: "button", onclick: signOut }, icon("logout", "sm"), "退出登录"));
 }
 
+
+// ---- 账号与隐私（spec [2026-10-23] §180）：隐私政策、用户协议、导出我的数据、注销账号 ----
+const LEGAL_DATE = "2026-11-06";
+const LEGAL = {
+  privacy: ["隐私政策", [
+    ["这份说明管什么", "IronM（AI 健身助手）怎么收、存、用你的信息。IronM 跑在谁的电脑或服务器上，谁就保管你的数据：在你自己电脑上跑的，数据只在你自己电脑上。"],
+    ["收哪些", "账号：邮箱和加密后的密码。档案：身高、出生日期、性别、目标、日常活动。训练：计划、每组记录、打卡和感受。饮食：记的餐、照片、饮食计划。身体数据：体重等读数，你导入的健康数据和化验单。你和 IronM 的对话，以及它记下的事（喜好、伤病、近期安排等）。你填的模型密钥。"],
+    ["存在哪、怎么保护", "存在运行 IronM 的那台电脑或服务器的数据库里。对话、记忆、计划等内容加密存放；模型密钥加密存放，页面上只显示末四位；日志只记类别和条数，不记你说的话和具体数值。"],
+    ["发给谁", "你问 IronM、拍照估热量、认器械时，内容发给你自己在「模型和 API」里填的模型服务商（如 DeepSeek、通义千问），由它按自己的隐私政策处理。查天气、用当前位置时，只把约 1 公里精度的经纬度发给 Open-Meteo 和 OpenStreetMap。动作和食物配图是从公开网站下载的，不带你的信息。除此之外不给第三方，不卖数据，不做广告。"],
+    ["你能做什么", "在「我」里看和改档案、身体数据、IronM 记得的事；在「我 → 账号与隐私」导出你的数据、注销账号。注销后，IronM 里你的训练、饮食、计划、记忆等马上删除，不能恢复；体重等身体读数和其他健康记录、上传的文件、对话记录跟着账号一起关闭，不能再访问。"],
+    ["未成年人", "未满 18 岁请在监护人同意下使用。"],
+    ["改动", "这一页改了会更新下面的日期。"],
+  ]],
+  terms: ["用户协议", [
+    ["IronM 是什么", "帮你安排训练和饮食、记录和解读身体数据的 AI 助手。"],
+    ["不是医疗建议", "IronM 的建议仅供参考，不能代替医生、营养师或康复师。胸痛、头晕、呼吸困难、晕倒等情况请立刻停止并就医；有慢病、孕期、伤病的，开始训练前先问医生。"],
+    ["你的账号", "邮箱就是登录名，密码自己保管。没配发信的服务找不回密码，请记好。"],
+    ["你填的模型", "IronM 用你自己填的模型回答，费用记在你自己的账户上，请遵守服务商的规定。"],
+    ["你发的内容", "排行榜里的评论、投票请真实友善，不发广告、违法或侵犯他人的内容；违规的内容会被删除。"],
+    ["开源与免责", "IronM 的代码按 Apache-2.0 开源，按\"原样\"提供，不保证一定适合你的目的；因使用造成的损失，在法律允许的范围内不承担责任。"],
+    ["停用", "你可以随时在「我 → 账号与隐私」注销账号；违反本协议的账号可能被停用。"],
+  ]],
+};
+function legalPage(view, kind) {
+  const [title, parts] = LEGAL[kind];
+  const back = store.get() ? "#me" : "#";
+  view.append(h("div", { class: "legal" },
+    h("a", { class: "link", href: back }, "‹ 返回"),
+    h("h1", {}, title),
+    h("p", { class: "legal-draft", role: "note" }, `草稿（${LEGAL_DATE}），正式对外前请负责人审核。`),
+    ...parts.flatMap(([hd, text]) => [h("h2", {}, hd), h("p", {}, text)]),
+    h("p", { class: "caption" }, `更新日期：${LEGAL_DATE}`)));
+}
+// 下载要带登录凭证：先取回来再交给浏览器存成文件
+async function download(path, name, accept) {
+  const res = await fetch(path, { headers: { Authorization: `Bearer ${store.get()}`, ...(accept ? { Accept: accept } : {}) } });
+  if (!res.ok) throw new Error(`没下载成（${res.status}），稍后再试`);
+  const url = URL.createObjectURL(await res.blob());
+  const a = h("a", { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+function exportSheet() {
+  const day = new Date().toISOString().slice(0, 10);
+  const msg = h("p", { class: "muted", role: "status" });
+  const go = (btn, path, name, accept) => async () => {
+    btn.disabled = true; msg.className = "muted"; msg.textContent = "正在准备…";
+    try { await download(path, name, accept); msg.textContent = `已下载：${name}`; }
+    catch (err) { msg.className = "error"; msg.textContent = err.message; }
+    btn.disabled = false;
+  };
+  const a = h("button", { class: "btn block", type: "button" }, icon("download", "sm"), "下载 IronM 的数据");
+  const b = h("button", { class: "btn ghost block", type: "button" }, icon("download", "sm"), "下载健康记录");
+  a.onclick = go(a, "/iron/api/export", `ironm-${day}.json`);
+  b.onclick = go(b, "/api/user/data-export", `health-${day}.ndjson`, "application/x-ndjson");
+  openSheet("导出我的数据", h("div", { class: "sheet-stack" },
+    h("p", { class: "muted" }, "IronM 的数据：档案、计划、训练、饮食、目标、IronM 记得的事、器材场所、排行榜里你写的评论和投票，一个 JSON 文件。不含模型密钥、照片和内部运行记录。"),
+    a,
+    h("p", { class: "muted" }, "健康记录：体重等身体读数、化验、手表、导入的健康数据，另一个文件（每行一条）。"),
+    b, msg));
+}
+function deleteSheet() {
+  const email = h("input", { type: "email", autocomplete: "off", placeholder: "输入你的邮箱确认", "aria-label": "输入你的邮箱确认" });
+  const msg = h("p", { class: "error", role: "status" });
+  const btn = h("button", { class: "btn danger block", type: "button", disabled: true }, "注销账号");
+  email.addEventListener("input", () => { btn.disabled = !email.value.includes("@"); });
+  btn.addEventListener("click", async () => {
+    btn.disabled = true; msg.className = "muted"; msg.textContent = "正在注销…";
+    try {
+      await api("/iron/api/account/delete", { method: "POST", body: JSON.stringify({ confirm: email.value.trim() }) });
+      signOut(); flash(h("span", {}, "账号已注销，IronM 里你的数据已删除。"), 5000);
+    } catch (err) { msg.className = "error"; msg.textContent = err.message; btn.disabled = false; }
+  });
+  openSheet("注销账号", h("div", { class: "sheet-stack" },
+    h("p", {}, h("b", {}, "注销后：")),
+    h("ul", { class: "muted legal-list" },
+      h("li", {}, "马上不能再登录；"),
+      h("li", {}, "IronM 里你的训练、饮食、计划、IronM 记得的事等马上删除，不能恢复；"),
+      h("li", {}, "体重等身体读数和其他健康记录、上传的文件、对话记录跟着账号一起关闭，不能再访问。")),
+    h("p", { class: "muted" }, "想留一份的，先在「导出我的数据」里下载。"),
+    email, btn, msg));
+}
 
 // 用自己的模型（§153）：选服务商、填密钥、选模型，先测试再保存；密钥只显示末四位
 async function modelSheet() {
@@ -4448,7 +4535,8 @@ function loginView(view) {
       mode === "register" || mode === "reset" ? password : null,
       mode === "register" || mode === "reset" ? again : null,
       mode === "register" && mail === false ? h("p", { class: "muted" }, "现在不发验证码，邮箱就是登录名；暂时不能找回密码，请记好密码。") : null,
-      submit, msg);
+      submit, msg,
+      mode === "register" ? h("p", { class: "caption legal-line" }, "注册即表示你同意", h("a", { href: "#terms" }, "《用户协议》"), "和", h("a", { href: "#privacy" }, "《隐私政策》")) : null);
     submit.disabled = false;
     links.replaceChildren(
       mode === "login" && mail !== false ? h("button", { type: "button", class: "link", onclick: () => { mode = "code"; draw(); } }, "用验证码登录") : null,
@@ -4907,6 +4995,8 @@ const PAGES = {
   chat: { title: "IronM", full: true, tabs: true, render: chatPage },  // 底栏一直在（§175）
   live: { title: "训练中", full: true, render: livePage },
   welcome: { title: "完善资料", full: true, render: welcomePage },  // 新注册的先到这里（§174）
+  privacy: { title: "隐私政策", full: true, render: (v) => legalPage(v, "privacy") },  // §180
+  terms: { title: "用户协议", full: true, render: (v) => legalPage(v, "terms") },
 };
 // 旧地址跳到新位置（§121 需求 1）
 function moved(name, sub, rest) {
@@ -4943,7 +5033,8 @@ async function render() {
   document.body.classList.remove("chatting");
   if (!signedIn) {
     $("bar").hidden = true; $("tabs").hidden = true; $("fab").hidden = true; chat.els = null;
-    view.replaceChildren(); loginView(view); return;
+    const legal = { "#privacy": "privacy", "#terms": "terms" }[location.hash];  // 隐私政策、用户协议不登录也能看（§180）
+    view.replaceChildren(); if (legal) legalPage(view, legal); else loginView(view); return;
   }
   const [name, sub, ...rest] = (location.hash.slice(1) || "home").split("/");
   const to = moved(name, sub, rest);

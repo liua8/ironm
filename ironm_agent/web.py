@@ -721,3 +721,8 @@ router.include_router(_atlas)
 from ironm_agent.web_password import router as _password  # noqa: E402
 
 router.include_router(_password)
+
+# 账号与隐私（spec [2026-10-23] §180）：导出我的数据、注销账号
+from ironm_agent.web_account import router as _account  # noqa: E402
+
+router.include_router(_account)

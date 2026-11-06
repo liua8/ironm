@@ -118,6 +118,14 @@ export default function Login() {
         {mode === "register" && mail === false && <Note>现在不发验证码，邮箱就是登录名；暂时不能找回密码，请记好密码。</Note>}
         <Button title={SUBMIT[mode]} onPress={submit} disabled={busy} />
         <Note tone={msg.tone}>{msg.text}</Note>
+        {mode === "register" && (
+          <View style={s.legal}>
+            <T style={s.small}>注册即表示你同意</T>
+            <LinkButton title="《用户协议》" onPress={() => router.push("/legal?kind=terms")} />
+            <T style={s.small}>和</T>
+            <LinkButton title="《隐私政策》" onPress={() => router.push("/legal?kind=privacy")} />
+          </View>
+        )}
       </Panel>
       <View style={s.links}>
         {mode === "login" && mail !== false && <LinkButton title="用验证码登录" onPress={() => go("code")} />}
@@ -136,4 +144,6 @@ const s = StyleSheet.create({
   row: { flexDirection: "row", gap: 8, alignItems: "center" },
   flex: { flex: 1 },
   links: { flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 12 },
+  legal: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: 2 },
+  small: { color: color.muted, fontSize: 13 },
 });

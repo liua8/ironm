@@ -1,4 +1,4 @@
-// 我（同网页 me，spec §140、§141、§146、§153；§176 照网页 §175）：资料卡、我的目标、设置分三组带图标（训练 / 数据 / 账号与模型），退出登录放最下面。
+// 我（同网页 me，spec §140、§141、§146、§153；§176 照网页 §175）：资料卡、我的目标、设置分四组带图标（训练 / 数据 / 账号与模型 / 账号与隐私 §180），退出登录放最下面。
 // 记忆不上页面，设置里一行"IronM 记得的事"能看能删。
 // 别处报"还没填模型"时带着 open=model 进来，直接打开"模型和 API"（spec §167）。
 import { router, useLocalSearchParams } from "expo-router";
@@ -7,6 +7,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useSession } from "@/auth/session";
 import { ABOUT } from "@/features/me/logic";
+import { DeleteBox, ExportBox } from "@/features/me/account";
 import { GoalBlock, RoleCard } from "@/features/me/role-card";
 import { ReminderBox } from "@/features/me/reminders";
 import { CityBox, FilesBox, GearBox, ImportBox, MemoryBox, ModelBox } from "@/features/me/settings";
@@ -15,7 +16,7 @@ import { Icon, type IconName } from "@/ui/icons";
 import { AppBar, Button, Panel, Screen, T } from "@/ui/pixel";
 import { color } from "@/ui/theme";
 
-type Open = "memory" | "gear" | "import" | "files" | "city" | "remind" | "model" | "about" | null;
+type Open = "memory" | "gear" | "import" | "files" | "city" | "remind" | "model" | "about" | "export" | "delete" | null;
 
 const TITLES: Record<Exclude<Open, null>, string> = {
   memory: "IronM 记得的事",
@@ -26,6 +27,8 @@ const TITLES: Record<Exclude<Open, null>, string> = {
   remind: "提醒",
   model: "模型和 API",
   about: "说明",
+  export: "导出我的数据",
+  delete: "注销账号",
 };
 
 export default function Me() {
@@ -60,6 +63,12 @@ export default function Me() {
         <IRow icon="coach" title="模型和 API" sub="可以用自己的模型" onPress={() => setOpen("model")} />
         <IRow icon="info" title="说明" onPress={() => setOpen("about")} last />
       </Group>
+      <Group icon="note" title="账号与隐私">
+        <IRow icon="upload" title="导出我的数据" sub="存成文件" onPress={() => setOpen("export")} />
+        <IRow icon="info" title="隐私政策" onPress={() => router.push("/legal?kind=privacy")} />
+        <IRow icon="note" title="用户协议" onPress={() => router.push("/legal?kind=terms")} />
+        <IRow icon="me" title="注销账号" sub="删掉 IronM 里你的数据" onPress={() => setOpen("delete")} last />
+      </Group>
       <Button
         kind="ghost"
         title="退出登录"
@@ -77,6 +86,8 @@ export default function Me() {
         {open === "remind" ? <ReminderBox /> : null}
         {open === "model" ? <ModelBox close={close} /> : null}
         {open === "about" ? <T muted>{ABOUT}</T> : null}
+        {open === "export" ? <ExportBox /> : null}
+        {open === "delete" ? <DeleteBox /> : null}
       </Sheet>
     </Screen>
   );

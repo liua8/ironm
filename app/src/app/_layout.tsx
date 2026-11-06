@@ -25,6 +25,7 @@ function Screens() {
         <Stack.Screen name="rank/[board]/index" />
         <Stack.Screen name="rank/[board]/[item]" />
       </Stack.Protected>
+      <Stack.Screen name="legal" />{/* 隐私政策、用户协议：登没登录都能看（§180） */}
       <Stack.Protected guard={!token} redirectTo="/">
         <Stack.Screen name="login" />
       </Stack.Protected>
