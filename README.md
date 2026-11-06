@@ -166,7 +166,7 @@ IronM 是单 Agent：所有问题都由同一个 AI 回答。问到哪一类，�
 
 分工很简单：**判断交给 AI，数字和底线交给代码。** 热量、基础代谢、营养素、跟你平时比的差，都由代码算；急症、危急指标、特殊人群、伤处、热量下限由代码守。AI 回答里的数字对不上出处会被退回重写；AI 出错了也不会偷偷换成规则替你决定，而是直接告诉你"出错了，可以重试"。
 
-后端 Python 3.13 + FastAPI + PostgreSQL（pgvector），作为插件接在 [mirobody](https://github.com/thetahealth/mirobody) 上（`vendor/mirobody` 是 1.5.8 原样）；网页是原生 JavaScript，不加载外部资源；手机 App 用 React Native / Expo，在 `app/`，还没上架。
+后端 Python 3.13 + FastAPI + PostgreSQL（pgvector），作为插件接在 [mirobody](https://github.com/thetahealth/mirobody) 上（`vendor/mirobody` 是 1.5.8 原样）；网页是原生 JavaScript，不加载外部资源。
 
 ## ❓ 常见问题
 
@@ -186,7 +186,6 @@ cp .env.example .env                   # 填好后 chmod 600 .env
 make setup                             # Python 环境
 make pg-install pg-init                # 本机 PostgreSQL 18 + pgvector（需要 micromamba）
 make run                               # http://127.0.0.1:18090
-cd app && npm install && npm run web   # 手机 App 的网页预览
 ```
 
 ## 🙏 致谢

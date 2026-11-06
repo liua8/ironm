@@ -13,9 +13,8 @@ evals/replay/reports/
 evals/sim/reports/
 
 # 手机 App（§164）
-app/node_modules/
-app/.expo/
-app/dist/
+# 手机 App 还没上架，代码只留本机（11-06）
+app/
 
 # 只留在本机、不上传（项目负责人 11-06："有可以不上传的东西尽量不上传"）：
 # 需求和验证清单、考题和报告、测试、开发用的脚本和方案。运行（脚本和 Docker 两种装法）都用不到。
