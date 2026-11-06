@@ -29,6 +29,7 @@ from ironm_agent.progression import (
     latest,
     plan_mark,
 )
+from ironm_agent.tone import BUDDY
 from ironm_agent.training import PlanItem, SetDone, WorkoutLog
 from ironm_agent.user_models import pick_quiet
 
@@ -51,6 +52,8 @@ SCHEMA: dict[str, Any] = {"type": "function", "function": {
     }, "required": ["exercise", "reps", "sets", "why"]}}}  # fmt: skip
 
 _PROMPT = """你是健身 App 里的「AI 健身管家」。现在不是他在问你：他刚记下一次训练，系统叫醒你定这次练到的动作下次怎么练。下面是系统算好的事实，数照用，不要自己编。
+
+{tone}
 
 按规程里「练完定下次」一节判断。要定就调用 `set_next_target`（每个动作一次，可以定几个）；不调的动作下次照上次的重量和次数。
 - 只有调用了工具才算定了。结果会告诉你存没存下；没存下的看原因，改了再调或者不调。
@@ -148,7 +151,7 @@ async def _run(
         return {}
     by_name = {item.exercise: item for item in todo}
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": _PROMPT.format(skill=skill.section(SECTION) or skill.text())},
+        {"role": "system", "content": _PROMPT.format(tone=BUDDY, skill=skill.section(SECTION) or skill.text())},
         {
             "role": "user",
             "content": "事实：\n" + "\n".join(f"- {x}" for x in facts(inp, log, todo, today)),

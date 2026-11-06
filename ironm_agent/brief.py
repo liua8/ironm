@@ -15,6 +15,7 @@ from typing import Any
 from ironm_agent.casefile import Snapshot, readiness, risks
 from ironm_agent.memory_store import Item
 from ironm_agent.metrics import Metric
+from ironm_agent.progression import DONE_PLAIN, progress_line
 from ironm_agent.training import Plan, WorkoutLog, week_of, week_start, weekday_name
 
 
@@ -52,6 +53,7 @@ def today_brief(
             "minutes": session.minutes,
             "items": [x.line() for x in session.items],
             "done": done,
+            "progress": progress_line(logs, today) if done else "",  # 练完那一句（§188）
             "tip": tip,
         }
     kcal, protein = _metric(snap.metrics, "kcal_target"), _metric(snap.metrics, "protein_target")
@@ -119,7 +121,8 @@ def hero_line(today: dict[str, Any], week: dict[str, Any]) -> dict[str, str]:
     if kind == "session" and t.get("done"):
         return {
             "title": f"{t['name']} 已拿下",
-            "push": "今天的训练完成了，干得漂亮！好好吃饭、早点睡。",
+            # 练完说具体的进步（§188），没得比就说练完了
+            "push": f"{p if (p := t.get('progress')) and p != DONE_PLAIN else '练完了。'}好好吃饭、早点睡。",
         }
     if kind == "session":
         if week_won:
@@ -153,7 +156,7 @@ def cheer(today: dict[str, Any], week: dict[str, Any], *, rainy: bool = False, h
     planned, done = week.get("planned") or 0, week.get("done") or 0
     kind = t.get("kind")
     if kind == "session" and t.get("done"):
-        return "今天的训练完成了，干得漂亮！"
+        return t.get("progress") or DONE_PLAIN  # 说具体的进步（§188）
     if planned and done >= planned:
         return "本周目标已经拿下，接下来每一练都是加分。"
     if kind == "session" and rainy:

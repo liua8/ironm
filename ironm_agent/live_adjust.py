@@ -16,6 +16,7 @@ from typing import Any
 from ironm_agent.live import Live, LiveError, LiveItem, LiveSet, known, new_item
 from ironm_agent.llm import LLM, parse_json
 from ironm_agent.progression import history
+from ironm_agent.tone import BUDDY, LIVE_NOTE
 from ironm_agent.training import Plan, WorkoutLog
 
 _log = logging.getLogger("ironm_agent.live")
@@ -40,9 +41,12 @@ _PROMPT = """你是健身管家 IronM。他正在训练，刚跟你说了一句�
 - {"kind": "swap", "item": 动作号, "to": "动作库里的动作名"}：后面的组换成别的动作（同一类：蹲换蹲、推换推、拉换拉）
 - {"kind": "skip", "item": 动作号}：这个动作今天不练了
 不需要改就不改。说疼的：不加重、不加组，先停下这个动作或换成不压痛处的；疼得厉害、肿、麻的，建议今天到此为止、去看医生。说累的：减重量或减组，别练到力竭。说太轻的：先加次数，做到目标次数的上限；次数到上限了还明显轻松（还能多做三个以上）才加重量，只加最小一档（上肢杠铃 2.5 公斤、下肢杠铃 5 公斤、哑铃每只 1–2 公斤），训练中一次只加一档；只做了一组、说不准能不能加时，不改，先问他这组还能再做几个。时间不够的：保留多关节的大动作，减辅助动作。
-"say"：一两句话，第一句就说怎么改，再说为什么，像教练站在旁边说；不写编号、不用 markdown。
+"say"：一两句话，第一句就说怎么改，再说为什么，像一起练的朋友站在旁边说；不写编号、不用 markdown。
 "end"：建议今天到此为止时写 true。
 只输出 JSON：{"say": "…", "changes": [...], "end": false}"""
+# 说话方式放在 "say" 那句前面，只输出 JSON 的要求仍在最后（§188 复核）
+_SYSTEM = _PROMPT.replace('"say"：一两句话', f'{BUDDY}\n{LIVE_NOTE}\n"say"：一两句话', 1)
+
 
 
 @dataclass
@@ -270,7 +274,7 @@ async def adjust(
         reply = await asyncio.wait_for(
             llm.chat(
                 "expert",
-                [{"role": "system", "content": _PROMPT}, {"role": "user", "content": facts}],
+                [{"role": "system", "content": _SYSTEM}, {"role": "user", "content": facts}],
                 json_mode=True,
             ),
             TIMEOUT_S,

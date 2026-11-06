@@ -45,6 +45,7 @@ from ironm_agent.insights import compare
 from ironm_agent.kb import default_kb
 from ironm_agent.llm import LLM, parse_json
 from ironm_agent.metrics import KcalAdjust, safe_floor
+from ironm_agent.tone import BUDDY
 from ironm_agent.training import DRAFT_HOURS, REST_WORDS, plan_content, week_start, weekday_name
 from ironm_agent.user_models import pick_quiet
 
@@ -55,6 +56,8 @@ TIMEOUT_S = 60.0
 COMMON = ("K03", "K09", "K16", "K18", "K28", "K31", "K37", "K64", "K81", "K82", "K87", "K88")
 
 _PROMPT = """你是健身 App 里的「AI 健身管家」。现在不是他在问你，是系统每天叫醒你做一次到期复查：下面是系统算好的事实（编号 F..，数都是代码算的，照用，不要自己算、不要编）和可以引用的资料（编号 K..）。
+
+{tone}
 
 按装上的规程里「到期复查」一节判断今天要不要调、调什么、调多少；没有固定的规则，由你决定。要调就调用工具（{tools}），可以调几样，也可以都不调：
 - 每次调用都写 why（一句话原因，像当面对他说，不写编号）、basis（用到的事实和资料编号，至少一个 F）、expect（给人看的预期，带时间）、check（系统到期能核对的预期：{{"metric": "weight|resting_hr|hrv|sleep|steps|waist|body_fat|completion|e1rm", "op": "<=" 或 ">=", "value": 数, "days": 3–42}}，e1rm 加 "exercise"；提醒和问一句可以不写预期）。
@@ -283,6 +286,7 @@ async def _run(user_id: str, deps: Deps, llm: LLM, *, today: date, force: bool, 
     allowed = {NOTE, *(t for x in skills for t in x.toolset if t in TOOLS)}
     schemas = [TOOLS[n] for n in TOOLS if n in allowed]
     system = _PROMPT.format(
+        tone=BUDDY,
         tools="、".join(n for n in TOOLS if n in allowed),
         stage=_STAGE if staging else "",
         stage_field=', "stage": "阶段小结"' if staging else "",

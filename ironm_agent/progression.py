@@ -230,3 +230,60 @@ def target_lines(
         if shown
         else []
     )
+
+
+DONE_PLAIN = "练完了，好好恢复。"
+
+
+def _did(sets: Sequence[SetDone]) -> list[SetDone]:
+    """真做了的组：次数是 0 的（试了没起来）不算。"""
+    return [x for x in sets if x.reps > 0]
+
+
+def _last_time(exercise: str, logs: Sequence[WorkoutLog]) -> tuple[list[SetDone], bool] | None:
+    """这个动作上一次（最近的一天）做了的组，同一天几条一起看；第二项：是不是都按组记了实际做的（不是照计划打卡）。"""
+    days = sorted({x.day for x in logs if x.done}, reverse=True)
+    for day in days:
+        items = [it for x in logs if x.done and x.day == day for it in x.items if _same(it.exercise, exercise)]
+        sets = _did([s for it in items for s in it.performed()])
+        if sets:
+            return sets, all(it.done_sets for it in items)
+    return None
+
+
+def progress_line(logs: Sequence[WorkoutLog], today: date) -> str:
+    """练完那一句（spec §188 需求 2）：今天练到的动作里，和上次比最明显的一点进步；没得比就说练完了。
+
+    先看最重一组重了多少（重得最多的那个动作）；重量一样再看那个重量下多做了几次——
+    次数只在两次都按组记了实际做的时才比（直接打卡照计划记的次数不算）。0 次的组不算。只用记录里的数，不调用模型。
+    """
+    before = [x for x in logs if x.done and x.day < today]
+    heavier: tuple[float, str] | None = None
+    more: tuple[int, str] | None = None
+    seen: set[str] = set()
+    for log in (x for x in logs if x.done and x.day == today):
+        for it in log.items:
+            if it.exercise in seen:
+                continue
+            seen.add(it.exercise)
+            today_items = [y for x in logs if x.done and x.day == today for y in x.items if _same(y.exercise, it.exercise)]
+            now = _did([s for y in today_items for s in y.performed()])
+            past = _last_time(it.exercise, before)
+            if not now or past is None:
+                continue
+            was, was_actual = past
+            w_now = max((s.weight_kg or 0.0) for s in now)
+            w_was = max((s.weight_kg or 0.0) for s in was)
+            if w_now > w_was and w_was > 0:
+                if heavier is None or w_now - w_was > heavier[0]:
+                    heavier = (w_now - w_was, it.exercise)
+            elif w_now == w_was and was_actual and all(y.done_sets for y in today_items):
+                r_now = max(s.reps for s in now if (s.weight_kg or 0.0) == w_now)
+                r_was = max(s.reps for s in was if (s.weight_kg or 0.0) == w_was)
+                if r_now > r_was and (more is None or r_now - r_was > more[0]):
+                    more = (r_now - r_was, it.exercise)
+    if heavier is not None:
+        return f"{heavier[1]}比上次多 {_fmt(heavier[0])} 公斤。"
+    if more is not None:
+        return f"{more[1]}比上次多做了 {more[0]} 次。"
+    return DONE_PLAIN

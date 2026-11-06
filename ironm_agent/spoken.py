@@ -13,6 +13,7 @@ from collections.abc import Sequence
 
 from ironm_agent.checks import plain
 from ironm_agent.llm import LLM
+from ironm_agent.tone import BUDDY
 
 _log = logging.getLogger("ironm_agent.run")
 TIMEOUT_S = 15.0  # 急症要尽快给出：等不到就用固定回答
@@ -93,7 +94,7 @@ async def say(
                     f"要点（意思要传达到）：\n{material}" if material else "") if x
     )  # fmt: skip
     messages = [
-        {"role": "system", "content": f"{_SYSTEM}\n\n{task}"},
+        {"role": "system", "content": f"{_SYSTEM}\n\n{BUDDY}\n\n{task}"},
         {"role": "user", "content": user or "（没有更多内容）"},
     ]
     try:

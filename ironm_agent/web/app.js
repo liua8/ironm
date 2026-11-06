@@ -501,7 +501,8 @@ function trainCard(brief, tr, week, lib, photos = {}) {
   if (!today?.session) return card("今日委托 · 休息", "散散步、拉拉伸，让身体恢复。");
   if (week.sick?.mode === "rest" && !(t?.done || today.done)) return card("今日委托 · 先休息", week.sick.why);
   const v = today.version || today.session;
-  if (t?.done || today.done) return card(`今日委托 · ${v.name}`, "练完了，好好恢复。", h("span", { class: "tag green" }, icon("check", "xs"), "完成，连续打卡 +1"));
+  // 练完那一句：和上次比最明显的进步，没得比就说练完了（§188）
+  if (t?.done || today.done) return card(`今日委托 · ${v.name}`, doneLine(t?.progress, 0, false).replace(/^练完了，/, ""), h("span", { class: "tag green" }, icon("check", "xs"), "练完了"));
   const parts = [...new Set(v.items.map((it) => partOf(lib, it.exercise)).filter(Boolean))].slice(0, 3);
   const coachNote = h("div", { class: "today-coach", role: "status", hidden: true });  // 管家对今天的说法（§163）
   const planned = Object.fromEntries(today.session.items.map((it) => [it.exercise, it.sets]));  // 被减掉的组（§121 需求 4）
@@ -1296,6 +1297,13 @@ function ring(done, planned, label = "本周", unit = "次") {
   return el;
 }
 
+// 练完那一句（§188）：先说和上次比的进步，再说这周第几练；不催、不喊口号
+function doneLine(progress, n, won) {
+  const p = progress && progress !== "练完了，好好恢复。" ? progress : "";
+  const wk = n ? `这周第 ${n} 练${won ? "，这周的都练到了" : ""}。` : "";
+  return [p, wk].filter(Boolean).join("") || "练完了，好好恢复。";
+}
+
 // 打卡成功的庆祝画面：写明本周第几练；点一下或 2.4 秒后自动消失
 async function celebrate() {
   const b = await api("/iron/api/brief").catch(() => null);
@@ -1303,8 +1311,8 @@ async function celebrate() {
   const won = w?.planned && n >= w.planned;
   const el = h("div", { class: "cheer", role: "status" },
     h("div", { class: "cheer-burst" }, icon("check")),
-    h("b", { class: "cheer-title" }, "打卡成功"),
-    h("p", {}, n ? `本周第 ${n} 练${won ? "，本周目标达成！" : "，继续保持！"}` : "又进步了一点，继续保持！"));
+    h("b", { class: "cheer-title" }, "练完了"),
+    h("p", {}, doneLine(b?.today?.training?.progress, n, won)));
   const close = () => el.remove();
   el.addEventListener("click", close);
   document.body.append(el);
