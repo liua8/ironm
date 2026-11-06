@@ -1,5 +1,5 @@
 # 推荐食谱（spec [2026-10-23] §118 需求 5）：原料和克数（名字都在食物库里，肉写生重）、油、几份、做法三四步。
-# 营养由代码按食物库算，每份 = 全部原料加油 ÷ 份数。tags：减脂、增肌、早餐、带饭。
+# 营养由代码按食物库算，每份 = 全部原料加油 ÷ 份数。tags：减脂、增肌、早餐、带饭、素食（蛋奶素：不放肉和水产）。
 # 内容由 Claude 按常见家常做法整理，待审定。
 version: "0.1"
 review: claude_draft
@@ -7,7 +7,7 @@ review: claude_draft
 recipes:
   - id: oat-egg-breakfast
     name: 燕麦牛奶配鸡蛋
-    tags: [早餐, 减脂, 增肌]
+    tags: [早餐, 减脂, 增肌, 素食]
     servings: 1
     parts: {燕麦片（干）: 40, 牛奶（全脂）: 250, 鸡蛋: 100, 香蕉: 60}
     oil: 0
@@ -15,7 +15,7 @@ recipes:
 
   - id: greek-yogurt-bowl
     name: 希腊酸奶水果碗
-    tags: [早餐, 减脂]
+    tags: [早餐, 减脂, 素食]
     servings: 1
     parts: {希腊酸奶（无糖脱脂）: 200, 蓝莓: 80, 燕麦片（干）: 20, 杏仁: 10}
     oil: 0
@@ -23,7 +23,7 @@ recipes:
 
   - id: wholewheat-egg-sandwich
     name: 全麦鸡蛋三明治
-    tags: [早餐, 带饭]
+    tags: [早餐, 带饭, 素食]
     servings: 1
     parts: {全麦面包: 60, 鸡蛋: 100, 生菜: 30, 番茄: 50, 奶酪: 20}
     oil: 3
@@ -31,7 +31,7 @@ recipes:
 
   - id: protein-shake
     name: 香蕉蛋白奶昔
-    tags: [早餐, 增肌]
+    tags: [早餐, 增肌, 素食]
     servings: 1
     parts: {乳清蛋白粉: 30, 牛奶（全脂）: 300, 香蕉: 120, 燕麦片（干）: 30}
     oil: 0
@@ -71,7 +71,7 @@ recipes:
 
   - id: tomato-egg-noodles
     name: 番茄鸡蛋面
-    tags: [增肌]
+    tags: [增肌, 素食]
     servings: 1
     parts: {面条（煮熟）: 300, 鸡蛋: 100, 番茄: 200, 青菜: 100}
     oil: 8
@@ -127,7 +127,7 @@ recipes:
 
   - id: egg-veg-congee
     name: 鸡蛋青菜粥
-    tags: [早餐, 减脂]
+    tags: [早餐, 减脂, 素食]
     servings: 1
     parts: {白粥: 300, 鸡蛋: 50, 青菜: 100}
     oil: 0
@@ -143,7 +143,7 @@ recipes:
 
   - id: edamame-snack
     name: 盐水毛豆加牛奶
-    tags: [增肌, 减脂]
+    tags: [增肌, 减脂, 素食]
     servings: 1
     parts: {毛豆（煮）: 100, 牛奶（全脂）: 250}
     oil: 0
@@ -151,7 +151,7 @@ recipes:
 
   - id: yogurt-banana-snack
     name: 酸奶香蕉加餐
-    tags: [减脂, 增肌]
+    tags: [减脂, 增肌, 素食]
     servings: 1
     parts: {无糖酸奶: 150, 香蕉: 120, 核桃: 10}
     oil: 0
@@ -164,3 +164,244 @@ recipes:
     parts: {米饭: 250, 虾仁（生）: 100, 鸡蛋: 100, 青菜: 50, 胡萝卜: 30}
     oil: 10
     steps: [鸡蛋炒散盛出, 虾仁和胡萝卜丁炒熟, 下米饭炒散，倒回鸡蛋和青菜，加盐]
+
+  # ---- §184 饮食方案库补的（Claude 按常见家常做法整理，待审定）----
+  - id: soymilk-egg-toast
+    name: 豆浆鸡蛋全麦面包
+    tags: [早餐, 减脂, 素食]
+    servings: 1
+    parts: {豆浆（无糖）: 300, 鸡蛋: 100, 全麦面包: 60, 黄瓜: 100}
+    oil: 0
+    steps: [鸡蛋水煮 8 分钟, 全麦面包烤一下或直接吃, 黄瓜切条，配一杯热豆浆]
+
+  - id: millet-egg-spinach
+    name: 小米粥鸡蛋拌菠菜
+    tags: [早餐, 素食]
+    servings: 1
+    parts: {小米粥: 300, 鸡蛋: 100, 菠菜: 150}
+    oil: 3
+    steps: [小米加水小火煮 30 分钟成粥, 鸡蛋水煮 8 分钟, 菠菜焯水 1 分钟，挤干切段，加几滴香油和醋拌匀]
+
+  - id: lowfat-milk-oats
+    name: 低脂奶燕麦坚果碗
+    tags: [早餐, 减脂, 素食]
+    servings: 1
+    parts: {低脂牛奶: 300, 燕麦片（干）: 50, 核桃: 10, 蓝莓: 80}
+    oil: 0
+    steps: [燕麦片加低脂牛奶，微波 2 分钟或小火煮开, 铺上蓝莓, 撒上掰碎的核桃]
+
+  - id: avocado-egg-toast
+    name: 牛油果鸡蛋全麦吐司
+    tags: [早餐, 素食]
+    servings: 1
+    parts: {全麦面包: 60, 鸡蛋: 100, 牛油果: 50, 番茄: 100}
+    oil: 3
+    steps: [牛油果压成泥抹在烤好的面包上, 鸡蛋少油煎熟放上去, 番茄切片配着吃，撒少许黑胡椒]
+
+  - id: bun-egg-milk
+    name: 肉包鸡蛋牛奶
+    tags: [早餐, 增肌]
+    servings: 1
+    parts: {肉包: 160, 鸡蛋: 50, 牛奶（全脂）: 250}
+    oil: 0
+    steps: [肉包蒸 10 分钟热透, 鸡蛋水煮 8 分钟, 配一盒牛奶]
+
+  - id: egg-custard-millet
+    name: 鸡蛋羹配小米粥
+    tags: [早餐, 素食]
+    servings: 1
+    parts: {鸡蛋: 100, 小米粥: 300, 青菜: 100}
+    oil: 2
+    steps: [鸡蛋加 1.5 倍温水打匀，过筛后盖盘子蒸 10 分钟, 出锅淋几滴香油和少许生抽, 青菜切碎放进小米粥里煮软]
+
+  - id: savory-oat-egg
+    name: 青菜香菇鸡蛋燕麦粥
+    tags: [早餐, 减脂, 素食]
+    servings: 1
+    parts: {燕麦片（干）: 40, 鸡蛋: 100, 青菜: 100, 香菇: 50}
+    oil: 2
+    steps: [香菇切片，少油炒香, 加水和燕麦片煮 3 分钟, 打入鸡蛋，放切碎的青菜煮软，加少许盐]
+
+  - id: zucchini-egg-pancake
+    name: 西葫芦鸡蛋饼配豆浆
+    tags: [早餐, 素食]
+    servings: 1
+    parts: {小麦粉（干）: 50, 鸡蛋: 100, 西葫芦: 100, 胡萝卜: 30, 豆浆（无糖）: 250}
+    oil: 6
+    steps: [西葫芦和胡萝卜擦丝，加鸡蛋、面粉和少许盐调成糊, 平底锅少油，摊成薄饼两面煎熟, 配一杯豆浆]
+
+  - id: kungpao-chicken-rice
+    name: 少油宫保鸡丁饭
+    tags: [增肌, 带饭]
+    servings: 2
+    parts: {鸡胸肉（生）: 300, 黄瓜: 150, 胡萝卜: 100, 花生（炒）: 20, 米饭: 300}
+    oil: 15
+    steps: [鸡胸肉切丁，加少许生抽和淀粉抓匀, 大火把鸡丁炒到变色, 加黄瓜丁、胡萝卜丁炒熟，调少许醋、生抽, 撒花生，配米饭分两份]
+
+  - id: mapo-tofu-rice
+    name: 少油麻婆豆腐饭
+    tags: [增肌, 带饭]
+    servings: 2
+    parts: {老豆腐: 400, 猪肉末（生）: 80, 青菜: 300, 米饭: 300}
+    oil: 15
+    steps: [豆腐切块，用淡盐水焯 1 分钟, 肉末炒散，加少许豆瓣酱炒香, 下豆腐和半碗水煮 5 分钟，勾薄芡, 青菜焯水，配米饭分两份]
+
+  - id: mushroom-chicken-rice
+    name: 香菇鸡腿糙米饭
+    tags: [减脂, 带饭]
+    servings: 2
+    parts: {鸡腿肉（生、去皮）: 300, 香菇: 150, 青菜: 300, 糙米饭: 300}
+    oil: 10
+    steps: [鸡腿肉切块，加生抽和姜片腌 10 分钟, 煎到表面金黄，加香菇和小半碗水焖 10 分钟, 青菜焯水，配糙米饭分两份]
+
+  - id: chicken-soba
+    name: 鸡丝荞麦凉面
+    tags: [减脂, 带饭]
+    servings: 1
+    parts: {荞麦面（煮熟）: 200, 鸡胸肉（熟）: 100, 黄瓜: 100, 胡萝卜: 50, 芝麻酱: 10}
+    oil: 0
+    steps: [荞麦面煮熟过凉水, 熟鸡胸肉撕成丝，黄瓜、胡萝卜切丝, 芝麻酱加醋、少许生抽和温水调开，拌匀]
+
+  - id: chickpea-salad
+    name: 鹰嘴豆沙拉配全麦面包
+    tags: [减脂, 素食]
+    servings: 1
+    parts: {鹰嘴豆（煮）: 120, 番茄: 100, 黄瓜: 100, 洋葱: 30, 奶酪: 20, 全麦面包: 40}
+    oil: 10
+    steps: [鹰嘴豆提前泡一夜，煮 40 分钟到软（或用煮好的）, 番茄、黄瓜、洋葱切丁，和鹰嘴豆、奶酪拌在一起, 淋橄榄油和柠檬汁，配全麦面包]
+
+  - id: salmon-quinoa
+    name: 三文鱼藜麦烤蔬菜
+    tags: [减脂, 增肌]
+    servings: 1
+    parts: {三文鱼（生）: 120, 藜麦（煮熟）: 150, 西葫芦: 100, 青椒: 80}
+    oil: 8
+    steps: [西葫芦、青椒切块，拌一半橄榄油，烤箱 200 度烤 15 分钟, 三文鱼撒盐和黑胡椒，少油煎 6 分钟, 和煮好的藜麦一起装盘]
+
+  - id: lentil-tomato-soup
+    name: 番茄小扁豆汤配全麦面包
+    tags: [减脂, 素食]
+    servings: 1
+    parts: {小扁豆（煮）: 200, 番茄: 150, 胡萝卜: 80, 洋葱: 50, 芹菜: 50, 全麦面包: 60}
+    oil: 8
+    steps: [洋葱、胡萝卜、芹菜切丁，用橄榄油炒软, 加番茄块和小扁豆，加水煮 20 分钟, 加少许盐和黑胡椒，配全麦面包]
+
+  - id: cod-tomato-pasta
+    name: 鳕鱼番茄全麦意面
+    tags: [增肌]
+    servings: 1
+    parts: {鳕鱼（生）: 150, 全麦意面（煮熟）: 200, 番茄: 150, 菠菜: 80}
+    oil: 8
+    steps: [意面煮熟捞出, 番茄炒出汁，放鳕鱼块小火煮 5 分钟, 下菠菜和意面拌匀，加少许盐]
+
+  - id: black-bean-chicken-bowl
+    name: 黑豆鸡胸蔬菜饭
+    tags: [减脂, 带饭]
+    servings: 1
+    parts: {黑豆（煮）: 100, 鸡胸肉（熟）: 100, 糙米饭: 120, 番茄: 80, 生菜: 80, 玉米（煮）: 50}
+    oil: 5
+    steps: [鸡胸肉切片, 生菜、番茄切好铺在碗底, 放上糙米饭、黑豆、玉米和鸡胸肉，淋少许橄榄油和醋]
+
+  - id: bean-rice-chicken-veg
+    name: 杂豆饭配鸡肉炒西兰花
+    tags: [减脂, 带饭]
+    servings: 1
+    parts: {糙米饭: 100, 红豆（煮）: 60, 鸡胸肉（生）: 150, 西兰花: 150, 木耳（泡发）: 50}
+    oil: 8
+    steps: [红豆泡一夜，和糙米一起煮成杂豆饭, 鸡胸肉切片炒到变色, 加西兰花和木耳炒熟，少放盐, 先吃菜和肉，最后吃饭]
+
+  - id: tofu-veg-brown-rice
+    name: 家常豆腐糙米饭
+    tags: [减脂, 带饭, 素食]
+    servings: 2
+    parts: {老豆腐: 300, 青椒: 100, 香菇: 100, 糙米饭: 300}
+    oil: 12
+    steps: [豆腐切片，两面煎黄, 下香菇和青椒炒软, 加少许生抽和水焖 3 分钟, 配糙米饭分两份]
+
+  - id: chickpea-spinach-stew
+    name: 鹰嘴豆番茄菠菜炖配米饭
+    tags: [素食, 带饭]
+    servings: 2
+    parts: {鹰嘴豆（煮）: 200, 番茄: 200, 菠菜: 150, 洋葱: 50, 米饭: 300}
+    oil: 12
+    steps: [洋葱切丁炒软, 加番茄块炒出汁，下鹰嘴豆和小半碗水炖 10 分钟, 放菠菜煮软，加盐, 配米饭分两份]
+
+  - id: edamame-tofu-dry-rice
+    name: 毛豆炒豆干配米饭
+    tags: [增肌, 带饭, 素食]
+    servings: 1
+    parts: {毛豆（煮）: 150, 豆干: 100, 青椒: 100, 米饭: 150}
+    oil: 10
+    steps: [毛豆煮 5 分钟捞出, 豆干切丁，和青椒一起炒香, 倒入毛豆翻匀，加少许盐和生抽，配米饭]
+
+  - id: fish-tofu-soup-rice
+    name: 鱼片豆腐汤配米饭
+    tags: [减脂]
+    servings: 1
+    parts: {草鱼（生）: 150, 嫩豆腐: 200, 青菜: 100, 米饭: 150}
+    oil: 5
+    steps: [鱼肉片成薄片，挑净刺，加姜丝和少许淀粉抓匀, 水开后放豆腐块煮 3 分钟, 下鱼片煮到变白，放青菜，加少许盐]
+
+  - id: beef-potato-stew
+    name: 土豆炖牛肉配米饭
+    tags: [增肌, 带饭]
+    servings: 2
+    parts: {瘦牛肉（生）: 300, 土豆: 300, 胡萝卜: 150, 米饭: 300}
+    oil: 10
+    steps: [牛肉切块焯水, 少油炒香，加生抽和没过的水炖 60 分钟, 加土豆、胡萝卜再炖 20 分钟, 配米饭分两份]
+
+  - id: shrimp-egg-custard
+    name: 虾仁蒸蛋配青菜米饭
+    tags: [减脂]
+    servings: 1
+    parts: {虾仁（生）: 100, 鸡蛋: 100, 青菜: 150, 米饭: 120}
+    oil: 3
+    steps: [鸡蛋加 1.5 倍温水打匀，放进虾仁, 盖盘子蒸 12 分钟，淋几滴香油和生抽, 青菜焯水，配米饭]
+
+  - id: steamed-chicken-yam
+    name: 清蒸鸡腿山药配糙米饭
+    tags: [减脂, 带饭]
+    servings: 1
+    parts: {鸡腿肉（生、去皮）: 150, 山药: 150, 西兰花: 150, 糙米饭: 100}
+    oil: 5
+    steps: [鸡腿肉切块，加姜片和少许生抽腌 10 分钟, 山药切段，和鸡肉一起蒸 20 分钟, 西兰花焯水，淋少许油，配糙米饭]
+
+  - id: tomato-egg-tofu-rice
+    name: 番茄鸡蛋豆腐配米饭
+    tags: [减脂, 素食]
+    servings: 1
+    parts: {鸡蛋: 100, 嫩豆腐: 200, 番茄: 200, 米饭: 150}
+    oil: 8
+    steps: [鸡蛋炒散盛出, 番茄炒出汁，下豆腐块煮 3 分钟, 倒回鸡蛋，加少许盐，配米饭]
+
+  - id: nuts-apple-snack
+    name: 一小把坚果配苹果
+    tags: [减脂, 素食]
+    servings: 1
+    parts: {混合坚果（无盐）: 25, 苹果: 200}
+    oil: 0
+    steps: [选不加盐、不裹糖的坚果，一小把约 25 克, 配一个苹果]
+
+  - id: lowfat-milk-kiwi
+    name: 低脂牛奶配猕猴桃
+    tags: [减脂, 素食]
+    servings: 1
+    parts: {低脂牛奶: 300, 猕猴桃: 150}
+    oil: 0
+    steps: [一杯低脂牛奶, 配两个猕猴桃]
+
+  - id: egg-almond-snack
+    name: 鸡蛋杏仁黄瓜加餐
+    tags: [减脂, 素食]
+    servings: 1
+    parts: {鸡蛋: 50, 杏仁: 15, 黄瓜: 150}
+    oil: 0
+    steps: [鸡蛋水煮 8 分钟, 配一小把杏仁和一根黄瓜]
+
+  - id: milk-egg-bread-snack
+    name: 牛奶鸡蛋全麦面包加餐
+    tags: [增肌, 素食]
+    servings: 1
+    parts: {牛奶（全脂）: 250, 鸡蛋: 50, 全麦面包: 30}
+    oil: 0
+    steps: [牛奶温热, 鸡蛋水煮 8 分钟, 配一片全麦面包]

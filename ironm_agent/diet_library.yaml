@@ -1,0 +1,394 @@
+# 饮食方案库（spec [2026-11-06] §184）：每份是一整天怎么吃，工作日、周末各四顿（早餐、午餐、晚餐、加餐）。
+# 每顿引用推荐食谱（recipes.yaml，type: recipe）或常见减脂餐（meals.yaml，type: preset），servings 是推荐份数；
+# 套用时按他的热量目标缩放（每顿 0.5–3 份、取 0.5 的倍数），减脂餐（外卖、食堂）是一整份，不缩放。
+#
+# 字段：
+#   goals    health 健康 / fat_loss 减脂 / muscle 增肌 / blood_pressure 控血压 / blood_sugar 控糖，主要的写在最前
+#   summary  一句话说这份怎么吃
+#   suits    适合谁；not_for 不适合谁、谁要先问医生或营养师（孕期、未成年、肾病、糖尿病用药不从方案库直接套）
+#   energy   热量怎么定：他的热量目标里已经算了减脂缺口或增肌多吃的部分，这里不再另加减
+#   macros   蛋白质、碳水、脂肪怎么分
+#   points   吃法要点（3–6 条）
+#   refs     依据库编号：正文里引用的编号都要写在这里，这里写的也都要在正文里引用
+# 带数字的句子要有出处（〔K..〕），没有的写〔经验〕；出处编号只在内部留底，页面上不显示（§14）。
+# 方案和要点用自己的话写，不抄原文，不写商标和品牌。内容由 Claude 整理，待审定。
+version: "0.1"
+review: claude_draft
+
+plans:
+  - id: balanced-home
+    name: 均衡家常（膳食宝塔）
+    goals: [health]
+    summary: 照膳食指南的食物量吃，主食、蔬果、奶、鱼禽蛋肉、豆类每天都有，家里做得出来。
+    suits:
+      - 身体健康、想吃得均衡的成年人
+      - 刚开始管饮食、不想算得太细的人
+      - 体重已经合适、想保持的人
+    not_for:
+      - 孕期、哺乳期、18 岁以下：按专门的膳食指南，先问医生或营养师〔经验〕
+      - 有肾病、糖尿病在用药，或者别的慢病正在治疗：先问医生或营养师
+    energy: 按你的每日热量目标吃；目标已经按你的目标（减脂、增肌或保持）算好，这里不再另加减。
+    macros:
+      protein: 练力量的人每天 1.4–2.0 克/公斤体重〔K09〕，分到三餐，每餐 20–40 克〔K36〕。
+      carbs: 谷类每天 200–300 克，其中全谷物和杂豆 50–150 克〔K17〕；剩下的热量主要给主食。
+      fat: 烹调油每天 25–30 克〔K17〕，少吃油炸。
+    points:
+      - 蔬菜每天不少于 300 克、深色的占一半，水果 200–350 克〔K17〕。
+      - 奶和奶制品每天 300–500 克，鱼禽蛋瘦肉 120–200 克，每周至少吃 2 次水产〔K17〕。
+      - 盐每天不超过 5 克，添加糖不超过 50 克、最好在 25 克以下〔K17〕。
+      - 每天喝水 1500–1700 毫升，首选白水〔K17〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: millet-egg-spinach, servings: 1}
+        午餐: {type: recipe, id: mushroom-chicken-rice, servings: 1.5}
+        晚餐: {type: recipe, id: steamed-fish-meal, servings: 1}
+        加餐: {type: recipe, id: yogurt-banana-snack, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: zucchini-egg-pancake, servings: 1}
+        午餐: {type: recipe, id: tomato-egg-noodles, servings: 1}
+        晚餐: {type: recipe, id: tofu-veg-brown-rice, servings: 1}
+        加餐: {type: recipe, id: lowfat-milk-kiwi, servings: 1}
+    refs: [K09, K17, K36]
+
+  - id: cut-home
+    name: 减脂·高蛋白（家常）
+    goals: [fat_loss]
+    summary: 热量按减脂目标，蛋白质吃到高的一端，主食不断、换一部分全谷物，家里能做。
+    suits:
+      - 想减脂、自己做饭或家里有人做饭的成年人
+      - 在练力量、想减脂时少掉肌肉的人
+    not_for:
+      - 孕期、哺乳期、18 岁以下：不做热量缺口，先问医生〔经验〕
+      - 有肾病的：高蛋白不适用，先问医生〔K90〕
+      - 糖尿病在用药、正在吃减重药的：热量和蛋白质请医生或营养师定
+      - 已经很瘦的：不适合快速减〔K125〕
+    energy: 按你的每日热量目标吃：减脂的缺口已经算在目标里（每天缺口不超过约 500 千卡〔K87〕），这里不再另减；每周掉体重的 0.5–1% 正合适〔K37〕。
+    macros:
+      protein: 每天 1.4–2.0 克/公斤体重，往高的一端吃〔K09〕；练力量、已经比较瘦的可以更高〔K37〕。
+      carbs: 主食不断，练前练后那顿放主食〔经验〕；全谷物和杂豆每天 50–150 克〔K17〕。
+      fat: 脂肪占热量的 20–30%〔K124〕，多用蒸、煮、炖，少油。
+    points:
+      - 每餐一份优质蛋白，20–40 克〔K36〕。
+      - 蔬菜每天不少于 300 克〔K17〕；饿了先加蔬菜和清汤〔经验〕。
+      - 体重看一周的平均，单天的起落不算数〔K97〕。
+      - 饮料换成白水、茶或无糖的〔经验〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: savory-oat-egg, servings: 1}
+        午餐: {type: recipe, id: chicken-brown-rice, servings: 1}
+        晚餐: {type: recipe, id: steamed-fish-meal, servings: 1}
+        加餐: {type: recipe, id: greek-yogurt-bowl, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: soymilk-egg-toast, servings: 1}
+        午餐: {type: recipe, id: chicken-soba, servings: 1}
+        晚餐: {type: recipe, id: shrimp-egg-custard, servings: 1}
+        加餐: {type: recipe, id: egg-almond-snack, servings: 1}
+    refs: [K09, K17, K36, K37, K87, K90, K97, K124, K125]
+
+  - id: cut-takeout
+    name: 减脂·外卖食堂
+    goals: [fat_loss]
+    summary: 不做饭也能减：外卖、食堂、便利店照着点，每顿先定蛋白质、主食减量、加一份蔬菜。
+    suits:
+      - 想减脂、平时吃外卖食堂便利店的上班族和学生
+      - 没时间做饭、又不想称重算热量的人
+    not_for:
+      - 孕期、哺乳期、18 岁以下：不做热量缺口，先问医生〔经验〕
+      - 有肾病的：高蛋白不适用，先问医生〔K90〕
+      - 糖尿病在用药、正在吃减重药的：热量和蛋白质请医生或营养师定
+    energy: 按你的每日热量目标吃：减脂的缺口已经算在目标里（每天不超过约 500 千卡〔K87〕），这里不再另减。外卖是一整份，缩放时只调加餐和自己做的那几顿。
+    macros:
+      protein: 每天 1.4–2.0 克/公斤体重，往高的一端吃〔K09〕，每顿先定一份肉、鱼、蛋或豆腐。
+      carbs: 主食吃平时的一半左右，或者换成杂粮饭、红薯、玉米〔经验〕。
+      fat: 少选油炸、干锅、红烧，酱汁另放、蘸着吃〔经验〕。
+    points:
+      - 鱼禽蛋瘦肉每天合计 120–200 克〔K17〕；荤菜选蒸、煮、炖的〔经验〕。
+      - 每顿加一份蔬菜，一天不少于 300 克〔K17〕。
+      - 汤少喝、酱少蘸，盐每天不超过 5 克〔K17〕。
+      - 奶茶、含糖饮料换无糖的，添加糖每天最好在 25 克以下〔K17〕。
+      - 体重看一周的平均，单天的起落不算数〔K97〕。
+    days:
+      weekday:
+        早餐: {type: preset, id: store-sweet-potato, servings: 1}
+        午餐: {type: preset, id: canteen-fish-two-veg, servings: 1}
+        晚餐: {type: preset, id: takeout-chicken-rice, servings: 1}
+        加餐: {type: recipe, id: yogurt-banana-snack, servings: 1}
+      weekend:
+        早餐: {type: preset, id: store-sandwich, servings: 1}
+        午餐: {type: preset, id: takeout-poke, servings: 1}
+        晚餐: {type: preset, id: store-oden, servings: 1}
+        加餐: {type: recipe, id: lowfat-milk-kiwi, servings: 1}
+    refs: [K09, K17, K87, K90, K97]
+
+  - id: bulk-home
+    name: 增肌·家常
+    goals: [muscle]
+    summary: 比维持多吃一点、蛋白质分到每一顿，练后那顿有肉有饭；家常菜做得出来。
+    suits:
+      - 想增肌、每周练 3 次以上力量的成年人〔经验〕
+      - 偏瘦、想长点肉的人
+    not_for:
+      - 18 岁以下：按正常吃饱吃好，具体量先问医生〔经验〕
+      - 有肾病的：高蛋白不适用，先问医生〔K90〕
+      - 孕期、哺乳期、糖尿病在用药的：热量和蛋白质请医生或营养师定
+    energy: 按你的每日热量目标吃：增肌多吃的部分已经算在目标里（比维持多 10–20%〔K88〕），这里不再另加；每周体重涨 0.25–0.5% 正合适〔K88〕，吃太多多长的主要是脂肪〔K89〕。
+    macros:
+      protein: 每天 1.6–2.2 克/公斤体重〔K88〕。
+      carbs: 每天至少 3–5 克/公斤〔K88〕；每天练 1 小时左右的 5–7 克/公斤〔K38〕。
+      fat: 每天 0.5–1.5 克/公斤〔K88〕，剩下的热量给主食。
+    points:
+      - 每 3–4 小时吃一次蛋白质，每次 20–40 克〔K36〕。
+      - 练后两小时内吃一顿有蛋白质的饭〔K36〕。
+      - 胃口小的，加一顿奶、蛋、坚果，比硬塞正餐容易〔经验〕。
+      - 练了多年的，多吃的部分取低端〔K88〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: bun-egg-milk, servings: 1}
+        午餐: {type: recipe, id: beef-potato-stew, servings: 1.5}
+        晚餐: {type: recipe, id: kungpao-chicken-rice, servings: 1.5}
+        加餐: {type: recipe, id: protein-shake, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: oat-egg-breakfast, servings: 1}
+        午餐: {type: recipe, id: shrimp-egg-fried-rice, servings: 1.5}
+        晚餐: {type: recipe, id: mapo-tofu-rice, servings: 1.5}
+        加餐: {type: recipe, id: edamame-snack, servings: 1}
+    refs: [K36, K38, K88, K89, K90]
+
+  - id: bulk-lunchbox
+    name: 增肌·上班带饭
+    goals: [muscle]
+    summary: 前一晚做好两份，第二天带一份当午饭；早餐和加餐用奶、蛋、蛋白粉补蛋白质。
+    suits:
+      - 想增肌、中午在单位或学校吃饭的人
+      - 愿意周末或前一晚花半小时做饭的人〔经验〕
+    not_for:
+      - 18 岁以下：按正常吃饱吃好，具体量先问医生〔经验〕
+      - 有肾病的：高蛋白不适用，先问医生〔K90〕
+      - 孕期、哺乳期、糖尿病在用药的：热量和蛋白质请医生或营养师定
+    energy: 按你的每日热量目标吃：增肌多吃的部分已经算在目标里（比维持多 10–20%〔K88〕），这里不再另加；吃太多多长的主要是脂肪〔K89〕。
+    macros:
+      protein: 每天 1.6–2.2 克/公斤体重〔K88〕，早餐和加餐各有一份奶或蛋。
+      carbs: 每天至少 3–5 克/公斤〔K88〕；每天练 1 小时左右的 5–7 克/公斤〔K38〕。
+      fat: 每天 0.5–1.5 克/公斤〔K88〕。
+    points:
+      - 每顿 20–40 克蛋白质，隔 3–4 小时一次〔K36〕。
+      - 做好立刻分盒、放冷藏，第二天吃完；吃前热透〔经验〕。
+      - 带饭的蔬菜选西兰花、青椒、胡萝卜，叶菜放一夜容易发黄〔经验〕。
+      - 练后两小时内吃一顿有蛋白质的饭〔K36〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: protein-shake, servings: 1}
+        午餐: {type: recipe, id: lean-pork-pepper, servings: 1.5}
+        晚餐: {type: recipe, id: beef-broccoli, servings: 1.5}
+        加餐: {type: recipe, id: milk-egg-bread-snack, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: wholewheat-egg-sandwich, servings: 1}
+        午餐: {type: recipe, id: chicken-thigh-potato, servings: 2}
+        晚餐: {type: recipe, id: salmon-sweet-potato, servings: 1.5}
+        加餐: {type: recipe, id: edamame-snack, servings: 1}
+    refs: [K36, K38, K88, K89, K90]
+
+  - id: mediterranean
+    name: 地中海式
+    goals: [health]
+    summary: 橄榄油做菜、每天一小把坚果，多吃鱼、豆子、蔬菜和全麦，红肉少吃。
+    suits:
+      - 想吃得健康、心血管风险偏高（血脂高、有家族史）的成年人
+      - 喜欢鱼、豆子和橄榄油口味的人
+    not_for:
+      - 坚果过敏的：不吃坚果，只用橄榄油那一半做法
+      - 孕期、哺乳期、18 岁以下，有肾病或糖尿病在用药的：先问医生或营养师〔经验〕
+    energy: 按你的每日热量目标吃。试验里每天约 4 汤匙橄榄油或 30 克坚果，而且不限热量〔K118〕；你要把油和坚果算进目标里，不额外加。
+    macros:
+      protein: 每天 1.4–2.0 克/公斤体重〔K09〕，鱼、豆类、蛋奶多一些，红肉少一些。
+      carbs: 主食多选全麦面包、全麦意面、豆类〔经验〕。
+      fat: 脂肪主要来自橄榄油、坚果和鱼，少吃肥肉、黄油和油炸〔经验〕。
+    points:
+      - 做菜、拌沙拉用橄榄油；每天一小把坚果，试验里是 30 克〔K118〕。
+      - 每周至少吃 2 次水产〔K17〕。
+      - 每周几顿用鹰嘴豆、扁豆、黑豆当主菜〔经验〕。
+      - 试验里这样吃的人，主要心血管事件比只建议少吃脂肪的人少〔K118〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: avocado-egg-toast, servings: 1}
+        午餐: {type: recipe, id: chickpea-salad, servings: 1}
+        晚餐: {type: recipe, id: salmon-quinoa, servings: 1}
+        加餐: {type: recipe, id: nuts-apple-snack, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: greek-yogurt-bowl, servings: 1}
+        午餐: {type: recipe, id: lentil-tomato-soup, servings: 1}
+        晚餐: {type: recipe, id: cod-tomato-pasta, servings: 1}
+        加餐: {type: recipe, id: nuts-apple-snack, servings: 1}
+    refs: [K09, K17, K118]
+
+  - id: dash
+    name: 控血压（DASH）
+    goals: [blood_pressure, health]
+    summary: 蔬菜水果多、低脂奶天天有、全谷物和豆类常吃，盐少放；吃药的照常吃药。
+    suits:
+      - 血压偏高（正常高值）或高血压、想用饮食帮着降压的成年人
+      - 口味偏咸、想慢慢吃淡一点的人
+    not_for:
+      - 晚期肾病、血钾高、在吃保钾利尿药的：这份钾和奶多，先问医生
+      - 在吃降压药的：照常吃药；血压降得太低、头晕时告诉医生
+      - 孕期、哺乳期、18 岁以下：先问医生〔经验〕
+    energy: 按你的每日热量目标吃；试验的食物份数是按每天 2000 千卡排的〔K119〕，目标不同时按比例多吃或少吃。
+    macros:
+      protein: 每天 1.4–2.0 克/公斤体重〔K09〕，鱼、禽、豆类、低脂奶为主，肉禽鱼每天不超过 6 份〔K119〕。
+      carbs: 谷物每天 6–8 份，多选全谷物〔K119〕。
+      fat: 低脂奶每天 2–3 份、油脂 2–3 份，少吃肥肉和油炸〔K119〕。
+    points:
+      - 钠每天不超过 2300 毫克，降到 1500 毫克降压更多〔K119〕；照中国指南，盐每天不超过 5 克〔K17〕。
+      - 蔬菜、水果每天各 4–5 份〔K119〕。
+      - 坚果、种子和豆类每周 4–5 份，甜食每周不超过 5 份〔K119〕。
+      - 试验里低钠的 DASH 比高钠的一般吃法，高血压的人收缩压低 11.5 mmHg〔K119〕。
+      - 少放酱油、咸菜、腌肉，多用醋、葱姜蒜和香料调味〔经验〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: lowfat-milk-oats, servings: 1}
+        午餐: {type: recipe, id: black-bean-chicken-bowl, servings: 1}
+        晚餐: {type: recipe, id: steamed-chicken-yam, servings: 1}
+        加餐: {type: recipe, id: lowfat-milk-kiwi, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: soymilk-egg-toast, servings: 1}
+        午餐: {type: recipe, id: lentil-tomato-soup, servings: 1}
+        晚餐: {type: recipe, id: salmon-sweet-potato, servings: 1}
+        加餐: {type: recipe, id: nuts-apple-snack, servings: 1}
+    refs: [K09, K17, K119]
+
+  - id: low-gi
+    name: 控糖（血糖偏高）
+    goals: [blood_sugar, health]
+    summary: 主食定量、三分之一以上换成全谷物和杂豆，先吃菜再吃肉、最后吃主食，规律吃饭。
+    suits:
+      - 体检血糖偏高（糖尿病前期）的成年人
+      - 2 型糖尿病、医生同意先从饮食和运动管的成年人
+    not_for:
+      - 在打胰岛素或吃促泌剂的：少吃主食、减重、加运动都可能低血糖，药要和医生一起调
+      - 1 型糖尿病、妊娠糖尿病、偏瘦的：要个体方案，找医生或营养师〔K121〕
+      - 有肾病的、18 岁以下、孕期哺乳期：先问医生〔经验〕
+    energy: 按你的每日热量目标吃；超重的人减掉体重的 3–5% 就有好处〔K121〕，减脂的缺口已经在目标里，不再另减。
+    macros:
+      protein: 占热量的 15–20%〔K121〕。
+      carbs: 占热量的 45–60%，主食定量、每顿差不多〔K121〕。
+      fat: 占热量的 20–35%，烹调油每天不超过 25 克〔K121〕。
+    points:
+      - 全谷物和杂豆占主食的三分之一以上，多选低 GI 的〔K121〕。
+      - 吃饭先吃菜、再吃肉、最后吃主食〔K121〕。
+      - 蔬菜每天 500 克，深色的占一半以上；盐不超过 5 克〔K121〕。
+      - 每周至少运动 5 天、每次 30–45 分钟，每周 2 次力量训练〔K121〕。
+      - 三餐定时，不要一顿不吃、下一顿吃很多〔经验〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: savory-oat-egg, servings: 1}
+        午餐: {type: recipe, id: bean-rice-chicken-veg, servings: 1}
+        晚餐: {type: recipe, id: steamed-chicken-yam, servings: 1}
+        加餐: {type: recipe, id: egg-almond-snack, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: soymilk-egg-toast, servings: 1}
+        午餐: {type: recipe, id: black-bean-chicken-bowl, servings: 1}
+        晚餐: {type: recipe, id: chicken-soba, servings: 1}
+        加餐: {type: recipe, id: greek-yogurt-bowl, servings: 1}
+    refs: [K121]
+
+  - id: vegetarian
+    name: 蛋奶素
+    goals: [health]
+    summary: 不吃肉和水产，吃蛋和奶；蛋白质靠豆腐、豆干、毛豆、鹰嘴豆、扁豆和蛋奶凑齐。
+    suits:
+      - 吃蛋奶、不吃肉和水产的成年人
+      - 想少吃肉、试试素食的人
+    not_for:
+      - 纯素（蛋奶也不吃）的：这份不够用，要另外安排，B12 一定要补〔K120〕
+      - 孕期、哺乳期、18 岁以下、60 岁以上和大训练量的运动员：找营养师一起排〔经验〕
+      - 有肾病、糖尿病在用药的：先问医生或营养师
+    energy: 按你的每日热量目标吃，不另加减。
+    macros:
+      protein: 每天 1.4–2.0 克/公斤体重〔K09〕，靠豆制品、豆类、蛋和奶凑齐〔K120〕。
+      carbs: 全谷物和杂豆每天 50–150 克〔K17〕。
+      fat: 烹调油每天 25–30 克〔K17〕。
+    points:
+      - 每顿都有一样高蛋白的：豆腐、豆干、毛豆、鹰嘴豆、蛋或奶〔经验〕。
+      - 奶和奶制品每天 300–500 克〔K17〕。
+      - 搭配得当的素食营养够用，饱和脂肪少、蔬果全谷物和豆类多，对血脂和血糖有好处〔K120〕。
+      - 纯素的人要从强化食品或补充剂补 B12〔K120〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: zucchini-egg-pancake, servings: 1}
+        午餐: {type: recipe, id: tofu-veg-brown-rice, servings: 1.5}
+        晚餐: {type: recipe, id: chickpea-spinach-stew, servings: 1}
+        加餐: {type: recipe, id: greek-yogurt-bowl, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: avocado-egg-toast, servings: 1}
+        午餐: {type: recipe, id: edamame-tofu-dry-rice, servings: 1}
+        晚餐: {type: recipe, id: tomato-egg-tofu-rice, servings: 1}
+        加餐: {type: recipe, id: lowfat-milk-kiwi, servings: 1}
+    refs: [K09, K17, K120]
+
+  - id: older-protein
+    name: 60 岁以上·高蛋白
+    goals: [health, muscle]
+    summary: 蛋白质比年轻人多吃一些、分到三餐，做得软一点、好嚼好消化，配合力量训练。
+    suits:
+      - 60 岁以上、想保住肌肉和力气的人
+      - 在做力量训练、每天走动多的老人
+    not_for:
+      - 肾功能差（eGFR 低于 30、没有透析）的：不要自己加蛋白质，先问医生〔K122〕
+      - 有慢病在用药、吞咽困难、最近体重掉得快的：先问医生或营养师
+    energy: 按你的每日热量目标吃；年纪大了不要猛减体重，减得太快掉的是肌肉〔经验〕。
+    macros:
+      protein: 健康老人每天至少 1.0–1.2 克/公斤体重；常运动的 1.2 克/公斤以上；有慢病的 1.2–1.5 克/公斤〔K122〕。
+      carbs: 主食软一点，粥、面、米饭都行，多选全谷物〔经验〕。
+      fat: 烹调油每天 25–30 克〔K17〕。
+    points:
+      - 蛋白质分到三餐，每餐 20–40 克〔K36〕；蛋、奶、鱼、豆腐都好嚼。
+      - 奶和奶制品每天 300–500 克〔K17〕。
+      - 配合抗阻训练，多吃的蛋白质才更能用来长肌肉〔K122〕。
+      - 牙口不好的，肉切碎蒸软，鱼选刺少的〔经验〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: egg-custard-millet, servings: 1}
+        午餐: {type: recipe, id: fish-tofu-soup-rice, servings: 1}
+        晚餐: {type: recipe, id: shrimp-egg-custard, servings: 1}
+        加餐: {type: recipe, id: lowfat-milk-kiwi, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: lowfat-milk-oats, servings: 1}
+        午餐: {type: recipe, id: beef-noodle-soup, servings: 1}
+        晚餐: {type: recipe, id: steamed-fish-meal, servings: 1}
+        加餐: {type: recipe, id: greek-yogurt-bowl, servings: 1}
+    refs: [K17, K36, K122]
+
+  - id: time-restricted
+    name: 限时进食（8 小时窗口）
+    goals: [fat_loss]
+    summary: 一天的饭集中在 8 小时里吃完〔经验〕；和同样少吃相比没有额外好处〔K123〕，只适合本来就喜欢这样吃的人。
+    suits:
+      - 喜欢晚上不吃东西、觉得集中吃更好管住嘴的健康成年人
+    not_for:
+      - 糖尿病在用药的（尤其胰岛素、促泌剂）：容易低血糖，不要自己用，先问医生
+      - 孕期、哺乳期、18 岁以下：不要用〔经验〕
+      - 有过进食障碍（暴食、催吐、厌食）的：不要用，先问医生
+      - 有肾病或别的慢病在治疗的：先问医生
+    energy: 按你的每日热量目标吃，和平常一样多，只是换个时间吃。试验里两组同样限热量，多加限时进食，12 个月并没有多减重〔K123〕。
+    macros:
+      protein: 每天 1.4–2.0 克/公斤体重〔K09〕，窗口里分三次吃，每次 20–40 克〔K36〕。
+      carbs: 和平常一样；练后那顿放主食〔经验〕。
+      fat: 和平常一样，不用特别调。
+    points:
+      - 窗口固定，比如 10:00–18:00〔经验〕；试验里用的是 8:00–16:00〔K123〕。
+      - 表里的"早餐"是窗口里的第一顿，加餐在下午，晚餐在窗口结束前吃完〔经验〕。
+      - 窗口外只喝水、茶、黑咖啡，不加糖和奶〔经验〕。
+      - 间歇性少吃改善身体成分的效果，没有比每天少吃更好〔K125〕。
+      - 训练排在窗口里，练完有饭吃〔经验〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: oat-egg-breakfast, servings: 1}
+        午餐: {type: recipe, id: chicken-brown-rice, servings: 1}
+        晚餐: {type: recipe, id: mushroom-chicken-rice, servings: 1}
+        加餐: {type: recipe, id: yogurt-banana-snack, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: avocado-egg-toast, servings: 1}
+        午餐: {type: recipe, id: kungpao-chicken-rice, servings: 1}
+        晚餐: {type: recipe, id: salmon-sweet-potato, servings: 1}
+        加餐: {type: recipe, id: edamame-snack, servings: 1}
+    refs: [K09, K36, K123, K125]

@@ -109,3 +109,40 @@ export type PlanLib = {
 
 /** 今天的饮食（只用到这一天记过哪几餐，提示"记下后会替换"）。 */
 export type MealDay = { meals: { kind: string; name: string }[] };
+
+/** 饮食方案库（§184，服务端 web_diet_library）：列表里的一份。 */
+export type DietLibBrief = {
+  id: string;
+  name: string;
+  goals: string[];
+  suits: string[];
+  summary: string;
+  per_day: Record<"weekday" | "weekend", { kcal: number; protein_g: number }>;
+};
+
+/** 一顿（同饮食计划的一格）：名字、份数、逐样吃什么、营养。 */
+export type DietLibSlot = {
+  type: "recipe" | "preset";
+  id: string;
+  servings: number;
+  name: string;
+  kcal: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  foods: { name: string; grams: number; kcal: number }[];
+};
+
+export type DietLibDay = { slots: Record<string, DietLibSlot>; total: Macros };
+
+/** 一份方案的全部内容：days 按推荐份数，scaled 按他的热量目标缩放（没有目标时 target 为空）。 */
+export type DietLibPlan = DietLibBrief & {
+  not_for: string[];
+  energy: string;
+  macros: { protein: string; carbs: string; fat: string };
+  points: string[];
+  refs: string[];
+  days: Record<"weekday" | "weekend", DietLibDay>;
+  scaled: { target: { kcal: number; protein_g: number } | null; days: Record<"weekday" | "weekend", DietLibDay> };
+  note: string;
+};

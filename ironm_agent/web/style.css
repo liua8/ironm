@@ -2203,6 +2203,13 @@ html { -webkit-font-smoothing: antialiased; font-smooth: auto; }
 .plan-lib { display: flex; flex-direction: column; gap: 10px; }
 .plan-lib-card { display: flex; flex-direction: column; gap: 4px; cursor: pointer; }
 .plan-lib-card .chip { align-self: flex-start; }
+/* §184 饮食方案库：卡片上的每天热量、详情里一天吃什么 */
+.diet-lib-kcal { font-size: 13px; color: var(--ink-2); }
+.plan-lib-card .tags .chip { align-self: auto; }
+.diet-day { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.diet-day .row-sub { white-space: normal; }
+.diet-day-total { margin: 0; font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.diet-refs summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 
 /* §163 管家看今天：正在看、出错了（能重试）、定了休息；临时调整的预览 */
 .today-coach { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; font-size: 14px; line-height: 1.5;

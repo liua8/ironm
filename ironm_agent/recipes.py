@@ -22,7 +22,7 @@ from ironm_agent.meals import FoodLine, Macros, Meal, MealKind, food_line, meal_
 from ironm_agent.yamlfile import load_yaml
 
 RECIPES_PATH = Path(__file__).with_name("recipes.yaml")
-TAGS = ("减脂", "增肌", "早餐", "带饭")
+TAGS = ("减脂", "增肌", "早餐", "带饭", "素食")
 SLOTS: tuple[MealKind, ...] = ("早餐", "午餐", "晚餐", "加餐")
 type PlanSet = Literal["weekday", "weekend"]
 MAX_PARTS = 11  # 加上油一共不超过一餐的 12 样

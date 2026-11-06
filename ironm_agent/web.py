@@ -720,6 +720,11 @@ from ironm_agent.web_atlas import router as _atlas  # noqa: E402
 
 router.include_router(_atlas)
 
+# 饮食方案库：看、套用成饮食计划、撤销（spec [2026-11-06] §184）
+from ironm_agent.web_diet_library import router as _diet_library  # noqa: E402
+
+router.include_router(_diet_library)
+
 # 找回密码（spec [2026-11-03] §155）：从 mirobody 挪进 iron-m，mirobody 的代码一行不改（§168）
 from ironm_agent.web_password import router as _password  # noqa: E402
 

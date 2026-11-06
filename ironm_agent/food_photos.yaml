@@ -25,6 +25,8 @@ queries:
   food:yam: chinese yam dioscorea
   food:rice-cake: nian gao rice cake slices
   food:quinoa: "File:Quinoa 2.jpg"
+  food:soba: soba noodles
+  food:wholewheat-pasta: whole wheat pasta
   # 肉蛋
   food:egg: "File:Hard boiled egg 2.jpg"
   food:egg-white: egg whites
@@ -61,6 +63,11 @@ queries:
   food:tofu-dry: ""  # 没找到合适的图：用色块
   food:soymilk: soy milk glass
   food:edamame: edamame
+  food:lowfat-milk: glass of milk
+  food:chickpeas: cooked chickpeas
+  food:lentils: cooked lentils
+  food:black-beans: cooked black beans
+  food:adzuki: adzuki beans
   # 蔬菜
   food:broccoli: "File:Stir-fried broccoli.jpg"
   food:spinach: spinach leaves
@@ -113,6 +120,7 @@ queries:
   food:sunflower-seeds: "File:Sunflowers seeds food.jpg"
   food:peanut-butter: "File:Peanut butter glass.jpg"
   food:sesame-paste: sesame paste tahini
+  food:mixed-nuts: mixed nuts
   food:oil: "File:Cooking Oil.jpg"
   food:butter: butter block
   food:sugar: "File:Sugar on a blue plate (close up).jpg"
@@ -185,6 +193,37 @@ queries:
   recipe:edamame-snack: boiled edamame bowl
   recipe:yogurt-banana-snack: "File:BananaYogurt.jpg"
   recipe:shrimp-egg-fried-rice: shrimp fried rice
+  # §184 饮食方案库补的食谱
+  recipe:soymilk-egg-toast: soy milk boiled egg toast breakfast
+  recipe:millet-egg-spinach: millet porridge egg
+  recipe:lowfat-milk-oats: oatmeal blueberries walnuts
+  recipe:avocado-egg-toast: avocado egg toast
+  recipe:bun-egg-milk: baozi breakfast
+  recipe:egg-custard-millet: steamed egg custard
+  recipe:savory-oat-egg: savory oatmeal egg
+  recipe:zucchini-egg-pancake: zucchini pancake
+  recipe:kungpao-chicken-rice: kung pao chicken
+  recipe:mapo-tofu-rice: mapo tofu rice
+  recipe:mushroom-chicken-rice: chicken shiitake rice
+  recipe:chicken-soba: cold soba noodle salad chicken
+  recipe:chickpea-salad: chickpea salad
+  recipe:salmon-quinoa: salmon quinoa bowl
+  recipe:lentil-tomato-soup: lentil tomato soup
+  recipe:cod-tomato-pasta: fish tomato pasta
+  recipe:black-bean-chicken-bowl: black bean chicken rice bowl
+  recipe:bean-rice-chicken-veg: chicken broccoli stir fry
+  recipe:tofu-veg-brown-rice: tofu stir fry peppers
+  recipe:chickpea-spinach-stew: chickpea spinach stew
+  recipe:edamame-tofu-dry-rice: edamame stir fry
+  recipe:fish-tofu-soup-rice: fish tofu soup
+  recipe:beef-potato-stew: beef potato stew
+  recipe:shrimp-egg-custard: steamed egg shrimp
+  recipe:steamed-chicken-yam: steamed chicken
+  recipe:tomato-egg-tofu-rice: tomato egg tofu
+  recipe:nuts-apple-snack: apple and nuts
+  recipe:lowfat-milk-kiwi: kiwifruit milk
+  recipe:egg-almond-snack: boiled egg almonds
+  recipe:milk-egg-bread-snack: milk egg whole wheat bread
   # 减脂餐
   preset:takeout-chicken-rice: "File:Lemongrass chicken rice bowl with kimchi.jpg"
   preset:takeout-beef-noodle: beef noodle soup bowl

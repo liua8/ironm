@@ -301,6 +301,7 @@ def test_tools_only_for_listed_roles() -> None:
     }
     assert {t.name for t in tools_for("nutrition")} == {
         "nutrition_calc",
+        "diet_templates",
         "trend_analysis",
         "explain_trends",
     }

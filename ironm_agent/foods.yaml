@@ -33,6 +33,9 @@ foods:
   - {id: yam, name: 山药, aka: [铁棍山药], cat: 主食, per100: [57, 1.9, 12.4, 0.2], unit: [根, 200]}
   - {id: rice-cake, name: 年糕, aka: [], cat: 主食, per100: [154, 3.3, 34.7, 0.6], unit: [份, 100]}
   - {id: quinoa, name: 藜麦（煮熟）, aka: [藜麦], cat: 主食, per100: [120, 4.4, 21.3, 1.9], unit: [碗, 150]}
+  # §184 饮食方案库补的（USDA FoodData Central，SR Legacy；注释里是 FDC 编号）
+  - {id: soba, name: 荞麦面（煮熟）, aka: [荞麦面, 荞麦面条], cat: 主食, per100: [99, 5.1, 21.4, 0.1], unit: [碗, 200]}  # FDC 168907
+  - {id: wholewheat-pasta, name: 全麦意面（煮熟）, aka: [全麦意面, 全麦意大利面], cat: 主食, per100: [149, 6.0, 30.1, 1.7], unit: [盘, 200]}  # FDC 168910
 
   # ---- 肉蛋（生重 / 熟重分开写）----
   - {id: egg, name: 鸡蛋, aka: [煮鸡蛋, 水煮蛋, 茶叶蛋, 蛋], cat: 肉蛋, per100: [143, 12.6, 0.7, 9.5], unit: [个, 50]}
@@ -72,6 +75,12 @@ foods:
   - {id: tofu-dry, name: 豆干, aka: [豆腐干, 香干], cat: 奶豆, per100: [140, 16.2, 11.5, 3.6], unit: [块, 50]}
   - {id: soymilk, name: 豆浆（无糖）, aka: [豆浆, 无糖豆浆], cat: 奶豆, per100: [33, 2.9, 1.7, 1.6], unit: [杯, 250]}
   - {id: edamame, name: 毛豆（煮）, aka: [毛豆], cat: 奶豆, per100: [121, 11.9, 8.9, 5.2], unit: [份, 100]}
+  # §184 饮食方案库补的（USDA FoodData Central，SR Legacy；豆类是煮熟不加盐的；注释里是 FDC 编号）
+  - {id: lowfat-milk, name: 低脂牛奶, aka: [低脂奶], cat: 奶豆, per100: [42, 3.4, 5.0, 1.0], unit: [盒, 250]}  # FDC 170872（1% 乳脂）
+  - {id: chickpeas, name: 鹰嘴豆（煮）, aka: [鹰嘴豆], cat: 奶豆, per100: [164, 8.9, 27.4, 2.6], unit: [份, 100]}  # FDC 173757
+  - {id: lentils, name: 小扁豆（煮）, aka: [小扁豆, 兵豆, 扁豆仁], cat: 奶豆, per100: [116, 9.0, 20.1, 0.4], unit: [份, 100]}  # FDC 172421
+  - {id: black-beans, name: 黑豆（煮）, aka: [黑豆], cat: 奶豆, per100: [132, 8.9, 23.7, 0.5], unit: [份, 100]}  # FDC 173735
+  - {id: adzuki, name: 红豆（煮）, aka: [红豆, 赤小豆, 红小豆], cat: 奶豆, per100: [128, 7.5, 24.8, 0.1], unit: [份, 100]}  # FDC 173728
 
   # ---- 蔬菜（生重）----
   - {id: broccoli, name: 西兰花, aka: [西蓝花, 绿花菜], cat: 蔬菜, per100: [34, 2.8, 6.6, 0.4], unit: [份, 200]}
@@ -127,6 +136,7 @@ foods:
   - {id: sunflower-seeds, name: 瓜子（葵花子）, aka: [瓜子, 葵花子], cat: 坚果油, per100: [582, 19.3, 24.0, 49.8], unit: [把, 20]}
   - {id: peanut-butter, name: 花生酱, aka: [], cat: 坚果油, per100: [588, 25.1, 20.0, 50.4], unit: [勺, 15]}
   - {id: sesame-paste, name: 芝麻酱, aka: [麻酱], cat: 坚果油, per100: [595, 17.0, 21.0, 54.0], unit: [勺, 15]}
+  - {id: mixed-nuts, name: 混合坚果（无盐）, aka: [混合坚果, 坚果, 什锦坚果], cat: 坚果油, per100: [607, 19.5, 22.4, 53.5], unit: [把, 25]}  # §184，FDC 170585（含花生、干烤不加盐）
   - {id: oil, name: 食用油, aka: [油, 植物油, 花生油, 橄榄油, 香油, 麻油], cat: 坚果油, per100: [884, 0, 0, 100], unit: [勺, 10]}
   - {id: butter, name: 黄油, aka: [], cat: 坚果油, per100: [717, 0.9, 0.1, 81.0], unit: [块, 10]}
   - {id: sugar, name: 白砂糖, aka: [糖, 白糖, 冰糖], cat: 坚果油, per100: [387, 0, 100, 0], unit: [勺, 10]}

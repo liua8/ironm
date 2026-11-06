@@ -1,14 +1,15 @@
 // 图鉴（spec §136、§161、§164 第三期；§176 照网页 §175 四段）：只放资料，动作 / 器械 / 食物 / 方案；
-// 食物段有 食材 / 食谱，方案段是方案库。打分、排名、评论都在排行榜（首页最上面"今日热搜"进去）。
+// 食物段有 食材 / 食谱，方案段有 训练 / 饮食 两个方案库（饮食方案库 §184）。打分、排名、评论都在排行榜（首页最上面"今日热搜"进去）。
 import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 
 import { FoodSection, FoodSheet } from "@/features/atlas/foods";
 import { MachineSheet, MachinesSection } from "@/features/atlas/machines";
 import { ExerciseSheet, MovesSection } from "@/features/atlas/moves";
+import { DietPlanSheet, DietPlansSection } from "@/features/atlas/diet-plans";
 import { PlanSheet, PlansSection } from "@/features/atlas/plans";
 import { RecipeSheet, RecipesSection } from "@/features/atlas/recipes";
-import type { Exercise, ExerciseLib, Food, Machine, PlanLib, Recipe } from "@/features/atlas/types";
+import type { DietLibBrief, Exercise, ExerciseLib, Food, Machine, PlanLib, Recipe } from "@/features/atlas/types";
 import { Pills } from "@/features/atlas/ui";
 import { AppBar, Screen, Seg } from "@/ui/pixel";
 
@@ -19,12 +20,12 @@ const SEGS: readonly (readonly [SegKey, string])[] = [
   ["food", "食物"],
   ["plans", "方案"],
 ];
-// 每段里的小标签（plans 只有方案库，不出小标签）
+// 每段里的小标签
 const CHIPS: Record<SegKey, readonly (readonly [string, string])[]> = {
   moves: [],
   machines: [],
   food: [["", "食材"], ["recipes", "食谱"]],
-  plans: [],
+  plans: [["", "训练"], ["diet", "饮食"]],
 };
 
 // 同一时间只开一个详情；器械详情里点动作换成动作详情（同网页 openSheet）
@@ -34,6 +35,7 @@ type Open =
   | { kind: "food"; f: Food }
   | { kind: "recipe"; x: Recipe; reload: () => void }
   | { kind: "plan"; x: PlanLib }
+  | { kind: "diet"; x: DietLibBrief }
   | null;
 
 const isSeg = (v: unknown): v is SegKey => v === "moves" || v === "machines" || v === "food" || v === "plans";
@@ -81,6 +83,8 @@ export default function Atlas() {
         <RecipesSection onOpen={(x, reload) => setOpen({ kind: "recipe", x, reload })} />
       ) : seg === "food" ? (
         <FoodSection onOpen={(f) => setOpen({ kind: "food", f })} />
+      ) : seg === "plans" && chip === "diet" ? (
+        <DietPlansSection onOpen={(x) => setOpen({ kind: "diet", x })} />
       ) : (
         <PlansSection onOpen={(x) => setOpen({ kind: "plan", x })} />
       )}
@@ -90,6 +94,7 @@ export default function Atlas() {
       {open?.kind === "food" ? <FoodSheet f={open.f} onClose={close} /> : null}
       {open?.kind === "recipe" ? <RecipeSheet x={open.x} reload={open.reload} onClose={close} /> : null}
       {open?.kind === "plan" ? <PlanSheet x={open.x} onClose={close} /> : null}
+      {open?.kind === "diet" ? <DietPlanSheet key={open.x.id} id={open.x.id} title={open.x.name} onClose={close} /> : null}
     </Screen>
   );
 }

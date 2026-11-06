@@ -2388,3 +2388,183 @@ entries:
     keywords: ["消耗", "热量消耗", "千卡", "卡路里", "代谢当量", "MET", "练一次消耗多少"]
     url: https://doi.org/10.1016/j.jshs.2023.10.010
     review: claude_draft
+
+  - id: K118
+    domains: [nutrition]
+    title: "地中海饮食加特级初榨橄榄油或坚果可降低高心血管风险人群的主要心血管事件"
+    source: "Primary Prevention of Cardiovascular Disease with a Mediterranean Diet Supplemented with Extra-Virgin Olive Oil or Nuts (PREDIMED)"
+    publisher: "New England Journal of Medicine"
+    year: 2018
+    level: rct
+    population: "55–80 岁、心血管高风险但尚无心血管病的成人"
+    summary: "西班牙多中心试验，对照组只建议少吃脂肪；两种地中海饮食组的主要心血管事件都少于对照组。2013 年的原报告因随机化偏差被撤回，2018 年用修正后的分析重新发表。"
+    points:
+      - text: "共纳入 7447 人，年龄 55–80 岁，女性占 57%，中位随访 4.8 年"
+        where: "摘要 Methods"
+      - text: "主要事件发生率为橄榄油组 3.8%、坚果组 3.4%、对照组 4.4%"
+        where: "摘要 Results"
+      - text: "与对照组相比，橄榄油组 HR 0.69（95%CI 0.53–0.91），坚果组 HR 0.72（95%CI 0.54–0.95）"
+        where: "摘要 Results"
+      - text: "实际吃法是每周发放特级初榨橄榄油 1 升、目标每天至少 4 汤匙；或每天发放混合坚果 30 克（核桃 15 克、榛子 7.5 克、杏仁 7.5 克）；不要求限能量或增加运动"
+        where: "补充来源 Basterra-Gortari 等 Diabetes Care 2019;42:1390（PMC6647050）Methods"
+    keywords: ["地中海饮食", "橄榄油", "坚果", "心血管病", "一级预防", "鱼类", "豆类", "膳食模式"]
+    url: https://doi.org/10.1056/NEJMoa1800389
+    review: claude_draft
+
+  - id: K119
+    domains: [nutrition]
+    title: "DASH 饮食加限钠能明显降低血压，两者合用效果最大"
+    source: "Effects on Blood Pressure of Reduced Dietary Sodium and the DASH Diet (DASH-Sodium)"
+    publisher: "New England Journal of Medicine"
+    year: 2001
+    level: rct
+    population: "血压正常或患高血压的成人"
+    summary: "在美国常见饮食组和 DASH 饮食组里，分别吃高、中、低三种钠水平的饮食各 30 天。钠越低血压越低，DASH 饮食在每个钠水平下都更低。"
+    points:
+      - text: "共 412 人，每个钠水平连续吃 30 天，顺序随机"
+        where: "摘要 Methods"
+      - text: "钠从高降到中，收缩压在对照饮食下降 2.1 mmHg、在 DASH 下降 1.3 mmHg；再从中降到低，又分别降 4.6 和 1.7 mmHg"
+        where: "摘要 Results"
+      - text: "低钠 DASH 与高钠对照饮食相比，血压正常者收缩压低 7.1 mmHg，高血压者低 11.5 mmHg"
+        where: "摘要 Results"
+      - text: "按每天 2000 千卡计，DASH 每天吃谷物 6–8 份、蔬菜 4–5 份、水果 4–5 份、低脂奶 2–3 份、肉禽鱼不超过 6 份、油脂 2–3 份；坚果种子豆类每周 4–5 份，甜食每周不超过 5 份；钠每天 2300 毫克，降到 1500 毫克降压更多"
+        where: "补充来源 NHLBI DASH Eating Plan 页的份量表及脚注（https://www.nhlbi.nih.gov/education/dash-eating-plan）"
+    keywords: ["DASH饮食", "高血压", "限钠", "低盐", "收缩压", "低脂奶", "蔬菜水果", "膳食模式"]
+    url: https://doi.org/10.1056/NEJM200101043440101
+    review: claude_draft
+
+  - id: K120
+    domains: [nutrition]
+    title: "合理搭配的素食（含纯素）营养充足，适合各个年龄段和运动员，但纯素者必须补充 B12"
+    source: "Position of the Academy of Nutrition and Dietetics: Vegetarian Diets (Melina, Craig, Levin)"
+    publisher: "Journal of the Academy of Nutrition and Dietetics"
+    year: 2016
+    level: position_stand
+    population: "各年龄段素食或纯素人群，包括孕期、哺乳期、儿童、老人和运动员"
+    summary: "美国营养与饮食学会认为，搭配得当的素食健康、营养充足，并有助于防治部分慢性病；纯素者需要从强化食品或补充剂中获取 B12。"
+    points:
+      - text: "合理搭配的素食和纯素适合从孕期到老年的各个阶段，也适合运动员"
+        where: "摘要"
+      - text: "素食者患缺血性心脏病、2型糖尿病、高血压、部分癌症和肥胖的风险较低"
+        where: "摘要"
+      - text: "饱和脂肪少，蔬果、全谷物、豆类、豆制品、坚果和种子多，这与总胆固醇、LDL 更低和血糖控制更好有关"
+        where: "摘要"
+      - text: "纯素者需要可靠的 B12 来源，比如强化食品或补充剂"
+        where: "摘要"
+    keywords: ["素食", "纯素", "植物性饮食", "维生素B12", "素食运动员", "营养充足", "慢性病预防"]
+    url: https://doi.org/10.1016/j.jand.2016.09.025
+    review: claude_draft
+
+  - id: K121
+    domains: [nutrition]
+    title: "成人2型糖尿病饮食要点：主食定量、多选全谷物，超重的人适度减重"
+    source: "成人糖尿病食养指南（2023年版）（国家卫健委办公厅发文（国卫办食品函 2023 年 5 号）；原文 PDF 在官网没找到，这里是高校网站的转载）"
+    publisher: "国家卫生健康委员会办公厅"
+    year: 2023
+    level: guideline
+    population: "成人2型糖尿病患者（1型糖尿病、妊娠糖尿病需在专业人员指导下参考）"
+    summary: "官方食养指南，要求能量合适、主食定量、优先吃全谷物和低 GI 食物，少油少盐，规律进餐并结合运动；超重的患者小幅减重就能获益。"
+    points:
+      - text: "推荐蛋白质占总能量 15–20%、碳水化合物 45–60%、脂肪 20–35%；按每天 1800–2000 千卡算，碳水约 200–300 克"
+        where: "三（二）及（三）"
+      - text: "全谷物和杂豆等低 GI 食物应占主食的三分之一以上；进餐时先吃菜、最后吃主食"
+        where: "三（三）"
+      - text: "超重或肥胖的患者减重 3–5% 就有临床意义；建议每月减 1–2 千克，3–6 个月减掉体重的 5–10%"
+        where: "三（二）"
+      - text: "每天吃蔬菜 500 克，深色蔬菜占一半以上；烹调油不超过 25 克，盐不超过 5 克"
+        where: "三（一）及（五）"
+      - text: "每周至少运动 5 天、每次 30–45 分钟，一半以上为中等强度；没有禁忌的话每周做 2 次抗阻训练"
+        where: "三（四）"
+    keywords: ["糖尿病饮食", "2型糖尿病", "主食定量", "全谷物", "低GI", "碳水化合物", "减重", "规律进餐"]
+    url: https://xyy.wnmc.edu.cn/__local/1/04/47/4459384D8ED88F0BCD2E5E340C4_8FC79CD8_1FBE7F.pdf
+    review: claude_draft
+
+  - id: K122
+    domains: [nutrition]
+    title: "65 岁以上老人每天至少需要 1.0–1.2 g/kg 蛋白质，经常运动或患病的需要更多"
+    source: "Evidence-based recommendations for optimal dietary protein intake in older people: a position paper from the PROT-AGE Study Group"
+    publisher: "Journal of the American Medical Directors Association"
+    year: 2013
+    level: consensus
+    population: "65 岁以上老人"
+    summary: "老人对蛋白质的合成反应变弱、患病时分解增多，所以比年轻人需要更多蛋白质，并应配合个体化的耐力和抗阻运动。"
+    points:
+      - text: "健康老人每天平均至少吃 1.0–1.2 g/kg 蛋白质"
+        where: "摘要"
+      - text: "经常运动或日常活跃的老人，建议每天 ≥1.2 g/kg"
+        where: "摘要"
+      - text: "大多数有急性或慢性病的老人，需要每天 1.2–1.5 g/kg"
+        where: "摘要"
+      - text: "例外：eGFR <30 mL/min/1.73m² 且未透析的严重肾病老人，可能需要限制蛋白质"
+        where: "摘要"
+    keywords: ["老年人", "蛋白质", "肌少症", "抗阻训练", "每公斤体重", "肾功能", "衰弱"]
+    url: https://doi.org/10.1016/j.jamda.2013.05.021
+    review: claude_draft
+
+  - id: K123
+    domains: [nutrition]
+    title: "已经在限能量的情况下，再限定进食时间并不能多减重"
+    source: "Calorie Restriction with or without Time-Restricted Eating in Weight Loss"
+    publisher: "New England Journal of Medicine"
+    year: 2022
+    level: rct
+    population: "肥胖成人"
+    summary: "两组能量摄入相同，一组只在上午 8 点到下午 4 点之间进食。12 个月后，体重、体脂和代谢指标两组都没有显著差别。"
+    points:
+      - text: "139 名肥胖患者随机分组，限时组只在 8:00–16:00 进食"
+        where: "摘要 Methods"
+      - text: "两组都限能量：男性每天 1500–1800 千卡，女性每天 1200–1500 千卡，持续 12 个月"
+        where: "摘要 Methods"
+      - text: "12 个月时限时组减重 8.0 千克，单纯限能量组减重 6.3 千克；差值 1.8 千克（95%CI −4.0 至 0.4，P=0.11），不显著"
+        where: "摘要 Results"
+      - text: "118 人（84.9%）完成随访；腰围、体脂、去脂体重、血压和代谢指标的结果与体重一致"
+        where: "摘要 Results"
+    keywords: ["限时进食", "轻断食", "间歇性禁食", "限能量", "减重", "肥胖", "进食窗口"]
+    url: https://doi.org/10.1056/NEJMoa2114833
+    review: claude_draft
+
+  - id: K124
+    domains: [nutrition]
+    title: "超重肥胖的饮食干预：每天少吃 500–1000 千卡，可选高蛋白、轻断食或代餐"
+    source: "体重管理指导原则（2024年版）"
+    publisher: "国家卫生健康委员会"
+    year: 2024
+    level: guideline
+    population: "超重或肥胖的成人（减重速度目标主要针对 BMI 24.0–32.5）"
+    summary: "生活方式干预是减重的基础，饮食上以限能量为核心；高蛋白、低碳水、间歇性能量限制和代餐等可以按个人情况选用，部分只适合短期使用。"
+    points:
+      - text: "BMI 在 24.0 到 32.5 之间的人，起始目标是每周减 0.5–1 千克、每月 2–4 千克，6 个月内减掉体重的 5–15% 并保持"
+        where: "三、超重肥胖的干预和治疗（开头）"
+      - text: "每天少吃 500–1000 千卡或减少 30% 的总能量；碳水、脂肪、蛋白质分别占 50–60%、20–30%、15–20%"
+        where: "三（一）1.（1）限制能量饮食"
+      - text: "高蛋白饮食指蛋白质供能超过 20%，一般不超过 30%；低碳水饮食指碳水供能 ≤40%、脂肪 ≥30%"
+        where: "三（一）1.（3）"
+      - text: "间歇性能量限制包括隔日禁食、4:3 和 5:2，禁食日的能量一般不超过平时需要量的 25%；代餐是每天替换一到两餐"
+        where: "三（一）1.（4）"
+    keywords: ["减重", "超重肥胖", "限能量", "高蛋白饮食", "代餐", "间歇性能量限制", "5:2轻断食", "减重速度"]
+    url: https://www.nhc.gov.cn/ylyjs/zcwj/202412/75cb79c171c94def9e768193e65484f7/files/1736390749000_59785.pdf
+    review: claude_draft
+
+  - id: K125
+    domains: [nutrition]
+    title: "改善身体成分的关键是持续的能量差，越瘦减得越慢越好，减脂期蛋白质要更高"
+    source: "International society of sports nutrition position stand: diets and body composition"
+    publisher: "Journal of the International Society of Sports Nutrition"
+    year: 2017
+    level: position_stand
+    population: "想减脂或增肌的训练人群"
+    summary: "减脂靠持续的能量缺口，增肌靠持续的能量盈余；低脂到生酮之间的各种饮食效果相近；做力量训练的瘦人在减脂期需要更高的蛋白质。"
+    points:
+      - text: "体脂越高，能量缺口可以开得越大；越瘦的人，减得慢越能保住瘦体重"
+        where: "摘要 第3条"
+      - text: "举例：每周减体重的 0.7% 比减 1.4% 保肌效果更好；健美备赛建议每周减体重的 0.5–1.0%"
+        where: "Conclusions and recommendations"
+      - text: "做力量训练的瘦人在能量不足时，可能需要每公斤去脂体重 2.3–3.1 g 蛋白质"
+        where: "摘要 第6条"
+      - text: "间歇性能量限制改善身体成分的效果，没有比每天限能量更好"
+        where: "摘要 第7条"
+      - text: "增肌期：新手能量盈余可以大一些，进阶训练者盈余要小一些，以免多长脂肪"
+        where: "Conclusions and recommendations"
+    keywords: ["减脂", "增肌", "能量缺口", "热量盈余", "减重速度", "高蛋白", "去脂体重", "身体成分"]
+    url: https://doi.org/10.1186/s12970-017-0174-y
+    review: claude_draft

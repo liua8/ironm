@@ -201,6 +201,13 @@ async def _templates(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
     )
 
 
+async def _diet_templates(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
+    """饮食方案库（§184）：不填 name 给目录，填了给那一份（有热量目标时按目标缩放份数）。"""
+    from ironm_agent.diet_library import diet_templates
+
+    return diet_templates(str(args.get("name") or ""), ctx.kcal_target)
+
+
 def _sources(refs: Iterable[str]) -> str:
     """资料编号 → "名称（机构 年份）"，追问依据时讲得出来。"""
     from ironm_agent.kb import default_kb
@@ -477,6 +484,16 @@ TOOLS: dict[str, ProTool] = {
                 }
             ),
             _nutrition,
+        ),
+        ProTool(
+            "diet_templates",
+            frozenset({"nutrition", "general"}),
+            "饮食方案库：每份是一整天怎么吃（均衡家常、减脂高蛋白、外卖食堂、增肌、地中海、控血压、控糖、蛋奶素、"
+            "60 岁以上、限时进食等），写明适合谁、谁要先问医生、热量和三大营养素怎么定、吃法要点、工作日和周末各四顿。"
+            "要给他排饮食、他问有哪些饮食方案时先调它：什么都不填给目录；name 填方案编号或名字给那一份的内容，"
+            "按他的热量目标算好每顿几份。推荐时说清参考的是哪一份；套用由他在图鉴里点，不要自己改他的饮食计划。",
+            _obj({"name": {"type": "string", "description": "方案编号或名字，如“地中海”“控糖”；要目录时不填"}}),
+            _diet_templates,
         ),
         ProTool(
             "pain_check",

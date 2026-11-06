@@ -46,6 +46,8 @@ CATALOG: tuple[Tool, ...] = (
          "find_substitutes", personal=True),
     Tool("营养计算", "iron-m", "nutrition_calc", frozenset({"nutrition", "general"}),
          "nutrition_calc", personal=True),
+    Tool("饮食方案库", "iron-m", "diet_templates", frozenset({"nutrition", "general"}),
+         "diet_templates", personal=True, note="目录和单份内容，按热量目标算每顿几份；套用由他在图鉴里点（§184）"),
     Tool("疼痛判断", "iron-m", "pain_check", frozenset({"recovery", "general"}), "pain_check",
          personal=True, note="运动场景分流，不做诊断"),
     Tool("指标趋势", "iron-m", "trend_analysis", EXPERTS, "trend_analysis", personal=True),

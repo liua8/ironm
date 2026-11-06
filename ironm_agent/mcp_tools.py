@@ -153,7 +153,7 @@ class FitnessToolsService:
     """健身专业计算：按本人的体重、伤病、器械、训练记录计算（读本人的数据，只读）。"""
 
     __tools__ = ("estimate_strength", "check_training_plan", "plan_templates", "training_patterns",
-                 "find_substitutes", "nutrition_calc", "pain_check", "trend_analysis",
+                 "find_substitutes", "nutrition_calc", "diet_templates", "pain_check", "trend_analysis",
                  "explain_trends")  # fmt: skip
 
     async def estimate_strength(
@@ -268,6 +268,15 @@ class FitnessToolsService:
         """
         return await _run("nutrition_calc", user_info,
                           {"items": items, "training_minutes": training_minutes, "weight_kg": weight_kg})  # fmt: skip
+
+    async def diet_templates(self, user_info: dict[str, Any], name: str | None = None) -> dict[str, Any]:
+        """饮食方案库（§184）：每份是一整天怎么吃，写明适合谁、谁要先问医生、热量和三大营养素怎么定、吃法要点、
+        工作日和周末各四顿；只读，不改本人的饮食计划。
+
+        Args:
+            name: 方案编号或名字，如"地中海""控糖"；不填时列出全部方案。
+        """
+        return await _run("diet_templates", user_info, {"name": name})
 
     async def pain_check(
         self,

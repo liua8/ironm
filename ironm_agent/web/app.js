@@ -753,6 +753,7 @@ const ATLAS_SEGS = [["moves", "动作"], ["machines", "器械"], ["food", "食�
 // 图鉴去重（§161）：图鉴只放资料；打分、排名、评论都在排行榜（首页最上面"今日热搜"进去）
 const ATLAS_CHIPS = {
   food: [["", "食材"], ["recipes", "食谱"]],
+  plans: [["", "训练"], ["diet", "饮食"]],  // 饮食方案库（§184）
 };
 function pageSeg(base, segs, cur, label) {
   return h("div", { class: "seg page-seg", role: "tablist", "aria-label": label, style: `grid-template-columns:repeat(${segs.length},minmax(0,1fr))` }, segs.map(([k, name]) =>
@@ -764,7 +765,7 @@ async function atlas(view, sub, rest) {
   view.append(pageSeg("atlas", ATLAS_SEGS, cur, "图鉴"),
     ATLAS_CHIPS[cur] ? h("div", { class: "pills atlas-chips" }, ATLAS_CHIPS[cur].map(([k, name]) =>
       h("a", { class: `pill${k === chip ? " on" : ""}`, href: `#atlas/${cur}${k ? `/${k}` : ""}` }, name))) : null);
-  if (cur === "plans") return plansAtlas(view);
+  if (cur === "plans") return chip === "diet" ? dietLibAtlas(view) : plansAtlas(view);
   if (cur === "machines") return machinesPage(view);
   if (cur === "food") return chip === "recipes" ? recipesPage(view) : foodAtlas(view);
   return moves(view);
@@ -786,6 +787,65 @@ function planLibSheet(x) {
     x.intensity ? h("div", {}, h("h3", {}, "强度"), h("p", {}, x.intensity)) : null,
     x.progress ? h("div", {}, h("h3", {}, "怎么加量"), h("p", {}, x.progress)) : null,
     h("p", { class: "caption" }, "排计划时 IronM 会按你的器械、伤病和时间调整动作；想用这个方案，跟 IronM 说一声。"));
+}
+
+// 饮食方案库（§184）：每份是一整天怎么吃；点开看适合谁、怎么吃、一天吃什么，能套用成饮食计划（换之前的存一份，能撤销一次）
+async function dietLibAtlas(view) {
+  const r = await api("/iron/api/diet/library");
+  view.append(h("div", { class: "plan-lib" }, r.plans.map((x) => pressable(h("div", { class: "card plan-lib-card", "aria-label": `${x.name}，点开看一天吃什么` },
+    h("b", {}, x.name), h("span", { class: "muted" }, `适合：${x.suits[0]}`),
+    h("span", { class: "diet-lib-kcal" }, `每天约 ${x.per_day.weekday.kcal} 千卡 · 蛋白质 ${x.per_day.weekday.protein_g} 克`),
+    h("div", { class: "tags" }, x.goals.map((g) => chip(g)))), () => dietLibSheet(x.id)))),
+  h("p", { class: "caption" }, r.note));
+}
+const DIET_SETS = [["weekday", "工作日"], ["weekend", "周末"]];
+const servingsText = (n) => (n === 1 ? "" : ` · ${n} 份`);
+async function dietLibSheet(id) {
+  let x;
+  try { x = await api(`/iron/api/diet/library/${encodeURIComponent(id)}`); } catch (err) { flash(err.message); return; }
+  const mine = x.scaled.target ? x.scaled : null;  // 有热量目标时按目标缩放后的份数
+  const days = (mine || x).days;
+  let set = "weekday";
+  const dayBox = h("div", { class: "diet-day" });
+  const drawDay = () => {
+    const d = days[set];
+    dayBox.replaceChildren(
+      h("div", { class: "seg seg-2", role: "tablist", "aria-label": "工作日或周末" }, DIET_SETS.map(([k, n]) => h("a", { href: "#atlas/plans/diet", role: "tab", class: set === k ? "on" : "", "aria-selected": String(set === k), onclick: (e) => { e.preventDefault(); set = k; drawDay(); } }, n))),
+      h("div", { class: "rows" }, Object.entries(d.slots).map(([k, s]) => h("div", { class: "row-item" },
+        h("div", { class: "row-main" }, h("span", { class: "row-title" }, `${k} · ${s.name.replace(/（[\d.]+ 份）$/, "")}`),
+          h("span", { class: "row-sub" }, s.foods.map((f) => `${f.name} ${f.grams} 克`).join("、"))),
+        h("span", { class: "row-end" }, `${Math.round(s.kcal)} 千卡${servingsText(s.servings)}`)))),
+      h("p", { class: "diet-day-total" }, `一天合计 ${d.total.kcal} 千卡 · 蛋白质 ${d.total.protein_g} 克 · 碳水 ${d.total.carbs_g} 克 · 脂肪 ${d.total.fat_g} 克`),
+      h("p", { class: "caption" }, mine ? `按你每天 ${mine.target.kcal} 千卡的目标算了份数；${x.note}` : `按推荐份数算；${x.note}`));
+  };
+  drawDay();
+  const msg = h("p", { class: "muted", role: "status" });
+  const apply = twoStep("用这份当我的饮食计划", "再点一次，换掉现在的饮食计划", async (b) => {
+    b.disabled = true;
+    try {
+      await api(`/iron/api/diet/library/${encodeURIComponent(x.id)}/apply`, { method: "POST", body: "{}" });
+      closeSheet();
+      const undo = h("button", { class: "link", type: "button", onclick: async () => {
+        undo.disabled = true;
+        try { await api("/iron/api/diet/library/undo", { method: "POST", body: "{}" }); flash("撤销了，饮食计划回到换之前"); render(); }
+        catch (err) { flash(err.message); }
+      } }, "撤销");
+      flash(h("span", { class: "flash-row" }, h("span", {}, `饮食计划换成了「${x.name}」`), undo), 8000);
+      render();
+    } catch (err) { msg.className = "error"; msg.textContent = err.message; b.disabled = false; }
+  }, "btn block");
+  openSheet(x.name,
+    h("div", { class: "tags" }, ...x.goals.map((g) => chip(g))),
+    h("p", { class: "lede" }, x.summary),
+    h("div", {}, h("h3", {}, "适合"), markList(x.suits, "ok", "check")),
+    h("div", {}, h("h3", {}, "先问医生或营养师"), markList(x.not_for, "bad", "alert")),
+    h("div", {}, h("h3", {}, "热量怎么定"), h("p", {}, x.energy)),
+    h("div", {}, h("h3", {}, "三大营养素"), h("ul", { class: "tips" }, h("li", {}, `蛋白质：${x.macros.protein}`), h("li", {}, `碳水：${x.macros.carbs}`), h("li", {}, `脂肪：${x.macros.fat}`))),
+    h("div", {}, h("h3", {}, "吃法要点"), h("ul", { class: "tips" }, x.points.map((t) => h("li", {}, t)))),
+    h("div", {}, h("h3", {}, "一天吃什么"), dayBox),
+    apply, msg,
+    h("p", { class: "caption" }, "确认后把饮食计划的工作日、周末四顿换成这一份，之后在饮食计划里照常能改；换之前的计划存了一份，能撤销一次。"),
+    h("details", { class: "diet-refs" }, h("summary", {}, "依据"), h("ul", { class: "tips" }, x.refs.map((t) => h("li", {}, t)))));
 }
 
 // 排行榜（§161）：首页"今日热搜"进来；榜单首页（搜索、热搜、六个榜）、榜单页、条目详情
@@ -2567,7 +2627,7 @@ async function planEditSheet(p, reload) {
         return h("label", { class: "pm-row" }, h("span", {}, h("b", {}, k), slots[k]?.missing ? h("small", { class: "error" }, "原来选的已经没有了") : null), sel);
       }),
       h("p", { class: "muted" }, `这一套合计 ${tot.kcal} 千卡、蛋白质 ${tot.protein_g} 克${p.target ? `；每天目标 ${p.target.kcal} 千卡、蛋白质 ${p.target.protein_g} 克` : ""}`),
-      h("p", { class: "caption" }, "食谱按 1 份算；只有你自己能看到。"));
+      h("p", { class: "caption" }, "新选的食谱按 1 份算；只有你自己能看到。想换一整套，去图鉴的饮食方案库。"));
   };
   draw();
   openSheet("饮食计划", body);
