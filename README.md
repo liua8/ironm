@@ -4,9 +4,11 @@
 
 # IronM
 
-**你的健身 AI 管家：练、吃、睡，它一起看，一起安排。**
+**Your AI fitness coach: training, food and sleep, seen together and planned together.**
 
-开源 · 装在自己电脑上 · 用你自己的大模型
+Open source · Runs on your own computer · Uses your own LLM
+
+**English** · [简体中文](README.zh-CN.md)
 
 [![Stars](https://img.shields.io/github/stars/liua8/ironm?style=flat&logo=github)](https://github.com/liua8/ironm/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/liua8/ironm)](https://github.com/liua8/ironm/commits/main)
@@ -15,192 +17,197 @@
 ![Docker](https://img.shields.io/badge/docker-compose-2496ED.svg?logo=docker&logoColor=white)
 [![Built on mirobody](https://img.shields.io/badge/built%20on-mirobody-6f42c1.svg)](https://github.com/thetahealth/mirobody)
 
-[功能](#-能做什么) · [截图](#-截图) · [安装](#-快速开始) · [常见问题](#-常见问题)
+[Features](#-what-it-does) · [Screenshots](#-screenshots) · [Install](#-quick-start) · [FAQ](#-faq)
 
-<img src="docs/readme/live.png" width="190" alt="训练记录器" />
-<img src="docs/readme/diet-library.png" width="190" alt="饮食方案库" />
-<img src="docs/readme/diet-plan.png" width="190" alt="饮食方案详情" />
-<img src="docs/readme/atlas-moves.png" width="190" alt="动作图鉴" />
+<img src="docs/readme/live.png" width="190" alt="Workout logger" />
+<img src="docs/readme/diet-library.png" width="190" alt="Diet plan library" />
+<img src="docs/readme/diet-plan.png" width="190" alt="Diet plan details" />
+<img src="docs/readme/atlas-moves.png" width="190" alt="Exercise library" />
 
 </div>
 
+> **Note:** the app itself is in Chinese for now: the interface, the coach's replies and the built-in content. This README and the code are in English and Chinese.
+
 ---
 
-> 😴 **昨晚只睡了 5 个小时，今天还练吗？**
+> 😴 **I only slept 5 hours last night. Should I still train today?**
 >
-> 🐧 **IronM：** 今天照练，但按七成来，别硬顶。昨晚只睡 5 小时，最近 3 晚平均 6.5 小时，比你平时 7.2 小时少 2.2 小时；静息心率 62 次/分，和平时一样，所以不用停练，收着点练就行。
+> 🐧 **IronM:** Train today, but at about 70%. Don't push through. You slept 5 hours last night, and your last 3 nights average 6.5 hours, 2.2 hours less than your usual 7.2. Your resting heart rate is 62 bpm, the same as usual, so there's no need to skip. Just take it easier.
 
-这句话里，它用了你这几晚的睡眠、你平时睡多久、你的静息心率，还知道你今天排的是哪一练。训练 App 看不到你的睡眠，手环不知道你今天要练什么，通用 AI 每次都得你从头讲一遍。IronM 三样都看得到，答完还会顺手把今天的训练调成七成。
+To answer that, it used your last few nights of sleep, how long you usually sleep, your resting heart rate, and which workout is on today's plan. A training app can't see your sleep, your watch doesn't know what you're training today, and a general-purpose AI needs you to explain everything from scratch every time. IronM sees all three, and after answering it also scales today's workout down to 70%.
 
-## 🤔 为什么做 IronM
+## 🤔 Why IronM
 
-练、吃、睡本来就是连着的。没睡好，今天该练轻点；练得狠，蛋白质得跟上；减脂期体重不动，先该看的是这几周练了多少、吃了多少，而不是闷头再少吃。
+Training, food and sleep are connected. Slept badly? Train lighter today. Trained hard? Your protein needs to keep up. Weight not moving on a cut? The first thing to look at is how much you've trained and eaten over the past few weeks, not just eating even less.
 
-可我们手里的工具是拆开的：训练 App 记组数，饮食 App 数卡路里，手环看睡眠。三边各说各的，最后还得自己在脑子里拼。
+But the tools we use are split apart: the training app counts sets, the diet app counts calories, the watch tracks sleep. Each tells its own story, and you're left piecing them together in your head.
 
-IronM 把它们放到一起，交给同一个 AI 管家。它看得到你的训练、饮食、睡眠心率和化验单，记得你的伤病、器械和作息。排计划、调今天的量、定下次的重量、改热量，都是看过全部再定；每个改动先出一张预览卡片，你点确认才生效，反悔了也能撤销。
+IronM puts them in one place and hands them to one AI coach. It sees your training, food, sleep, heart rate and lab results, and it remembers your injuries, equipment and schedule. Building a plan, adjusting today's load, setting next session's weights, changing calories: it looks at everything before deciding. Every change shows up first as a preview card. Nothing takes effect until you tap confirm, and you can undo it.
 
-## 🔗 一起管，管住了什么
+## 🔗 What changes when it's all in one place
 
-| | 只用单一工具时 | 有了 IronM |
+| | With a single-purpose app | With IronM |
 |---|---|---|
-| 😴 **昨晚没睡好** | 训练 App 照推原计划，手环只提醒你睡少了 | 拿睡眠和静息心率跟你平时比，定今天照练、减量还是休息 |
-| 🤒 **感冒发烧** | 打卡提醒照样响 | 当天停练；好了先按七成练一周，不急着回原重量 |
-| ⚖️ **减脂一周体重不动** | 饮食 App 让你再少吃点 | 看 30 天体重趋势和这段时间练的、吃的，多半先不动热量，保住力量训练 |
-| 💪 **想增肌** | 训练和饮食各定各的目标 | 训练计划、热量、蛋白质、饮食方案份量，全按同一个增肌目标来 |
-| 🧳 **出差只有一对哑铃** | 计划没法照做，回来重排 | 这几天临时换成哑铃版，记得你膝盖伤过，到期自动回原计划 |
-| 📅 **每周复盘** | 三个 App 的图表分开看 | 练了几次、吃了多少、体重、睡眠心率放一起看，再提要不要改计划或热量 |
+| 😴 **Bad night's sleep** | The training app pushes the plan as usual; the watch just says you slept less | Compares sleep and resting heart rate with your usual, then decides: train as planned, lighter, or rest |
+| 🤒 **Cold or fever** | Check-in reminders keep coming | No training that day; once you're better, a week at about 70% before going back to your old weights |
+| ⚖️ **A week on a cut, weight hasn't moved** | The diet app tells you to eat less | Looks at your 30-day weight trend and what you've trained and eaten; usually leaves calories alone and protects your strength training |
+| 💪 **Want to build muscle** | Training and diet set their own goals | Training plan, calories, protein and diet portions all follow the same muscle-gain goal |
+| 🧳 **Business trip, one pair of dumbbells** | The plan doesn't work, so you rebuild it when you're back | Swaps to a dumbbell version for those days, remembers your knee injury, and switches back automatically when the trip ends |
+| 📅 **Weekly review** | Charts from three apps, viewed separately | Sessions, food, weight, sleep and heart rate side by side, then suggestions on whether to change the plan or calories |
 
-## 💬 看它怎么回答
+## 💬 How it answers
 
-两周模拟测试里的真实对话：模型是 DeepSeek，用户数据是模拟的，回答一字没改。
+Real conversations from a two-week simulation test. The model is DeepSeek and the user data is simulated. The replies were in Chinese and are translated here; the content is unchanged.
 
-> ⚖️ **练了一周，体重一点没动，是不是要再少吃点？**
+> ⚖️ **I've trained for a week and my weight hasn't moved at all. Should I eat less?**
 >
-> 🐧 **IronM：** 不用再少吃。一周看不出变化，你的体重这 30 天基本持平，先别动热量。最近 30 天头一周平均 66.0 公斤、最后一周 65.9 公斤，变化没超过日常波动；单次称重受水分、糖原影响，一周内本身就有约 0.35%（约 0.3 公斤）的波动。
-> 1. 每天早上空腹、上完厕所后称一次，连着记两周，看周平均而不是单天
-> 2. 这周三次力量照计划练，蛋白质每天 105–132 克、每餐 20–25 克，热量按 1348 千卡吃
-> 3. 两周后周平均还不降，再谈减热量；一次只改一样，缺口每天不超过约 500 千卡
+> 🐧 **IronM:** No need to eat less. A single week won't show it, and your weight has been basically flat for 30 days, so leave calories alone for now. Over the last 30 days your first week averaged 66.0 kg and your last week 65.9 kg, a change within normal daily fluctuation. A single weigh-in is affected by water and glycogen, and swings of about 0.35% (about 0.3 kg) within a week are normal.
+> 1. Weigh yourself every morning on an empty stomach after the bathroom, for two weeks straight, and look at the weekly average rather than single days
+> 2. Do your three strength sessions this week as planned, with 105–132 g of protein a day and 20–25 g per meal, eating 1348 kcal
+> 3. If the weekly average still hasn't dropped after two weeks, then talk about cutting calories: change one thing at a time, and keep the deficit under about 500 kcal a day
 
-> 🧳 **下周一到周三要出差，酒店健身房只有一对哑铃，最重 20 公斤。**
+> 🧳 **I'm travelling Monday to Wednesday next week. The hotel gym only has one pair of dumbbells, 20 kg max.**
 >
-> 🐧 **IronM：** 能练，这三天把周一、周三的器械动作换成哑铃版，我已经出了临时调整的预览，你确认后生效。你周一、周三的箱式深蹲、绳索划船、罗马尼亚硬拉、高位下拉都要器械，酒店只有一对哑铃。你膝盖有伤，深蹲类动作要控制下蹲深度、用轻重量，蹲到大腿接近平行就停，出现膝痛就停。
-> 1. 周一：哑铃高脚杯深蹲（控制下蹲深度、用轻重量，蹲到大腿接近平行就停，膝痛就停）、哑铃卧推、单臂哑铃划船、臀桥、死虫式，组次照原计划
-> 2. 周三：哑铃罗马尼亚硬拉、哑铃俯身划船、哑铃推举、高脚杯深蹲（控制下蹲深度、用轻重量，蹲到大腿接近平行就停，膝痛就停）、平板支撑，组次照原计划
-> 3. 哑铃最重20公斤，重量选做完还剩2–3次的，深蹲蹲浅一点、左膝疼就停
+> 🐧 **IronM:** You can train. For those three days, swap the machine exercises on Monday and Wednesday for dumbbell versions. I've created a preview of the temporary change, and it takes effect once you confirm. Your Monday and Wednesday box squats, cable rows, Romanian deadlifts and lat pulldowns all need machines, and the hotel only has dumbbells. You have a knee injury, so control the depth on squats and use light weights: stop when your thighs are about parallel, and stop if your knee hurts.
+> 1. Monday: dumbbell goblet squat (controlled depth, light weight, stop at about parallel, stop if your knee hurts), dumbbell bench press, one-arm dumbbell row, glute bridge, dead bug; sets and reps as planned
+> 2. Wednesday: dumbbell Romanian deadlift, dumbbell bent-over row, dumbbell shoulder press, goblet squat (same knee cautions), plank; sets and reps as planned
+> 3. Dumbbells go up to 20 kg: pick a weight that leaves 2–3 reps in the tank, squat a bit shallower, and stop if your left knee hurts
 >
-> 周四回健身房后按原计划练，重量照上次的来。
+> Back at your gym on Thursday, train as planned, starting from last session's weights.
 >
-> 下面是临时调整的预览，点「确认」才生效，到了结束日期自动回到原计划，也能提前撤销。
+> Below is the preview of the temporary change. Tap "Confirm" to apply it. It switches back to your normal plan automatically on the end date, and you can also undo it early.
 
-（回答下面跟着一张临时调整的预览卡片，点确认才生效。）
+(A preview card for the temporary change follows the reply. It only takes effect once you confirm.)
 
-## ✨ 能做什么
+## ✨ What it does
 
-### 🏋️ 训练
-- 📋 **方案打底**：12 份训练方案（入门全身、上下肢分化、推拉腿、居家、时间少、60 岁以上……），按你的水平、天数、器械、伤病和时间改成你自己的
-- 🌅 **每天看一眼**：根据睡眠、心率和你说的话，定今天怎么练
-- 🧳 **临时调整**：出差、生病、减量周写好起止日期，到期自动恢复
-- ⏱️ **训练记录器**：一组一组记，点数字直接填，组间休息倒计时，练完出分享卡
-- 📈 **下次目标**：每个动作下次练多重，按这次的记录定
-- 📖 **动作图鉴**：115 个动作，带配图、动图和替代动作；34 种器械，拍一张就能认
+### 🏋️ Training
+- 📋 **Plan templates**: 24 training plans (beginner full body, upper/lower, push/pull/legs, bro split, dumbbells at home, kettlebell, bodyweight progressions, glutes and legs, big three, strength plus running, coming back after a break, hotel workouts, 60+…), adapted to your level, days, equipment, injuries and time
+- 🌅 **A daily check**: decides how you train today from your sleep, heart rate and what you've told it
+- 🧳 **Temporary changes**: travel, illness or a deload week, with start and end dates; your normal plan comes back automatically
+- ⏱️ **Workout logger**: log set by set, tap a number to fill it in, rest timer between sets, a share card when you finish
+- 📈 **Next-session targets**: how much to lift next time on each exercise, based on this session's log
+- 🏃 **Cardio by calories**: want to burn an extra N kcal a week? It works out from your body weight how long to walk, jog or cycle, and puts it in your plan
+- 📖 **Exercise library**: 115 exercises with images, animations and alternatives; 34 kinds of equipment, recognised from a photo
 
-### 🥗 饮食
-- 📸 **拍照 / 一句话记餐**：拍张照或说一句"中午吃了一碗牛肉面"就记下；热量按食物库算，不让模型瞎估
-- 🍱 **饮食方案库**：11 份整天的饮食方案，一键套用：均衡家常、减脂高蛋白、外卖食堂减脂、增肌家常、上班带饭增肌、地中海、DASH 控血压、控糖、蛋奶素、60 岁以上高蛋白、限时进食。份量按你的热量目标自动缩放，不合适就撤销
-- 🥚 **食物库和食谱**：130 种食物、50 个家常食谱、12 份外卖食堂常见餐
-- 🔥 **热量目标**：按基础代谢算；要调由 IronM 看你的记录决定，代码兜住下限：不低于基础代谢，单次不超过 300 千卡，累计不超过 500 千卡
+### 🥗 Food
+- 📸 **Log a meal with a photo or a sentence**: snap a photo or say "had a bowl of beef noodles for lunch". Calories come from the food database, not from a model's guess
+- 🍱 **Diet plan library**: 16 full-day diet plans you can apply in one tap: balanced home cooking, high-protein fat loss, fat loss on takeout and canteen food, fat loss with packed lunches, muscle gain with home cooking, muscle gain with packed lunches, muscle gain on takeout and canteen food, maintenance, weight gain for skinny people, high-protein vegetarian, Mediterranean, DASH for blood pressure, blood sugar control, lacto-ovo vegetarian, high protein for 60+, time-restricted eating. Portions scale to your calorie target automatically, and you can undo
+- 🧮 **Built around you**: say "I mostly eat takeout and don't eat pork", and IronM picks four meals a day from the recipes while the system sets the portions. Daily calories land within 8% of your target, protein is covered, and nothing you avoid is included. Nothing changes until you confirm
+- 🎯 **Follows your goal**: switch from fat loss to muscle gain and IronM checks whether your diet plan still fits the new goal; if not, it offers a card to switch plans
+- 🥚 **Foods and recipes**: 159 foods, 81 recipes (home cooking, packed lunches, takeout and canteen, vegetarian, weight gain), 12 common takeout and canteen meals
+- 🔥 **Calorie target**: based on your basal metabolic rate. Changes are decided by IronM from your records, with hard limits in code: never below your BMR, at most 300 kcal per change, at most 500 kcal in total
 
-### ❤️ 身体数据
-- 🧪 **化验单识别**：化验单、体检报告拍照识别（基于 [mirobody](https://github.com/thetahealth/mirobody)）
-- ⌚ **手表和苹果健康**：导入数据，每项指标都跟你自己的平时比
+### ❤️ Health data
+- 🧪 **Lab report reading**: lab results and checkup reports read from a photo (via [mirobody](https://github.com/thetahealth/mirobody))
+- ⌚ **Watches and Apple Health**: import your data; every metric is compared with your own usual
 
-### 🧩 还有
-- 🧠 **长期记忆**：记得你的伤病、器械、作息和喜好，记错了在「我」里删掉
-- 📚 **有出处**：依据库 125 条，中国居民膳食指南、国家卫健委指导原则、ACSM、ISSN、NEJM 随机试验……想知道为什么，追问一句就讲出处
-- 🛡️ **安全底线**：急症、危急指标、孕期、高血压、伤处，写死在代码里
-- 📦 **你的数据你做主**：随时导出，随时注销
+### 🧩 Also
+- 🧠 **Long-term memory**: remembers your injuries, equipment, schedule and preferences. If it gets something wrong, delete it under "Me"
+- 📚 **Sources**: an evidence base of 125 entries: Chinese dietary guidelines, China's National Health Commission guidance, ACSM, ISSN, NEJM randomised trials… Ask why and it tells you the source
+- 🛡️ **Safety floor**: emergencies, critical values, pregnancy, high blood pressure and injuries are handled by hard-coded rules
+- 📦 **Your data, your call**: export everything or delete your account at any time
 
 <details>
-<summary>📱 每个页面都有什么</summary>
+<summary>📱 What's on each page</summary>
 
 <br/>
 
-底部五个标签：首页、IronM、图鉴、记录、我。网页和手机 App 一样。
+Five tabs at the bottom: Home, IronM, Library, Records, Me. The mobile app in progress uses the same layout.
 
-| 页面 | 内容 |
+| Page | What's there |
 |---|---|
-| 🏠 首页 | 今天练什么、调整过没有、开始训练、直接打卡；今天还能吃多少、拍照记、写一句；排行榜热搜 |
-| 🐧 IronM | 对话；改计划、记一餐、改目标出预览卡片；它主动发的消息；每周周报；能发照片 |
-| 📖 图鉴 | 动作、器械、食物和食谱、训练方案库、饮食方案库 |
-| 📊 记录 | 本周练了几次、累计时长、PR、和上周比；身体数据趋势；训练时间线和打卡照片；成就 |
-| 👤 我 | 资料和目标、器材和场所、城市和天气、身体数据、记得的事、导入数据、模型设置、账号与隐私 |
-| 📋 训练计划 | 一周的安排，换动作、改组次、排顺序；每个动作的下次目标 |
-| ⏱️ 训练中 | 逐组记录、休息倒计时、加一组、计时 |
-| 🍱 饮食账单 | 今天的热量余额、目标怎么算的；每顿照计划记或记实际吃的；饮食计划 |
+| 🏠 Home | What to train today, whether it was adjusted, start a workout, quick check-in; how many calories are left today, log by photo or text; trending on the leaderboard |
+| 🐧 IronM | Chat; preview cards for plan changes, meals and goal changes; messages it sends you; weekly report; photo upload |
+| 📖 Library | Exercises, equipment, foods and recipes, training plan library, diet plan library |
+| 📊 Records | Sessions this week, total time, PRs, compared with last week; body data trends; training timeline and check-in photos; achievements |
+| 👤 Me | Profile and goal, equipment and place, city and weather, body data, things it remembers, data import, model settings, account and privacy |
+| 📋 Training plan | The week's schedule; swap exercises, change sets and reps, reorder; next-session targets for each exercise |
+| ⏱️ Workout | Set-by-set logging, rest timer, add a set, stopwatch |
+| 🍱 Food log | Today's calorie balance and how the target is calculated; log each meal as planned or what you actually ate; diet plan |
 
 </details>
 
-## 📸 截图
+## 📸 Screenshots
 
 <table>
 <tr>
-<td align="center"><img src="docs/readme/live.png" width="200" /><br/><sub><b>训练记录器</b><br/>点数字直接填，组间休息倒计时</sub></td>
-<td align="center"><img src="docs/readme/diet-library.png" width="200" /><br/><sub><b>饮食方案库</b><br/>11 份整天的吃法，一键套用</sub></td>
-<td align="center"><img src="docs/readme/diet-plan.png" width="200" /><br/><sub><b>方案详情</b><br/>适合谁、热量和营养素怎么定</sub></td>
-<td align="center"><img src="docs/readme/atlas-moves.png" width="200" /><br/><sub><b>动作图鉴</b><br/>115 个动作，配图和动图</sub></td>
+<td align="center"><img src="docs/readme/live.png" width="200" /><br/><sub><b>Workout logger</b><br/>Tap a number to fill it in, rest timer between sets</sub></td>
+<td align="center"><img src="docs/readme/diet-library.png" width="200" /><br/><sub><b>Diet plan library</b><br/>16 full-day plans, apply in one tap</sub></td>
+<td align="center"><img src="docs/readme/diet-plan.png" width="200" /><br/><sub><b>Plan details</b><br/>Who it's for, how calories and macros are set</sub></td>
+<td align="center"><img src="docs/readme/atlas-moves.png" width="200" /><br/><sub><b>Exercise library</b><br/>115 exercises with images and animations</sub></td>
 </tr>
 </table>
 
-## 🚀 快速开始
+## 🚀 Quick start
 
-你需要一台电脑和一个大模型密钥。DeepSeek、通义千问、智谱、豆包、Kimi、OpenAI 都行，兼容 OpenAI 接口的也行；DeepSeek 充几块钱能用很久。
+You need a computer and an LLM API key. DeepSeek, Qwen, Zhipu, Doubao, Kimi and OpenAI all work, as does anything with an OpenAI-compatible API. A few yuan of DeepSeek credit lasts a long time.
 
-🐳 **用 Docker**（Windows、Mac、Linux）
+🐳 **With Docker** (Windows, macOS, Linux)
 
 ```bash
 git clone https://github.com/liua8/ironm.git iron-m && cd iron-m
 docker compose up -d
 ```
 
-💻 **不用 Docker**（Mac、Linux）
+💻 **Without Docker** (macOS, Linux)
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh   # 已有 uv 可跳过，装完重开终端
+curl -LsSf https://astral.sh/uv/install.sh | sh   # skip if you already have uv; reopen the terminal afterwards
 git lfs install
 git clone https://github.com/liua8/ironm.git iron-m && cd iron-m
 scripts/start.sh
 ```
 
-第一次要十几分钟装环境和下载配图，之后几秒就起来。然后：
+The first run takes ten-plus minutes to set up the environment and download images; after that it starts in seconds. Then:
 
-1. 打开 <http://127.0.0.1:18090/iron/>，注册，填身高、出生日期、体重
-2. 「我 → 模型和 API」填上你的密钥
-3. 跟它说："我想开始练，一周三次，在健身房。"
+1. Open <http://127.0.0.1:18090/iron/>, sign up, and enter your height, date of birth and weight
+2. Under "Me → Model and API", enter your key
+3. Tell it: "I want to start training, three times a week, at the gym."
 
-端口被占、国内下载慢、怎么更新和卸载，看 [deploy/self-host.md](deploy/self-host.md)。
+For port conflicts, slow downloads in mainland China, updating and uninstalling, see [deploy/self-host.md](deploy/self-host.md) (in Chinese).
 
-## 🧠 它是怎么工作的
+## 🧠 How it works
 
-IronM 是单 Agent：所有问题都由同一个 AI 回答。问到哪一类，它先翻出那一类的规程（排计划、动作教学、营养、今天练不练、伤痛处理、看数据、记录复盘、建档，一共 8 份），再去查方案库、动作库、食物库、依据库和你的数据。你不在的时候它也没闲着：每天评估今天怎么练，练完定下次目标，每周复盘一次，聊完整理该记住的事。
+IronM is a single agent: one AI answers every question. Depending on the topic, it first loads the guide for that kind of question (building plans, exercise coaching, nutrition, whether to train today, pain and injuries, reading data, logging and reviews, onboarding; 8 in all), then looks things up in the plan libraries, exercise library, food database, evidence base and your data. It also works when you're not around: every day it assesses how you should train, after each workout it sets next session's targets, once a week it reviews your progress, and after each chat it sorts out what to remember.
 
-分工很简单：**判断交给 AI，数字和底线交给代码。** 热量、基础代谢、营养素、跟你平时比的差，都由代码算；急症、危急指标、特殊人群、伤处、热量下限由代码守。AI 回答里的数字对不上出处会被退回重写；AI 出错了也不会偷偷换成规则替你决定，而是直接告诉你"出错了，可以重试"。
+The split is simple: **judgement goes to the AI; numbers and safety limits go to code.** Calories, BMR, macros and how far you are from your usual are all calculated in code. Emergencies, critical values, special groups, injuries and the calorie floor are guarded by code. If a number in the AI's answer doesn't match its source, the answer is sent back to be rewritten. If the AI fails, IronM doesn't quietly fall back to rules that decide for you; it tells you plainly that something went wrong and that you can try again.
 
-后端 Python 3.13 + FastAPI + PostgreSQL（pgvector），作为插件接在 [mirobody](https://github.com/thetahealth/mirobody) 上（`vendor/mirobody` 是 1.5.8 原样）；网页是原生 JavaScript，不加载外部资源。
+The backend is Python 3.13 + FastAPI + PostgreSQL (pgvector), running as a plugin on [mirobody](https://github.com/thetahealth/mirobody) (`vendor/mirobody` is version 1.5.8, unmodified). The web app is plain JavaScript and loads nothing from external sites.
 
-## ❓ 常见问题
+## ❓ FAQ
 
-**💰 要花钱吗？** IronM 免费。模型费用走你自己的账户，用 DeepSeek 的话问一次大约一分钱。
+**💰 Does it cost anything?** IronM is free. Model costs go through your own account; with DeepSeek, a question costs about one fen (well under one US cent).
 
-**📱 手机上能用吗？** 现在在电脑上跑、用浏览器打开，页面按手机屏幕设计。手机 App 还在做。
+**📱 Can I use it on my phone?** For now it runs on a computer and you open it in a browser; the pages are designed for phone screens. A mobile app is in progress.
 
-**🔒 数据会上传吗？** 不会。数据在你自己电脑的数据库里，敏感内容加密。只有你问的话和拍的照片会发给你自己配置的模型服务商；查天气只发约 1 公里精度的经纬度。
+**🔒 Is my data uploaded anywhere?** No. Your data stays in a database on your own computer, with sensitive content encrypted. Only your questions and the photos you take are sent to the model provider you configured. The weather lookup only sends coordinates rounded to about 1 km.
 
-**🩺 能代替教练或医生吗？** 不能，建议只供参考。有慢病、怀孕、受伤的，开练前先问医生；运动中胸痛、头晕、呼吸困难，马上停下就医。
+**🩺 Can it replace a coach or doctor?** No. Treat it as advice only. If you have a chronic condition, are pregnant or are injured, check with a doctor before you start. If you get chest pain, dizziness or shortness of breath while exercising, stop and get medical help right away.
 
-## 🛠️ 开发
+## 🛠️ Development
 
 ```bash
-git lfs install && git lfs pull        # vendor/mirobody 里有两个 git-lfs 文件
-cp .env.example .env                   # 填好后 chmod 600 .env
-make setup                             # Python 环境
-make pg-install pg-init                # 本机 PostgreSQL 18 + pgvector（需要 micromamba）
+git lfs install && git lfs pull        # vendor/mirobody contains two git-lfs files
+cp .env.example .env                   # fill it in, then chmod 600 .env
+make setup                             # Python environment
+make pg-install pg-init                # local PostgreSQL 18 + pgvector (needs micromamba)
 make run                               # http://127.0.0.1:18090
 ```
 
-## 🙏 致谢
+## 🙏 Acknowledgements
 
-健康数据底座来自 [mirobody](https://github.com/thetahealth/mirobody)。动作配图来自 [wger](https://wger.de) 和 [Everkinetic](https://github.com/everkinetic/data)（CC BY-SA），食物照片来自 Unsplash 和 Pexels，排行榜配图来自 Wikimedia Commons，作者和许可记在 `ironm_agent/*_images.yaml`，页面上有署名；图片不在仓库里，安装时按清单下载。营养数据参考 USDA FoodData Central。
+The health data foundation comes from [mirobody](https://github.com/thetahealth/mirobody). Exercise images come from [wger](https://wger.de) and [Everkinetic](https://github.com/everkinetic/data) (CC BY-SA), food photos from Unsplash and Pexels, and leaderboard images from Wikimedia Commons. Authors and licences are recorded in `ironm_agent/*_images.yaml` and credited in the app. Images aren't stored in the repository; they're downloaded from that list at install time. Nutrition data draws on USDA FoodData Central.
 
-## 🤝 参与贡献
+## 🤝 Contributing
 
-欢迎提 [Issue](https://github.com/liua8/ironm/issues) 说说你用起来哪里顺手、哪里别扭，或者想要什么功能；也欢迎直接提 PR。改动大的话，先开个 Issue 聊一下方向。
+[Issues](https://github.com/liua8/ironm/issues) are welcome: tell us what works well, what feels awkward, or what you'd like to see. Pull requests are welcome too. For bigger changes, please open an issue first to discuss the direction.
 
-## ⭐ Star 历史
+## ⭐ Star history
 
 [![Star History Chart](https://api.star-history.com/svg?repos=liua8/ironm&type=Date)](https://star-history.com/#liua8/ironm&Date)
 
-## 📄 许可
+## 📄 License
 
 [Apache License 2.0](LICENSE)
 
@@ -208,6 +215,6 @@ make run                               # http://127.0.0.1:18090
 
 <br/>
 
-如果 IronM 帮到了你，欢迎给个 ⭐
+If IronM helps you, a ⭐ would mean a lot
 
 </div>
