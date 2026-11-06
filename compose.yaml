@@ -1,0 +1,101 @@
+# 用 Docker 跑 IronM（spec §185）。在仓库目录里：
+#   docker compose up -d          第一次构建并启动（十几分钟），以后几秒钟
+#   打开 http://127.0.0.1:18090/iron/
+#   docker compose logs -f ironm  看日志        docker compose down   停（数据还在）
+#   docker compose down -v        停并删光数据（账号、记录、配图、密钥）
+# 可选设置写在仓库目录的 .env 里（格式见 .env.example 的"Docker"一节）：
+#   IRONM_PORT=18200              换网页端口
+#   IRONM_IMAGES=0                不下配图
+#   DOCKER_MIRROR=docker.1ms.run/ 国内下镜像慢时的加速前缀（末尾的 / 要带）
+#   PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/   国内 Python 包源
+#   APT_MIRROR=mirrors.aliyun.com 国内系统包源
+# 需要 Docker Compose v2（Docker Desktop 自带；Linux 按 Docker 官方说明装 docker-compose-plugin）。
+name: ironm
+
+services:
+  # 第一次生成数据库密码和两把密钥（数据库密码一个卷、两把密钥一个卷），把数据卷交给 ironm 用户；每次启动都跑，已有的不动
+  init:
+    image: ironm:local
+    pull_policy: never   # 用下面 ironm 构建出来的镜像
+    user: "0:0"
+    command: ["init"]
+    restart: "no"
+    network_mode: none
+    healthcheck:
+      disable: true
+    volumes:
+      - pgpass:/secrets/pg
+      - keys:/secrets/keys
+      - data:/data
+      - uploads:/app/vendor/mirobody/.theta
+
+  pg:
+    # 大版本（pg17）不要改：已有的数据卷换了大版本就起不来
+    image: ${DOCKER_MIRROR:-}pgvector/pgvector:0.8.6-pg17-trixie
+    restart: unless-stopped
+    shm_size: 256mb
+    # 不映射端口：只有 IronM 容器连得到。三个扩展（vector、pg_trgm、pgcrypto）mirobody 启动时自己建
+    environment:
+      POSTGRES_USER: ironm
+      POSTGRES_DB: mirobody
+      POSTGRES_PASSWORD_FILE: /secrets/pg/pg_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - pgpass:/secrets/pg:ro
+    healthcheck:
+      # 走 TCP：第一次初始化时临时起的数据库只听本地套接字，不算好
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ironm -d mirobody"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+  ironm:
+    image: ironm:local
+    build:
+      context: .
+      args:
+        PYTHON_IMAGE: ${DOCKER_MIRROR:-}python:3.13-slim-bookworm
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+        APT_MIRROR: ${APT_MIRROR:-}
+    restart: unless-stopped
+    init: true
+    # 只把下面这几项可选设置从 .env 交给容器（没写的就不设）。不整份读 .env：
+    # 那里面给 scripts/start.sh 用的数据库密码、密钥、开发用的固定验证码会盖过这里的设置。
+    environment:
+      IRONM_PORT: ${IRONM_PORT:-18090}
+      IRONM_IMAGES: ${IRONM_IMAGES:-1}
+      EMAIL_SMTP_HOST:
+      EMAIL_SMTP_PORT:
+      EMAIL_SMTP_USER:
+      EMAIL_SMTP_PASS:
+      EMAIL_FROM:
+      EMAIL_FROM_NAME:
+      TAVILY_API_KEY:
+      IRONM_ADMINS:
+      HTTP_PROXY:
+      HTTPS_PROXY:
+      NO_PROXY: ${NO_PROXY:-pg,localhost,127.0.0.1}
+    ports:
+      # 只听本机：同一个 Wi-Fi 里的别人连不上
+      - "127.0.0.1:${IRONM_PORT:-18090}:18090"
+    volumes:
+      - pgpass:/secrets/pg:ro
+      - keys:/secrets/keys:ro
+      - data:/data
+      - uploads:/app/vendor/mirobody/.theta
+    depends_on:
+      pg:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+
+volumes:
+  pgpass:
+  keys:
+  pgdata:
+  data:
+  uploads:

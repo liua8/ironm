@@ -1,0 +1,5 @@
+# Windows 上 git 可能把换行改成 CRLF；这些文件要在 Linux 容器里跑，固定用 LF（spec §185）
+*.sh text eol=lf
+Dockerfile text eol=lf
+compose.yaml text eol=lf
+docker/** text eol=lf

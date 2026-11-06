@@ -1806,6 +1806,34 @@ Obsoletes: [2026-10-23] §30 第 1 条（18 块平面图）
 - [x] 原有测试全部通过
   - 结果：后端 1430 个通过，1 个不通过是写死日期的旧测试；App jest 231、tsc 无错
 
+### 185. 用 Docker 跑
+- [x] 干净环境（没有数据卷）`docker compose up -d`：构建成功、两个服务起来，`/iron/` 是登录页（本机实测）
+  - 结果（11-06，Mac M 芯片 + colima 0.10.3 / Docker 29，用 `git archive HEAD` 导出的干净目录加本节文件构建）：构建约 5 分钟、镜像 743 MB、构建上下文 14 MB；init 生成三个密钥后退出，数据库和 IronM 都 healthy，`/iron/` 返回 200 是登录页。实测查出并改了：数据库初始化脚本用文件挂载，挂载不到时变成空目录、数据库起不来（mirobody 启动时自己建三个扩展，去掉这个挂载）
+- [x] 打开的网页上注册、完善资料、进首页（本机实测）
+  - 结果：注册（邮箱 + 密码，不要验证码）→ 完善资料（身高、出生日期、体重）→"以后再说，先进首页"，首页正常显示
+- [x] 密钥第一次生成、再启动不变；日志和 `docker compose config` 里看不到密钥；仓库 `.env` 里的数据库密码和密钥不影响（本机实测）
+  - 结果：`.env` 里故意写错数据库密码、两把密钥、`DATABASE_URL`，再加 `SEED_DEMO_DATA=true`、`IRONM_EXTRA_CONFIG=config/local.yaml`，`down` 再 `up` 后照常登录、三个密钥文件的校验和不变；三个密钥值在全部日志和 `compose config` 里出现 0 次；jwt_key、config_key 是 600（ironm），pg_password 是 644（数据库容器换用户后还要读）
+  - 独立审查后改（11-06）：原来整份 `.env` 交给容器，mirobody 先读环境变量再读配置文件，开发用 `.env` 里的 `EMAIL_PREDEFINE_CODES`（固定验证码）会生效、`PG_PASSWORD` 等明文出现在 `docker inspect` 里。改成只交发信、联网搜索、管理员、代理这几项，空值当没写。复测：`.env` 写 `EMAIL_PREDEFINE_CODES` 给一个邮箱配固定验证码，用它登不上；`compose config` 和服务进程的环境里都没有数据库密码和固定验证码。数据库密码和两把密钥分成两个卷，数据库容器只看得到自己的密码
+- [x] `down` 再 `up` 账号和数据都在；`down -v` 后是新库（本机实测）
+  - 结果：`down`/`up` 后原账号能登录；`down -v` 后原账号"邮箱或密码不对"，密钥换了新的
+- [x] 配图在后台下，下完不再下；关掉时不下（本机实测）
+  - 结果：起来一分钟内下完（动作 237、食物 65、排行榜 50 张），写了完成标记，重启不再下；`IRONM_IMAGES=0` 时数据卷是空的、日志里没有"后台下载配图"
+  - 独立审查后改：原来"下完记一笔"不管下到几张都记，没下到的（国内常见）和更新后清单新加的永远补不上。改成每次启动在后台补下还没有的，动作图有变化才重新合成动图。复测：第一次"新下 299 张、没下到 1 张"，重启"新下 0 张、本来就有 299 张、没下到 1 张"（只重试那一张），动图没重做"
+- [x] 两个 git-lfs 文件是占位文字时，构建时下回来、校验和对得上（本机实测）
+  - 结果：两个文件换成 git-lfs 占位文字，构建时从上游 mirobody 1.5.8 下回来（12.7 MB、0.8 MB），sha256 和占位文字里记的一致；事先另外核对过上游这两个文件和仓库里的逐字节相同
+- [x] 只听 127.0.0.1；换网页端口能起；数据库端口没映射出来（本机实测）
+  - 结果：`127.0.0.1:18391->18090`；`.env` 写 `IRONM_PORT=18392` 后是 `127.0.0.1:18392`；数据库只有容器内的 5432/tcp
+- [x] 服务不是 root 跑；镜像里没有 tests/、evals/、app/、data/、.env（本机实测）
+  - 结果：`uid=10001(ironm)`；/app 下只有 LICENSE、README.md、config、docker、ironm_agent、pyproject.toml、scripts、uv.lock、vendor，没有 .env 和 config/local.yaml
+- [x] 不预置演示账号：用演示账号和固定验证码登不上（本机实测）
+  - 结果：you@mirobody.ai + 111111 返回"No SMTP server configured"，登不上（`.env` 里写 `SEED_DEMO_DATA=true` 也一样）
+- [x] 说明写全；`scripts/start.sh`、原有测试照旧
+  - 结果：deploy/self-host.md 加了两种跑法怎么选和"用 Docker 跑"一节（装 Docker Desktop、拿代码、启动、看日志、停、更新、删光、可选设置、国内下载慢、要知道的），README 写了两条路，.env.example 加了 Docker 一节；start.sh 没改；1418 个测试通过（不含写死日期的 test_memory_layers）
+- [ ] Windows 上的 Docker Desktop 实测（这里只有 Mac，没测；已固定 .sh 等文件用 LF 换行）
+- [x] 国内源能用：`.env` 写 `PIP_INDEX_URL`（阿里云）和新加的 `APT_MIRROR`（阿里云，审查指出系统包原来没走国内源）后不用缓存重新构建，系统包、Python 包都从阿里云下，构建成功
+- [ ] 国内网络下 `DOCKER_MIRROR` 镜像加速实测（这里能直连 Docker Hub，没测加速地址）
+- [x] 其他审查意见（11-06）：宿主机 umask 077 拿下来的代码（600）容器里读不了，构建时放开读权限（复测：源码改成 600 后构建，起来 healthy）；`.dockerignore` 加上各层目录的 `.env`、`*.key.yaml`；数据库健康检查走 TCP；git-lfs 下不到时分别说 git clone 和下压缩包的人怎么办；说明补了"遇到问题"表、Windows 建 `.env` 的办法、下压缩包的人怎么更新、备份数据库（复测：导出 115 KB）、删镜像、哪些操作会把数据卷删掉
+
 ## [2026-10-22]
 
 对应: spec.md `[2026-10-22]`
