@@ -96,6 +96,13 @@ def meal_store() -> MealStore:
     return default_meals()
 
 
+def recipe_store() -> Any:
+    """自建食谱和饮食计划（§118）；放这里是为了改目标、换饮食方案的卡片确认时也能用（§190）。"""
+    from ironm_agent.recipes import default_diet_store
+
+    return default_diet_store()
+
+
 def photo_store() -> Any:
     from ironm_agent.checkin_photo import default_photos
 
@@ -110,6 +117,7 @@ def video_dir() -> Path:
 TRAINING = Depends(training_store)
 MEMORY = Depends(memory_store)
 MEALS = Depends(meal_store)  # 测试时用 dependency_overrides 换成内存版
+KITCHEN: Any = Depends(recipe_store)  # 自建食谱和饮食计划；测试时换成内存版
 PHOTOS = Depends(photo_store)  # 打卡照片（§117），测试时换成内存版
 UPLOAD = File(...)
 PHOTO = File(None)

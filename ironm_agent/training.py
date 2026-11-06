@@ -38,8 +38,9 @@ DRAFT_HOURS = 24
 MERGE_MINUTES = 30  # 这么久之内没确认的计划预览，再改一下时在它上面接着改（§45）
 WEEKDAYS = "一二三四五六日"
 type Kind = Literal[
-    "plan", "log", "goal", "temp"
-]  # goal：改目标的预览（§151），确认后由网页那层写档案和目标表；temp：临时调整（§163），确认了才算数
+    "plan", "log", "goal", "temp", "diet"
+]  # goal：改目标的预览（§151），确认后由网页那层写档案和目标表；temp：临时调整（§163），确认了才算数；
+# diet：换饮食方案（§190），确认后由网页那层换饮食计划
 type DraftState = Literal["pending", "confirmed", "cancelled", "undone"]
 
 
@@ -578,7 +579,7 @@ class TrainingBook:
             return self._put(
                 user_id, replace(d, state="confirmed", applied=new.id, previous=previous)
             )
-        if d.kind in ("goal", "temp"):
+        if d.kind in ("goal", "temp", "diet"):
             return self._put(user_id, replace(d, state="confirmed"))
         row = StoredLog(new_id(), _log_of(d.content), now())
         self._logs.setdefault(user_id, []).append(row)
@@ -811,12 +812,12 @@ class PgTraining:
                     {"target": target, "uid": user_id, "content": rows[0]["content"],
                      "previous": rows[0]["previous"]},
                 )  # fmt: skip
-            elif d.kind == "goal":  # 改目标：这里只改状态，写档案和目标表在网页那层（§151）
+            elif d.kind in ("goal", "diet"):  # 改目标、换饮食方案：这里只改状态，写档案、换计划在网页那层（§151、§190）
                 rows = await tx.execute(
                     "UPDATE ironm_draft SET state = 'confirmed', updated_at = now()"
-                    f" WHERE id = :id AND user_id = :uid AND kind = 'goal' AND state = 'pending' AND {_FRESH}"
+                    f" WHERE id = :id AND user_id = :uid AND kind = :kind AND state = 'pending' AND {_FRESH}"
                     " RETURNING id",
-                    {"id": draft_id, "uid": user_id},
+                    {"id": draft_id, "uid": user_id, "kind": d.kind},
                 )
                 if not rows:
                     return None
@@ -878,7 +879,7 @@ class PgTraining:
             await tx.execute(_LOCK, {"uid": user_id})
             rows = await tx.execute(
                 "UPDATE ironm_draft SET state = 'undone', updated_at = now()"
-                " WHERE id = :id AND user_id = :uid AND state = 'confirmed' AND (kind IN ('log', 'goal', 'temp') OR EXISTS ("
+                " WHERE id = :id AND user_id = :uid AND state = 'confirmed' AND (kind IN ('log', 'goal', 'temp', 'diet') OR EXISTS ("
                 " SELECT 1 FROM ironm_plan p WHERE p.id = ironm_draft.applied AND p.user_id = :uid AND p.active))"
                 " RETURNING kind, applied, previous",
                 {"id": draft_id, "uid": user_id},

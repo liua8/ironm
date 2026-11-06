@@ -174,6 +174,12 @@ def goal_card(draft: Draft, content: dict[str, Any]) -> list[dict[str, Any]]:
     return _card(draft, "改目标预览", body)
 
 
+def diet_card(draft: Draft, content: dict[str, Any]) -> list[dict[str, Any]]:
+    """换饮食方案的预览（§190）：网页沿用训练记录那种卡片（标题、一句说明、几行）。"""
+    body = {"headline": content.get("headline", ""), "items": list(content.get("items") or [])}
+    return _card(draft, "换饮食方案预览", body)
+
+
 def temp_card(draft: Draft, content: dict[str, Any]) -> list[dict[str, Any]]:
     """临时调整的预览（§163）：网页沿用训练记录那种卡片（标题、一句说明、几行）。"""
     body = {"headline": content.get("headline", ""), "items": list(content.get("items") or [])}

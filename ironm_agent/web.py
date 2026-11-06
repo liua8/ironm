@@ -42,7 +42,16 @@ from ironm_agent.training import (
     WorkoutLog,
     default_training,
 )
-from ironm_agent.web_more import FEEL, GOAL, ILLNESS, PAIN, PHOTOS, coach_later, plan_change_later
+from ironm_agent.web_more import (
+    FEEL,
+    GOAL,
+    ILLNESS,
+    KITCHEN,
+    PAIN,
+    PHOTOS,
+    coach_later,
+    plan_change_later,
+)
 
 _log = logging.getLogger("ironm_agent.web")
 
@@ -382,8 +391,11 @@ async def confirm_draft(
     memory: MemoryStore = STORE,
     illness: Any = ILLNESS,
     goals: Any = GOAL,
+    kitchen: Any = KITCHEN,
 ) -> dict[str, Any]:
     was = await store.draft(user_id, draft_id)
+    if was is not None and was.kind == "diet" and not (was.state == "pending" and was.expired()):
+        return await _confirm_diet(user_id, draft_id, store, kitchen)
     if was is not None and was.kind == "goal" and not (was.state == "pending" and was.expired()):
         # 改目标：确认了才写档案和目标表（§151）。这一次真把它从待确认改成已确认的才写，
         # 点两次、两个请求同时到都只写一次；写失败时已写的恢复、卡片作废，不留半截（复核 11-03）
@@ -413,6 +425,29 @@ async def confirm_draft(
     return out
 
 
+async def _confirm_diet(user_id: str, draft_id: str, store: TrainingStore, kitchen: Any) -> dict[str, Any]:
+    """换饮食方案的卡片（§190）：真把它从待确认改成已确认的这一次才换，按确认时的热量目标算份数；
+    换不成时卡片退回、计划不动。"""
+    from ironm_agent.diet_library import by_id
+    from ironm_agent.web_diet_library import _target, apply_plan
+
+    done = await store.confirm(user_id, draft_id)
+    if done is None:
+        return await _draft_action(store, user_id, draft_id, "confirm")
+    try:
+        p = by_id(str((done.content.get("diet") or {}).get("id") or ""))
+        if p is None:
+            raise LookupError("diet plan gone")
+        target = await _target(user_id)
+        await apply_plan(user_id, p, kitchen, target.kcal if target else None, draft=draft_id)
+    except Exception as e:
+        _log.warning("diet apply failed: error_type=%s", type(e).__name__)
+        await store.undo(user_id, draft_id)
+        raise HTTPException(503, "这次没换成，饮食计划还是原来的；请让 IronM 重新出一张卡片") from e
+    fresh = await store.draft(user_id, draft_id)
+    return {"draft": (fresh or done).json()}
+
+
 @router.post("/iron/api/drafts/{draft_id}/cancel")
 async def cancel_draft(
     draft_id: str, user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
@@ -431,8 +466,15 @@ async def undo_draft(
     store: TrainingStore = TRAINING,
     memory: MemoryStore = STORE,
     goals: Any = GOAL,
+    kitchen: Any = KITCHEN,
 ) -> dict[str, Any]:
     d = await store.draft(user_id, draft_id)
+    if d is not None and d.kind == "diet" and d.state == "confirmed":  # 换饮食方案：放回换之前的计划（§190）
+        from ironm_agent.web_diet_library import restore_plan
+
+        if not await restore_plan(user_id, kitchen, draft=draft_id):
+            raise HTTPException(409, "之后又换过饮食计划，不能撤销这一次")
+        return await _draft_action(store, user_id, draft_id, "undo")
     if d is not None and d.kind == "goal" and d.state == "confirmed":  # §151
         from ironm_agent import web_more
 

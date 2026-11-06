@@ -27,14 +27,13 @@ from ironm_agent.recipes import (
     Recipe,
     SlotRef,
     check_parts,
-    default_diet_store,
     my_recipes,
     new_id,
     recommended,
     set_of,
 )
 from ironm_agent.web import _verify
-from ironm_agent.web_more import MEALS, _day, _kind, _save_meal
+from ironm_agent.web_more import KITCHEN, MEALS, _day, _kind, _save_meal, recipe_store  # noqa: F401
 
 _log = logging.getLogger("ironm_agent.diet")
 router: APIRouter = APIRouter()
@@ -182,11 +181,7 @@ async def add_usual(
 # ---- 食谱（§118 需求 5）--------------------------------------------------------------------------
 
 
-def recipe_store() -> DietStore:
-    return default_diet_store()
-
-
-KITCHEN: Any = Depends(recipe_store)  # 自建食谱和饮食计划；测试时换成内存版
+# recipe_store、KITCHEN 挪到 web_more（换饮食方案的卡片确认时也要用，§190），这里照旧能引用
 
 
 class RecipeIn(BaseModel):
@@ -328,12 +323,10 @@ async def _plan(store: DietStore, user_id: str) -> dict[str, dict[str, SlotRef |
     return out
 
 
-@router.get("/iron/api/diet/plan")
-async def get_diet_plan(
-    user_id: str = Depends(_verify()), store: DietStore = KITCHEN, meals: MealStore = MEALS
-) -> dict[str, Any]:
-    from ironm_agent.web_more import _targets
-
+async def plan_days(
+    store: DietStore, meals: MealStore, user_id: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """工作日、周末每顿吃什么，和一天合计的热量、蛋白质（饮食页和管家的档案用同一份，§190）。"""
     plan = await _plan(store, user_id)
     sets: dict[str, Any] = {}
     totals: dict[str, Any] = {}
@@ -346,6 +339,16 @@ async def get_diet_plan(
         ms = [m for _, m in got.values() if m is not None]
         totals[s] = {"kcal": round(sum(m.macros.kcal for m in ms)),
                      "protein_g": round(sum(m.macros.protein_g for m in ms))}  # fmt: skip
+    return sets, totals
+
+
+@router.get("/iron/api/diet/plan")
+async def get_diet_plan(
+    user_id: str = Depends(_verify()), store: DietStore = KITCHEN, meals: MealStore = MEALS
+) -> dict[str, Any]:
+    from ironm_agent.web_more import _targets
+
+    sets, totals = await plan_days(store, meals, user_id)
     try:
         target = (await _targets(user_id))[0]
     except Exception as e:

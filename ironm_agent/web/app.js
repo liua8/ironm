@@ -2318,9 +2318,16 @@ function todayPlan(d, redraw, meta) {
   const pic = (img) => (img?.url ? h("img", { class: "tp-thumb", src: img.url, alt: "", loading: "lazy" }) : null);
   const meal = (k, kcal, state, end, img, ...body) => h("div", { class: `tp-meal ${state}` },
     h("div", { class: "tp-head" }, pic(img), h("b", {}, k), kcal != null ? h("span", { class: "tp-kcal" }, h("b", { class: "fig-n" }, String(Math.round(kcal))), "千卡") : null, end), ...body);
+  const off = h("div", { class: "diet-review", hidden: true });  // 计划和热量目标差得多（多半改过目标，§190）
   const draw = (plan) => {
     const set = plan?.sets?.[plan.today_set] || {};
     if (plan) meta.textContent = `按${plan.today_set === "weekend" ? "周末" : "工作日"}的计划，一共 ${plan.totals[plan.today_set].kcal} 千卡。`;
+    const sum = plan?.totals?.[plan.today_set]?.kcal, want = plan?.target?.kcal;
+    off.hidden = !(sum && want && Math.abs(sum - want) / want > 0.15);
+    if (!off.hidden) off.replaceChildren(
+      h("div", { class: "dr-text" }, h("b", {}, `饮食计划约 ${sum} 千卡，目标约 ${want} 千卡`),
+        h("small", {}, "差得有点多，可能是改过目标；可以换一份合适的方案，或者在对话里让 IronM 帮你挑。")),
+      h("a", { class: "link", href: "#atlas/plans/diet" }, "去换"));
     const kinds = MEAL_KINDS.filter((k) => MAIN_KINDS.includes(k) || d.meals.some((x) => x.kind === k));
     list.replaceChildren(...kinds.map((k) => {
       const xs = d.meals.filter((x) => x.kind === k);
@@ -2344,7 +2351,7 @@ function todayPlan(d, redraw, meta) {
   };
   draw(null);
   api("/iron/api/diet/plan").then(draw).catch(() => {});
-  return h("div", { class: "today-plan" }, meta, review, list);  // 计划说明放进面板里（草地上看不清，§131）
+  return h("div", { class: "today-plan" }, meta, off, review, list);  // 计划说明放进面板里（草地上看不清，§131）
 }
 
 // 点空着的那一顿：拍、写、选、常吃的，都记成这一顿
@@ -4363,7 +4370,11 @@ function cardView(msg, card) {
   const state = card.state || "pending";
   const expired = state === "pending" && Date.parse(d.expires) < Date.now();
   const plan = card.kind === "plan", temp = card.kind === "temp";  // temp：临时调整（§163），到期回到原计划
-  const body = temp
+  const diet = card.kind === "diet";  // 换饮食方案（§190）：确认时按当时的热量目标算份数
+  const body = diet
+    ? [(d.items || []).length ? h("ul", {}, d.items.map((it) => h("li", {}, it))) : null,
+      state === "pending" && !expired ? h("p", { class: "caption" }, "确认后换掉工作日、周末四顿，份数按确认时的热量目标算；同时改了目标的，先确认改目标。") : null]
+    : temp
     ? [(d.items || []).length ? h("ul", { class: "temp-lines" }, d.items.map((it) => h("li", {}, it))) : null,
       state === "pending" && !expired ? h("p", { class: "caption" }, `${TEMP_RULE}没确认的过了开始日期就作废。`)
         : state === "confirmed" ? h("p", { class: "caption" }, "到了结束日期自动回到原计划，也可以提前撤销。") : null]
@@ -4384,13 +4395,13 @@ function cardView(msg, card) {
       d.rpe ? h("p", { class: "muted" }, `感受 ${d.rpe} 分`) : null, d.note ? h("p", { class: "muted" }, d.note) : null];
   const act = (action) => cardAction(msg, card, action);
   const buttons = state === "pending" && !expired
-    ? [h("button", { class: "btn small", type: "button", disabled: card.busy, onclick: () => act("confirm") }, plan ? "确认，保存计划" : temp ? "确认，这几天这样练" : "确认，记下"),
+    ? [h("button", { class: "btn small", type: "button", disabled: card.busy, onclick: () => act("confirm") }, plan ? "确认，保存计划" : temp ? "确认，这几天这样练" : diet ? "确认，换饮食计划" : "确认，记下"),
       h("button", { class: "btn quiet small", type: "button", disabled: card.busy, onclick: () => act("cancel") }, "取消")]
     : state === "confirmed"
-      ? [h("span", { class: "chip good" }, plan ? "计划已保存" : temp ? "已生效，到期回到原计划" : "已记下"), h("button", { class: "btn quiet small", type: "button", disabled: card.busy, onclick: () => act("undo") }, "撤销")]
+      ? [h("span", { class: "chip good" }, plan ? "计划已保存" : temp ? "已生效，到期回到原计划" : diet ? "饮食计划已换" : "已记下"), h("button", { class: "btn quiet small", type: "button", disabled: card.busy, onclick: () => act("undo") }, "撤销")]
       : [h("span", { class: "chip" }, expired ? (temp ? "已作废：过了开始日期还没确认" : "已过期，让教练重新生成") : temp && state === "undone" ? "已撤销，回到原计划" : CARD_STATE[state] || state)];
   return h("div", { class: `preview ${state}` },
-    h("div", { class: "pv-title" }, icon(plan ? "dumbbell" : temp ? "timer" : "check", "sm"), h("b", {}, d.title), h("span", { class: "muted" }, d.headline || "")),
+    h("div", { class: "pv-title" }, icon(plan ? "dumbbell" : temp ? "timer" : diet ? "food" : "check", "sm"), h("b", {}, d.title), h("span", { class: "muted" }, d.headline || "")),
     ...body,
     h("div", { class: "pv-actions" }, buttons),
     card.error ? h("p", { class: "msg-note" }, card.error) : null);

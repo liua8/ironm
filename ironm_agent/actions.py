@@ -34,9 +34,10 @@ KCAL_CHANGE = "propose_kcal_change"  # 调每日热量目标（§122）
 REMEMBER = "remember"  # 记忆（§145，取代回答 JSON 里的 memory）
 SET_GOAL = "propose_goal"  # 改正式目标：目标类型和目标体重，出卡片确认（§151）
 TEMP_CHANGE = "propose_temporary_change"  # 这几天临时这样练：带起止日期，出卡片确认，到期回到原计划（§163）
+DIET_PLAN = "propose_diet_plan"  # 换饮食方案：从方案库挑一份，按热量目标算份数，出卡片确认（§190）
 ACTION_TOOLS = (
     PLAN_EDIT, NEW_PLAN, LOG_WORKOUT, ASK_TERMS, RECORD_STATE, LOG_BODY, LOG_MEAL, ADJUST_TODAY,
-    KCAL_CHANGE, REMEMBER, SET_GOAL, TEMP_CHANGE,
+    KCAL_CHANGE, REMEMBER, SET_GOAL, TEMP_CHANGE, DIET_PLAN,
 )  # fmt: skip
 ALWAYS = (
     RECORD_STATE,
@@ -495,6 +496,29 @@ TEMP_CHANGE_SCHEMA: dict[str, Any] = {
     },
 }
 
+DIET_PLAN_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": DIET_PLAN,
+        "description": (
+            "把他的饮食计划（首页\"今天吃什么\"照着排的工作日、周末四顿）换成饮食方案库里的一份：交方案编号，"
+            "系统按他的热量目标算好每顿几份，出一张预览卡片，他点确认才换，换了能撤销一次。"
+            "他说想换、或者目标变了现在的计划对不上（档案里饮食计划的热量和热量目标差得多）时用；"
+            "先用 diet_templates 看过目录和那一份，挑适合他目标和情况的。只能交方案库里的，不要自己编计划。"
+            "孕期、未成年、肾病、糖尿病在用药的不交，先建议他问医生。没确认前计划没换，不要说已经换了。"
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "plan": {"type": "string", "description": "方案库里那一份的编号（如 bulk-home）"},
+                "why": {"type": "string", "description": "一句话：为什么换这份，像当面对他说"},
+            },
+            "required": ["plan"],
+        },
+    },
+}
+
 
 SCHEMAS = {
     PLAN_EDIT: PLAN_EDIT_SCHEMA,
@@ -509,6 +533,7 @@ SCHEMAS = {
     REMEMBER: REMEMBER_SCHEMA,
     SET_GOAL: SET_GOAL_SCHEMA,
     TEMP_CHANGE: TEMP_CHANGE_SCHEMA,
+    DIET_PLAN: DIET_PLAN_SCHEMA,
 }
 _CONFIRMED = (
     f"他刚回应了你列的条件清单，算确认，不要再问一遍：调用 {NEW_PLAN}（kind 写 new）交计划，他改了哪几项就按改了的排；"
@@ -596,6 +621,7 @@ class Outcome:
     cards: tuple[dict[str, Any], ...] = ()
     draft: str = ""  # 存下的预览编号
     calc: str = ""  # 系统算出来的数（一餐的热量、新的热量目标）：登记成计算结果，回答里能引〔C编号〕（复核 11-05）
+    extra: dict[str, Any] = field(default_factory=dict)  # 处理函数之间传的数（改目标的新热量目标，§190），不给管家看
 
 
 type Handler = Callable[["Desk", Mapping[str, Any]], Awaitable[Outcome]]
@@ -614,6 +640,7 @@ class Desk:
     rejected: Counter[str] = field(default_factory=Counter)  # 原因类别 → 次数
     plan: Outcome | None = None  # 这一轮最后一张计划预览
     goal: Outcome | None = None  # 这一轮最后一张改目标预览（§151）
+    diet: Outcome | None = None  # 这一轮最后一张换饮食方案预览（§190）
     temps: list[Outcome] = field(default_factory=list)  # 这一轮出的临时调整预览（§163）
     logs: list[Outcome] = field(default_factory=list)
     saved: list[Outcome] = field(default_factory=list)  # 直接记下的：一餐、读数（§122）
@@ -662,7 +689,8 @@ class Desk:
     def kinds(self) -> list[str]:
         """出了哪几种预览卡片（各配一句确认说明）。"""
         return ((["plan"] if self.plan is not None else []) + (["log"] if self.logs else [])
-                + (["goal"] if self.goal is not None else []) + (["temp"] if self.temps else []))  # fmt: skip
+                + (["goal"] if self.goal is not None else []) + (["temp"] if self.temps else [])
+                + (["diet"] if self.diet is not None else []))  # fmt: skip
 
     @property
     def done_kinds(self) -> set[str]:
@@ -672,6 +700,7 @@ class Desk:
         out |= {"state"} if self.said else set()
         out |= {"goal"} if self.goal is not None else set()
         out |= {"temp"} if self.temps else set()
+        out |= {"diet"} if self.diet is not None else set()
         return out | {x.what for x in (*self.saved, *self.changed) if x.what}
 
     def done_note(self) -> str:
@@ -685,7 +714,8 @@ class Desk:
         for x in self.logs:
             out += x.cards
         out += [c for x in self.temps for c in x.cards]
-        return out + (list(self.goal.cards) if self.goal is not None else [])
+        out += list(self.goal.cards) if self.goal is not None else []
+        return out + (list(self.diet.cards) if self.diet is not None else [])  # 改目标在前：先确认目标再换饮食
 
     @property
     def tried_plan(self) -> bool:
@@ -696,6 +726,7 @@ class Desk:
     def drafts(self) -> list[str]:
         out = [self.plan.draft] if self.plan is not None and self.plan.draft else []
         out += [self.goal.draft] if self.goal is not None and self.goal.draft else []
+        out += [self.diet.draft] if self.diet is not None and self.diet.draft else []
         out += [x.draft for x in self.temps if x.draft]
         return out + [x.draft for x in self.logs if x.draft]
 
@@ -749,6 +780,10 @@ class Desk:
             if self.goal is not None and self.goal.draft and self.goal.draft != out.draft:
                 self.stale.append(self.goal.draft)
             self.goal = out
+        elif out.kind == "diet":  # 同一轮后一张换饮食方案换掉前一张
+            if self.diet is not None and self.diet.draft and self.diet.draft != out.draft:
+                self.stale.append(self.diet.draft)
+            self.diet = out
         elif out.kind == "temp":
             self.temps.append(out)
         elif out.kind == "saved":

@@ -321,6 +321,8 @@ class CaseFile:
     sore: tuple[str, ...] = ()  # 最近 3 天说过疼的部位（§158）：只给排计划、换动作的工具避开，不当成伤病写进回答
     meals: str = ""  # 今天的饮食账单（§187）：和首页饮食账单同一份；读不到时为空
     meals_id: str = ""
+    diet_plan: str = ""  # 现在的饮食计划（§190）：工作日、周末一天合计，最近套用的方案；读不到时为空
+    diet_plan_id: str = ""
 
     def text(self, *, calcs: bool = True) -> str:
         lines = [
@@ -341,6 +343,8 @@ class CaseFile:
             lines.append(
                 f"- 今天的饮食（和首页饮食账单同一份，以这里为准；用到其中的数字时写这个编号）〔{self.meals_id}〕：{self.meals}"
             )
+        if self.diet_plan:  # 和热量目标对不上（比如改过目标）时，可以出换饮食方案的卡片（§190）
+            lines.append(f"- 饮食计划（首页\"今天吃什么\"照这个排）〔{self.diet_plan_id}〕：{self.diet_plan}")
         if self.weather:
             lines.append(f"- {self.weather}（安排户外运动、饮食和补水时要照顾到）")
         if self.limits:
@@ -403,6 +407,7 @@ def build(
     target: str = "",
     sore: Sequence[str] = (),
     meals: str = "",
+    diet_plan: str = "",
 ) -> CaseFile:
     """insights：指标解读（§84），每条是 (给角色看的一句话, 追问依据时讲的详细说法)。
     sore：最近 3 天说过疼的部位（§158），和记着的伤病一样避开。"""
@@ -450,6 +455,9 @@ def build(
     meals_id = f"C{len(metrics) + 3 + len(found)}" if meals else ""
     if meals:
         calcs[meals_id] = f"今天的饮食账单：{meals}"
+    diet_plan_id = f"C{len(metrics) + 3 + len(found) + bool(meals)}" if diet_plan else ""
+    if diet_plan:
+        calcs[diet_plan_id] = f"饮食计划：{diet_plan}"
     return CaseFile(
         basics=basics,
         limits=limits,
@@ -469,6 +477,8 @@ def build(
         sore=tuple(dict.fromkeys(sore)),
         meals=meals,
         meals_id=meals_id,
+        diet_plan=diet_plan,
+        diet_plan_id=diet_plan_id,
     )
 
 

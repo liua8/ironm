@@ -29,6 +29,7 @@ from typing import Any, cast
 
 from ironm_agent.actions import (
     ADJUST_TODAY,
+    DIET_PLAN,
     KCAL_CHANGE,
     LOG_BODY,
     LOG_MEAL,
@@ -133,6 +134,7 @@ from ironm_agent.render import (
     TURN_ID,
     answer_text,
     consultation_summary,
+    diet_card,
     finished,
     goal_card,
     log_card,
@@ -337,6 +339,7 @@ CONFIRM_NOTE = {
     "log": "下面是这次训练的记录预览，点「确认」才会记下。",
     "goal": "下面是改目标的预览，点「确认」才会改，改了也能撤销。",  # §151
     "temp": "下面是临时调整的预览，点「确认」才生效，到了结束日期自动回到原计划，也能提前撤销。",  # §163
+    "diet": "下面是换饮食方案的预览，点「确认」才换，按确认时的热量目标算份数，换了也能撤销。",  # §190
 }
 # 本会话里这些回答给全文、不压成要点（列给他确认的条件、给出过的预览，spec [2026-10-23] §68）
 KEEP_WHOLE = (HEAD, *CONFIRM_NOTE.values())
@@ -494,6 +497,7 @@ class IronMAgent:
         )
         self._meals: Any = None
         self._diet: Any = None
+        self._kitchen: Any = None  # 自建食谱和饮食计划（§190）；测试里换成内存版
         self._coach_cache: dict[str, tuple[date, Any]] = {}  # 同一轮只读一次管家方案（§97）
         self._web_search: Any = None  # 联网搜索（§91）；None 时按环境变量里的密钥配，测试里换成假的
         self._web_log: Any = None  # 联网查询的待审清单；None 用数据库里的
@@ -826,7 +830,8 @@ class IronMAgent:
         if prior is not None:
             await self._drop_drafts(user_id, [prior.id])
         return Outcome(True, "已出改目标预览卡片，等他确认（确认前目标没改）。", kind="goal",
-                       cards=tuple(goal_card(draft, content)), draft=draft.id, what="goal")  # fmt: skip
+                       cards=tuple(goal_card(draft, content)), draft=draft.id, what="goal",
+                       extra={"kcal": round(k1) if k1 and kind and after != before else None})  # fmt: skip
 
     async def _target(self, user_id: str, snapshot: Snapshot) -> str:
         """目标体重和日期的一句话（排新计划前确认时带上，spec [2026-10-23] §55 需求 2）；读不到时当作没有。"""
@@ -994,6 +999,75 @@ class IronMAgent:
             return ""
         by = {m.key: m.value for m in snapshot.metrics}
         return day_bill(rows, by.get("kcal_target"), by.get("protein_target"))
+
+    def _kitchen_store(self) -> Any:
+        if self._kitchen is None:
+            from ironm_agent.recipes import default_diet_store
+
+            self._kitchen = default_diet_store()
+        return self._kitchen
+
+    async def _diet_plan_facts(self, user_id: str) -> tuple[dict[str, Any], str] | None:
+        """现在的饮食计划（§190）：工作日、周末一天合计（和饮食页同一份算法），最近从方案库套用的方案名；读不到时 None。"""
+        from ironm_agent.web_diet import plan_days
+        from ironm_agent.web_diet_library import applied_plan
+
+        try:
+            kitchen = self._kitchen_store()
+            _, totals = await plan_days(kitchen, self._meals_store(), user_id)
+            p = await applied_plan(user_id, kitchen)
+        except Exception as e:
+            _log.warning("diet plan unavailable: error_type=%s", type(e).__name__)
+            return None
+        return totals, (p.name if p is not None else "")
+
+    async def _diet_plan_line(self, user_id: str) -> str:
+        """档案里饮食计划那一行（§190）；读不到时为空。"""
+        from ironm_agent.diet_library import SET_NAMES
+
+        got = await self._diet_plan_facts(user_id)
+        if got is None:
+            return ""
+        totals, name = got
+        if not any(v["kcal"] for v in totals.values()):
+            return "还没排（首页\"今天吃什么\"没有照着排的）"
+        days = "、".join(f"{SET_NAMES[s]}一天约 {v['kcal']} 千卡、蛋白质 {v['protein_g']} 克"
+                         for s, v in totals.items() if v["kcal"])  # fmt: skip
+        return days + (f"；最近从饮食方案库套用的是「{name}」" if name else "")
+
+    async def _diet_preview(
+        self, user_id: str, args: Mapping[str, Any], ctx: Context, snapshot: Snapshot | None, today: date,
+        store: Any, kcal: float | None,
+    ) -> Outcome:  # fmt: skip
+        """换饮食方案（§190）：方案要在方案库里；孕期、糖尿病、未成年不出卡片；按热量目标算份数存成预览。"""
+        from ironm_agent.diet_library import by_id, named
+        from ironm_agent.web_diet_library import preview_lines
+
+        name = str(args.get("plan") or "").strip()
+        p = (by_id(name) or named(name)) if name else None
+        if p is None:
+            return Outcome(False, "饮食方案库里没有这份：先用 diet_templates 看目录，plan 写方案编号。", "format")
+        if ctx.risks & {"pregnancy", "diabetes"}:
+            return Outcome(False, "他记着孕期或糖尿病：不从方案库直接套，不出卡片；建议他先问医生或营养师。", "special")
+        age = snapshot.profile.age(today) if snapshot is not None else None
+        if age is not None and age < 18:
+            return Outcome(False, "他还没成年：不从方案库直接套，不出卡片；建议在家长和医生的指导下吃。", "special")
+        if kcal is None:
+            kcal = _metric_value(snapshot, "kcal_target") if snapshot is not None else None
+        items = preview_lines(p, kcal)
+        items.append(f"按每天约 {round(kcal)} 千卡的热量目标算份数" if kcal else "还算不出热量目标：按推荐份数")
+        content = {"title": "换饮食方案", "headline": str(args.get("why") or "")[:60] or f"换成「{p.name}」",
+                   "items": items, "diet": {"id": p.id, "name": p.name, "kcal": round(kcal) if kcal else None}}  # fmt: skip
+        try:  # 上一轮出的还没处理：作废，免得他点了旧的
+            prior = await store.pending_plan(user_id, DRAFT_HOURS * 60, kind="diet")
+        except Exception as e:
+            _log.info("diet draft lookup failed: error_type=%s", type(e).__name__)
+            prior = None
+        draft = await store.add_draft(user_id, "diet", content)
+        if prior is not None:
+            await self._drop_drafts(user_id, [prior.id])
+        return Outcome(True, f"已出换成「{p.name}」的预览卡片，等他确认（确认前饮食计划没换）。", kind="diet",
+                       cards=tuple(diet_card(draft, content)), draft=draft.id, what="diet")  # fmt: skip
 
     async def _illness_followup(self, user_id: str, run: dict[str, Any]) -> str:
         """今天还没问过、也还没回答的生病：返回追问的一句，并记下今天问过了。"""
@@ -1694,16 +1768,16 @@ class IronMAgent:
             # 要新计划、本会话还没确认条件：由它用自己的话列出条件请他确认（§55、§86），不出预览；
             # 开头那段没有"排新计划前先确认一下"（下一轮靠它认出问过了）时，退回系统列的五项
             # 改目标的卡片照出（§151：他说了新目标，同一轮又要先确认排计划的条件，两件事都要给他）
-            goal_draft = desk.goal.draft if desk.goal is not None else ""
-            await self._drop_drafts(user_id, [d for d in desk.drafts if d != goal_draft])
+            keep = [x for x in (desk.goal, desk.diet) if x is not None]  # 换饮食方案的卡片同样照出（§190）
+            await self._drop_drafts(user_id, [d for d in desk.drafts if d not in {x.draft for x in keep}])
             ask = own if asks_terms else confirm_ask(terms)
             run.update(
                 path="clarify", missing=["confirm"], clarify_by="model" if asks_terms else "fixed"
             )
             said["answer"] = ask
-            note = CONFIRM_NOTE["goal"] if desk.goal is not None else ""
-            yield text_block("\n\n".join(x for x in (refusal_fixed, ask, note) if x))
-            for block in desk.goal.cards if desk.goal is not None else ():
+            notes = [CONFIRM_NOTE[x.kind] for x in keep]
+            yield text_block("\n\n".join(x for x in (refusal_fixed, ask, *notes) if x))
+            for block in (b for x in keep for b in x.cards):
                 yield block
             run.pop("_desk", None)  # 卡片发出去了：后面再出什么事也不作废它
             return
@@ -2255,7 +2329,27 @@ class IronMAgent:
             # 分几轮说的（"想减到 65 公斤"→"哪天？"→"半年吧"）、答应管家给的方案（"可以"）：
             # 他前几句和管家上一句也算原话（复核 11-03）；确认卡片前他还能看清
             said = "\n".join([text, *user_lines(list(history))[-3:], *[x for x in history if x.startswith(COACH)][-1:]])
-            return await self._goal_preview(user_id, said, today, snapshot, args, store)
+            out = await self._goal_preview(user_id, said, today, snapshot, args, store)
+            if not out.ok or DIET_PLAN not in handlers:
+                return out
+            # 改目标时一起看饮食计划（§190）：告诉它现在的计划和新目标各多少，开换饮食方案的工具；换不换由它判断
+            new_kcal = (out.extra or {}).get("kcal")
+            facts = await self._diet_plan_facts(user_id)
+            if facts is None:
+                return out
+            from ironm_agent.diet_library import SET_NAMES
+
+            totals, _ = facts
+            now = "、".join(f"{SET_NAMES[s]}约 {v['kcal']} 千卡" for s, v in totals.items() if v["kcal"]) or "还没排"
+            desk.unlock([DIET_PLAN])
+            hint = (f"他现在的饮食计划一天{now}" + (f"，新目标每天约 {new_kcal} 千卡" if new_kcal else "")
+                    + "。对不上新目标的话，同一轮用 propose_diet_plan 从饮食方案库挑一份出卡片（按新目标的热量算），他确认才换。")  # fmt: skip
+            return replace(out, text=f"{out.text}{hint}")
+
+        async def diet_plan(desk: Desk, args: Mapping[str, Any]) -> Outcome:
+            """换饮食方案（§190）：同一轮出了改目标卡片时按新目标的热量算。"""
+            new_kcal = (desk.goal.extra or {}).get("kcal") if desk.goal is not None else None
+            return await self._diet_preview(user_id, args, ctx, snapshot, today, store, new_kcal)
 
         async def temp_change(desk: Desk, args: Mapping[str, Any]) -> Outcome:
             """这几天临时这样练（§163 需求 2）：套到当前计划上、检查，出临时调整的预览卡片，他确认才生效。"""
@@ -2265,7 +2359,7 @@ class IronMAgent:
 
         handlers: dict[str, Handler] = {
             LOG_WORKOUT: log_workout, RECORD_STATE: record_state, LOG_BODY: log_body,
-            LOG_MEAL: log_meal, KCAL_CHANGE: kcal_change, SET_GOAL: set_goal,
+            LOG_MEAL: log_meal, KCAL_CHANGE: kcal_change, SET_GOAL: set_goal, DIET_PLAN: diet_plan,
         }  # fmt: skip
         if remembering:  # 暂停记忆、系统拼出来的问法：不给（§145）
             handlers[REMEMBER] = remember
@@ -2545,7 +2639,7 @@ class IronMAgent:
             snapshot, recall, text, plan=lines + target_lines(plan, steady, snapshot.today, decided),
             illness=state, day=today_lines,
             insights=insight_lines, target=target, sore=sore_parts,
-            meals=await self._meals_line(user_id, snapshot),
+            meals=await self._meals_line(user_id, snapshot), diet_plan=await self._diet_plan_line(user_id),
         )  # fmt: skip
         current = await wx if wx is not None else None
         if current is not None:
