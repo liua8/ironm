@@ -2616,3 +2616,14 @@ button.tag { border: 0; cursor: pointer; font: inherit; font-size: 12px; font-we
 
 /* 饮食账单"今天还能吃"的数字小一点（项目负责人 11-06："卡路里字太大了"）：44 → 32 */
 .bg-big.fig-n { font-size: 32px; }
+
+/* 今天吃什么每顿一行（11-06："字体太大了，不要移到下一行"）：顿名和热量小一点、整行不换行；"记实际吃的"小链接 */
+.tp-head { flex-wrap: nowrap; min-width: 0; }
+.tp-head b { font-size: 16px; white-space: nowrap; }
+.tp-kcal { white-space: nowrap; flex-shrink: 0; }
+.tp-kcal .fig-n { font-size: 16px; }
+.tp-head .btn, .tp-head .link, .tp-tag { white-space: nowrap; flex-shrink: 0; }
+.tp-other { align-self: flex-start; font-size: 13px; margin-top: 2px; }
+/* 每顿吃什么的克数、千卡：14 号、不折行（前面的样式把 .num 放大到 24 号，"152 千卡"被挤成两行） */
+.tp-foods .num { font-size: 14px; line-height: 1.4; white-space: nowrap; }
+.tp-foods li { font-size: 14px; }

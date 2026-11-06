@@ -5,7 +5,7 @@ import { Fragment, useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { api } from "@/api/client";
-import { Button, LinkButton, Note, Panel, PixelText, Plank, Seg, T } from "@/ui/pixel";
+import { Button, LinkButton, Note, Panel, Plank, Seg, T } from "@/ui/pixel";
 import { color, space } from "@/ui/theme";
 
 import { isPicked, PLAN_GROUPS, planMeta, planOptions, reviewLine, type SlotRow, slotRows } from "./logic";
@@ -55,11 +55,11 @@ function MealRow({ row, onMeal, onLog, onAdd }: { row: SlotRow; onMeal: (m: Meal
     <View style={s.meal}>
       <View style={s.head}>
         {image ? <FoodTile name={row.kind} image={image} size={40} dim={planned} /> : null}
-        <PixelText size={24} style={planned ? s.dim : undefined}>{row.kind}</PixelText>
+        <T style={[s.kind, planned && s.dim]} numberOfLines={1}>{row.kind}</T>
         {kcal != null ? (
           <View style={s.kcal}>
-            <PixelText size={24} style={planned ? s.dim : undefined}>{String(Math.round(kcal))}</PixelText>
-            <T muted style={s.kcalUnit}>千卡</T>
+            <T style={[s.kcalNum, planned && s.dim]} numberOfLines={1}>{String(Math.round(kcal))}</T>
+            <T muted style={s.kcalUnit} numberOfLines={1}>千卡</T>
           </View>
         ) : null}
         <View style={s.end}>{end}</View>
@@ -75,6 +75,8 @@ function MealRow({ row, onMeal, onLog, onAdd }: { row: SlotRow; onMeal: (m: Meal
             <Fragment>
               <T muted style={s.name}>{row.slot.name}</T>
               {row.slot.foods?.length ? <FoodList foods={row.slot.foods} dim /> : null}
+              {/* 吃的和计划不一样：照空着那顿一样记（拍、写、选、常吃的），记成这一顿 */}
+              <LinkButton title="吃的不一样？记实际吃的 ›" onPress={() => onAdd(row.kind)} />
             </Fragment>
           ) : (
             <T muted style={s.name}>没排</T>
@@ -221,8 +223,11 @@ const s = StyleSheet.create({
   reviewTitle: { fontWeight: "700", color: color.accentText, fontSize: 14 },
   meal: { gap: 6, paddingVertical: 14, borderTopWidth: 1, borderStyle: "dashed", borderColor: color.woodLight },
   head: { flexDirection: "row", alignItems: "center", gap: 10 },
-  kcal: { flexDirection: "row", alignItems: "baseline", gap: 2, flexShrink: 1 },
+  kcal: { flexDirection: "row", alignItems: "baseline", gap: 2, flexShrink: 0 },
   kcalUnit: { fontSize: 13 },
+  // 顿名和热量 16 号、整行不换行（11-06："字体太大了，不要移到下一行"）
+  kind: { fontSize: 16, fontWeight: "800", color: color.ink, flexShrink: 0 },
+  kcalNum: { fontSize: 16, fontWeight: "800", color: color.ink },
   end: { marginLeft: "auto" },
   tag: { fontSize: 13, fontWeight: "700", color: color.ink2, backgroundColor: color.amber, borderWidth: 1, borderRadius: 14, borderColor: color.accentSoft, paddingHorizontal: space.s, letterSpacing: 1, overflow: "hidden" },
   dim: { color: color.muted },

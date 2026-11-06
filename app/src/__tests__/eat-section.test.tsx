@@ -118,3 +118,10 @@ async function waitPost() {
   }
   throw new Error("没有发出记一餐的请求");
 }
+
+it("a planned meal can be logged as what he actually ate (11-06)", async () => {
+  await render(<EatSection />);
+  expect(await screen.findByText("照计划记")).toBeTruthy();
+  await fireEvent.press(screen.getByText("吃的不一样？记实际吃的 ›"));
+  expect(await screen.findByText("记午餐")).toBeTruthy();  // 和空着那顿的"＋ 记"同一个弹出页，记成这一顿
+});

@@ -2326,7 +2326,9 @@ function todayPlan(d, redraw, meta) {
         return meal(k, planned.kcal, "planned", h("button", { class: "btn small", type: "button", onclick: async (e) => {
           e.currentTarget.disabled = true;
           try { redraw(await api("/iron/api/diet/plan/log", { method: "POST", body: JSON.stringify({ slot: k }) })); flash(`记下了${k}`); } catch (err) { flash(err.message); e.currentTarget.disabled = false; }
-        } }, "照计划记"), planned.image, h("span", { class: "tp-name" }, planned.name), planned.foods?.length ? lines(planned.foods) : null);
+        } }, "照计划记"), planned.image, h("span", { class: "tp-name" }, planned.name), planned.foods?.length ? lines(planned.foods) : null,
+          // 吃的和计划不一样：照空着那顿一样记（拍、写、选、常吃的），记成这一顿
+          h("button", { class: "link tp-other", type: "button", onclick: () => addMealSheet(k, d, redraw) }, "吃的不一样？记实际吃的", icon("chevron", "xs")));
       }
       return meal(k, null, "unplanned", h("button", { class: "link", type: "button", onclick: () => addMealSheet(k, d, redraw) }, icon("plus", "xs"), "记"), null,
         h("span", { class: "tp-none" }, "没排"));

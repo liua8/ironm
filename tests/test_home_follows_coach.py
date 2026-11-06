@@ -18,3 +18,10 @@ def test_home_list_follows_the_coach() -> None:
     )
     assert "onStatus: onToday" in card and "doneSheet(v.name, shownVersion)" in card
     assert "比计划少 ${cut} 组" in card  # 少了的组照旧标出来
+
+
+def test_planned_meal_can_be_logged_as_what_was_actually_eaten() -> None:
+    """11-06：按计划排了的那顿，除了"照计划记"还能"记实际吃的"（和空着那顿同一个弹出页）。"""
+    plan = JS[JS.index("function todayPlan") : JS.index("// 点空着的那一顿")]
+    assert '"照计划记"' in plan
+    assert 'onclick: () => addMealSheet(k, d, redraw) }, "吃的不一样？记实际吃的"' in plan
