@@ -84,7 +84,7 @@ export function HistorySheet({ visible, current, onClose, onPick }: { visible: b
 const s = StyleSheet.create({
   back: { flex: 1, justifyContent: "flex-end" },
   dim: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(40,20,5,0.45)" },
-  sheet: { maxHeight: "80%", backgroundColor: color.paper, borderTopWidth: 4, borderColor: color.woodDark, paddingHorizontal: space.l, paddingTop: space.m, gap: space.m, width: "100%", maxWidth: 720, alignSelf: "center" },
+  sheet: { maxHeight: "80%", backgroundColor: color.paper, borderTopWidth: 1, borderColor: color.woodDark, paddingHorizontal: space.l, paddingTop: space.m, gap: space.m, width: "100%", maxWidth: 720, alignSelf: "center" },
   head: { flexDirection: "row", alignItems: "center" },
   title: { flex: 1, color: color.ink, fontSize: 18, fontWeight: "700" },
   close: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
@@ -92,7 +92,7 @@ const s = StyleSheet.create({
   state: { paddingVertical: space.xl, alignItems: "center", gap: space.m },
   list: { flexGrow: 0 },
   listBody: { gap: space.s, paddingBottom: space.s },
-  row: { flexDirection: "row", alignItems: "center", gap: space.m, backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.woodLight, paddingHorizontal: space.m, paddingVertical: 10 },
+  row: { flexDirection: "row", alignItems: "center", gap: space.m, backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.woodLight, paddingHorizontal: space.m, paddingVertical: 10 },
   rowOn: { borderColor: color.accent },
   rowDown: { opacity: 0.7 },
   main: { flex: 1, minWidth: 0, gap: 2 },

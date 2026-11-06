@@ -7,7 +7,7 @@ import { api } from "@/api/client";
 import { stripRefs } from "@/features/me/logic";
 import { WeekShare } from "@/features/share/share";
 import { Button, PixelText, Panel, T } from "@/ui/pixel";
-import { color, font, space } from "@/ui/theme";
+import { color, font, radius, space } from "@/ui/theme";
 
 import { BuddySay, Failed, PanelHead, Row, Sheet } from "./kit";
 import {
@@ -24,6 +24,7 @@ import {
   weekCount,
   weekMoreLine,
   type WeekReport as Report,
+  weekPerf,
   weekReportText,
   type Workout,
 } from "./logic";
@@ -37,15 +38,36 @@ export type BriefWeek = {
   sleep?: { value?: number | null; brief?: string } | null;
 };
 
-/** 这周：练了几次只说一次（§137）。 */
+/** 这周表现（§137 练了几次只说一次；§176 照参照图：三格、周目标进度、和上周比一句）。 */
 export function WeekPanel({ logs, cal, week }: { logs: Workout[]; cal: Calendar | null; week: BriefWeek | null }) {
   const { monday, days, before, diff } = weekCount(logs, new Date());
+  const { minutes, sets } = weekPerf(logs, new Date());
   const planned = week?.planned || week?.due || 0;
+  const pct = planned ? Math.min(100, Math.round((days / planned) * 100)) : 0;
   const more = weekMoreLine(cal, week);
+  const cell = (k: string, v: string, u: string, hot = false) => (
+    <View style={w.cell}>
+      <Text style={w.k}>{k}</Text>
+      <Text style={[w.v, hot && w.hot]}>{v}<Text style={w.u}>{u}</Text></Text>
+    </View>
+  );
   return (
     <Panel>
-      <PanelHead title="这周" right={`${md(monday)} 起`} />
-      <PixelText size={24}>{`练了 ${days} 次${planned ? `，计划 ${planned} 次` : ""}`}</PixelText>
+      <View style={w.head}>
+        <View style={w.title}><View style={w.dot} /><PixelText size={24} style={w.titleText}>这周表现</PixelText></View>
+        <Text style={w.date}>{`${md(monday)} 起`}</Text>
+      </View>
+      <View style={w.cells}>
+        {cell("已练次数", `${days}`, planned ? `/${planned}次` : "次", true)}
+        {cell("累计时长", minutes >= 60 ? (minutes / 60).toFixed(1) : `${minutes}`, minutes >= 60 ? "小时" : "分钟")}
+        {cell("完成组数", `${sets}`, "组")}
+      </View>
+      {planned ? (
+        <View style={w.goal}>
+          <View style={w.goalHead}><Text style={w.goalK}>周目标完成度</Text><Text style={w.goalV}>{`${pct}%`}</Text></View>
+          <View style={w.track}><View style={[w.fill, { width: `${pct}%` }]} /></View>
+        </View>
+      ) : null}
       <T>{compareLine(diff, before)}</T>
       {more ? <T>{more}</T> : null}
       {week?.tips?.length ? <BuddySay head="IronM 这周的建议">{stripRefs(week.tips[0])}</BuddySay> : null}
@@ -200,14 +222,14 @@ const CELL = { flex: 1, aspectRatio: 1, maxWidth: 48, alignItems: "center", just
 
 const s = StyleSheet.create({
   calHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  calBtn: { width: 40, height: 36, alignItems: "center", justifyContent: "center", backgroundColor: color.plank, borderWidth: 2, borderColor: color.woodDark },
+  calBtn: { width: 40, height: 36, alignItems: "center", justifyContent: "center", backgroundColor: color.plank, borderWidth: 1, borderRadius: 14, borderColor: color.woodDark },
   calBtnOff: { opacity: 0.4 },
   calBtnText: { color: color.accentInk, fontSize: 22, fontWeight: "700", lineHeight: 24 },
   calTitle: { color: color.ink, fontSize: 17, fontWeight: "700" },
   calRow: { flexDirection: "row", justifyContent: "space-between", gap: 4 },
   cell: { ...CELL, textAlign: "center" },
   weekday: { aspectRatio: undefined, color: color.muted, fontSize: 13, paddingVertical: 2 },
-  day: { borderWidth: 2, borderColor: "transparent" },
+  day: { borderWidth: 1, borderRadius: 14, borderColor: "transparent" },
   dayText: { color: color.ink, fontSize: 14, fontVariant: ["tabular-nums"] },
   dayTextOn: { color: color.accentInk, fontWeight: "700" },
   dayTextMuted: { color: color.muted },
@@ -217,19 +239,39 @@ const s = StyleSheet.create({
   rest: { backgroundColor: "rgba(74, 42, 16, 0.08)", borderColor: "rgba(74, 42, 16, 0.15)" },
   has: { backgroundColor: color.paperLight },
   today: { borderColor: color.woodDark },
-  dot: { width: 12, height: 12, borderWidth: 2, borderColor: color.wood, backgroundColor: color.paperLight },
+  dot: { width: 12, height: 12, borderWidth: 1, borderRadius: 14, borderColor: color.wood, backgroundColor: color.paperLight },
   dotOn: { backgroundColor: color.accent, borderColor: color.accentText },
   pr: { flexDirection: "row", alignItems: "center", gap: space.s, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: color.woodLight },
   prLast: { borderBottomWidth: 0 },
   prName: { flex: 1, color: color.ink, fontSize: 15 },
-  prNum: { fontFamily: font.pixel, fontSize: 24, lineHeight: 30, color: color.ink },
+  prNum: { fontWeight: "800", fontSize: 24, lineHeight: 30, color: color.ink },
   prNumNew: { color: color.accentText },
   prDay: { color: color.muted, fontSize: 13, minWidth: 48, textAlign: "right" },
-  badge: { fontSize: 12, fontWeight: "800", color: color.woodDark, backgroundColor: color.amber, borderWidth: 2, borderColor: "#8a5a10", paddingHorizontal: 6, paddingVertical: 1, overflow: "hidden" },
-  entry: { flexDirection: "row", alignItems: "center", gap: space.m, backgroundColor: color.paper, borderWidth: 4, borderColor: color.wood, padding: space.m },
+  badge: { fontSize: 12, fontWeight: "800", color: color.ink2, backgroundColor: color.amber, borderWidth: 1, borderRadius: 14, borderColor: "#8a5a10", paddingHorizontal: 6, paddingVertical: 1, overflow: "hidden" },
+  entry: { flexDirection: "row", alignItems: "center", gap: space.m, backgroundColor: color.paper, borderWidth: 1, borderRadius: 14, borderColor: color.wood, padding: space.m },
   entryDown: { backgroundColor: color.paperLight },
-  entryPlank: { backgroundColor: color.plank, borderWidth: 2, borderColor: color.woodDark, paddingHorizontal: 8, paddingVertical: 2 },
+  entryPlank: { backgroundColor: color.plank, borderWidth: 1, borderRadius: 14, borderColor: color.woodDark, paddingHorizontal: 8, paddingVertical: 2 },
   entryPlankText: { color: color.accentInk },
   entryText: { flex: 1, color: color.ink, fontSize: 14 },
   entryChev: { color: color.muted, fontSize: 22 },
+});
+
+const w = StyleSheet.create({
+  head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  title: { flexDirection: "row", alignItems: "center", gap: 8 },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: color.accent },
+  titleText: { fontSize: 20, lineHeight: 26 },
+  date: { color: color.ink2, fontSize: 12, fontWeight: "700", backgroundColor: color.paperLight, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3, overflow: "hidden" },
+  cells: { flexDirection: "row", backgroundColor: color.paperLight, borderRadius: 18, paddingVertical: 14, paddingHorizontal: 6 },
+  cell: { flex: 1, alignItems: "center", gap: 2 },
+  k: { color: color.ink2, fontSize: 12, fontWeight: "600" },
+  v: { color: color.ink, fontSize: 26, fontWeight: "800" },
+  hot: { color: color.accentText },
+  u: { color: color.muted, fontSize: 12, fontWeight: "600" },
+  goal: { gap: 6 },
+  goalHead: { flexDirection: "row", justifyContent: "space-between" },
+  goalK: { color: color.ink, fontSize: 13, fontWeight: "700" },
+  goalV: { color: color.accentText, fontSize: 13, fontWeight: "700" },
+  track: { height: 8, borderRadius: 999, backgroundColor: color.wood, overflow: "hidden" },
+  fill: { height: 8, borderRadius: 999, backgroundColor: color.accent },
 });

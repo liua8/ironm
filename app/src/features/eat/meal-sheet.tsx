@@ -108,5 +108,5 @@ const s = StyleSheet.create({
   cellKey: { fontSize: 13, lineHeight: 18 },
   caption: { fontSize: 13, lineHeight: 19 },
   hero: { alignItems: "center" },
-  photo: { width: "100%", aspectRatio: 4 / 3, borderWidth: 3, borderColor: color.wood, backgroundColor: "#e9c784" },
+  photo: { width: "100%", aspectRatio: 4 / 3, borderWidth: 1, borderRadius: 14, borderColor: color.wood, backgroundColor: "#e9c784" },
 });

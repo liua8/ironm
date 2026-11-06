@@ -140,7 +140,7 @@ export function useTrainingReminderSync(): void {
 const s = StyleSheet.create({
   time: { flexDirection: "row", gap: space.s },
   step: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4 },
-  stepBtn: { width: 36, height: 40, alignItems: "center", justifyContent: "center", backgroundColor: color.plank, borderWidth: 2, borderColor: color.woodDark },
+  stepBtn: { width: 36, height: 40, alignItems: "center", justifyContent: "center", backgroundColor: color.plank, borderWidth: 1, borderRadius: 14, borderColor: color.woodDark },
   stepSign: { color: color.accentInk, fontSize: 20, fontWeight: "700" },
   stepVal: { flex: 1, alignItems: "center" },
   unit: { color: color.muted, fontSize: 13 },

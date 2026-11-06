@@ -1,4 +1,4 @@
-// 根布局的登录闸（spec §164）：凭证读出来之前不画页面；直接打开 /chat 这类标签外的页面，
+// 根布局的登录闸（spec §164）：凭证读出来之前不画页面；直接打开 /eat 这类标签外的页面（§176 起对话进了底栏，换成饮食账单），
 // 第一次渲染就带着凭证；没登录打开它们落到登录页。
 import { Text } from "react-native";
 import { renderRouter, screen, waitFor } from "expo-router/testing-library";
@@ -15,10 +15,10 @@ jest.mock("expo-secure-store", () => ({
 }));
 
 const firstToken: string[] = [];
-function Chat() {
+function Eat() {
   const { token } = useSession();
   if (!firstToken.length) firstToken.push(token);
-  return <Text>对话页</Text>;
+  return <Text>饮食账单</Text>;
 }
 const stub = (name: string) => () => <Text>{name}</Text>;
 
@@ -26,11 +26,12 @@ const routes = {
   _layout: RootLayout,
   "(tabs)/_layout": stub("标签"),
   "(tabs)/index": stub("首页"),
+  "(tabs)/chat": stub("对话页"),
   "(tabs)/atlas": stub("图鉴"),
-  "(tabs)/record": stub("战绩"),
+  "(tabs)/record": stub("记录"),
   "(tabs)/me": stub("我"),
   login: stub("登录页"),
-  chat: Chat,
+  eat: Eat,
   plan: stub("计划"),
   live: stub("训练"),
   timeline: stub("时间线"),
@@ -44,17 +45,17 @@ beforeEach(() => {
   firstToken.length = 0;
 });
 
-it("opens /chat directly with the stored token already loaded", async () => {
+it("opens /eat directly with the stored token already loaded", async () => {
   mockSaved = "tok";
-  await renderRouter(routes, { initialUrl: "/chat" });
-  await waitFor(() => expect(screen.getByText("对话页")).toBeTruthy());
+  await renderRouter(routes, { initialUrl: "/eat" });
+  await waitFor(() => expect(screen.getByText("饮食账单")).toBeTruthy());
   expect(firstToken).toEqual(["tok"]);
 });
 
-it("sends a signed-out visitor of /chat to the login page", async () => {
+it("sends a signed-out visitor of /eat to the login page", async () => {
   mockSaved = "";
-  const r = await renderRouter(routes, { initialUrl: "/chat" });
+  const r = await renderRouter(routes, { initialUrl: "/eat" });
   await waitFor(() => expect(r.getPathname()).toBe("/login"));
   expect(screen.getByText("登录页")).toBeTruthy();
-  expect(screen.queryByText("对话页")).toBeNull();
+  expect(screen.queryByText("饮食账单")).toBeNull();
 });

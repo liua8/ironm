@@ -64,7 +64,8 @@ beforeEach(() => {
 
 it("record: this week, calendar, PR, timeline entry and last week's report", async () => {
   await page(<Record />);
-  expect(await screen.findByText("练了 1 次，计划 3 次")).toBeTruthy();
+  expect(await screen.findByText("这周表现")).toBeTruthy();  // §176 三格：已练次数 1/3
+  expect(screen.getByText("1/3次")).toBeTruthy();
   expect(screen.getByText(/连续打卡 3 天，平均感受 7.0 分/)).toBeTruthy();
   expect(screen.getByText("这周睡得少，强度降一点")).toBeTruthy();
   expect(screen.getByText("本月练了 1 天，共 40 分钟。")).toBeTruthy();

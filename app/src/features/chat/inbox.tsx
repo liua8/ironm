@@ -237,7 +237,7 @@ export function WeekMsg({ report }: { report: WeekReport }) {
 }
 
 const s = StyleSheet.create({
-  box: { backgroundColor: color.paper, borderWidth: 3, borderColor: color.accent, padding: space.m, gap: space.m },
+  box: { backgroundColor: color.paper, borderWidth: 1, borderRadius: 14, borderColor: color.accent, padding: space.m, gap: space.m },
   head: { flexDirection: "row", alignItems: "center", gap: space.s },
   who: { color: color.ink, fontSize: 15, fontWeight: "700" },
   flex: { flex: 1, minWidth: 0 },

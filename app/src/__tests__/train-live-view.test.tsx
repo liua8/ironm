@@ -57,14 +57,15 @@ beforeEach(() => {
   });
 });
 
-it("home: today's quest, alert, moves, and 开练 starts with today's plan", async () => {
+it("home: today's quest card (§176), alert, numbered moves, and 开始训练 starts with today's plan", async () => {
   await render(<TrainSection />);
-  expect(await screen.findByText("今日委托")).toBeTruthy();
+  expect(await screen.findByText(/^今日委托 · /)).toBeTruthy();
   expect(screen.getByText("血压偏高：加大训练前先找医生")).toBeTruthy();
-  expect(screen.getByText("周四，练胸和背。")).toBeTruthy();
-  expect(screen.getByText("这周练了 1 次，计划 3 次")).toBeTruthy();
-  expect(screen.getByText("2×8")).toBeTruthy();
-  await fireEvent.press(screen.getByText("开练"));
+  expect(screen.getByText("胸 · 背")).toBeTruthy();
+  expect(screen.getByText("这周已练 1/3 次")).toBeTruthy();
+  expect(screen.getByText("2 组 × 8 次")).toBeTruthy();
+  expect(screen.getByText("已经练完了，直接打卡")).toBeTruthy();
+  await fireEvent.press(screen.getByText("开始训练"));
   const start = seen.find((x) => x.url === "/iron/api/live/start");
   expect(start?.body).toEqual({ today_plan: true });
   expect(mockRouter.push).toHaveBeenCalledWith("/live");
@@ -89,8 +90,8 @@ it("live: tick a set, rest starts, finish saves and shows the done card", async 
   await fireEvent.press(screen.getByText("完成第 1 组"));
   const put = seen.find((x) => x.method === "PUT");
   expect((put?.body as { items: typeof live.items }).items[0].sets[0].done).toBe(true);
-  expect(await screen.findByText("组间休息")).toBeTruthy();
-  await fireEvent.press(screen.getByText("结束"));
+  expect(await screen.findByText("组间休息中")).toBeTruthy();
+  await fireEvent.press(screen.getByText("结束训练"));
   await fireEvent.press(screen.getByText("保存这次训练"));
   expect(await screen.findByText("练完了")).toBeTruthy();
   expect(screen.getByText("本周第 2 练，还差 1 练。")).toBeTruthy();

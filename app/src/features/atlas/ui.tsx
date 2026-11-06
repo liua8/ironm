@@ -5,7 +5,7 @@ import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, type ViewS
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button } from "@/ui/pixel";
-import { color, font, space } from "@/ui/theme";
+import { color, shadow, space } from "@/ui/theme";
 
 /** 小标签（方框）。 */
 export function Chip({ children, tone }: { children: ReactNode; tone?: "hot" | "good" }) {
@@ -163,12 +163,12 @@ export function Cover({ uri, mark, style, contain }: { uri: string; mark: string
 }
 
 /** 卡片：一张封面 + 两行字，两列排。 */
-export function Card({ cover, title, sub, badge, onPress, label }: { cover: ReactNode; title: string; sub?: ReactNode; badge?: string; onPress: () => void; label: string }) {
+export function Card({ cover, title, sub, badge, onPress, label, foot }: { cover: ReactNode; title: string; sub?: ReactNode; badge?: string; onPress: () => void; label: string; foot?: ReactNode }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [s.card, pressed && s.pressed]}>
       <View>
         {cover}
-        {badge ? <Text style={s.badge}>{badge}</Text> : null}
+        {badge ? <Text style={[s.badge, badge === "进阶" && s.badgeHot]}>{badge}</Text> : null}
       </View>
       <View style={s.cardInfo}>
         <Text style={s.cardTitle} numberOfLines={2}>
@@ -182,6 +182,7 @@ export function Card({ cover, title, sub, badge, onPress, label }: { cover: Reac
           sub
         )}
       </View>
+      {foot}
     </Pressable>
   );
 }
@@ -261,39 +262,39 @@ export function GrassNote({ children }: { children: ReactNode }) {
 export const ui = StyleSheet.create({
   section: { gap: space.s },
   sectionHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.s },
-  plankTitle: { alignSelf: "flex-start", fontFamily: font.pixel, fontSize: 24, lineHeight: 28, color: color.accentInk, backgroundColor: color.plank, borderWidth: 3, borderColor: color.woodDark, paddingHorizontal: 10, paddingVertical: 4 },
-  small: { fontSize: 13, color: color.paperLight },
-  link: { color: color.woodDark, fontSize: 14, fontWeight: "600", backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.wood, paddingHorizontal: 8, paddingVertical: 2 },
+  plankTitle: { alignSelf: "flex-start", fontWeight: "800", fontSize: 20, lineHeight: 26, color: color.ink },
+  small: { fontSize: 13, color: color.muted, fontWeight: "600" },
+  link: { color: color.accentText, fontSize: 14, fontWeight: "700" },
   lede: { color: color.ink, fontSize: 16, lineHeight: 24, fontWeight: "600" },
   body: { color: color.ink, fontSize: 15, lineHeight: 24 },
   muted: { color: color.muted, fontSize: 14, lineHeight: 20 },
   error: { color: color.heat, fontSize: 14, lineHeight: 20 },
   ok: { color: color.accentText, fontSize: 14, lineHeight: 20 },
-  callout: { flexDirection: "row", gap: 8, backgroundColor: color.heatSoft, borderLeftWidth: 3, borderLeftColor: color.heat, padding: space.m },
+  callout: { flexDirection: "row", gap: 8, backgroundColor: color.heatSoft, borderLeftWidth: 1, borderLeftColor: color.heat, padding: space.m },
   calloutText: { flex: 1, color: color.ink, fontSize: 14, lineHeight: 21 },
   btnRow: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
-  search: { backgroundColor: color.paperLight, borderWidth: 3, borderColor: color.wood, paddingHorizontal: space.m, paddingVertical: 10, fontSize: 16, color: color.ink },
+  search: { backgroundColor: color.paper, borderRadius: 999, paddingHorizontal: space.l, paddingVertical: 12, fontSize: 16, color: color.ink, borderWidth: 0, ...shadow },
 });
 
 const s = StyleSheet.create({
-  chip: { borderWidth: 2, borderColor: color.wood, backgroundColor: color.paperLight, paddingHorizontal: 8, paddingVertical: 2 },
+  chip: { borderWidth: 1, borderRadius: 14, borderColor: color.wood, backgroundColor: color.paperLight, paddingHorizontal: 8, paddingVertical: 2 },
   chipHot: { borderColor: color.heat, backgroundColor: color.heatSoft },
   chipGood: { borderColor: color.accent, backgroundColor: color.goodSoft },
-  chipText: { color: color.woodDark, fontSize: 13, fontWeight: "600" },
+  chipText: { color: color.ink2, fontSize: 13, fontWeight: "600" },
   chipTextHot: { color: color.heat },
   tags: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   pills: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   pillsRow: { flexDirection: "row", gap: 6, paddingRight: space.s },
-  pill: { borderWidth: 2, borderColor: color.wood, backgroundColor: color.paperLight, paddingHorizontal: 12, paddingVertical: 6 },
-  pillOn: { backgroundColor: color.amber, borderColor: "#8a5a10" },
-  pillText: { color: color.woodDark, fontSize: 14, fontWeight: "600" },
-  pillTextOn: { color: color.woodDark },
-  overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(40,20,5,0.45)" },
-  sheet: { maxHeight: "90%", width: "100%", maxWidth: 720, alignSelf: "center", backgroundColor: color.paper, borderTopWidth: 4, borderColor: color.wood, borderLeftWidth: 4, borderRightWidth: 4 },
-  sheetHead: { flexDirection: "row", alignItems: "center", gap: space.s, paddingHorizontal: space.l, paddingTop: space.m, paddingBottom: space.s, borderBottomWidth: 2, borderBottomColor: color.woodLight },
+  pill: { borderRadius: 999, backgroundColor: color.paper, paddingHorizontal: 14, paddingVertical: 7, ...shadow },
+  pillOn: { backgroundColor: "#1d1d26" },
+  pillText: { color: color.ink2, fontSize: 14, fontWeight: "600" },
+  pillTextOn: { color: "#ffffff" },
+  overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(30,20,50,0.4)" },
+  sheet: { maxHeight: "90%", width: "100%", maxWidth: 720, alignSelf: "center", backgroundColor: color.paper, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
+  sheetHead: { flexDirection: "row", alignItems: "center", gap: space.s, paddingHorizontal: space.l, paddingTop: space.m, paddingBottom: space.s, borderBottomWidth: 1, borderBottomColor: color.woodLight },
   sheetTitle: { flex: 1, color: color.ink, fontSize: 20, fontWeight: "700" },
-  close: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: color.wood, backgroundColor: color.paperLight },
-  closeText: { color: color.woodDark, fontSize: 16, fontWeight: "700" },
+  close: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 18, backgroundColor: color.iconBg },
+  closeText: { color: color.ink2, fontSize: 16, fontWeight: "700" },
   sheetBody: { padding: space.l, gap: space.m },
   h3: { color: color.ink, fontSize: 16, fontWeight: "700", marginTop: 2 },
   caption: { color: color.muted, fontSize: 13, lineHeight: 19 },
@@ -304,24 +305,25 @@ const s = StyleSheet.create({
   markBad: { color: color.heat },
   stepNo: { minWidth: 18, color: color.muted, fontSize: 15, lineHeight: 22, fontWeight: "700" },
   markText: { flex: 1, color: color.ink, fontSize: 15, lineHeight: 22 },
-  cover: { backgroundColor: "#e9c784", borderWidth: 3, borderColor: color.wood, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  cover: { backgroundColor: color.paperLight, borderRadius: 18, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   coverImg: { width: "100%", height: "100%", backgroundColor: "#fff" },
-  coverMark: { fontSize: 30, fontWeight: "800", color: color.woodDark, opacity: 0.8 },
-  card: { width: "47.5%", flexGrow: 0, backgroundColor: color.paper, borderWidth: 3, borderColor: color.wood, padding: 6, gap: 6 },
+  coverMark: { fontSize: 30, fontWeight: "800", color: color.ink2, opacity: 0.8 },
+  card: { width: "47.5%", flexGrow: 0, backgroundColor: color.paper, borderRadius: 22, padding: 8, gap: 8, ...shadow },
   pressed: { opacity: 0.75 },
-  badge: { position: "absolute", left: 4, top: 4, fontSize: 11, color: color.woodDark, backgroundColor: color.paperLight, borderWidth: 1, borderColor: color.wood, paddingHorizontal: 4 },
-  cardInfo: { gap: 2 },
-  cardTitle: { color: color.ink, fontSize: 15, fontWeight: "700" },
+  badge: { position: "absolute", left: 6, top: 6, fontSize: 11, fontWeight: "700", color: color.good, backgroundColor: color.goodSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, overflow: "hidden" },
+  cardInfo: { gap: 2, paddingHorizontal: 4 },
+  badgeHot: { color: color.accentText, backgroundColor: color.accentSoft },
+  cardTitle: { color: color.ink, fontSize: 16, fontWeight: "800" },
   cardSub: { color: color.muted, fontSize: 12, lineHeight: 17 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 10, justifyContent: "space-between" },
-  row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: 2, borderBottomColor: color.woodLight, borderStyle: "dashed" },
+  row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: color.woodLight, borderStyle: "dashed" },
   rowMain: { flex: 1, minWidth: 0, gap: 2 },
   rowTitle: { color: color.ink, fontSize: 15, fontWeight: "600" },
   rowSub: { color: color.muted, fontSize: 13 },
   chev: { color: color.muted, fontSize: 20 },
-  failed: { gap: space.s, backgroundColor: color.paper, borderWidth: 3, borderColor: color.wood, padding: space.m },
+  failed: { gap: space.s, backgroundColor: color.paper, borderWidth: 1, borderRadius: 14, borderColor: color.wood, padding: space.m },
   failedTitle: { color: color.heat, fontSize: 15, fontWeight: "700" },
   act: { color: color.muted, fontSize: 13, fontWeight: "600", paddingVertical: 2 },
   actArmed: { color: color.heat },
-  grassNote: { alignSelf: "flex-start", backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.wood, paddingHorizontal: 10, paddingVertical: 4 },
+  grassNote: { alignSelf: "flex-start", backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.wood, paddingHorizontal: 10, paddingVertical: 4 },
 });

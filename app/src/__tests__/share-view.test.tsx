@@ -112,7 +112,7 @@ it("logic: week card has the plan count, weight change and next week's focus", (
 
 it("finish: 晒一下 opens the card in the same sheet, captures it and hands the PNG to the system share", async () => {
   await render(<LivePage />);
-  await fireEvent.press(await screen.findByText("结束"));
+  await fireEvent.press(await screen.findByText("结束训练"));
   await fireEvent.press(screen.getByText("保存这次训练"));
   await fireEvent.press(await screen.findByText("晒一下"));
   expect(await screen.findByText("委托完成")).toBeTruthy();

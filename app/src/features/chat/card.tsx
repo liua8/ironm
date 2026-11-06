@@ -126,7 +126,7 @@ export function PreviewCard({ card }: { card: CardRef }) {
 }
 
 const s = StyleSheet.create({
-  card: { borderWidth: 2, borderColor: color.wood, backgroundColor: color.paperLight, padding: space.m, gap: space.s },
+  card: { borderWidth: 1, borderRadius: 14, borderColor: color.wood, backgroundColor: color.paperLight, padding: space.m, gap: space.s },
   cardOk: { borderColor: color.accent },
   cardOff: { opacity: 0.7 },
   title: { color: color.ink, fontSize: 16, fontWeight: "700" },

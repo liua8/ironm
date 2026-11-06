@@ -1,5 +1,5 @@
-// 图鉴（spec §136、§161、§164 第三期）：只放资料，三段 动作 / 饮食 / 方案；动作段有 动作库 / 器械，
-// 饮食段有 食材 / 食谱，方案段是方案库。打分、排名、评论都在排行榜（首页最上面"今日热搜"进去）。
+// 图鉴（spec §136、§161、§164 第三期；§176 照网页 §175 四段）：只放资料，动作 / 器械 / 食物 / 方案；
+// 食物段有 食材 / 食谱，方案段是方案库。打分、排名、评论都在排行榜（首页最上面"今日热搜"进去）。
 import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 
@@ -10,17 +10,19 @@ import { PlanSheet, PlansSection } from "@/features/atlas/plans";
 import { RecipeSheet, RecipesSection } from "@/features/atlas/recipes";
 import type { Exercise, ExerciseLib, Food, Machine, PlanLib, Recipe } from "@/features/atlas/types";
 import { Pills } from "@/features/atlas/ui";
-import { PageTitle, Screen, Seg } from "@/ui/pixel";
+import { AppBar, Screen, Seg } from "@/ui/pixel";
 
-type SegKey = "moves" | "food" | "plans";
+type SegKey = "moves" | "machines" | "food" | "plans";
 const SEGS: readonly (readonly [SegKey, string])[] = [
   ["moves", "动作"],
-  ["food", "饮食"],
+  ["machines", "器械"],
+  ["food", "食物"],
   ["plans", "方案"],
 ];
 // 每段里的小标签（plans 只有方案库，不出小标签）
 const CHIPS: Record<SegKey, readonly (readonly [string, string])[]> = {
-  moves: [["", "动作库"], ["machines", "器械"]],
+  moves: [],
+  machines: [],
   food: [["", "食材"], ["recipes", "食谱"]],
   plans: [],
 };
@@ -34,13 +36,14 @@ type Open =
   | { kind: "plan"; x: PlanLib }
   | null;
 
-const isSeg = (v: unknown): v is SegKey => v === "moves" || v === "food" || v === "plans";
-const kept: { seg: SegKey; chip: Record<SegKey, string> } = { seg: "moves", chip: { moves: "", food: "", plans: "" } };
+const isSeg = (v: unknown): v is SegKey => v === "moves" || v === "machines" || v === "food" || v === "plans";
+const kept: { seg: SegKey; chip: Record<SegKey, string> } = { seg: "moves", chip: { moves: "", machines: "", food: "", plans: "" } };
 
 export default function Atlas() {
   // 能从别处带着段和小标签进来：/atlas?seg=food&chip=recipes
   const params = useLocalSearchParams<{ seg?: string; chip?: string }>();
-  const [seg, setSegState] = useState<SegKey>(isSeg(params.seg) ? params.seg : kept.seg);
+  const asked = params.seg === "moves" && params.chip === "machines" ? "machines" : params.seg;  // 旧的 seg=moves&chip=machines 进器械
+  const [seg, setSegState] = useState<SegKey>(isSeg(asked) ? asked : kept.seg);
   const [chips, setChips] = useState<Record<SegKey, string>>(() => {
     const start = { ...kept.chip };
     if (isSeg(params.seg) && CHIPS[params.seg].some(([k]) => k === params.chip)) start[params.seg] = params.chip ?? "";
@@ -60,7 +63,7 @@ export default function Atlas() {
 
   return (
     <Screen>
-      <PageTitle>图鉴</PageTitle>
+      <AppBar title="图鉴" />
       <Seg items={SEGS} value={seg} onChange={setSeg} />
       {CHIPS[seg].length ? (
         <Pills
@@ -70,7 +73,7 @@ export default function Atlas() {
           onChange={setChip}
         />
       ) : null}
-      {seg === "moves" && chip === "machines" ? (
+      {seg === "machines" ? (
         <MachinesSection onOpen={(m, lib) => setOpen({ kind: "machine", m, lib })} onMove={openMove} />
       ) : seg === "moves" ? (
         <MovesSection onOpen={openMove} />

@@ -230,12 +230,12 @@ export function MachineSheet({ m, lib, onClose, onMove }: { m: Machine; lib: Exe
 
 const s = StyleSheet.create({
   wrap: { gap: space.l },
-  shot: { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: color.paper, borderWidth: 4, borderColor: color.wood, padding: 14 },
+  shot: { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: color.paper, borderWidth: 1, borderRadius: 14, borderColor: color.wood, padding: 14 },
   shotDown: { opacity: 0.75 },
-  shotIcon: { width: 48, height: 48, alignItems: "center", justifyContent: "center", backgroundColor: color.paperLight, borderWidth: 3, borderColor: color.wood },
+  shotIcon: { width: 48, height: 48, alignItems: "center", justifyContent: "center", backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.wood },
   shotMain: { flex: 1, minWidth: 0, gap: 2 },
   shotTitle: { color: color.ink, fontSize: 16, fontWeight: "700" },
   row: { flexDirection: "row" },
   cover: { width: "100%", aspectRatio: 4 / 3 },
-  thumb: { width: 48, height: 48, borderWidth: 2 },
+  thumb: { width: 48, height: 48, borderWidth: 1, borderRadius: 14 },
 });

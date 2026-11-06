@@ -168,7 +168,7 @@ export function TwoStep({ label, sure, onConfirm, danger = true }: { label: stri
 }
 
 /** 单独一页顶上的返回：能退就退，退不了（直接打开的）就回到给定的标签页。 */
-export function BackLink({ label, fallback }: { label: string; fallback: "/record" | "/me" }) {
+export function BackLink({ label, fallback }: { label: string; fallback: "/" | "/record" | "/me" }) {
   return (
     <Pressable accessibilityRole="link" accessibilityLabel={`返回${label}`} hitSlop={8} onPress={() => (router.canGoBack() ? router.back() : router.replace(fallback))} style={k.back}>
       <Text style={k.backText}>{`‹ ${label}`}</Text>
@@ -195,18 +195,18 @@ export function KV({ k: name, v }: { k: string; v: ReactNode }) {
 }
 
 export const kit = StyleSheet.create({
-  rows: { borderTopWidth: 2, borderTopColor: color.woodLight },
-  card: { backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.wood, padding: space.m, gap: space.s },
+  rows: { borderTopWidth: 1, borderTopColor: color.woodLight },
+  card: { backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.wood, padding: space.m, gap: space.s },
   link: { color: color.accentText, fontSize: 14, fontWeight: "600" },
 });
 
 const k = StyleSheet.create({
   overlay: { flex: 1, justifyContent: "flex-end" },
   backdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(40, 20, 6, 0.45)" },
-  sheet: { maxHeight: "90%", width: "100%", maxWidth: 720, alignSelf: "center", backgroundColor: color.paper, borderTopWidth: 4, borderLeftWidth: 4, borderRightWidth: 4, borderColor: color.woodDark },
-  sheetHead: { flexDirection: "row", alignItems: "center", gap: space.s, paddingHorizontal: space.l, paddingTop: space.m, paddingBottom: space.s, borderBottomWidth: 2, borderBottomColor: color.woodLight },
+  sheet: { maxHeight: "90%", width: "100%", maxWidth: 720, alignSelf: "center", backgroundColor: color.paper, borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: color.woodDark },
+  sheetHead: { flexDirection: "row", alignItems: "center", gap: space.s, paddingHorizontal: space.l, paddingTop: space.m, paddingBottom: space.s, borderBottomWidth: 1, borderBottomColor: color.woodLight },
   sheetTitle: { flex: 1 },
-  close: { width: 36, height: 36, alignItems: "center", justifyContent: "center", backgroundColor: color.plank, borderWidth: 2, borderColor: color.woodDark },
+  close: { width: 36, height: 36, alignItems: "center", justifyContent: "center", backgroundColor: color.plank, borderWidth: 1, borderRadius: 14, borderColor: color.woodDark },
   closeText: { color: color.accentInk, fontSize: 22, fontWeight: "700", lineHeight: 24 },
   sheetBody: { padding: space.l, gap: space.m },
   head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.s, flexWrap: "wrap" },
@@ -214,7 +214,7 @@ const k = StyleSheet.create({
   chip: { alignSelf: "flex-start", fontSize: 12, fontWeight: "700", color: color.ink, backgroundColor: color.paperLight, borderWidth: 1, borderColor: color.woodLight, paddingHorizontal: 6, paddingVertical: 1, overflow: "hidden" },
   chipGood: { backgroundColor: color.goodSoft, color: color.accentText, borderColor: color.accent },
   chipBad: { backgroundColor: color.heatSoft, color: color.heat, borderColor: color.heat },
-  chipWarn: { backgroundColor: color.amber, color: color.woodDark, borderColor: color.wood },
+  chipWarn: { backgroundColor: color.amber, color: color.ink2, borderColor: color.wood },
   row: { flexDirection: "row", alignItems: "center", gap: space.s, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: color.woodLight },
   rowLast: { borderBottomWidth: 0 },
   rowDown: { backgroundColor: color.paperLight },
@@ -223,20 +223,20 @@ const k = StyleSheet.create({
   rowSub: { color: color.muted, fontSize: 13, lineHeight: 18 },
   rowEnd: { color: color.muted, fontSize: 14 },
   chev: { color: color.muted, fontSize: 20, marginLeft: 2 },
-  say: { backgroundColor: color.paperLight, borderLeftWidth: 4, borderLeftColor: color.accent, padding: space.m, gap: 4 },
+  say: { backgroundColor: color.paperLight, borderLeftWidth: 1, borderLeftColor: color.accent, padding: space.m, gap: 4 },
   sayHead: { color: color.accentText, fontSize: 13, fontWeight: "700" },
   caption: { color: color.muted, fontSize: 13, lineHeight: 19 },
   sub: { color: color.ink, fontSize: 15, fontWeight: "700", marginTop: space.xs },
   failed: { gap: space.s },
   pills: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
-  pill: { paddingHorizontal: space.m, paddingVertical: 7, backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.wood },
+  pill: { paddingHorizontal: space.m, paddingVertical: 7, backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.wood },
   pillOn: { backgroundColor: color.amber, borderColor: color.woodDark },
   pillText: { color: color.ink, fontSize: 14 },
-  pillTextOn: { color: color.woodDark, fontWeight: "700" },
+  pillTextOn: { color: color.ink2, fontWeight: "700" },
   link: { color: color.accentText, fontSize: 14, fontWeight: "600", paddingVertical: 4 },
   danger: { color: color.heat },
   armed: { backgroundColor: color.heatSoft, paddingHorizontal: 6 },
-  back: { alignSelf: "flex-start", backgroundColor: color.plank, borderWidth: 2, borderColor: color.woodDark, paddingHorizontal: space.m, paddingVertical: 6 },
+  back: { alignSelf: "flex-start", backgroundColor: color.plank, borderWidth: 1, borderRadius: 14, borderColor: color.woodDark, paddingHorizontal: space.m, paddingVertical: 6 },
   backText: { color: color.accentInk, fontSize: 15, fontWeight: "700" },
   kv: { flexDirection: "row", justifyContent: "space-between", gap: space.m, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: color.woodLight },
   kvKey: { color: color.muted, fontSize: 14 },

@@ -52,7 +52,7 @@ export function LiveEntry({ live, onPress, label = "开始训练" }: { live: Liv
 }
 
 const s = StyleSheet.create({
-  entry: { flexDirection: "row", alignItems: "center", gap: space.m, backgroundColor: color.goodSoft, borderWidth: 3, borderColor: color.fire, paddingHorizontal: space.m, paddingVertical: space.m },
+  entry: { flexDirection: "row", alignItems: "center", gap: space.m, backgroundColor: color.goodSoft, borderWidth: 1, borderRadius: 14, borderColor: color.fire, paddingHorizontal: space.m, paddingVertical: space.m },
   pressed: { opacity: 0.8 },
   main: { flex: 1, minWidth: 0 },
   title: { color: color.ink, fontSize: 16, fontWeight: "700" },

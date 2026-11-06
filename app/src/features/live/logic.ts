@@ -180,6 +180,14 @@ export function progress(items: LiveItem[]): { all: number; done: number; text: 
   return { all, done, text: `第 ${Math.min(done + 1, all)} / 共 ${all} 组`, pct: all ? Math.round((done / all) * 100) : 0 };
 }
 
+/** 次数旁的小标签（§176，同网页）：服务端给"目标 …""上次 …"原样放；"计划 N 组 × 次数"只取次数写成"目标 N 次"。 */
+export function targetPill(target: string | null | undefined): string {
+  const t = String(target || "");
+  if (!/^计划/.test(t)) return t;
+  const reps = t.match(/×\s*([^，,、）)]+)/)?.[1]?.trim();
+  return reps ? `目标 ${reps}${/\d$/.test(reps) ? " 次" : ""}` : "";
+}
+
 /** 结束时的小结：完成了几组、几个动作、总训练量（计时的不算重量）。 */
 export function summarize(items: LiveItem[]): { sets: number; exercises: number; volume: number } {
   const done = items.flatMap((it) => it.sets.filter((s) => s.done).map((s) => [it, s] as const));

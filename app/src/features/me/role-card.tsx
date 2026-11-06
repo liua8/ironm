@@ -284,8 +284,8 @@ function GoalForm({ goal, done }: { goal: GoalState["goal"]; done: (next?: GoalS
 
 const s = StyleSheet.create({
   head: { flexDirection: "row", alignItems: "center", gap: space.m },
-  avatar: { width: 52, height: 52, alignItems: "center", justifyContent: "center", backgroundColor: color.amber, borderWidth: 3, borderColor: color.woodDark },
-  avatarText: { color: color.woodDark },
+  avatar: { width: 52, height: 52, alignItems: "center", justifyContent: "center", backgroundColor: color.amber, borderWidth: 1, borderRadius: 14, borderColor: color.woodDark },
+  avatarText: { color: color.ink2 },
   main: { flex: 1, gap: 2, minWidth: 0 },
   email: { color: color.ink, fontSize: 16, fontWeight: "700" },
   sub: { color: color.muted, fontSize: 13 },
@@ -299,13 +299,13 @@ const s = StyleSheet.create({
   goalHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: space.s },
   goalTitle: { color: color.ink, fontSize: 16, fontWeight: "700" },
   nums: { flexDirection: "row", gap: space.s },
-  numBox: { flex: 1, alignItems: "center", gap: 2, backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.woodLight, paddingVertical: space.s },
+  numBox: { flex: 1, alignItems: "center", gap: 2, backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.woodLight, paddingVertical: space.s },
   numNow: { borderColor: color.accent, backgroundColor: color.goodSoft },
-  num: { fontFamily: font.pixel, fontSize: 24, lineHeight: 30, color: color.ink },
+  num: { fontWeight: "800", fontSize: 24, lineHeight: 30, color: color.ink },
   progress: { gap: 6 },
-  bar: { height: 14, backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.wood },
+  bar: { height: 14, backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.wood },
   fill: { height: "100%", backgroundColor: color.accent },
   good: { color: color.accentText },
   warn: { color: "#8a5a10" },
-  notice: { color: color.woodDark, backgroundColor: "rgba(242, 193, 78, 0.3)", borderLeftWidth: 3, borderLeftColor: "#8a5a10", padding: space.s, fontSize: 14, gap: 4 },
+  notice: { color: color.ink2, backgroundColor: "rgba(242, 193, 78, 0.3)", borderLeftWidth: 1, borderLeftColor: "#8a5a10", padding: space.s, fontSize: 14, gap: 4 },
 });

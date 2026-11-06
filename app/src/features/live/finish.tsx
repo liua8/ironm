@@ -61,7 +61,7 @@ function Ring({ before, done, planned }: { before: number; done: number; planned
           cx={size / 2}
           cy={size / 2}
           r={r}
-          stroke={full ? color.amber : color.accent}
+          stroke={full ? color.good : color.accent}
           strokeWidth={w}
           fill="none"
           strokeDasharray={`${len * p} ${len}`}
@@ -145,7 +145,7 @@ export function FinishSheet({ live, t0, open, onClose, flush }: { live: Live; t0
         </View>
         {prs.map((p) => (
           <View key={p.exercise} style={s.pr}>
-            <LiveIcon name="trophy" size={20} color={color.wood} />
+            <LiveIcon name="trophy" size={20} color={color.accent} />
             <View style={s.flex}>
               <Text style={s.prTitle}>{`${p.exercise} ${p.weight_kg}×${p.reps}`}</Text>
               <Text style={s.muted}>{`估算最大重量 ${Math.round(p.e1rm)} 公斤，以前 ${Math.round(p.before)}`}</Text>
@@ -205,11 +205,11 @@ const s = StyleSheet.create({
   p: { color: color.ink, fontSize: 14, lineHeight: 21 },
   h3: { color: color.ink, fontSize: 15, fontWeight: "700" },
   sum: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
-  cell: { flexGrow: 1, flexBasis: "45%", backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.wood, padding: space.s, gap: 2 },
+  cell: { flexGrow: 1, flexBasis: "45%", backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.wood, padding: space.s, gap: 2 },
   cellVal: { color: color.ink, fontSize: 18, fontWeight: "700" },
   hero: { alignItems: "center", gap: space.s },
-  burst: { width: 64, height: 64, alignItems: "center", justifyContent: "center", backgroundColor: color.fire, borderWidth: 3, borderColor: color.woodDark },
-  pr: { flexDirection: "row", alignItems: "center", gap: space.m, backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.amber, padding: space.s },
+  burst: { width: 64, height: 64, alignItems: "center", justifyContent: "center", backgroundColor: color.fire, borderWidth: 1, borderRadius: 14, borderColor: color.woodDark },
+  pr: { flexDirection: "row", alignItems: "center", gap: space.m, backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.amber, padding: space.s },
   prTitle: { color: color.ink, fontSize: 15, fontWeight: "700" },
   week: { flexDirection: "row", alignItems: "center", gap: space.m },
   ring: { width: 96, height: 96, alignItems: "center", justifyContent: "center" },

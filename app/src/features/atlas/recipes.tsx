@@ -126,16 +126,16 @@ function StepBtn({ label, a11y, onPress }: { label: string; a11y: string; onPres
 
 const s = StyleSheet.create({
   wrap: { gap: space.m },
-  box: { alignSelf: "flex-start", backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.wood, paddingHorizontal: 10, paddingVertical: 6 },
+  box: { alignSelf: "flex-start", backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.wood, paddingHorizontal: 10, paddingVertical: 6 },
   cover: { width: "100%", aspectRatio: 4 / 3 },
   hero: { width: "100%", aspectRatio: 16 / 9 },
   macros: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
-  macro: { flexGrow: 1, flexBasis: 70, alignItems: "center", gap: 2, backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.woodLight, paddingVertical: space.s },
+  macro: { flexGrow: 1, flexBasis: 70, alignItems: "center", gap: 2, backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.woodLight, paddingVertical: space.s },
   macroNum: { color: color.ink, fontSize: 18, fontWeight: "700" },
   unit: { color: color.muted, fontSize: 12, fontWeight: "400" },
   macroName: { color: color.muted, fontSize: 12 },
   stepper: { flexDirection: "row", alignItems: "center", gap: space.m },
-  stepBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: color.wood, backgroundColor: color.paperLight },
-  stepText: { color: color.woodDark, fontSize: 20, fontWeight: "700" },
+  stepBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: 14, borderColor: color.wood, backgroundColor: color.paperLight },
+  stepText: { color: color.ink2, fontSize: 20, fontWeight: "700" },
   servings: { minWidth: 32, textAlign: "center", color: color.ink, fontSize: 20, fontWeight: "700" },
 });

@@ -1,4 +1,4 @@
-// 底部四个标签（同网页版 §121）：首页 / 图鉴 / 战绩 / 我；木板样式的标签栏。没登录时回登录页。
+// 底部五格（同网页版 §175）：首页 / IronM / 图鉴 / 记录 / 我；白底，选中的珊瑚红。没登录时回登录页。
 import { Redirect, Tabs } from "expo-router";
 import type { BottomTabBarProps } from "expo-router/tabs";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -11,12 +11,13 @@ import { color } from "@/ui/theme";
 
 const TABS: readonly (readonly [string, string, IconName])[] = [
   ["index", "首页", "home"],
+  ["chat", "IronM", "chat"],
   ["atlas", "图鉴", "atlas"],
-  ["record", "战绩", "record"],
+  ["record", "记录", "record"],
   ["me", "我", "me"],
 ];
 
-function WoodTabBar({ state, navigateToTab }: BottomTabBarProps) {
+function CardTabBar({ state, navigateToTab }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   return (
     <View style={[s.bar, { paddingBottom: Math.max(insets.bottom, 8) }]} accessibilityRole="tablist">
@@ -32,7 +33,7 @@ function WoodTabBar({ state, navigateToTab }: BottomTabBarProps) {
             onPress={() => route && navigateToTab(route.key)}
             style={[s.tab, on && s.tabOn]}
           >
-            <Icon name={icon} size={22} color={on ? color.accentText : color.accentInk} />
+            <Icon name={icon} size={22} color={on ? color.accent : color.ink2} />
             <Text style={[s.label, on && s.labelOn]}>{label}</Text>
           </Pressable>
         );
@@ -48,7 +49,7 @@ export default function TabsLayout() {
   if (!ready) return null;
   if (!token) return <Redirect href="/login" />;
   return (
-    <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <WoodTabBar {...props} />}>
+    <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <CardTabBar {...props} />}>
       {TABS.map(([name, label]) => (
         <Tabs.Screen key={name} name={name} options={{ title: label }} />
       ))}
@@ -57,9 +58,9 @@ export default function TabsLayout() {
 }
 
 const s = StyleSheet.create({
-  bar: { flexDirection: "row", gap: 6, backgroundColor: color.wood, borderTopWidth: 4, borderTopColor: color.woodDark, paddingTop: 8, paddingHorizontal: 8 },
-  tab: { flex: 1, alignItems: "center", gap: 2, paddingVertical: 6, backgroundColor: color.plank, borderWidth: 2, borderColor: color.woodDark },
-  tabOn: { backgroundColor: color.amber },
-  label: { color: color.accentInk, fontSize: 13, fontWeight: "700" },
-  labelOn: { color: color.accentText },
+  bar: { flexDirection: "row", backgroundColor: color.paper, borderTopWidth: 1, borderTopColor: color.wood, paddingTop: 6, paddingHorizontal: 4 },
+  tab: { flex: 1, alignItems: "center", justifyContent: "center", gap: 3, paddingVertical: 4 },
+  tabOn: {},
+  label: { color: color.ink2, fontSize: 11, fontWeight: "600" },
+  labelOn: { color: color.accentText, fontWeight: "700" },
 });

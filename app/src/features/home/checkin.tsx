@@ -199,9 +199,9 @@ export function RestSheet({ open, onClose, onDone }: { open: boolean; onClose: (
 const s = StyleSheet.create({
   label: { color: color.muted, fontSize: 13, fontWeight: "600", marginTop: space.xs },
   slotWrap: { gap: space.xs },
-  slot: { flexDirection: "row", alignItems: "center", gap: space.m, backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.wood, padding: space.s },
+  slot: { flexDirection: "row", alignItems: "center", gap: space.m, backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.wood, padding: space.s },
   slotDown: { opacity: 0.75 },
-  slotView: { width: 56, height: 56, alignItems: "center", justifyContent: "center", backgroundColor: color.paper, borderWidth: 2, borderColor: color.woodLight, overflow: "hidden" },
+  slotView: { width: 56, height: 56, alignItems: "center", justifyContent: "center", backgroundColor: color.paper, borderWidth: 1, borderRadius: 14, borderColor: color.woodLight, overflow: "hidden" },
   slotImg: { width: "100%", height: "100%" },
   slotMain: { flex: 1, minWidth: 0, gap: 2 },
   slotTitle: { color: color.ink, fontSize: 15, fontWeight: "700" },

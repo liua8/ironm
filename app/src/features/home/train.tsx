@@ -1,5 +1,5 @@
-// 首页·练（同网页 home、trainCard，spec §121 需求 4、§131）：训练进行中的入口、安全提醒、今日委托（照片、分钟/动作/千卡、奖励、本周的点）、
-// 热身和正式训练的动作、开练（带上今天的计划，§123）、更多（今天的版本、直接打卡、完整计划）。
+// 首页·练（同网页 home、trainCard，spec §121 需求 4；§176 照网页 §175 的今日委托卡）：训练进行中的入口、安全提醒、
+// 今日委托卡（标题、部位标签、"完成 +1 颗星"、这周已练几次的进度、编号的动作表、开始训练、已经练完了直接打卡、热身时长、更多）。
 // 网页上的场所与器材卡、睡眠心率天气小格、IronM 说、生病追问、右下角快捷记录不在这里（场所器材放"我"，快捷记录按 §133 不要悬浮按钮）。
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
@@ -73,35 +73,49 @@ export function TrainSection() {
           ))}
         </View>
       ) : null}
-      <Hero card={card} dots={dots} onRetry={load} />
       {card.kind === "session" ? (
-        <Panel>
-          {card.warmup ? (
-            <Fold title={`先热身，约 ${card.warmup.minutes} 分钟`}>
-              {card.warmup.steps.map((x, i) => <Text key={i} style={s.p}>{`${i + 1}. ${clean(x)}`}</Text>)}
-            </Fold>
-          ) : null}
-          <Text style={s.h3}>正式训练</Text>
-          {card.rows.map((it, i) => (
-            <View key={`${it.exercise}-${i}`} style={s.move}>
-              <Thumb url={it.pic} size={52} />
-              <View style={s.moveText}>
-                <Text style={s.moveName} numberOfLines={1}>{it.exercise}</Text>
-                {it.note ? <Text style={[s.moveNote, it.cut && s.cut]}>{it.note}</Text> : null}
-              </View>
-              <Text style={s.moveSets}>{it.sets}</Text>
+        <Panel style={s.quest}>
+          <View style={s.questTop}>
+            <PixelText size={24} style={s.questTitle}>{`今日委托 · ${card.title}`}</PixelText>
+            <View style={s.tags}>
+              {card.parts.length ? <Text style={[s.tag, s.tagCoral]}>{card.parts.join(" · ")}</Text> : null}
+              <Text style={[s.tag, s.tagGreen]}>完成 +1 颗星</Text>
             </View>
-          ))}
-          <Button title={d.live ? "继续训练" : "开练"} onPress={go} disabled={busy} />
-          <LinkButton title={more ? "收起" : "更多"} onPress={() => setMore(!more)} />
+          </View>
+          <WeekBar w={dots} />
+          <View style={s.list}>
+            {card.rows.map((it, i) => (
+              <View key={`${it.exercise}-${i}`} style={[s.row, i > 0 && s.rowLine]}>
+                <Text style={s.no}>{i + 1}</Text>
+                <View style={s.moveText}>
+                  <Text style={s.moveName} numberOfLines={1}>{it.exercise}</Text>
+                  {it.note ? <Text style={[s.moveNote, it.cut && s.cut]}>{it.note}</Text> : null}
+                </View>
+                <Text style={s.moveSets}>{it.sets}</Text>
+              </View>
+            ))}
+          </View>
+          <Button title={d.live ? "继续训练" : "开始训练"} onPress={go} disabled={busy} />
+          <Button kind="wood" title="已经练完了，直接打卡" onPress={() => setDone({ name: card.title, version: card.version })} />
+          <View style={s.foot}>
+            <Text style={s.mutedText}>{card.warmup ? `先热身约 ${card.warmup.minutes} 分钟` : ""}</Text>
+            <LinkButton title={more ? "收起" : "更多"} onPress={() => setMore(!more)} />
+          </View>
           {more ? (
             <View style={s.more}>
+              {card.warmup ? (
+                <Fold title={`先热身，约 ${card.warmup.minutes} 分钟`}>
+                  {card.warmup.steps.map((x, i) => <Text key={i} style={s.p}>{`${i + 1}. ${clean(x)}`}</Text>)}
+                </Fold>
+              ) : null}
               <TodayVersion lib={d.lib} targets={d.tr?.targets || {}} onCheckin={(name, version) => setDone({ name, version })} />
               <LinkButton title="完整计划 ›" onPress={() => router.push("/plan")} />
             </View>
           ) : null}
         </Panel>
-      ) : null}
+      ) : (
+        <Hero card={card} dots={dots} onRetry={load} />
+      )}
       <DoneSheet
         open={done !== null}
         onClose={() => setDone(null)}
@@ -115,7 +129,19 @@ export function TrainSection() {
   );
 }
 
-/** 今日委托这张卡（§131）：木牌标题、照片放在标题上面。 */
+/** 这周已练几次：一行字加一条进度（§176）。 */
+function WeekBar({ w }: { w: ReturnType<typeof weekDots> }) {
+  if (!w) return null;
+  const pct = Math.min(100, Math.round((w.done / w.planned) * 100));
+  return (
+    <View style={s.weekBar} accessibilityLabel={w.label}>
+      <Text style={s.weekText}>{`这周已练 ${w.done}/${w.planned} 次`}</Text>
+      <View style={s.track}><View style={[s.fill, { width: `${pct}%` }]} /></View>
+    </View>
+  );
+}
+
+/** 没有今天的训练时（还没计划、休息、练完了、读不到）那张卡。 */
 function Hero({ card, dots, onRetry }: { card: TodayCard; dots: ReturnType<typeof weekDots>; onRetry: () => void }) {
   if (card.kind === "failed") {
     return (
@@ -172,7 +198,7 @@ function Hero({ card, dots, onRetry }: { card: TodayCard; dots: ReturnType<typeo
         {card.burn ? <Fig n={card.burn} unit="千卡" /> : null}
       </View>
       <View style={s.reward}>
-        <LiveIcon name="trophy" size={16} color={color.wood} />
+        <LiveIcon name="trophy" size={16} color={color.accent} />
         <Text style={s.rewardText}>完成奖励：一颗星，连续打卡 +1</Text>
       </View>
       <WeekDots w={dots} />
@@ -181,17 +207,33 @@ function Hero({ card, dots, onRetry }: { card: TodayCard; dots: ReturnType<typeo
 }
 
 const s = StyleSheet.create({
+  quest: { padding: 18, gap: 14 },
+  questTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: space.s },
+  questTitle: { flex: 1, fontSize: 22, lineHeight: 28 },
+  tags: { alignItems: "flex-end", gap: 6 },
+  tag: { fontSize: 12, fontWeight: "700", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, overflow: "hidden" },
+  tagCoral: { color: color.accentText, backgroundColor: color.accentSoft },
+  tagGreen: { color: color.good, backgroundColor: color.goodSoft },
+  weekBar: { flexDirection: "row", alignItems: "center", gap: 10 },
+  weekText: { color: color.ink, fontSize: 13, fontWeight: "700" },
+  track: { width: 100, height: 6, borderRadius: 999, backgroundColor: color.wood, overflow: "hidden" },
+  fill: { height: 6, borderRadius: 999, backgroundColor: color.accent },
+  list: { backgroundColor: color.paperLight, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 4 },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
+  rowLine: { borderTopWidth: 1, borderTopColor: color.wood },
+  no: { width: 26, height: 26, borderRadius: 13, overflow: "hidden", backgroundColor: color.paper, textAlign: "center", lineHeight: 26, fontSize: 13, fontWeight: "700", color: color.ink },
+  foot: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   wrap: { gap: space.l },
   alerts: { gap: space.s },
   p: { color: color.ink, fontSize: 14, lineHeight: 21 },
   h3: { color: color.ink, fontSize: 16, fontWeight: "700" },
   questHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.m },
   mutedText: { color: color.muted, fontSize: 14 },
-  pic: { width: "100%", aspectRatio: 16 / 9, borderWidth: 3, borderColor: color.woodDark, backgroundColor: color.paperLight },
+  pic: { width: "100%", aspectRatio: 16 / 9, borderWidth: 1, borderRadius: 14, borderColor: color.woodDark, backgroundColor: color.paperLight },
   credit: { color: color.muted, fontSize: 11, marginTop: 2, textDecorationLine: "underline" },
   figs: { flexDirection: "row", flexWrap: "wrap", gap: space.l },
-  reward: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.woodLight, paddingHorizontal: space.s, paddingVertical: 6 },
-  rewardText: { color: color.wood, fontSize: 13, fontWeight: "600" },
+  reward: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.woodLight, paddingHorizontal: space.s, paddingVertical: 6 },
+  rewardText: { color: color.ink2, fontSize: 13, fontWeight: "600" },
   btnRow: { flexDirection: "row", flexWrap: "wrap", gap: space.s },
   move: { flexDirection: "row", alignItems: "center", gap: space.m, paddingVertical: 4 },
   moveText: { flex: 1, minWidth: 0 },
@@ -199,5 +241,5 @@ const s = StyleSheet.create({
   moveNote: { color: color.muted, fontSize: 12 },
   cut: { color: color.heat },
   moveSets: { color: color.ink, fontSize: 15, fontWeight: "700" },
-  more: { gap: space.m, borderTopWidth: 2, borderColor: color.woodLight, paddingTop: space.m },
+  more: { gap: space.m, borderTopWidth: 1, borderColor: color.woodLight, paddingTop: space.m },
 });

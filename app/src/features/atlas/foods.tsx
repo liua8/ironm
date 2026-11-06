@@ -151,7 +151,7 @@ export function FoodSheet({ f, onClose }: { f: Food; onClose: () => void }) {
 
 const s = StyleSheet.create({
   wrap: { gap: space.m },
-  box: { backgroundColor: color.paper, borderWidth: 3, borderColor: color.wood, padding: space.m },
+  box: { backgroundColor: color.paper, borderWidth: 1, borderRadius: 14, borderColor: color.wood, padding: space.m },
   cover: { width: "100%", aspectRatio: 4 / 3 },
   kcal: { color: color.ink, fontSize: 14, fontWeight: "700" },
   protein: { color: color.muted, fontSize: 12, fontWeight: "400" },
@@ -162,9 +162,9 @@ const s = StyleSheet.create({
   credit: { color: color.muted, fontSize: 12 },
   link: { textDecorationLine: "underline" },
   macros: { flexDirection: "row", gap: space.s },
-  macro: { flex: 1, alignItems: "center", gap: 2, backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.woodLight, paddingVertical: space.s },
+  macro: { flex: 1, alignItems: "center", gap: 2, backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.woodLight, paddingVertical: space.s },
   macroNum: { color: color.ink, fontSize: 16, fontWeight: "700" },
-  log: { gap: space.s, borderTopWidth: 2, borderTopColor: color.woodLight, paddingTop: space.s },
+  log: { gap: space.s, borderTopWidth: 1, borderTopColor: color.woodLight, paddingTop: space.s },
   gramRow: { flexDirection: "row", alignItems: "center", gap: space.s },
   gramField: { width: 100, paddingVertical: 8 },
 });

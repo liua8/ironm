@@ -1,16 +1,19 @@
-// 我（同网页 me，spec §140、§141、§146、§153）：角色卡、我的目标、设置收成一列（点了在弹出页里打开），退出登录放最下面。
+// 我（同网页 me，spec §140、§141、§146、§153；§176 照网页 §175）：资料卡、我的目标、设置分三组带图标（训练 / 数据 / 账号与模型），退出登录放最下面。
 // 记忆不上页面，设置里一行"IronM 记得的事"能看能删。
 // 别处报"还没填模型"时带着 open=model 进来，直接打开"模型和 API"（spec §167）。
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useSession } from "@/auth/session";
 import { ABOUT } from "@/features/me/logic";
 import { GoalBlock, RoleCard } from "@/features/me/role-card";
 import { ReminderBox } from "@/features/me/reminders";
 import { CityBox, FilesBox, GearBox, ImportBox, MemoryBox, ModelBox } from "@/features/me/settings";
-import { PanelHead, Row, Sheet } from "@/features/record/kit";
-import { Button, Panel, PageTitle, Screen, T } from "@/ui/pixel";
+import { Sheet } from "@/features/record/kit";
+import { Icon, type IconName } from "@/ui/icons";
+import { AppBar, Button, Panel, Screen, T } from "@/ui/pixel";
+import { color } from "@/ui/theme";
 
 type Open = "memory" | "gear" | "import" | "files" | "city" | "remind" | "model" | "about" | null;
 
@@ -39,23 +42,26 @@ export default function Me() {
 
   return (
     <Screen>
-      <PageTitle>我</PageTitle>
+      <AppBar title="我" />
       <RoleCard />
       <GoalBlock />
-      <Panel>
-        <PanelHead title="设置" />
-        <Row title="身体数据" sub="体重、BMI、体脂率" onPress={() => router.push("/body")} />
-        <Row title="IronM 记得的事" sub="记错了可以删" onPress={() => setOpen("memory")} />
-        <Row title="器材和场所" sub="排计划、换动作按这个" onPress={() => setOpen("gear")} />
-        <Row title="导入健康数据和化验单" onPress={() => setOpen("import")} />
-        <Row title="我的文件" onPress={() => setOpen("files")} />
-        <Row title="城市和天气" onPress={() => setOpen("city")} />
-        <Row title="提醒" sub="训练日提醒，默认关" onPress={() => setOpen("remind")} />
-        <Row title="模型和 API" sub="可以用自己的模型" onPress={() => setOpen("model")} />
-        <Row title="说明" last onPress={() => setOpen("about")} />
-      </Panel>
+      <Group icon="home" title="训练">
+        <IRow icon="home" title="器材和场所" sub="排计划、换动作按这个" onPress={() => setOpen("gear")} />
+        <IRow icon="sun" title="城市和天气" onPress={() => setOpen("city")} />
+        <IRow icon="bell" title="提醒" sub="训练日提醒，默认关" onPress={() => setOpen("remind")} last />
+      </Group>
+      <Group icon="note" title="数据">
+        <IRow icon="wave" title="身体数据" sub="体重、BMI、体脂率" onPress={() => router.push("/body")} />
+        <IRow icon="coach" title="IronM 记得的事" sub="记错了可以删" onPress={() => setOpen("memory")} />
+        <IRow icon="upload" title="导入健康数据和化验单" onPress={() => setOpen("import")} />
+        <IRow icon="note" title="我的文件" onPress={() => setOpen("files")} last />
+      </Group>
+      <Group icon="me" title="账号与模型">
+        <IRow icon="coach" title="模型和 API" sub="可以用自己的模型" onPress={() => setOpen("model")} />
+        <IRow icon="info" title="说明" onPress={() => setOpen("about")} last />
+      </Group>
       <Button
-        kind="wood"
+        kind="ghost"
         title="退出登录"
         onPress={async () => {
           await signOut();
@@ -75,3 +81,39 @@ export default function Me() {
     </Screen>
   );
 }
+
+/** 一组设置：组名带图标，下面一张卡。 */
+function Group({ icon, title, children }: { icon: IconName; title: string; children: ReactNode }) {
+  return (
+    <View style={g.group}>
+      <View style={g.head}><Icon name={icon} size={18} color={color.accent} /><Text style={g.headText}>{title}</Text></View>
+      <Panel style={g.card}>{children}</Panel>
+    </View>
+  );
+}
+
+/** 一行设置：左边浅紫圆底的图标。 */
+function IRow({ icon, title, sub, onPress, last }: { icon: IconName; title: string; sub?: string; onPress: () => void; last?: boolean }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={onPress} style={({ pressed }) => [g.row, !last && g.rowLine, pressed && g.rowDown]}>
+      <View style={g.ic}><Icon name={icon} size={18} color="#3b3b5c" /></View>
+      <Text style={g.title} numberOfLines={1}>{title}</Text>
+      {sub ? <Text style={g.sub} numberOfLines={1}>{sub}</Text> : null}
+      <Text style={g.chev}>›</Text>
+    </Pressable>
+  );
+}
+
+const g = StyleSheet.create({
+  group: { gap: 8 },
+  head: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 2 },
+  headText: { color: color.ink, fontSize: 17, fontWeight: "800" },
+  card: { paddingVertical: 4, gap: 0 },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 },
+  rowLine: { borderBottomWidth: 1, borderBottomColor: color.wood },
+  rowDown: { opacity: 0.7 },
+  ic: { width: 40, height: 40, borderRadius: 20, backgroundColor: color.iconBg, alignItems: "center", justifyContent: "center" },
+  title: { flex: 1, minWidth: 0, color: color.ink, fontSize: 16, fontWeight: "600" },
+  sub: { maxWidth: "40%", color: color.muted, fontSize: 12 },
+  chev: { color: color.muted, fontSize: 20 },
+});

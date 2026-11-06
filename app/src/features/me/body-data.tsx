@@ -56,7 +56,8 @@ async function loadAll() {
 
 type Open = { kind: "metric"; m: Metric } | { kind: "record"; title: string; kinds: string[] } | null;
 
-export function BodyData() {
+/** top：记录页上的"身体数据指标"卡（§176）——体重、BMI、体脂率和"记录""全部身体数据"；整页在 /body。 */
+export function BodyData({ top = false }: { top?: boolean } = {}) {
   const { data, error, reload } = useLoad(loadAll);
   const [open, setOpen] = useState<Open>(null);
   if (error && !data)
@@ -80,6 +81,31 @@ export function BodyData() {
   const tired = (mm?.muscles ?? []).filter((x) => x.tier !== "ready" || x.state === "sore");
   const weekSub = [week?.planned ? `完成 ${week.done} / ${week.planned} 次` : "", mm?.sessions ? `${tired.length} 块肌肉恢复中` : ""].filter(Boolean).join(" · ");
   const showMetric = (x: Metric) => setOpen({ kind: "metric", m: x });
+  const sheet = (
+    <Sheet visible={open !== null} title={open?.kind === "metric" ? open.m.name : open ? `记录${open.title}` : ""} onClose={() => setOpen(null)}>
+      {open?.kind === "metric" ? <MetricDetail m={open.m} onChanged={reload} close={() => setOpen(null)} /> : null}
+      {open?.kind === "record" ? <RecordBox kinds={open.kinds} onChanged={reload} /> : null}
+    </Sheet>
+  );
+  if (top) {
+    return (
+      <Panel>
+        <View style={s.topHead}>
+          <PixelText size={24} style={s.topTitle}>身体数据指标</PixelText>
+          <Pressable accessibilityRole="button" onPress={() => setOpen({ kind: "record", title: "体重、腰围、体脂", kinds: ["weight", "waist", "body_fat"] })} style={s.topRec}>
+            <Text style={s.topRecText}>记录</Text>
+          </Pressable>
+        </View>
+        <Tile m={weight} wide extra={weeklyChange(m.weight_trend)} onPress={() => showMetric(weight)} />
+        <View style={s.pair}>
+          <Tile m={m.bmi ?? { key: "bmi", name: "BMI" }} brief={m.bmi ? undefined : "要先填身高体重"} onPress={() => showMetric(m.bmi ?? { key: "bmi", name: "BMI", text: "要先在「我」里填身高，再记一次体重。", missing: ["个人中心"] })} />
+          <Tile m={fat} brief={fat.value != null ? undefined : "还没记录"} onPress={() => showMetric(fat)} />
+        </View>
+        <Pressable accessibilityRole="link" onPress={() => router.push("/body")}><Text style={s.topAll}>全部身体数据 ›</Text></Pressable>
+        {sheet}
+      </Panel>
+    );
+  }
 
   return (
     <>
@@ -320,16 +346,21 @@ function Fold({ title, sub, small, children }: { title: string; sub?: string; sm
 }
 
 const s = StyleSheet.create({
-  fresh: { color: color.paperLight, fontSize: 13, textShadowColor: color.woodDark, textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 0 },
+  topHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  topTitle: { fontSize: 20, lineHeight: 26 },
+  topRec: { backgroundColor: color.accentSoft, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
+  topRecText: { color: color.accentText, fontSize: 12, fontWeight: "700" },
+  topAll: { color: color.accentText, fontSize: 14, fontWeight: "700" },
+  fresh: { color: color.ink, fontSize: 13 },
   pair: { flexDirection: "row", gap: space.m },
-  tile: { backgroundColor: color.paper, borderWidth: 4, borderColor: color.wood, padding: space.m, gap: 6 },
+  tile: { backgroundColor: color.paper, borderWidth: 1, borderRadius: 14, borderColor: color.wood, padding: space.m, gap: 6 },
   half: { flex: 1, minWidth: 0 },
   tileDown: { backgroundColor: color.paperLight },
   tileHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 6, flexWrap: "wrap" },
   tileName: { color: color.ink, fontSize: 15, fontWeight: "700" },
   tileSub: { color: color.muted, fontSize: 13 },
   tileValue: { color: color.ink },
-  tileNum: { fontFamily: font.pixel, fontSize: 36, lineHeight: 44, color: color.ink },
+  tileNum: { fontWeight: "800", fontSize: 36, lineHeight: 44, color: color.ink },
   tileNumLong: { fontSize: 24, lineHeight: 30 },
   tileUnit: { color: color.muted, fontSize: 14 },
   tileFoot: { flexDirection: "row", justifyContent: "space-between" },
@@ -340,7 +371,7 @@ const s = StyleSheet.create({
   bigUnit: { color: color.muted, fontSize: 15 },
   fact: { gap: 2 },
   factKey: { color: color.muted, fontSize: 13, fontWeight: "700" },
-  calc: { gap: space.s, borderTopWidth: 2, borderTopColor: color.woodLight, paddingTop: space.m },
+  calc: { gap: space.s, borderTopWidth: 1, borderTopColor: color.woodLight, paddingTop: space.m },
   muscle: { flexDirection: "row", alignItems: "center", gap: space.s },
   muscleName: { width: 76, color: color.ink, fontSize: 14 },
   bar: { flex: 1, height: 10, backgroundColor: color.paper, borderWidth: 1, borderColor: color.wood },
@@ -348,9 +379,9 @@ const s = StyleSheet.create({
   barSore: { backgroundColor: color.heat },
   muscleWord: { width: 64, textAlign: "right", color: color.muted, fontSize: 13 },
   sore: { color: color.heat },
-  notice: { color: color.woodDark, backgroundColor: "rgba(242, 193, 78, 0.3)", borderLeftWidth: 3, borderLeftColor: "#8a5a10", padding: space.s, fontSize: 14 },
-  fold: { backgroundColor: color.paper, borderWidth: 4, borderColor: color.wood },
-  foldSmall: { borderWidth: 2, borderColor: color.woodLight },
+  notice: { color: color.ink2, backgroundColor: "rgba(242, 193, 78, 0.3)", borderLeftWidth: 1, borderLeftColor: "#8a5a10", padding: space.s, fontSize: 14 },
+  fold: { backgroundColor: color.paper, borderWidth: 1, borderRadius: 14, borderColor: color.wood },
+  foldSmall: { borderWidth: 1, borderRadius: 14, borderColor: color.woodLight },
   foldHead: { flexDirection: "row", alignItems: "center", gap: space.s, padding: space.m },
   foldMain: { flex: 1, gap: 2 },
   foldTitle: { color: color.ink, fontSize: 16, fontWeight: "700" },

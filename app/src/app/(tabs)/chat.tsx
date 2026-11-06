@@ -1,5 +1,5 @@
-// 对话页（spec §164 第二期，同网页版 chatPage）：从首页"IronM"那一段进来，整页显示。
-// 页头：回首页、IronM 头像、以前的对话、新对话；没有消息时是欢迎和几个常问的；
+// 对话页（spec §164 第二期，同网页版 chatPage；§176 起是底栏"IronM"一格）。
+// 页头是一张企鹅卡：IronM、这周练了几次、连续打卡几天、最近一次破纪录，右边以前的对话、新对话；没有消息时是欢迎和几个常问的；
 // 回答边收边显示，可以停止；对话最后放管家消息和周报消息。输入框跟着键盘上移。
 // 别的页想直接问一句，可以打开 /chat?q=问题（同网页版 askCoach）。
 // 输入框的相机按钮（§152）：照片传好就连同输入框里的字一起发，没写字时问"帮我看看这个"。
@@ -19,6 +19,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { api } from "@/api/client";
 import { useSession } from "@/auth/session";
 import { Composer, LOOK_AT_THIS } from "@/features/chat/composer";
 import { HistorySheet } from "@/features/chat/history";
@@ -27,8 +28,9 @@ import { Mascot } from "@/features/chat/mascot";
 import { Message } from "@/features/chat/message";
 import { ask, attachPhoto, chatState, dropFile, ensureOwner, loadSession, newChat, openChat, rate, stop, uploading, useChat } from "@/features/chat/store";
 import type { Photo } from "@/lib/photo";
+import { prWall, type Calendar, type Workout } from "@/features/record/logic";
 import { PixelText } from "@/ui/pixel";
-import { color, space } from "@/ui/theme";
+import { color, radius, shadow, space } from "@/ui/theme";
 
 const STARTERS = [
   ["给我安排今天的训练", "按你的目标和状态"],
@@ -69,11 +71,13 @@ export default function ChatPage() {
     [send],
   );
 
+  // §176 起对话是底栏一格，页面一直挂着：别处带着 ?q= 跳过来时每次都要发；发完把参数清掉，下次同一句也能再发
   useEffect(() => {
     let live = true;
     void openChat().then(() => {
-      if (!live || asked.current || !q) return;
+      if (!live || !q || asked.current) return;
       asked.current = true;
+      router.setParams({ q: undefined });
       // 正在回答别的：先放进输入框
       if (chatState().busy) setDraft(String(q));
       else send(String(q));
@@ -81,10 +85,11 @@ export default function ChatPage() {
     return () => {
       live = false;
     };
-    // 只在打开页面时读一次
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!q) asked.current = false;  // 参数清掉后，下一次带问题进来照样发
+  }, [q]);
 
-  const back = () => (router.canGoBack() ? router.back() : router.replace("/"));
   const fresh = () => {
     newChat();
     setDraft("");
@@ -102,17 +107,20 @@ export default function ChatPage() {
 
   const empty = !chat.messages.length;
   return (
-    <SafeAreaView style={s.screen} edges={["top", "left", "right", "bottom"]}>
+    <SafeAreaView style={s.screen} edges={["top", "left", "right"]}>
       <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === "web" ? undefined : "padding"}>
         <View style={s.wrap}>
           <View style={s.bar}>
-            <Pressable accessibilityRole="button" accessibilityLabel="回首页" onPress={back} hitSlop={8} style={s.backBtn}>
-              <Text style={s.backText}>‹</Text>
-            </Pressable>
-            <Mascot size={34} />
-            <PixelText size={24} style={s.name} numberOfLines={1}>IronM</PixelText>
-            <Tool label="以前的对话" onPress={() => setHistory(true)} />
-            <Tool label="新对话" onPress={fresh} />
+            <View style={s.avatar}><Mascot size={56} /></View>
+            <View style={s.who}>
+              <PixelText size={24} style={s.name} numberOfLines={1}>IronM</PixelText>
+              <Text style={s.whoSub}>陪你练、帮你记</Text>
+              <BuddyFacts />
+            </View>
+            <View style={s.tools}>
+              <Tool label="以前的对话" onPress={() => setHistory(true)} />
+              <Tool label="新对话" onPress={fresh} />
+            </View>
           </View>
 
           <ScrollView
@@ -126,7 +134,7 @@ export default function ChatPage() {
           >
             {chat.loading && empty ? (
               <View style={s.loading}>
-                <ActivityIndicator color={color.paperLight} />
+                <ActivityIndicator color={color.accent} />
               </View>
             ) : empty ? (
               <Welcome onAsk={send} busy={chat.busy} />
@@ -151,6 +159,41 @@ export default function ChatPage() {
       </KeyboardAvoidingView>
       <HistorySheet visible={history} current={chat.session} onClose={() => setHistory(false)} onPick={pick} />
     </SafeAreaView>
+  );
+}
+
+type Brief = { week?: { planned?: number; due?: number; done?: number } | null };
+
+/** 企鹅卡上的几个小标签：只放有的数（§175 需求 5）。 */
+function BuddyFacts() {
+  const [tags, setTags] = useState<[string, "green" | "coral" | "plain"][]>([]);
+  useEffect(() => {
+    let live = true;
+    void Promise.all([
+      api<Brief>("/iron/api/brief").catch(() => null),
+      api<Calendar>("/iron/api/calendar").catch(() => null),
+      api<{ workouts?: Workout[] }>("/iron/api/training").catch(() => null),
+    ]).then(([brief, cal, tr]) => {
+      if (!live) return;
+      const w = brief?.week, planned = w?.planned || w?.due || 0;
+      const pr = prWall(tr?.workouts ?? []).find((x) => x.broke);
+      const out: [string, "green" | "coral" | "plain"][] = [];
+      if (planned) out.push([`这周 ${w?.done ?? 0}/${planned} 次`, "green"]);
+      if (cal?.streak_days) out.push([`连续打卡 ${cal.streak_days} 天`, "coral"]);
+      if (pr) out.push([`${pr.name}破纪录 ${pr.best.weight_kg} kg`, "plain"]);
+      setTags(out);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (!tags.length) return null;
+  return (
+    <View style={s.facts}>
+      {tags.map(([t, tone]) => (
+        <Text key={t} style={[s.fact, tone === "green" ? s.factGreen : tone === "coral" ? s.factCoral : null]}>{t}</Text>
+      ))}
+    </View>
   );
 }
 
@@ -192,11 +235,17 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: color.grass },
   flex: { flex: 1 },
   wrap: { flex: 1, width: "100%", maxWidth: 720, alignSelf: "center", paddingHorizontal: space.l, paddingBottom: space.s },
-  bar: { flexDirection: "row", alignItems: "center", gap: space.s, paddingVertical: space.s },
-  backBtn: { width: 32, height: 36, alignItems: "center", justifyContent: "center", backgroundColor: color.plank, borderWidth: 2, borderColor: color.woodDark },
-  backText: { color: color.accentInk, fontSize: 26, lineHeight: 28, fontWeight: "700" },
-  name: { flex: 1, minWidth: 0, color: color.paperLight, textShadowColor: color.woodDark, textShadowOffset: { width: 2, height: 2 }, textShadowRadius: 0 },
-  tool: { backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.wood, paddingHorizontal: space.s, paddingVertical: 6 },
+  bar: { flexDirection: "row", alignItems: "flex-start", gap: space.m, padding: space.m, marginTop: space.s, backgroundColor: color.paper, borderRadius: radius.m, ...shadow },
+  avatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: "#fff3c4", alignItems: "center", justifyContent: "center" },
+  who: { flex: 1, minWidth: 0, gap: 2 },
+  whoSub: { color: color.muted, fontSize: 12 },
+  name: { color: color.ink },
+  tools: { gap: 6, alignItems: "flex-end" },
+  facts: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 },
+  fact: { fontSize: 11, fontWeight: "700", color: color.ink2, backgroundColor: color.paperLight, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3, overflow: "hidden" },
+  factGreen: { color: color.good, backgroundColor: color.goodSoft },
+  factCoral: { color: color.accentText, backgroundColor: color.accentSoft },
+  tool: { backgroundColor: color.iconBg, borderRadius: radius.pill, paddingHorizontal: space.m, paddingVertical: 6 },
   toolDown: { opacity: 0.7 },
   toolText: { color: color.ink, fontSize: 13, fontWeight: "600" },
   thread: { gap: 14, paddingVertical: space.m },
@@ -204,10 +253,10 @@ const s = StyleSheet.create({
   loading: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: space.xl },
   welcome: { flexGrow: 1, justifyContent: "center", gap: space.l, paddingVertical: space.m },
   welcomeText: { gap: space.xs },
-  welcomeTitle: { color: color.paperLight, textShadowColor: color.woodDark, textShadowOffset: { width: 2, height: 2 }, textShadowRadius: 0 },
+  welcomeTitle: { color: color.ink },
   welcomeSub: { color: color.ink, fontSize: 15, lineHeight: 22 },
   starters: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  starter: { flexBasis: "47%", flexGrow: 1, backgroundColor: color.paper, borderWidth: 2, borderColor: color.wood, borderBottomWidth: 4, padding: space.m, gap: 4 },
+  starter: { flexBasis: "47%", flexGrow: 1, backgroundColor: color.paper, borderWidth: 1, borderRadius: 14, borderColor: color.wood, borderBottomWidth: 1, padding: space.m, gap: 4 },
   starterQ: { color: color.ink, fontSize: 15, lineHeight: 21, fontWeight: "600" },
   starterWho: { color: color.muted, fontSize: 12 },
 });

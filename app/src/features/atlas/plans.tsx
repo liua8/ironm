@@ -70,10 +70,10 @@ export function PlanSheet({ x, onClose }: { x: PlanLib; onClose: () => void }) {
 
 const s = StyleSheet.create({
   wrap: { gap: 10 },
-  card: { gap: 4, backgroundColor: color.paper, borderWidth: 4, borderColor: color.wood, padding: 14 },
+  card: { gap: 4, backgroundColor: color.paper, borderWidth: 1, borderRadius: 14, borderColor: color.wood, padding: 14 },
   pressed: { opacity: 0.75 },
   name: { color: color.ink, fontSize: 17, fontWeight: "700" },
   chip: { flexDirection: "row", marginTop: 2 },
-  note: { alignSelf: "flex-start", backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.wood, paddingHorizontal: 10, paddingVertical: 6 },
+  note: { alignSelf: "flex-start", backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.wood, paddingHorizontal: 10, paddingVertical: 6 },
   session: { gap: 4 },
 });

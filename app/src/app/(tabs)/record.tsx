@@ -1,12 +1,13 @@
-// 战绩（同网页 recordPage，spec §137、§139、§147）：一页到底——这周、打卡日历、成就、训练时间线入口、上周周报（放最下面）。
+// 记录（同网页 recordPage，spec §137、§139、§147；§176 原"战绩"）：一页到底——这周表现、打卡日历、身体数据指标、成就、训练时间线入口、上周周报（放最下面）。
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef } from "react";
 
 import { api } from "@/api/client";
+import { BodyData } from "@/features/me/body-data";
 import { Failed, useLoad } from "@/features/record/kit";
 import { type Calendar, prWall, type WeekReport, type Workout } from "@/features/record/logic";
 import { type BriefWeek, CalendarCard, PrPanel, TimelineEntry, WeekPanel, WeekReportPanel } from "@/features/record/sections";
-import { Panel, PageTitle, Screen, T } from "@/ui/pixel";
+import { Panel, AppBar, Screen, T } from "@/ui/pixel";
 
 type Data = { week: BriefWeek | null; cal: Calendar | null; logs: Workout[] | null; rep: WeekReport | null };
 
@@ -17,7 +18,7 @@ async function loadAll(): Promise<Data> {
     api<{ workouts: Workout[] }>("/iron/api/training").catch(() => null),
     api<WeekReport>("/iron/api/report/week").catch(() => null),
   ]);
-  if (!brief && !cal && !tr) throw new Error("战绩暂时读不到训练记录，稍后再试。");
+  if (!brief && !cal && !tr) throw new Error("记录页暂时读不到训练记录，稍后再试。");
   return { week: brief?.week ?? null, cal, logs: tr?.workouts ?? null, rep };
 }
 
@@ -34,7 +35,7 @@ export default function Record() {
   const logs = data?.logs ?? [];
   return (
     <Screen>
-      <PageTitle>战绩</PageTitle>
+      <AppBar title="记录" />
       {error && !data ? (
         <Panel>
           <Failed error={error} retry={reload} />
@@ -47,6 +48,7 @@ export default function Record() {
         <>
           <WeekPanel logs={logs} cal={data.cal} week={data.week} />
           {data.cal ? <CalendarCard key={data.cal.today + data.cal.done_days.length} first={data.cal} /> : null}
+          <BodyData top />
           <PrPanel rows={prWall(logs).slice(0, 8)} />
           <TimelineEntry logs={logs} />
           {data.rep ? <WeekReportPanel r={data.rep} /> : null}

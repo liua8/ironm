@@ -83,7 +83,7 @@ it("动作库：按部位收纳，全部 N 个展开，搜索时平铺；详情�
   await fireEvent.press(screen.getByText("全部 5 个 ›"));
   expect(screen.getByText("夹胸")).toBeTruthy();
   await fireEvent.changeText(screen.getByLabelText("搜索动作"), "划");
-  expect(screen.getByText("1 个动作")).toBeTruthy();
+  expect(screen.getByText("1 项")).toBeTruthy();
   await fireEvent.press(screen.getByText("划船"));
   expect(await screen.findByText("主要练：肌肉")).toBeTruthy();
   expect(screen.getByText("什么情况先别做：", { exact: false })).toBeTruthy();
@@ -155,7 +155,7 @@ it("器械：清单点开能看能练的动作", async () => {
 
 it("食谱：按标签筛，按份数记一餐，提示会替换", async () => {
   await page();
-  await fireEvent.press(await screen.findByText("饮食"));
+  await fireEvent.press(await screen.findByText("食物"));
   await fireEvent.press(await screen.findByText("食谱"));
   expect(await screen.findByText("鸡胸沙拉")).toBeTruthy();
   await fireEvent.press(screen.getByText("早餐"));

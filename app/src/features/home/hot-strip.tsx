@@ -47,11 +47,11 @@ export function HotStrip() {
 }
 
 const s = StyleSheet.create({
-  strip: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: color.paper, borderWidth: 2, borderColor: color.wood, paddingHorizontal: 12, paddingVertical: 10 },
-  label: { fontFamily: font.pixel, fontSize: 12, color: color.accentInk, backgroundColor: color.heat, paddingHorizontal: 6, paddingVertical: 3 },
+  strip: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: color.paper, borderWidth: 1, borderRadius: 14, borderColor: color.wood, paddingHorizontal: 12, paddingVertical: 10 },
+  label: { fontWeight: "800", fontSize: 12, color: color.accentInk, backgroundColor: color.heat, paddingHorizontal: 6, paddingVertical: 3 },
   rows: { flex: 1, flexDirection: "row", gap: 12, overflow: "hidden" },
   row: { color: color.ink, fontSize: 14, flexShrink: 1 },
-  no: { color: color.heat, fontFamily: font.pixel },
+  no: { color: color.heat, fontWeight: "800" },
   flag: { color: color.heat, fontSize: 12 },
   muted: { color: color.muted, fontSize: 14 },
   chev: { color: color.muted, fontSize: 20 },

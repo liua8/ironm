@@ -1,4 +1,5 @@
-// 首页·干饭（spec §164 第二期，照网页版 food，§125）：只留今日余额、记一餐、今天的饮食计划三块。
+// 饮食（spec §164 第二期，照网页版 food，§125）：今日余额、记一餐、今天的饮食计划三块（"饮食账单"整页 /eat）。
+// compact（§176 首页）：只放"今天吃"卡（圆环、三格、拍照记、写一句），弹出页照旧在这里开。
 // 弹出页一次只开一个：从"＋ 记"那页点写一句、从图鉴选、常吃的，是换掉弹出页里的内容，不叠第二层。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
@@ -9,6 +10,7 @@ import { Button, Note, Panel, T } from "@/ui/pixel";
 import { space } from "@/ui/theme";
 
 import { HowTarget, TodayBudget } from "./budget";
+import { EatCard } from "./eat-card";
 import { AddMeal, EntryBar, LogUsual, PhotoMeal, PickFoods, WriteMeal } from "./entry";
 import { MealDetail } from "./meal-sheet";
 import { Sheet } from "./parts";
@@ -40,7 +42,7 @@ function sheetTitle(x: SheetState): string {
   }
 }
 
-export function EatSection() {
+export function EatSection({ compact = false, refresh = 0 }: { compact?: boolean; refresh?: number } = {}) {
   const [day, setDay] = useState<Day | null>(null);
   const [loadErr, setLoadErr] = useState("");
   const [metrics, setMetrics] = useState<Record<string, Metric>>({});
@@ -83,9 +85,10 @@ export function EatSection() {
     loadSide();
   }, [loadSide]);
 
+  // refresh 变了就重读（§176：首页一直挂着，回到首页时首页把它加一，去饮食账单或对话里记的一餐跟着显示）
   useEffect(() => {
     loadAll();
-  }, [loadAll]);
+  }, [loadAll, refresh]);
 
   const open = (x: SheetState) => {
     setSheet(x);
@@ -166,6 +169,20 @@ export function EatSection() {
     }
   })();
 
+  const sheetView = (
+    <Sheet title={sheet ? sheetTitle(sheet) : ""} visible={!!sheet} onClose={close}>
+      <View key={sheetSeq}>{body}</View>
+    </Sheet>
+  );
+  if (compact) {
+    return (
+      <View style={s.wrap}>
+        <EatCard day={day} metrics={metrics} onWrite={() => open({ type: "write", kind: null })} onPhoto={(photo) => open({ type: "photo", kind: null, photo })} />
+        {flash ? <Note tone={flash.tone}>{flash.text}</Note> : null}
+        {sheetView}
+      </View>
+    );
+  }
   return (
     <View style={s.wrap}>
       <TodayBudget day={day} metrics={metrics} onHow={() => open({ type: "how" })} />
@@ -188,9 +205,7 @@ export function EatSection() {
         onAdd={(kind) => open({ type: "add", kind })}
         onReview={act}
       />
-      <Sheet title={sheet ? sheetTitle(sheet) : ""} visible={!!sheet} onClose={close}>
-        <View key={sheetSeq}>{body}</View>
-      </Sheet>
+      {sheetView}
     </View>
   );
 }

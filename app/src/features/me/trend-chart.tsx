@@ -51,7 +51,7 @@ export function Chart({ series, bars = false }: { series: [string, number][]; ba
 }
 
 const s = StyleSheet.create({
-  end: { position: "absolute", width: 10, height: 10, marginLeft: -5, marginTop: -5, backgroundColor: color.accentText, borderWidth: 2, borderColor: color.paperLight },
+  end: { position: "absolute", width: 10, height: 10, marginLeft: -5, marginTop: -5, backgroundColor: color.accentText, borderWidth: 1, borderRadius: 14, borderColor: color.paperLight },
   chart: { gap: 6 },
   chartBox: { borderTopWidth: 1, borderBottomWidth: 1, borderStyle: "dashed", borderColor: color.woodLight, paddingVertical: 4 },
   foot: { flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 6 },

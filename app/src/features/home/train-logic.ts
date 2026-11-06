@@ -60,6 +60,8 @@ export type TodayCard =
       rows: MoveRow[];
       warmup: Warmup | null;
       session: Session;
+      parts: string[];  // 部位标签（§176 照参照图）
+      version: Session | null;  // 管家调整过的今天版本（直接打卡时带上）
     };
 
 /** 今日委托这张卡显示什么（同网页 trainCard）。 */
@@ -90,7 +92,7 @@ export function todayCard(
       exercise: it.exercise,
       note: [it.load, cut > 0 ? `比计划少 ${cut} 组` : ""].filter(Boolean).join("，"),
       cut: cut > 0,
-      sets: setsText(it, lib),
+      sets: setsLine(it, lib),
       pic: exImg(lib, it.exercise),
     };
   });
@@ -106,7 +108,15 @@ export function todayCard(
     rows,
     warmup: today.warmup,
     session: today.session,
+    parts,
+    version: today.version || null,
   };
+}
+
+/** 一行组数（§176 照参照图）：力量写"4 组 × 10 次"，有氧写时长。 */
+export function setsLine(it: PlanItem, lib: Library | null | undefined): string {
+  if (partOf(lib, it.exercise) === "有氧" || /分钟/.test(it.reps)) return it.reps;
+  return `${it.sets} 组 × ${it.reps}${/[\d–-]$/.test(it.reps) ? " 次" : ""}`;
 }
 
 /** 进行中的训练开始了几分钟。 */

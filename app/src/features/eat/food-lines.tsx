@@ -110,7 +110,7 @@ export function FoodLines({ rows, setRows, oil = true }: { rows: LineRow[]; setR
 
 const s = StyleSheet.create({
   wrap: { gap: space.s },
-  row: { gap: space.xs, paddingBottom: space.s, borderBottomWidth: 2, borderStyle: "dashed", borderColor: color.woodLight },
+  row: { gap: space.xs, paddingBottom: space.s, borderBottomWidth: 1, borderStyle: "dashed", borderColor: color.woodLight },
   top: { flexDirection: "row", alignItems: "center", gap: space.s },
   name: { flex: 1, minWidth: 0 },
   nameText: { fontWeight: "600", fontSize: 14 },
@@ -120,7 +120,7 @@ const s = StyleSheet.create({
   delText: { color: color.muted, fontSize: 20, fontWeight: "700" },
   total: { fontSize: 13 },
   hits: { gap: space.xs },
-  hit: { flexDirection: "row", alignItems: "center", gap: space.s, padding: space.xs, borderWidth: 2, borderColor: color.woodLight, backgroundColor: color.paperLight },
+  hit: { flexDirection: "row", alignItems: "center", gap: space.s, padding: space.xs, borderWidth: 1, borderRadius: 14, borderColor: color.woodLight, backgroundColor: color.paperLight },
   hitDown: { opacity: 0.7 },
   hitText: { flex: 1, minWidth: 0 },
   hitName: { fontSize: 14 },

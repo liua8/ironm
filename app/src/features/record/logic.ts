@@ -87,6 +87,17 @@ export function weekCount(logs: Workout[], today: Date): { monday: string; days:
   return { monday, days, before, diff: days - before };
 }
 
+/** 这周表现的三格（§176，同网页 recordPage）：练了几天、累计分钟、完成组数。 */
+export function weekPerf(logs: Workout[], today: Date): { days: number; minutes: number; sets: number } {
+  const monday = mondayOf(today);
+  const mine = trainedOnly(logs).filter((x) => x.day >= monday);
+  return {
+    days: new Set(mine.map((x) => x.day)).size,
+    minutes: mine.reduce((a, x) => a + (x.minutes || 0), 0),
+    sets: mine.reduce((a, x) => a + (x.items ?? []).reduce((b, it) => b + (it.done_sets?.length || it.sets || 0), 0), 0),
+  };
+}
+
 /** "比上周多 2 次。" 这一句。 */
 export function compareLine(diff: number, before: number): string {
   if (diff > 0) return `比上周多 ${diff} 次。`;

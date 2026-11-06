@@ -125,7 +125,7 @@ const s = StyleSheet.create({
   caption: { color: color.muted, fontSize: 13, lineHeight: 19 },
   photo: { width: "100%", height: "100%" },
   check: { flexDirection: "row", alignItems: "center", gap: space.s },
-  box: { width: 22, height: 22, borderWidth: 2, borderColor: color.wood, backgroundColor: color.paperLight, alignItems: "center", justifyContent: "center" },
+  box: { width: 22, height: 22, borderWidth: 1, borderRadius: 14, borderColor: color.wood, backgroundColor: color.paperLight, alignItems: "center", justifyContent: "center" },
   boxOn: { backgroundColor: color.accent, borderColor: color.accentText },
   tick: { color: color.accentInk, fontSize: 14, fontWeight: "800", lineHeight: 16 },
   checkText: { color: color.ink, fontSize: 15 },

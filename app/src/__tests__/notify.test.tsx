@@ -173,7 +173,7 @@ describe("组间休息到点", () => {
   it("打勾开始休息时排到点通知；+15 秒重排；跳过时取消", async () => {
     await render(<LivePage />);
     await fireEvent.press(await screen.findByText("完成第 1 组"));
-    expect(await screen.findByText("组间休息")).toBeTruthy();
+    expect(await screen.findByText("组间休息中")).toBeTruthy();
     await waitFor(() => expect(restReqs()).toHaveLength(1));
     const first = restReqs()[0];
     expect(first.trigger.type).toBe("date");
@@ -186,7 +186,7 @@ describe("组间休息到点", () => {
     expect(restReqs()[1].trigger.date! - first.trigger.date!).toBe(15000);
 
     const before = restCancels();
-    await fireEvent.press(screen.getByText("跳过"));
+    await fireEvent.press(screen.getByText("跳过休息"));
     await waitFor(() => expect(restCancels()).toBeGreaterThan(before));
     expect(restReqs()).toHaveLength(2);  // 跳过后不再排
   });
@@ -207,7 +207,7 @@ describe("组间休息到点", () => {
     await fireEvent.press(await screen.findByText("完成第 1 组"));
     await waitFor(() => expect(restReqs()).toHaveLength(1));
     const before = restCancels();
-    await fireEvent.press(screen.getByText("结束"));
+    await fireEvent.press(screen.getByText("结束训练"));
     await fireEvent.press(screen.getByText("保存这次训练"));
     await waitFor(() => expect(restCancels()).toBeGreaterThan(before));
     expect(restReqs()).toHaveLength(1);

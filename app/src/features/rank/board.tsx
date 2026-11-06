@@ -141,13 +141,13 @@ function RankAdd({ d }: { d: Board }) {
 const s = StyleSheet.create({
   wrap: { gap: space.m },
   pendingTitle: { color: color.ink, fontSize: 15, fontWeight: "700", marginBottom: 4 },
-  wait: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 6, borderBottomWidth: 2, borderBottomColor: color.woodLight },
+  wait: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: color.woodLight },
   pressed: { opacity: 0.7 },
   add: { gap: space.s },
   addRow: { flexDirection: "row", alignItems: "center", gap: space.s },
   addField: { flex: 1, minWidth: 0, paddingVertical: 8 },
   similar: { gap: space.s },
   asks: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  ask: { borderWidth: 2, borderColor: color.wood, backgroundColor: color.paperLight, paddingHorizontal: 10, paddingVertical: 4 },
-  askText: { color: color.woodDark, fontSize: 14, fontWeight: "600" },
+  ask: { borderWidth: 1, borderRadius: 14, borderColor: color.wood, backgroundColor: color.paperLight, paddingHorizontal: 10, paddingVertical: 4 },
+  askText: { color: color.ink2, fontSize: 14, fontWeight: "600" },
 });

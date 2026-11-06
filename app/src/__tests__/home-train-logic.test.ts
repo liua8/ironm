@@ -36,7 +36,7 @@ describe("todayCard", () => {
     if (c.kind !== "session") throw new Error(c.kind);
     expect(c.sub).toBe("周三，练腿臀和有氧。IronM 按你今天的状态调整过。");
     expect(c.burn).toBe("300–400");
-    expect(c.rows[0]).toMatchObject({ exercise: "深蹲", note: "60 公斤，比计划少 2 组", cut: true, sets: "2×8–10" });
+    expect(c.rows[0]).toMatchObject({ exercise: "深蹲", note: "60 公斤，比计划少 2 组", cut: true, sets: "2 组 × 8–10 次" });  // §176 照参照图
     expect(c.rows[1].sets).toBe("20 分钟");
     expect(c.rows[0].pic).toMatch(/^https?:\/\/.+\/iron\/api\/exercise-images\/squat-0\.jpg$/);
     expect(c.photo?.url).toMatch(/\/iron\/api\/food-images\/legs\.jpg$/);

@@ -9,16 +9,17 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, Vibration
 import { api } from "@/api/client";
 import { Thumb, useFlash } from "@/features/home/bits";
 import { exImg } from "@/features/home/train-logic";
+import { prWall, type Workout } from "@/features/record/logic";
 import type { Library } from "@/features/home/types";
 import { cancelRestEnd, scheduleRestEnd } from "@/lib/notify";
 import { Button, LinkButton, Note, PixelText } from "@/ui/pixel";
-import { color, space } from "@/ui/theme";
+import { color, radius, space } from "@/ui/theme";
 
 import { AddMoveSheet } from "./add-move";
 import { FinishSheet } from "./finish";
 import { LiveIcon, type LiveIconName } from "./icons";
 import {
-  addSet, bumpValue, checkKg, clampRest, clock, completeSet, curPos, e1rm, emptyMsg, type Live, type LiveItem, type LiveResp,
+  addSet, bumpValue, checkKg, clampRest, clock, completeSet, curPos, e1rm, emptyMsg, type Live, type LiveItem, type LiveResp, targetPill,
   type LiveSet, minutesToSeconds, moveItem, progress, secondsToMinutes, stepOf, toNum, undoSet, type Warn,
 } from "./logic";
 
@@ -92,15 +93,22 @@ function IconBtn({ icon, label, onPress, disabled, on, size = 16 }: { icon: Live
   );
 }
 
-function Stepper({ label, value, unit, onDown, onUp, hot }: { label: string; value: number | null; unit: string; onDown: () => void; onUp: () => void; hot?: boolean }) {
+/** 重量、次数各一块（§176 照参照图）：上面一行名字和小标签，下面大号数字配左右圆按钮。 */
+function Stepper({ label, value, unit, onDown, onUp, hot, pill, pillTone }: { label: string; value: number | null; unit: string; onDown: () => void; onUp: () => void; hot?: boolean; pill?: string; pillTone?: "green" }) {
   return (
     <View style={s.stepper}>
-      <Pressable accessibilityRole="button" accessibilityLabel={`${label}减`} onPress={onDown} style={s.stepBtn}><Text style={s.stepSign}>−</Text></Pressable>
-      <View style={s.stepVal}>
-        <PixelText size={24} style={hot ? s.hot : undefined}>{value == null ? "–" : String(value)}</PixelText>
-        <Text style={s.unit}>{unit}</Text>
+      <View style={s.stepHead}>
+        <Text style={s.stepLabel}>{label}</Text>
+        {pill ? <Text style={[s.pill, pillTone === "green" && s.pillGreen]}>{pill}</Text> : null}
       </View>
-      <Pressable accessibilityRole="button" accessibilityLabel={`${label}加`} onPress={onUp} style={s.stepBtn}><Text style={s.stepSign}>+</Text></Pressable>
+      <View style={s.stepRow}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`${label}减`} onPress={onDown} style={s.stepBtn}><Text style={s.stepSign}>−</Text></Pressable>
+        <View style={s.stepVal}>
+          <Text style={[s.stepNum, hot && s.hot]}>{value == null ? "–" : String(value)}</Text>
+          <Text style={s.unit}>{unit}</Text>
+        </View>
+        <Pressable accessibilityRole="button" accessibilityLabel={`${label}加`} onPress={onUp} style={[s.stepBtn, s.stepUp]}><Text style={[s.stepSign, s.stepSignUp]}>+</Text></Pressable>
+      </View>
     </View>
   );
 }
@@ -125,6 +133,13 @@ export function Recorder({ data, onReload }: { data: LiveResp & { live: Live }; 
   const t0 = useRef(new Date(L.started).getTime() + skew).current;
 
   useEffect(() => { api<Library>("/iron/api/exercises").then(setLib).catch(() => setLib(null)); }, []);
+  // 重量旁的"最近最佳"：最近 30 天这个动作最好一组的重量（§176）
+  const [bestKg, setBestKg] = useState<Record<string, number | null | undefined>>({});
+  useEffect(() => {
+    api<{ workouts?: Workout[] }>("/iron/api/training")
+      .then((tr) => setBestKg(Object.fromEntries(prWall(tr.workouts ?? []).map((x) => [x.name, x.best.weight_kg]))))
+      .catch(() => {});
+  }, []);
 
   const put = useCallback(async () => {
     saveT.current = null;
@@ -208,7 +223,7 @@ export function Recorder({ data, onReload }: { data: LiveResp & { live: Live }; 
     setRest({ i, end: r.restEnd });
     if (r.pr) {
       Vibration.vibrate([0, 30, 60, 30]);
-      show(<View style={s.flashRow}><LiveIcon name="trophy" size={18} color={color.amber} /><Text style={s.flashText}><Text style={s.bold}>新纪录 </Text>{r.pr}</Text></View>);
+      show(<View style={s.flashRow}><LiveIcon name="trophy" size={18} color={color.accent} /><Text style={s.flashText}><Text style={s.bold}>新纪录 </Text>{r.pr}</Text></View>);
     } else Vibration.vibrate(15);
     if (r.next) show(r.next);  // 下一组的建议：这组次数没做够，下一组降一档
     void save(true);
@@ -283,14 +298,16 @@ export function Recorder({ data, onReload }: { data: LiveResp & { live: Live }; 
     const hot = st.weight_kg != null && it.plan_kg != null && st.weight_kg > it.plan_kg;
     return (
       <View style={s.focus}>
+        <Text style={s.nowTag}>{`进行中 · 第 ${j + 1}/${it.sets.length} 组`}</Text>
         <View style={s.focusTop}>
           <Thumb url={exImg(lib, it.exercise)} size={72} />
           {mv?.cues?.[0] ? <Text style={[s.cue, s.flex]}>{mv.cues[0]}</Text> : null}
         </View>
         {it.timed ? null : (
           <View style={s.steps}>
-            <Stepper label="重量" value={st.weight_kg} unit="公斤" hot={hot} onDown={() => bump(i, j, "weight_kg", -stepOf(steps, it))} onUp={() => bump(i, j, "weight_kg", stepOf(steps, it))} />
-            <Stepper label="次数" value={st.reps} unit="次" onDown={() => bump(i, j, "reps", -1)} onUp={() => bump(i, j, "reps", 1)} />
+            <Stepper label="重量" value={st.weight_kg} unit="公斤" hot={hot} onDown={() => bump(i, j, "weight_kg", -stepOf(steps, it))} onUp={() => bump(i, j, "weight_kg", stepOf(steps, it))}
+              pill={bestKg[it.exercise] ? `最近最佳 ${bestKg[it.exercise]} kg` : undefined} pillTone="green" />
+            <Stepper label="次数" value={st.reps} unit="次" onDown={() => bump(i, j, "reps", -1)} onUp={() => bump(i, j, "reps", 1)} pill={targetPill(it.target) || undefined} />
           </View>
         )}
         {warn && warn.i === i ? (
@@ -369,17 +386,34 @@ export function Recorder({ data, onReload }: { data: LiveResp & { live: Live }; 
       <View style={s.bar}>
         <IconBtn icon="back" label="返回（训练不会结束）" onPress={goBack} size={18} />
         <View style={[s.flex, s.who]}>
+          <Text style={s.clock}>{clock((now - t0) / 1000)}</Text>
           <Text style={s.sub} numberOfLines={1}>{L.session ? `训练中 · ${L.session}` : "训练中"}</Text>
-          <PixelText size={24}>{clock((now - t0) / 1000)}</PixelText>
         </View>
         <IconBtn icon={soundOn ? "bell" : "mute"} label="提示音" onPress={() => { sound.on = !sound.on; setSoundOn(sound.on); }} size={18} />
-        <Button small kind="wood" title="结束" onPress={() => setFinishing(true)} />
+        <Pressable accessibilityRole="button" onPress={() => setFinishing(true)} style={s.end}><Text style={s.endText}>结束训练</Text></Pressable>
       </View>
       <ScrollView style={s.flex} contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
         {prog.all ? (
           <View style={s.prog}>
-            <Text style={s.sub}>{prog.text}</Text>
+            <View style={s.progHead}>
+              <Text style={s.progK}>{`总进度：第 ${here ? here.i + 1 : L.items.length}/${L.items.length} 个动作`}</Text>
+              <Text style={s.progV}>{`已做 ${prog.done}/${prog.all} 组（${prog.pct}%）`}</Text>
+            </View>
             <View style={s.thin}><View style={[s.thinFill, { width: `${prog.pct}%` }]} /></View>
+          </View>
+        ) : null}
+        {rest && restLeft > 0 ? (
+          <View style={s.rest}>
+            <View style={s.restHead}>
+              <View style={s.restK}><View style={s.restDot} /><Text style={s.restLabel}>组间休息中</Text></View>
+              <Text style={s.restNum}>{clock(restLeft)}<Text style={s.restOf}>{` / ${clock(L.items[rest.i]?.rest ?? 0)}`}</Text></Text>
+            </View>
+            <View style={s.restTrack}><View style={[s.restFill, { width: `${Math.max(0, Math.min(100, Math.round((1 - restLeft / Math.max(1, L.items[rest.i]?.rest ?? 1)) * 100)))}%` }]} /></View>
+            <View style={s.restBtns}>
+              <RestBtn title="−15 秒" onPress={() => adjRest(-15)} />
+              <RestBtn title="+15 秒" onPress={() => adjRest(15)} />
+              <RestBtn title="跳过休息" onPress={() => setRest(null)} />
+            </View>
           </View>
         ) : null}
         {flash}
@@ -390,19 +424,6 @@ export function Recorder({ data, onReload }: { data: LiveResp & { live: Live }; 
         {/* 按计划的训练动作已经带好了；只有自由训练能加动作（§133） */}
         {!L.session ? <Button kind="ghost" title="＋ 加动作" onPress={() => setAdding(true)} /> : null}
       </ScrollView>
-      {rest && restLeft > 0 ? (
-        <View style={s.rest}>
-          <View>
-            <Text style={s.sub}>组间休息</Text>
-            <PixelText size={24} style={s.restNum}>{clock(restLeft)}</PixelText>
-          </View>
-          <View style={s.restBtns}>
-            <Button small kind="ghost" title="−15 秒" onPress={() => adjRest(-15)} />
-            <Button small kind="ghost" title="+15 秒" onPress={() => adjRest(15)} />
-            <Button small title="跳过" onPress={() => setRest(null)} />
-          </View>
-        </View>
-      ) : null}
       {/* 保存结束时先停掉休息（取消到点通知），训练都结束了不该再响 */}
       <FinishSheet live={L} t0={t0} open={finishing} onClose={() => setFinishing(false)} flush={() => { setRest(null); return flush(); }} />
       <AddMoveSheet open={adding} lib={lib} onClose={() => setAdding(false)} flush={flush} onAdded={(items) => { L.items = items; redraw(); }} />
@@ -411,6 +432,14 @@ export function Recorder({ data, onReload }: { data: LiveResp & { live: Live }; 
 }
 
 /** 有氧（§130）：页面填分钟，存秒。 */
+function RestBtn({ title, onPress }: { title: string; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [s.restBtn, pressed && s.off]}>
+      <Text style={s.restBtnText}>{title}</Text>
+    </Pressable>
+  );
+}
+
 function MinutesField({ st, j, onChange, done }: { st: LiveSet; j: number; onChange: (sec: number | null) => void; done?: boolean }) {
   const [text, setText] = useState(secondsToMinutes(st.seconds));
   return (
@@ -430,44 +459,44 @@ const s = StyleSheet.create({
   page: { flex: 1, gap: space.s },
   flex: { flex: 1, minWidth: 0 },
   bold: { fontWeight: "700" },
-  bar: { flexDirection: "row", alignItems: "center", gap: space.s, backgroundColor: color.paper, borderWidth: 3, borderColor: color.woodDark, paddingHorizontal: space.s, paddingVertical: 6 },
-  who: { alignItems: "center" },
+  bar: { flexDirection: "row", alignItems: "center", gap: space.s, paddingVertical: 6 },
+  who: { alignItems: "flex-start", gap: 2 },
   scroll: { gap: space.m, paddingBottom: space.xl },
-  prog: { gap: 4 },
-  thin: { height: 8, backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.woodDark },
-  thinFill: { height: "100%", backgroundColor: color.accent },
-  card: { backgroundColor: color.paper, borderWidth: 3, borderColor: color.wood, padding: space.m, gap: space.s },
+  prog: { gap: 8, backgroundColor: color.paper, borderRadius: 20, padding: space.m },
+  thin: { height: 8, backgroundColor: color.wood, borderRadius: 999, overflow: "hidden" },
+  thinFill: { height: "100%", backgroundColor: color.accent, borderRadius: 999 },
+  card: { backgroundColor: color.paper, borderRadius: 24, padding: space.l, gap: space.s },
   cardDone: { backgroundColor: color.goodSoft },
-  cardCur: { borderColor: color.woodDark, borderWidth: 4 },
+  cardCur: { borderWidth: 2, borderColor: color.accentSoft },
   head: { flexDirection: "row", alignItems: "center", gap: 6 },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  name: { color: color.ink, fontSize: 16, fontWeight: "700", flexShrink: 1 },
+  name: { color: color.ink, fontSize: 22, fontWeight: "800", flexShrink: 1 },
   sub: { color: color.muted, fontSize: 13, lineHeight: 18 },
   unit: { color: color.muted, fontSize: 13 },
-  iconBtn: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: color.wood, backgroundColor: color.paperLight },
+  iconBtn: { width: 34, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 17, backgroundColor: color.iconBg },
   iconOn: { backgroundColor: color.fire, borderColor: color.woodDark },
   off: { opacity: 0.4 },
-  focus: { gap: space.s, backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.woodLight, padding: space.s },
+  focus: { gap: space.m },
   focusTop: { flexDirection: "row", alignItems: "center", gap: space.m },
   cue: { color: color.ink, fontSize: 14, lineHeight: 20 },
-  steps: { flexDirection: "row", gap: space.s },
-  stepper: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4 },
-  stepBtn: { width: 36, height: 40, alignItems: "center", justifyContent: "center", backgroundColor: color.plank, borderWidth: 2, borderColor: color.woodDark },
-  stepSign: { color: color.accentInk, fontSize: 20, fontWeight: "700" },
-  stepVal: { flex: 1, alignItems: "center" },
+  steps: { gap: space.s },
+  stepper: { gap: 8, backgroundColor: color.paperLight, borderRadius: 20, paddingHorizontal: space.l, paddingVertical: space.m },
+  stepBtn: { width: 52, height: 52, alignItems: "center", justifyContent: "center", borderRadius: 26, backgroundColor: color.iconBg },
+  stepSign: { color: "#3b3b5c", fontSize: 26, fontWeight: "600", lineHeight: 30 },
+  stepVal: { flex: 1, flexDirection: "row", alignItems: "baseline", justifyContent: "center", gap: 4 },
   hot: { color: color.heat },
-  warn: { gap: space.s, backgroundColor: color.heatSoft, borderWidth: 2, borderColor: color.heat, padding: space.s },
+  warn: { gap: space.s, backgroundColor: color.heatSoft, borderWidth: 1, borderRadius: 14, borderColor: color.heat, padding: space.s },
   warnText: { color: color.heat, fontSize: 14, lineHeight: 20 },
   warnBtns: { flexDirection: "row", alignItems: "center", gap: space.m },
   timedRow: { flexDirection: "row" },
   sets: { gap: 4 },
   setRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 3, paddingHorizontal: 4 },
   setDone: { backgroundColor: color.goodSoft },
-  setCur: { borderWidth: 2, borderColor: color.amber, paddingHorizontal: 2, paddingVertical: 1 },
+  setCur: { borderWidth: 1, borderRadius: 14, borderColor: color.accent, paddingHorizontal: 2, paddingVertical: 1 },
   setN: { width: 18, color: color.muted, fontSize: 13, textAlign: "center" },
-  in: { flex: 1, minWidth: 0, height: 36, paddingHorizontal: 6, backgroundColor: color.paperLight, borderWidth: 2, borderColor: color.wood, color: color.ink, fontSize: 15, textAlign: "center" },
+  in: { flex: 1, minWidth: 0, height: 36, paddingHorizontal: 6, backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.wood, color: color.ink, fontSize: 15, textAlign: "center" },
   inDone: { color: color.accentText },
-  timeBtn: { width: 58, height: 34, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: color.woodLight, backgroundColor: color.paperLight },
+  timeBtn: { width: 58, height: 34, alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: 14, borderColor: color.woodLight, backgroundColor: color.paperLight },
   timeRun: { backgroundColor: color.fire, borderColor: color.woodDark },
   timeText: { color: color.muted, fontSize: 12 },
   timeTextRun: { color: color.accentInk, fontWeight: "700" },
@@ -475,9 +504,33 @@ const s = StyleSheet.create({
   x: { width: 20, alignItems: "center" },
   addSet: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", paddingVertical: 4 },
   addSetText: { color: color.accentText, fontSize: 14, fontWeight: "600" },
-  rest: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space.s, flexWrap: "wrap", backgroundColor: color.paper, borderWidth: 3, borderColor: color.woodDark, padding: space.m },
-  restNum: { color: color.fire },
-  restBtns: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  rest: { gap: 10, backgroundColor: color.iconBg, borderRadius: 22, padding: space.l },
+  restNum: { color: color.good, fontSize: 28, fontWeight: "800" },
+  restBtns: { flexDirection: "row", gap: 8 },
+  restHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  restK: { flexDirection: "row", alignItems: "center", gap: 8 },
+  restDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: color.good },
+  restLabel: { color: color.ink, fontSize: 15, fontWeight: "700" },
+  restOf: { color: color.muted, fontSize: 14, fontWeight: "600" },
+  restTrack: { height: 6, borderRadius: 999, backgroundColor: "#dcdbe9", overflow: "hidden" },
+  restFill: { height: 6, borderRadius: 999, backgroundColor: color.good },
+  restBtn: { flex: 1, alignItems: "center", paddingVertical: 10, borderRadius: 14, backgroundColor: color.paper },
+  restBtnText: { color: color.ink, fontSize: 14, fontWeight: "600" },
+  clock: { color: color.ink, fontSize: 20, fontWeight: "800", backgroundColor: color.iconBg, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 4, overflow: "hidden" },
+  end: { backgroundColor: color.accentSoft, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9 },
+  endText: { color: color.accentText, fontSize: 14, fontWeight: "700" },
+  progHead: { flexDirection: "row", justifyContent: "space-between", gap: 8 },
+  progK: { color: color.ink2, fontSize: 13, fontWeight: "600" },
+  progV: { color: color.accentText, fontSize: 13, fontWeight: "700" },
+  nowTag: { alignSelf: "flex-start", color: color.accentText, backgroundColor: color.accentSoft, fontSize: 12, fontWeight: "700", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, overflow: "hidden" },
+  stepHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  stepLabel: { color: color.ink2, fontSize: 13, fontWeight: "600" },
+  stepRow: { flexDirection: "row", alignItems: "center", gap: space.s },
+  stepUp: { backgroundColor: color.accent },
+  stepSignUp: { color: "#ffffff" },
+  stepNum: { color: color.ink, fontSize: 44, fontWeight: "800" },
+  pill: { color: color.ink2, backgroundColor: color.paper, fontSize: 11, fontWeight: "700", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, overflow: "hidden" },
+  pillGreen: { color: color.good, backgroundColor: color.goodSoft },
   flashRow: { flexDirection: "row", alignItems: "center", gap: space.s },
-  flashText: { flex: 1, color: color.accentInk, fontSize: 14, lineHeight: 20 },
+  flashText: { flex: 1, color: color.ink, fontSize: 14, lineHeight: 20 },
 });
