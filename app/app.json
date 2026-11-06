@@ -39,6 +39,15 @@
         {
           "color": "#3d7a1c"
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "IronM 只在你点“用当前位置”时取一次位置，用来查当地天气，只留到约 1 公里。",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false,
+          "isAndroidForegroundServiceEnabled": false
+        }
       ]
     ],
     "scheme": "ironm"

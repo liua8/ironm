@@ -187,6 +187,11 @@ export function checkWelcome(
   return { profile, weight };
 }
 
+/** 定位交给服务端前粗到两位小数（约 1 公里，§173）。 */
+export function spotOf(c: { latitude: number; longitude: number }): { lat: number; lon: number } {
+  return { lat: Math.round(c.latitude * 100) / 100, lon: Math.round(c.longitude * 100) / 100 };
+}
+
 /** 2026-11-05 → 2026年11月5日。 */
 export function fmtDay(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);

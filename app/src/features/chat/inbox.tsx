@@ -2,7 +2,7 @@
 // 管家消息（§26、§85）——上次看过之后的调整、要你确认的调整，在这里"确认"或"暂不"；
 // 周报消息（§147 需求 3）——每周第一次打开对话时发，点掉这周不再出。
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { api } from "@/api/client";
@@ -11,7 +11,7 @@ import { color, space } from "@/ui/theme";
 
 import { errorText } from "./api";
 import { Mascot } from "./mascot";
-import { type Inbox, type InboxChange, type InboxPending, INBOX_WORD, inboxShown, type WeekReport, weekSaid } from "./model";
+import { type Draft, draftClosed, type Inbox, type InboxChange, type InboxPending, INBOX_WORD, inboxShown, TEMP_RULE, tempSpan, type WeekReport, weekSaid } from "./model";
 import { closeWeek } from "./store";
 import { cleanText } from "./text";
 
@@ -44,9 +44,7 @@ export function InboxMsg({ inbox }: { inbox: Inbox }) {
       ) : null}
       {inbox.pending.length ? (
         <View style={s.pending}>
-          {inbox.pending.map((x) => (
-            <PendingRow key={x.key} x={x} />
-          ))}
+          {inbox.pending.map((x) => (x.value?.draft ? <DraftPending key={x.key} x={x} id={x.value.draft} /> : <PendingRow key={x.key} x={x} />))}
         </View>
       ) : null}
     </View>
@@ -158,6 +156,81 @@ function PendingRow({ x }: { x: InboxPending }) {
       {phase === "working" ? <Text style={s.muted}>IronM 在改计划，大约要半分钟…</Text> : null}
       {said ? <Text style={s.text}>{cleanText(said)}</Text> : null}
       {proposal?.draft ? <DraftView d={proposal.draft} answer={proposal.answer} warning={proposal.warning} /> : null}
+      {error ? <Text style={s.error}>{error}</Text> : null}
+    </View>
+  );
+}
+
+/** 带预览的待确认（管家提的改计划、临时调整，§163）：列出改了什么，"好"就真正确认这份预览，再收起这条；确认后能撤销。 */
+function DraftPending({ x, id }: { x: InboxPending; id: string }) {
+  const [d, setD] = useState<Draft | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<"ask" | "later" | "done" | "undone">("ask");
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let live = true;
+    api<{ draft: Draft }>(`/iron/api/drafts/${encodeURIComponent(id)}`)
+      .then((r) => live && setD(r.draft))
+      .catch((err) => live && setError(errorText(err)));
+    return () => {
+      live = false;
+    };
+  }, [id]);
+  const call = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setError("");
+    try {
+      await fn();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const confirm = () => call(async () => {
+    await api(`/iron/api/drafts/${encodeURIComponent(id)}/confirm`, { method: "POST", json: {} });
+    await api("/iron/api/coach/decide", { method: "POST", json: { key: x.key, decision: "accept" } }).catch(() => {});
+    setPhase("done");
+  });
+  const later = () => call(async () => {
+    await api("/iron/api/coach/decide", { method: "POST", json: { key: x.key, decision: "later" } });
+    setPhase("later");
+  });
+  const undo = () => call(async () => {
+    await api(`/iron/api/drafts/${encodeURIComponent(id)}/undo`, { method: "POST", json: {} });
+    setPhase("undone");
+  });
+  const temp = d?.kind === "temp" && d.temp ? d.temp : null;
+  if (phase === "later") return <Text style={s.muted}>好的，「{x.title}」今天不再提。</Text>;
+  return (
+    <View style={s.item}>
+      <Text style={s.title}>{cleanText(x.title)}</Text>
+      {x.why ? <Text style={s.muted}>{cleanText(x.why)}</Text> : null}
+      {!d ? (error ? null : <Text style={s.muted}>正在读取…</Text>) : draftClosed(d) && phase === "ask" ? (
+        <Text style={s.muted}>{draftClosed(d)}</Text>
+      ) : (
+        <View style={s.draft}>
+          {temp ? <Text style={s.text}>{tempSpan(temp)}</Text> : <Text style={s.muted}>改了什么：</Text>}
+          {(temp?.lines ?? d.items ?? []).map((it, i) => <Text key={i} style={s.text}>{`• ${cleanText(it)}`}</Text>)}
+          {temp?.why ? <Text style={s.muted}>{`为什么：${cleanText(temp.why)}`}</Text> : null}
+          {phase === "ask" ? (
+            <>
+              {temp ? <Text style={s.caption}>{TEMP_RULE}</Text> : null}
+              <View style={s.row}>
+                <Button small title="好" disabled={busy} onPress={confirm} />
+                <Button small kind="ghost" title="暂不" disabled={busy} onPress={later} />
+              </View>
+            </>
+          ) : phase === "done" ? (
+            <View style={s.row}>
+              <Text style={s.ok}>{temp ? "已生效，到期回到原计划。" : "已保存，新的计划从今天起生效。"}</Text>
+              <Button small kind="ghost" title="撤销" disabled={busy} onPress={undo} />
+            </View>
+          ) : (
+            <Text style={s.ok}>{temp ? "已撤销，回到原计划。" : "已撤销，计划回到改之前的样子。"}</Text>
+          )}
+        </View>
+      )}
       {error ? <Text style={s.error}>{error}</Text> : null}
     </View>
   );

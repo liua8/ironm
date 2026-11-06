@@ -1,5 +1,6 @@
 // "我"的设置里各行点开的内容（同网页 memorySheet、gearSection、addGrid、filesSection、citySection、modelSheet）。
 // 都放在弹出页里；上传报告在手机上拍照或从相册选（§164 第四期），PDF 等文件、导入苹果健康、基因数据还要在网页版做。
+import * as Location from "expo-location";
 import { router } from "expo-router";
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
@@ -12,7 +13,7 @@ import { Button, Field, LinkButton, Note, T } from "@/ui/pixel";
 import { color, space } from "@/ui/theme";
 
 import { apiData, askPath } from "./data";
-import { addGear, fileState, GEAR, GEAR_PLACES, type Gear, gearLine, type Memory, memoryGroups, sizeText, stripRefs, type UploadedFile, validDay } from "./logic";
+import { addGear, fileState, GEAR, GEAR_PLACES, type Gear, gearLine, type Memory, memoryGroups, sizeText, spotOf, stripRefs, type UploadedFile, validDay } from "./logic";
 
 type Msg = { tone: "error" | "muted" | "ok"; text: string };
 const quiet: Msg = { tone: "muted", text: "" };
@@ -431,6 +432,19 @@ export function CityBox() {
       setMsg({ tone: "error", text: (e as Error).message });
     }
   };
+  // 用当前位置（同网页 citySection，§173）：只在点了才取一次，经纬度留两位小数（约 1 公里）交给服务端认城市
+  const locate = async () => {
+    setMsg({ tone: "muted", text: "正在定位…" });
+    try {
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.status !== "granted") return setMsg({ tone: "error", text: "没有同意定位，可以手填城市" });
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+      setData(await api<Place>("/iron/api/place/locate", { method: "POST", json: spotOf(pos.coords) }));
+      setMsg(quiet);
+    } catch (e) {
+      setMsg({ tone: "error", text: e instanceof Error && /[\u4e00-\u9fff]/.test(e.message) ? e.message : "这次没取到位置，可以手填城市" });
+    }
+  };
   return (
     <>
       {editing ? (
@@ -460,7 +474,9 @@ export function CityBox() {
           />
         </View>
       )}
-      <Caption>按城市取实时天气和空气质量，首页和 IronM 安排训练、饮食时会用上。</Caption>
+      {editing ? null : <LinkButton title="用当前位置" onPress={() => void locate()} />}
+      {editing ? null : <Note tone={msg.tone}>{msg.text}</Note>}
+      <Caption>按城市取实时天气和空气质量，首页和 IronM 安排训练、饮食时会用上；问 IronM 天气也按这里。用当前位置只在你点了才取，只留到约 1 公里。</Caption>
     </>
   );
 }

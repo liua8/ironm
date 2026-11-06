@@ -51,4 +51,4 @@ export type TrainImages = { images: Record<string, ImageRef> };
 
 export type TodayVersion =
   | { status: "ok"; original: Session; today: Session; changed: boolean; changes: string[]; reasons: string[] }
-  | { status: string; message?: string; why?: string };
+  | { status: string; message?: string; why?: string; original?: Session };  // reviewing 正在看 / coach_error 出错了 / rest_today 定了休息（§163）

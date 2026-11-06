@@ -1,4 +1,4 @@
-// 饮食（spec §164 第二期，照网页版 food，§125）：今日余额、记一餐、今天的饮食计划三块（"饮食账单"整页 /eat）。
+// 饮食（spec §164 第二期，照网页版 food，§125）：今日余额、记一餐（带"推荐这一餐"，§118）、今天的饮食计划三块（"饮食账单"整页 /eat）。
 // compact（§176 首页）：只放"今天吃"卡（圆环、三格、拍照记、写一句），弹出页照旧在这里开。
 // 弹出页一次只开一个：从"＋ 记"那页点写一句、从图鉴选、常吃的，是换掉弹出页里的内容，不叠第二层。
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -15,6 +15,7 @@ import { AddMeal, EntryBar, LogUsual, PhotoMeal, PickFoods, WriteMeal } from "./
 import { MealDetail } from "./meal-sheet";
 import { Sheet } from "./parts";
 import { PlanEdit, TodayPlan } from "./plan";
+import { RecommendMeal } from "./recommend";
 import type { Day, DietPlan, DietReview, Meal, Metric, Usual } from "./types";
 
 type SheetState =
@@ -25,7 +26,8 @@ type SheetState =
   | { type: "add"; kind: string }
   | { type: "meal"; meal: Meal }
   | { type: "how" }
-  | { type: "plan"; plan: DietPlan };
+  | { type: "plan"; plan: DietPlan }
+  | { type: "rec" };
 
 const errText = (e: unknown) => (e instanceof Error && e.message ? e.message : "没有成功，请再试一次。");
 
@@ -39,6 +41,7 @@ function sheetTitle(x: SheetState): string {
     case "meal": return `${x.meal.kind} · ${x.meal.name}`;
     case "how": return "今日目标怎么算的";
     case "plan": return "饮食计划";
+    case "rec": return "推荐这一餐";
   }
 }
 
@@ -166,6 +169,7 @@ export function EatSection({ compact = false, refresh = 0 }: { compact?: boolean
       case "meal": return <MealDetail meal={sheet.meal} done={done} />;
       case "how": return <HowTarget metrics={metrics} />;
       case "plan": return <PlanEdit initial={sheet.plan} onChanged={setPlan} />;
+      case "rec": return <RecommendMeal done={(d) => done(d, "记下了推荐的这一餐")} />;
     }
   })();
 
@@ -192,6 +196,7 @@ export function EatSection({ compact = false, refresh = 0 }: { compact?: boolean
           onPick={() => open({ type: "pick", kind: null })}
           onPhoto={(photo) => open({ type: "photo", kind: null, photo })}
         />
+        <Button kind="ghost" small title="不知道吃什么？推荐这一餐" onPress={() => open({ type: "rec" })} />
       </Panel>
       <TodayPlan
         day={day}

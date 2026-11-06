@@ -15,7 +15,8 @@ import { checkLive, LiveEntry, startLive } from "@/features/live/start";
 
 import { askCoach, Fig, Fold, Thumb, useFlash, WeekDots } from "./bits";
 import { DoneSheet, RestSheet } from "./checkin";
-import { TodayVersion } from "./today-version";
+import { heroLine, withCoach } from "./today-logic";
+import { TodayVersion, useToday } from "./today-version";
 import { clean, type TodayCard, todayCard, weekDots } from "./train-logic";
 import type { Brief, Library, Session, TrainImages, Training, Week } from "./types";
 
@@ -28,6 +29,7 @@ export function TrainSection() {
   const [done, setDone] = useState<{ name: string; version: Session | null } | null>(null);
   const [rest, setRest] = useState(false);
   const [flash, show] = useFlash();
+  const today = useToday();  // 管家定的今天（§163）：大卡片上一行提示和"更多"里共用
 
   const load = useCallback(async () => {
     const [brief, tr, week, lib, photos, live] = await Promise.all([
@@ -57,7 +59,7 @@ export function TrainSection() {
   };
 
   if (!d) return <Note>正在读今天的训练…</Note>;
-  const card = todayCard(d.brief, d.tr, d.week, d.lib, d.photos?.images || {});
+  const card = todayCard(d.brief, d.tr, withCoach(d.week, today.shown), d.lib, d.photos?.images || {});  // 管家调整过就列调整后的
   const dots = weekDots(d.brief);
   const alerts = d.brief?.alerts || [];
   return (
@@ -83,6 +85,7 @@ export function TrainSection() {
             </View>
           </View>
           <WeekBar w={dots} />
+          <CoachLine today={today} />
           <View style={s.list}>
             {card.rows.map((it, i) => (
               <View key={`${it.exercise}-${i}`} style={[s.row, i > 0 && s.rowLine]}>
@@ -108,7 +111,7 @@ export function TrainSection() {
                   {card.warmup.steps.map((x, i) => <Text key={i} style={s.p}>{`${i + 1}. ${clean(x)}`}</Text>)}
                 </Fold>
               ) : null}
-              <TodayVersion lib={d.lib} targets={d.tr?.targets || {}} onCheckin={(name, version) => setDone({ name, version })} />
+              <TodayVersion today={today} lib={d.lib} targets={d.tr?.targets || {}} onCheckin={(name, version) => setDone({ name, version })} />
               <LinkButton title="完整计划 ›" onPress={() => router.push("/plan")} />
             </View>
           ) : null}
@@ -125,6 +128,18 @@ export function TrainSection() {
         onRest={() => { setDone(null); setRest(true); }}
       />
       <RestSheet open={rest} onClose={() => setRest(false)} onDone={finished} />
+    </View>
+  );
+}
+
+/** 大卡片上一行（同网页 heroCoach，§163）：IronM 正在看 / 出错了（带重试）/ 调整了今天 / 今天休息。 */
+function CoachLine({ today }: { today: ReturnType<typeof useToday> }) {
+  const line = heroLine(today.shown);
+  if (!line) return null;
+  return (
+    <View style={[s.coach, line.tone === "error" && s.coachErr]} accessibilityLiveRegion="polite">
+      <Text style={[s.coachText, line.tone === "error" && s.coachTextErr]}>{clean(line.text)}</Text>
+      {line.tone === "error" ? <Button small title="重试" onPress={() => void today.retry()} /> : null}
     </View>
   );
 }
@@ -207,6 +222,10 @@ function Hero({ card, dots, onRetry }: { card: TodayCard; dots: ReturnType<typeo
 }
 
 const s = StyleSheet.create({
+  coach: { flexDirection: "row", alignItems: "center", gap: space.s, backgroundColor: color.paperLight, borderRadius: 12, padding: space.s },
+  coachErr: { backgroundColor: color.heatSoft },
+  coachText: { flex: 1, color: color.ink, fontSize: 13, lineHeight: 19 },
+  coachTextErr: { color: color.heat },
   quest: { padding: 18, gap: 14 },
   questTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: space.s },
   questTitle: { flex: 1, fontSize: 22, lineHeight: 28 },

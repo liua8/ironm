@@ -505,8 +505,23 @@ function trainCard(brief, tr, week, lib, photos = {}) {
   const parts = [...new Set(v.items.map((it) => partOf(lib, it.exercise)).filter(Boolean))].slice(0, 3);
   const coachNote = h("div", { class: "today-coach", role: "status", hidden: true });  // 管家对今天的说法（§163）
   const planned = Object.fromEntries(today.session.items.map((it) => [it.exercise, it.sets]));  // 被减掉的组（§121 需求 4）
+  const list = h("ol", { class: "quest-list" });
+  let shownVersion = today.version || null;  // 直接打卡带上的版本：管家调整过就是调整后的
+  const drawList = (items) => list.replaceChildren(...items.map((it, i) => {
+    const cut = (planned[it.exercise] || 0) - (it.sets || 0);
+    return h("li", {}, h("span", { class: "q-no" }, String(i + 1)),
+      h("span", { class: "q-name" }, it.exercise, it.load || cut > 0
+        ? h("small", { class: cut > 0 ? "move-cut" : "" }, [it.load, cut > 0 ? `比计划少 ${cut} 组` : ""].filter(Boolean).join("，")) : null),
+      h("span", { class: `q-sets${/自重|力竭/.test(`${it.load}${it.reps}`) ? " hot" : ""}` }, setsLine(it, lib)));
+  }));
+  drawList(v.items);
+  // 管家定的今天（§163）：调整过就把动作表换成调整后的，和上面那一行说法一致
+  const onToday = (tv, ctl) => {
+    heroCoach(coachNote, tv, ctl);
+    if (tv.status === "ok" && tv.changed && tv.today) { drawList(tv.today.items); shownVersion = tv.today; }
+  };
   const detail = h("div", { class: "hc-detail", hidden: true },
-    todayVersion(today.session, { compact: true, onStatus: (tv, ctl) => heroCoach(coachNote, tv, ctl) }),
+    todayVersion(today.session, { compact: true, onStatus: onToday }),
     h("a", { class: "link hc-more", href: "#plan" }, "完整计划", icon("chevron", "xs")));
   const toggle = h("button", { class: "link hc-toggle", type: "button", "aria-expanded": "false" }, "更多");
   toggle.addEventListener("click", () => {
@@ -522,15 +537,9 @@ function trainCard(brief, tr, week, lib, photos = {}) {
         h("span", { class: "tag green" }, "完成 +1 颗星"))),
     weekBar(brief),
     coachNote,
-    h("ol", { class: "quest-list" }, v.items.map((it, i) => {
-      const cut = (planned[it.exercise] || 0) - (it.sets || 0);
-      return h("li", {}, h("span", { class: "q-no" }, String(i + 1)),
-        h("span", { class: "q-name" }, it.exercise, it.load || cut > 0
-          ? h("small", { class: cut > 0 ? "move-cut" : "" }, [it.load, cut > 0 ? `比计划少 ${cut} 组` : ""].filter(Boolean).join("，")) : null),
-        h("span", { class: `q-sets${/自重|力竭/.test(`${it.load}${it.reps}`) ? " hot" : ""}` }, setsLine(it, lib)));
-    })),
+    list,
     h("button", { class: "btn block go", type: "button", onclick: () => startLive({ today_plan: true }) }, icon("play", "sm"), liveNow ? "继续训练" : "开始训练"),
-    h("button", { class: "btn ghost block", type: "button", onclick: () => doneSheet(v.name, today.version || null) }, "已经练完了，直接打卡"),
+    h("button", { class: "btn ghost block", type: "button", onclick: () => doneSheet(v.name, shownVersion) }, "已经练完了，直接打卡"),
     h("div", { class: "quest-foot" }, today.warmup ? h("span", { class: "muted" }, `先热身约 ${today.warmup.minutes} 分钟`) : h("span"), toggle),
     detail);
 }

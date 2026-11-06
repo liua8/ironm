@@ -9,7 +9,7 @@ import { Button } from "@/ui/pixel";
 import { color, space } from "@/ui/theme";
 
 import { errorText } from "./api";
-import { CARD_STATE, type CardRef, cardExpired } from "./model";
+import { CARD_STATE, type CardRef, cardExpired, TEMP_RULE } from "./model";
 import { cleanText } from "./text";
 
 type DraftState = { draft: { state: string } };
@@ -35,6 +35,7 @@ export function PreviewCard({ card }: { card: CardRef }) {
   const now = state || "pending";
   const expired = cardExpired(d, now);
   const plan = card.kind === "plan";
+  const temp = card.kind === "temp";  // 临时调整（§163）：这几天这样练，到期回到原计划
   const c = (t: string | undefined) => cleanText(t ?? "");
 
   const act = async (action: "confirm" | "cancel" | "undo") => {
@@ -43,7 +44,7 @@ export function PreviewCard({ card }: { card: CardRef }) {
     try {
       const r = await api<DraftState>(`/iron/api/drafts/${encodeURIComponent(card.draft)}/${action}`, { method: "POST", json: {} });
       setState(r.draft?.state || now);
-      if (plan) void syncTrainingReminder(); // 确认或撤销了改计划：训练日提醒跟着计划走
+      if (plan || temp) void syncTrainingReminder(); // 确认或撤销了改计划：训练日提醒跟着计划走
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -101,24 +102,26 @@ export function PreviewCard({ card }: { card: CardRef }) {
   else if (now === "pending" && !expired)
     actions = (
       <>
-        <Button small title={plan ? "确认，保存计划" : "确认，记下"} disabled={busy} onPress={() => act("confirm")} />
+        <Button small title={temp ? "确认，这几天这样练" : plan ? "确认，保存计划" : "确认，记下"} disabled={busy} onPress={() => act("confirm")} />
         <Button small kind="ghost" title="取消" disabled={busy} onPress={() => act("cancel")} />
       </>
     );
   else if (now === "confirmed")
     actions = (
       <>
-        <Text style={[s.chip, s.chipGood]}>{plan ? "计划已保存" : "已记下"}</Text>
+        <Text style={[s.chip, s.chipGood]}>{temp ? "已生效，到期回到原计划" : plan ? "计划已保存" : "已记下"}</Text>
         <Button small kind="ghost" title="撤销" disabled={busy} onPress={() => act("undo")} />
       </>
     );
-  else actions = <Text style={s.chip}>{expired ? "已过期，让 IronM 重新生成" : CARD_STATE[now] || now}</Text>;
+  else actions = <Text style={s.chip}>{expired ? (temp ? "已作废：过了开始日期还没确认" : "已过期，让 IronM 重新生成") : temp && now === "undone" ? "已撤销，回到原计划" : CARD_STATE[now] || now}</Text>;
 
   return (
     <View style={[s.card, now === "confirmed" && s.cardOk, (now === "cancelled" || now === "undone") && s.cardOff]}>
       <Text style={s.title}>{c(d.title)}</Text>
       {d.headline ? <Text style={s.muted}>{c(d.headline)}</Text> : null}
       {body}
+      {temp && now === "pending" && !expired ? <Text style={s.muted}>{`${TEMP_RULE}没确认的过了开始日期就作废。`}</Text> : null}
+      {temp && now === "confirmed" ? <Text style={s.muted}>到了结束日期自动回到原计划，也可以提前撤销。</Text> : null}
       <View style={s.actions}>{actions}</View>
       {error ? <Text style={s.note}>{error}</Text> : null}
     </View>

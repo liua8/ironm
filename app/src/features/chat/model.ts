@@ -126,14 +126,34 @@ export function progressHead(msg: CoachMsg): string {
 // ---- 管家消息（§26）和周报消息（§147）--------------------------------------------------------
 
 export type InboxChange = { key: string; kind: string; change: string; before?: string; after?: string; why?: string; status?: string };
-export type InboxPending = { key: string; kind: string; title: string; why?: string; value?: { trigger?: string } | null };
+export type InboxPending = { key: string; kind: string; title: string; why?: string; value?: { trigger?: string; draft?: string; temp?: boolean } | null };
 export type Inbox = { version: number | string; changes: InboxChange[]; pending: InboxPending[] };
 
 export const INBOX_WORD: Record<string, string> = { added: "新", changed: "调整", removed: "解除" };
 
-/** 管家消息里列出来的调整：训练目标那类不列，最多三条。 */
+/** 管家消息里列出来的调整：训练目标那类不列；"今天"那类只列自动生效的（"正在看""出错了"不是调整，§163），最多三条。 */
 export function inboxShown(r: Inbox): InboxChange[] {
-  return r.changes.filter((c) => c.kind !== "target").slice(0, 3);
+  return r.changes.filter((c) => c.kind !== "target" && (c.kind !== "today" || c.status === "auto")).slice(0, 3);
+}
+
+// ---- 临时调整（§163 需求 2，同网页 tempSpan / tempBody）：这几天这样练，到期回到原计划 ----
+export type Temp = { start: string; end: string; why?: string; lines?: string[] };
+export type Draft = { id: string; kind: string; state: string; expired?: boolean; expires?: string; title?: string; headline?: string; items?: string[]; temp?: Temp | null };
+export const TEMP_RULE = "这几天这样练，到期自动回到原计划；点确认才生效，确认后也能提前撤销。";
+const md = (iso: string) => {
+  const [, m, d] = iso.split("-").map(Number);
+  return `${m}月${d}日`;
+};
+/** 11月6日到11月8日这样练，到期回到原计划（只有一天时写那一天）。 */
+export function tempSpan(t: Temp): string {
+  return `${t.start === t.end ? md(t.start) : `${md(t.start)}到${md(t.end)}`}这样练，到期回到原计划`;
+}
+/** 待确认的预览已经不能确认时怎么说（同网页 coachCard 的待确认行）。 */
+export function draftClosed(d: Draft): string {
+  if (d.state === "pending" && d.expired) return "没确认，已经作废了；想调可以再跟 IronM 说。";
+  if (d.state === "confirmed") return "已经确认过了。";
+  if (d.state !== "pending") return "已经处理过了。";
+  return "";
 }
 
 export function inboxEmpty(r: Inbox | null | undefined): boolean {

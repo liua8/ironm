@@ -66,3 +66,62 @@ it("does not show 去填模型 under ordinary answers", async () => {
   await render(<Message msg={m} onRate={jest.fn()} />);
   expect(screen.queryByText("去填模型")).toBeNull();
 });
+
+const tempDraft = (state: string, expired = false) => ({
+  draft: { id: "t1", kind: "temp", state, expired, items: ["杠铃卧推 换成 哑铃卧推"], temp: { start: "2026-11-07", end: "2026-11-09", why: "出差只有哑铃", lines: ["杠铃卧推 换成 哑铃卧推", "周五 腿 先停"] } },
+});
+
+it("§163: 好 on a preview really confirms it, then can be undone", async () => {
+  mockApi.mockImplementation(async (path: string) => {
+    if (path === "/iron/api/drafts/t1") return tempDraft("pending");
+    if (path.endsWith("/confirm")) return tempDraft("confirmed");
+    if (path.endsWith("/undo")) return tempDraft("undone");
+    return {};
+  });
+  await render(<InboxMsg inbox={{ version: 1, changes: [], pending: [{ key: "review:temp", kind: "proposal", title: "这几天临时这样练", value: { draft: "t1", temp: true } }] }} />);
+  expect(await screen.findByText("11月7日到11月9日这样练，到期回到原计划")).toBeTruthy();
+  expect(screen.getByText("• 周五 腿 先停")).toBeTruthy();
+  expect(screen.getByText("为什么：出差只有哑铃")).toBeTruthy();
+  await fireEvent.press(screen.getByText("好"));
+  const calls = mockApi.mock.calls.map((c) => c[0]);
+  expect(calls.indexOf("/iron/api/drafts/t1/confirm")).toBeLessThan(calls.indexOf("/iron/api/coach/decide"));
+  expect(mockApi).toHaveBeenCalledWith("/iron/api/coach/decide", { method: "POST", json: { key: "review:temp", decision: "accept" } });
+  expect(await screen.findByText("已生效，到期回到原计划。")).toBeTruthy();
+  await fireEvent.press(screen.getByText("撤销"));
+  expect(await screen.findByText("已撤销，回到原计划。")).toBeTruthy();
+});
+
+it("§163: an expired preview says so and offers no button", async () => {
+  mockApi.mockImplementation(async () => tempDraft("pending", true));
+  await render(<InboxMsg inbox={{ version: 1, changes: [], pending: [{ key: "review:temp", kind: "proposal", title: "这几天临时这样练", value: { draft: "t1", temp: true } }] }} />);
+  expect(await screen.findByText("没确认，已经作废了；想调可以再跟 IronM 说。")).toBeTruthy();
+  expect(screen.queryByText("好")).toBeNull();
+});
+
+it("§163: a 'today' change that is not automatic (e.g. coach error) is not listed", async () => {
+  mockApi.mockResolvedValue({});
+  await render(<InboxMsg inbox={{ version: 1, pending: [], changes: [
+    { key: "today", kind: "today", change: "changed", after: "IronM 出错了，还没看今天的情况", status: "info" },
+    { key: "today2", kind: "today", change: "changed", after: "今天按七成练", status: "auto" },
+  ] }} />);
+  expect(screen.queryByText(/出错了/)).toBeNull();
+  expect(screen.getByText("今天按七成练")).toBeTruthy();
+});
+
+it("§163: a temp card in an answer reads as 'these days, then back to the plan'", async () => {
+  mockApi.mockImplementation(async (path: string) => (path.endsWith("/confirm") ? { draft: { state: "confirmed" } } : { draft: { state: "pending" } }));
+  let m = coachMsg("k2");
+  for (const b of [
+    { type: "start", id: "r3" },
+    { type: "text", text: "出差这几天先这样练。" },
+    { type: "tool_call", id: "card-t2", args: { kind: "temp", draft: "t2" } },
+    { type: "tool_result", tool_call_id: "card-t2", content: JSON.stringify({ title: "临时调整", headline: "11月7日到11月9日这样练", items: ["杠铃卧推 换成 哑铃卧推"], expires: "2099-01-01T00:00:00+08:00" }) },
+    { type: "end" },
+  ])
+    m = applyBlock(m, b);
+  await render(<Message msg={m} onRate={jest.fn()} />);
+  expect(await screen.findByText("确认，这几天这样练")).toBeTruthy();
+  expect(screen.getByText(/到期自动回到原计划；点确认才生效/)).toBeTruthy();
+  await fireEvent.press(screen.getByText("确认，这几天这样练"));
+  expect(await screen.findByText("已生效，到期回到原计划")).toBeTruthy();
+});
