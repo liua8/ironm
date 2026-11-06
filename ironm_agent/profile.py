@@ -11,6 +11,7 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ironm_agent.ddl import run_ddl
 from ironm_agent.metrics import ACTIVITY, GOALS, Activity, Goal, Profile, Sex
 
 _log = logging.getLogger("ironm_agent.profile")
@@ -52,7 +53,7 @@ async def _q(sql: str, params: dict[str, Any] | None = None) -> list[dict[str, A
 async def _ensure() -> None:
     global _ready
     if not _ready:
-        await _q(DDL)
+        await run_ddl(DDL, execute=_q)
         _ready = True
 
 

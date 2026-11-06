@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from itertools import pairwise
 from typing import Any, Literal
 
+from ironm_agent.ddl import run_ddl
+
 _log = logging.getLogger("ironm_agent.weather")
 
 GEO_URL = "https://geocoding-api.open-meteo.com/v1/search"
@@ -461,7 +463,7 @@ async def _q(sql: str, params: dict[str, Any] | None = None) -> list[dict[str, A
 
     global _ready
     if not _ready:
-        await execute_query(DDL, {}, log_sql=False)
+        await run_ddl(DDL)
         _ready = True
     rows = await execute_query(sql, params or {}, log_sql=False)
     return rows if isinstance(rows, list) else []

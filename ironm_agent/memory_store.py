@@ -16,6 +16,8 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal, Protocol, cast
 
+from ironm_agent.ddl import run_ddl
+
 _log = logging.getLogger("ironm_agent.memory_store")
 
 type Category = Literal[
@@ -324,8 +326,7 @@ class PgMemory:
         from mirobody.utils.db import execute_query
 
         if not self._ready:
-            for ddl in DDL:
-                await execute_query(ddl, {}, log_sql=False)
+            await run_ddl(*DDL)
             self._ready = True
         rows = await execute_query(sql, params or {}, log_sql=False)
         return rows if isinstance(rows, list) else []

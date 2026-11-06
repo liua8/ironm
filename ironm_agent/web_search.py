@@ -17,6 +17,7 @@ from datetime import date
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
+from ironm_agent.ddl import run_ddl
 from ironm_agent.kb import Entry, Point
 
 _log = logging.getLogger("ironm_agent.web_search")
@@ -185,7 +186,7 @@ class PgWebLog:
         from mirobody.utils.db import execute_query
 
         if not self._ready:
-            await execute_query(DDL, {}, log_sql=False)
+            await run_ddl(DDL)
             self._ready = True
         rows = await execute_query(sql, params, log_sql=False)
         return rows if isinstance(rows, list) else []

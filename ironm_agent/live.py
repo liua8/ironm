@@ -16,6 +16,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ironm_agent.ddl import run_ddl
 from ironm_agent.exercises import library
 from ironm_agent.progression import Decided, coach_target, history
 from ironm_agent.training import LogItem, Plan, SetDone, WorkoutLog
@@ -119,7 +120,7 @@ class PgLive:
         from mirobody.utils.db import execute_query
 
         if not self._ready:
-            await execute_query(DDL, {}, log_sql=False)
+            await run_ddl(DDL)
             self._ready = True
         rows = await execute_query(sql, params, log_sql=False)
         return rows if isinstance(rows, list) else []

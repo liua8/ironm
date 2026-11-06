@@ -16,6 +16,7 @@ from typing import Any, Literal, Protocol
 from pydantic import BaseModel, Field
 
 from ironm_agent.casefile import said
+from ironm_agent.ddl import run_ddl
 from ironm_agent.training import PlanEdit
 
 _log = logging.getLogger("ironm_agent.day_state")
@@ -225,7 +226,7 @@ class PgDay:
         from mirobody.utils.db import execute_query
 
         if not self._ready:
-            await execute_query(DDL, {}, log_sql=False)
+            await run_ddl(DDL)
             self._ready = True
         rows = await execute_query(sql, params, log_sql=False)
         return rows if isinstance(rows, list) else []

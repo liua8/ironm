@@ -28,6 +28,7 @@ from pydantic import (
     model_validator,
 )
 
+from ironm_agent.ddl import run_ddl
 from ironm_agent.memory_extract import digits
 from ironm_agent.numbers import written_numbers
 
@@ -694,11 +695,8 @@ class PgTraining:
         self._ready = False
 
     async def _ready_tables(self) -> None:
-        from mirobody.utils.db import execute_query
-
         if not self._ready:
-            for ddl in DDL:
-                await execute_query(ddl, {}, log_sql=False)
+            await run_ddl(*DDL)
             self._ready = True
 
     async def _q(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:

@@ -23,6 +23,7 @@ from typing import Any, Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ironm_agent.common import ContractModel
+from ironm_agent.ddl import run_ddl
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
 from ironm_agent.yamlfile import load_yaml
 
@@ -541,8 +542,7 @@ class PgMeals:
         from mirobody.utils.db import execute_query
 
         if not self._ready:
-            await execute_query(DDL, {}, log_sql=False)
-            await execute_query(INDEX, {}, log_sql=False)
+            await run_ddl(DDL, INDEX)
             self._ready = True
         rows = await execute_query(sql, params or {}, log_sql=False)
         return rows if isinstance(rows, list) else []

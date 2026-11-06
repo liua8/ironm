@@ -8,6 +8,8 @@ from __future__ import annotations
 import base64
 from typing import Any, Protocol
 
+from ironm_agent.ddl import run_ddl
+
 
 class PhotoStore(Protocol):
     async def put(self, user_id: str, workout_id: str, data: bytes, mime: str) -> None: ...
@@ -57,7 +59,7 @@ class PgPhotos:
         from mirobody.utils.db import execute_query
 
         if not self._ready:
-            await execute_query(DDL, {}, log_sql=False)
+            await run_ddl(DDL)
             self._ready = True
         rows = await execute_query(sql, params or {}, log_sql=False)
         return rows if isinstance(rows, list) else []

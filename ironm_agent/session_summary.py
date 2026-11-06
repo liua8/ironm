@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Protocol
 
+from ironm_agent.ddl import run_ddl
 from ironm_agent.llm import LLM, ModelUnavailable, parse_json
 from ironm_agent.memory_extract import MAX_CONTENT, norm, until_of
 from ironm_agent.memory_store import Change, Item, new_id, now
@@ -84,7 +85,7 @@ class PgSummary:
         from mirobody.utils.db import execute_query
 
         if not self._ready:
-            await execute_query(DDL, {}, log_sql=False)
+            await run_ddl(DDL)
             self._ready = True
         rows = await execute_query(sql, params, log_sql=False)
         return rows if isinstance(rows, list) else []

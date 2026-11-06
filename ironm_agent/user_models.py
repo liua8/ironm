@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
 
+from ironm_agent.ddl import run_ddl
 from ironm_agent.llm import LLM, ModelsConfig, Reply, StageModel, TurnLLM, _request, load_models
 
 _log = logging.getLogger(__name__)
@@ -151,8 +152,7 @@ class PgModels:
         from mirobody.utils.db import execute_query
 
         if not self._ready:
-            for ddl in DDL:
-                await execute_query(ddl, {}, log_sql=False)
+            await run_ddl(*DDL)
             self._ready = True
         rows = await execute_query(sql, params, log_sql=False)
         return rows if isinstance(rows, list) else []

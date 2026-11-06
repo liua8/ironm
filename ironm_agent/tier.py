@@ -14,6 +14,7 @@ from datetime import date, datetime
 from difflib import SequenceMatcher
 from typing import Any, Protocol
 
+from ironm_agent.ddl import run_ddl
 from ironm_agent.exercises import library
 
 TIERS: tuple[tuple[str, str], ...] = (
@@ -188,9 +189,7 @@ class PgTier:
         from mirobody.utils.db import execute_query
 
         if not self._ready:
-            for stmt in DDL.split(";"):
-                if stmt.strip():
-                    await execute_query(stmt, {}, log_sql=False)
+            await run_ddl(*DDL.split(";"))
             self._ready = True
         rows = await execute_query(sql, params, log_sql=False)
         return rows if isinstance(rows, list) else []

@@ -19,6 +19,8 @@ from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise
 from typing import Any, Literal, Protocol
 
+from ironm_agent.ddl import run_ddl
+
 _log = logging.getLogger("ironm_agent.harness")
 
 RETAIN_DAYS = 180
@@ -338,9 +340,7 @@ class PgTrace:
         from mirobody.utils.db import execute_query
 
         if not self._ready:
-            for stmt in DDL.split(";"):
-                if stmt.strip():
-                    await execute_query(stmt, {}, log_sql=False)
+            await run_ddl(*DDL.split(";"))
             self._ready = True
         rows = await execute_query(sql, params, log_sql=False)
         return rows if isinstance(rows, list) else []

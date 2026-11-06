@@ -17,6 +17,7 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from ironm_agent.ddl import run_ddl
 from ironm_agent.foods import OIL_ID, Per100, by_id, foods
 from ironm_agent.meals import FoodLine, Macros, Meal, MealKind, food_line, meal_from
 from ironm_agent.yamlfile import load_yaml
@@ -192,7 +193,7 @@ class PgDiet:
         from mirobody.utils.db import execute_query
 
         if not self._ready:
-            await execute_query(DDL, {}, log_sql=False)
+            await run_ddl(DDL)
             self._ready = True
         rows = await execute_query(sql, params, log_sql=False)
         return rows if isinstance(rows, list) else []

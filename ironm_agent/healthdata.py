@@ -161,11 +161,42 @@ async def raw_daily(user_id: str, indicator: str, start: date, end: date) -> tup
     return tuple(sorted(out))
 
 
+async def manual_weight(user_id: str, start: date, end: date) -> tuple[Point, ...]:
+    """手动记的体重，按本地日期每天取平均（spec §186）。
+
+    手动记的体重存进 mirobody 后，按天汇总的数后台约一小时才算一次；指标只读汇总的数时，新用户填完体重
+    最长要等一小时才算得出热量目标。这里直接读记录（和「身体数据」里列出来的同一个查询，改正、删除照
+    mirobody 的规矩），同一天和汇总的数一起合并时以这里为准。只认公斤。"""
+    from ironm_agent.readings import default_readings
+
+    rows = await default_readings().recent(user_id, "weight", limit=60)
+    by_day: dict[date, list[float]] = {}
+    for r in rows:
+        if str(r.get("unit") or "kg").strip().lower() not in ("kg", "公斤"):
+            continue
+        value = _num(r.get("value"))
+        try:
+            day = date.fromisoformat(str(r.get("day"))[:10])
+        except ValueError:
+            continue
+        if value is not None and start <= day <= end:
+            by_day.setdefault(day, []).append(value)
+    return tuple(sorted((d, sum(v) / len(v)) for d, v in by_day.items()))
+
+
+def _num(text: Any) -> float | None:
+    try:
+        return float(str(text).strip())
+    except ValueError:
+        return None
+
+
 async def read_all(
     svc: Any,
     user_id: str,
     today: date,
     raw: Callable[[str, str, date, date], Awaitable[tuple[Point, ...]]] = raw_daily,
+    manual: Callable[[str, date, date], Awaitable[tuple[Point, ...]]] = manual_weight,
 ) -> Readings:
     """读全部数据；某一项读不到时记下来，其余照常。"""
     who = {"user_id": user_id}
@@ -189,8 +220,19 @@ async def read_all(
             found[key].append(await raw(user_id, indicator, start, today))
         except Exception as e:
             _log.warning("raw series unavailable: key=%s error_type=%s", key, type(e).__name__)
-    errors = [k for k, n in failures.items() if n == len(names[k]) and not any(found[k])]
+    try:  # 刚手动记的体重：不等后台按天汇总（§186）
+        mine = await manual(user_id, start, today)
+    except Exception as e:
+        _log.warning("manual weight unavailable: error_type=%s", type(e).__name__)
+        mine = ()
+    errors = [
+        k
+        for k, n in failures.items()
+        if n == len(names[k]) and not any(found[k]) and not (k == "weight" and mine)
+    ]
     got = {k: merge(v) for k, v in found.items()}
+    if mine:  # 同一天以手动记的为准
+        got["weight"] = tuple(sorted({**dict(got["weight"]), **dict(mine)}.items()))
     sleep_names = candidates(catalog, SLEEP)
     sleep_parts = await asyncio.gather(
         *(_series(svc, who, n, start, today, _TO_HOURS) for n in sleep_names),

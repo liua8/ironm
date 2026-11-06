@@ -22,6 +22,7 @@ from typing import Any, Literal, Protocol
 from pydantic import BaseModel, Field
 
 from ironm_agent.casefile import Snapshot
+from ironm_agent.ddl import run_ddl
 from ironm_agent.metrics import KcalAdjust
 from ironm_agent.training import Plan, WorkoutLog, weekday_name
 
@@ -480,8 +481,7 @@ class PgCoach:
         from mirobody.utils.db import execute_query
 
         if not self._ready:
-            for ddl in DDL:
-                await execute_query(ddl, {}, log_sql=False)
+            await run_ddl(*DDL)
             self._ready = True
         rows = await execute_query(sql, params, log_sql=False)
         return rows if isinstance(rows, list) else []

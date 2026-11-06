@@ -11,6 +11,7 @@ from datetime import date
 from typing import Any, Protocol
 
 from ironm_agent.body import muscle_codes
+from ironm_agent.ddl import run_ddl
 from ironm_agent.protools.recovery import Feel
 
 # 打卡时点的"哪里酸"（§105）对应的肌肉：记进同一份肌肉酸痛，人体图和恢复估算照顾到
@@ -91,9 +92,7 @@ class PgFeel:
         from mirobody.utils.db import execute_query
 
         if not self._ready:
-            for stmt in DDL.split(";"):
-                if stmt.strip():
-                    await execute_query(stmt, {}, log_sql=False)
+            await run_ddl(*DDL.split(";"))
             self._ready = True
         rows = await execute_query(sql, params, log_sql=False)
         return rows if isinstance(rows, list) else []
