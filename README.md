@@ -6,18 +6,20 @@
 
 **Your AI fitness coach: training, food and sleep, seen together and planned together.**
 
-Open source · Runs on your own computer · Uses your own LLM
+Open source · Use it online or run it yourself · Uses your own LLM
+
+**👉 Try it now: <https://test-ironm.mirobody.ai>** (no install, works in a phone browser)
 
 **English** · [简体中文](README.zh-CN.md)
 
-[![Stars](https://img.shields.io/github/stars/liua8/ironm?style=flat&logo=github)](https://github.com/liua8/ironm/stargazers)
-[![Last commit](https://img.shields.io/github/last-commit/liua8/ironm)](https://github.com/liua8/ironm/commits/main)
+[![Stars](https://img.shields.io/github/stars/thetahealth/mirobody-ironm?style=flat&logo=github)](https://github.com/thetahealth/mirobody-ironm/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/thetahealth/mirobody-ironm)](https://github.com/thetahealth/mirobody-ironm/commits/main)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.13-3776AB.svg?logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/docker-compose-2496ED.svg?logo=docker&logoColor=white)
 [![Built on mirobody](https://img.shields.io/badge/built%20on-mirobody-6f42c1.svg)](https://github.com/thetahealth/mirobody)
 
-[Features](#-what-it-does) · [Screenshots](#-screenshots) · [Install](#-quick-start) · [FAQ](#-faq)
+[Features](#-what-it-does) · [Screenshots](#-screenshots) · [Try it](#-quick-start) · [FAQ](#-faq)
 
 <img src="docs/readme/live.png" width="190" alt="Workout logger" />
 <img src="docs/readme/diet-library.png" width="190" alt="Diet plan library" />
@@ -141,12 +143,23 @@ Five tabs at the bottom: Home, IronM, Library, Records, Me. The mobile app in pr
 
 ## 🚀 Quick start
 
-You need a computer and an LLM API key. DeepSeek, Qwen, Zhipu, Doubao, Kimi and OpenAI all work, as does anything with an OpenAI-compatible API. A few yuan of DeepSeek credit lasts a long time.
+### 🌐 Use it online (nothing to install)
+
+1. Open <https://test-ironm.mirobody.ai> on your phone or computer
+2. Sign up with your email (you'll get a verification code), then enter your height, date of birth and weight
+3. Under "Me → Model and API", enter your own LLM API key. DeepSeek, Qwen, Zhipu, Doubao, Kimi and OpenAI all work, as does anything with an OpenAI-compatible API; a few yuan of DeepSeek credit lasts a long time. Without a key you can still log workouts and meals and browse the libraries; you just can't ask IronM
+4. Tell it: "I want to start training, three times a week, at the gym."
+
+This is a test deployment: it gets updated often and may have rough edges. Keep your own notes of anything you can't afford to lose. On a phone, use "Add to Home Screen" to open it like an app.
+
+### 🖥️ Run it yourself (optional)
+
+If you'd rather keep all your data on your own computer, run your own copy. You need a computer and an LLM API key.
 
 🐳 **With Docker** (Windows, macOS, Linux)
 
 ```bash
-git clone https://github.com/liua8/ironm.git iron-m && cd iron-m
+git clone https://github.com/thetahealth/mirobody-ironm.git iron-m && cd iron-m
 docker compose up -d
 ```
 
@@ -155,7 +168,7 @@ docker compose up -d
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh   # skip if you already have uv; reopen the terminal afterwards
 git lfs install
-git clone https://github.com/liua8/ironm.git iron-m && cd iron-m
+git clone https://github.com/thetahealth/mirobody-ironm.git iron-m && cd iron-m
 scripts/start.sh
 ```
 
@@ -179,9 +192,9 @@ The backend is Python 3.13 + FastAPI + PostgreSQL (pgvector), running as a plugi
 
 **💰 Does it cost anything?** IronM is free. Model costs go through your own account; with DeepSeek, a question costs about one fen (well under one US cent).
 
-**📱 Can I use it on my phone?** For now it runs on a computer and you open it in a browser; the pages are designed for phone screens. A mobile app is in progress.
+**📱 Can I use it on my phone?** Yes: open <https://test-ironm.mirobody.ai> in your phone's browser; the pages are designed for phone screens. A native app is in progress (the code is in `app/`; it hasn't been released yet).
 
-**🔒 Is my data uploaded anywhere?** No. Your data stays in a database on your own computer, with sensitive content encrypted. Only your questions and the photos you take are sent to the model provider you configured. The weather lookup only sends coordinates rounded to about 1 km.
+**🔒 Where is my data?** On the online version, it's stored in the test server's database, with sensitive content encrypted. If you run it yourself, it stays in a database on your own computer. Either way, only your questions and the photos you take are sent to the model provider you configured, and the weather lookup only sends coordinates rounded to about 1 km.
 
 **🩺 Can it replace a coach or doctor?** No. Treat it as advice only. If you have a chronic condition, are pregnant or are injured, check with a doctor before you start. If you get chest pain, dizziness or shortness of breath while exercising, stop and get medical help right away.
 
@@ -201,11 +214,11 @@ The health data foundation comes from [mirobody](https://github.com/thetahealth/
 
 ## 🤝 Contributing
 
-[Issues](https://github.com/liua8/ironm/issues) are welcome: tell us what works well, what feels awkward, or what you'd like to see. Pull requests are welcome too. For bigger changes, please open an issue first to discuss the direction.
+[Issues](https://github.com/thetahealth/mirobody-ironm/issues) are welcome: tell us what works well, what feels awkward, or what you'd like to see. Pull requests are welcome too. For bigger changes, please open an issue first to discuss the direction.
 
 ## ⭐ Star history
 
-[![Star History Chart](https://api.star-history.com/svg?repos=liua8/ironm&type=Date)](https://star-history.com/#liua8/ironm&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=thetahealth/mirobody-ironm&type=Date)](https://star-history.com/#thetahealth/mirobody-ironm&Date)
 
 ## 📄 License
 

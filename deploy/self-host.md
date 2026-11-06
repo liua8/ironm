@@ -1,6 +1,8 @@
 # 在自己电脑上用 IronM（网页版）
 
-还没有大家共用的服务器，所以每个人在自己电脑上跑一份 IronM，用浏览器打开网页版（spec §177）。有两种跑法，选一种：
+**只是想用的话，不用看这份**：直接打开 <https://test-ironm.mirobody.ai> 注册就能用，手机浏览器也行。
+
+这份是给想把数据只留在自己电脑上、自己跑一份 IronM 的人看的。有两种跑法，选一种：
 
 | | 用 Docker（[跳到这一节](#用-docker-跑)） | 用脚本（下面第 1–7 步） |
 |---|---|---|
@@ -52,7 +54,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ## 3. 拿代码
 
 ```bash
-git clone https://github.com/liua8/ironm.git iron-m
+git clone https://github.com/thetahealth/mirobody-ironm.git iron-m
 cd iron-m
 ```
 
@@ -140,7 +142,7 @@ docker compose version
 ### 2. 拿代码
 
 ```bash
-git clone https://github.com/liua8/ironm.git iron-m
+git clone https://github.com/thetahealth/mirobody-ironm.git iron-m
 cd iron-m
 ```
 
