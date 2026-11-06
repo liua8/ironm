@@ -19,8 +19,8 @@ import { AddMoveSheet } from "./add-move";
 import { FinishSheet } from "./finish";
 import { LiveIcon, type LiveIconName } from "./icons";
 import {
-  addSet, bumpValue, checkKg, clampRest, clock, completeSet, curPos, e1rm, emptyMsg, type Live, type LiveItem, type LiveResp, targetPill,
-  type LiveSet, minutesToSeconds, moveItem, progress, secondsToMinutes, stepOf, toNum, undoSet, type Warn,
+  addSet, bumpValue, checkKg, clampRest, clock, completeSet, curPos, e1rm, emptyMsg, KG_RANGE, type Live, type LiveItem, type LiveResp, type NumRange,
+  REPS_RANGE, targetPill, type LiveSet, minutesToSeconds, moveItem, progress, secondsToMinutes, stepOf, toNum, typedNum, undoSet, type Warn,
 } from "./logic";
 
 // 提示音开关：这次打开 App 期间记住
@@ -93,8 +93,25 @@ function IconBtn({ icon, label, onPress, disabled, on, size = 16 }: { icon: Live
   );
 }
 
-/** 重量、次数各一块（§176 照参照图）：上面一行名字和小标签，下面大号数字配左右圆按钮。 */
-function Stepper({ label, value, unit, onDown, onUp, hot, pill, pillTone }: { label: string; value: number | null; unit: string; onDown: () => void; onUp: () => void; hot?: boolean; pill?: string; pillTone?: "green" }) {
+/** 中间的大数字点一下就能自己填（§178）：填完（完成或点别处）存，填得不对就还原。 */
+function BigNum({ label, value, hot, range, onSet }: { label: string; value: number | null; hot?: boolean; range: NumRange; onSet: (v: number) => void }) {
+  const shown = value == null ? "" : String(value);
+  const [text, setText] = useState(shown);
+  useEffect(() => setText(shown), [shown]);
+  const commit = () => {
+    const v = typedNum(text, range);
+    setText(shown);  // 存下的值变了由下面的 effect 换上；被退回（今天不许加重）时也不留着填的数
+    if (v != null && v !== value) onSet(v);
+  };
+  return (
+    <TextInput value={text} onChangeText={setText} onBlur={commit} placeholder="–" placeholderTextColor={color.muted}
+      keyboardType={range.dec ? "decimal-pad" : "number-pad"} returnKeyType="done" selectTextOnFocus
+      accessibilityLabel={`${label}，点一下直接填`} style={[s.stepNum, s.stepIn, hot && s.hot]} />
+  );
+}
+
+/** 重量、次数各一块（§176 照参照图）：上面一行名字和小标签，下面大号数字配左右圆按钮；edit 给了时大数字能自己填（§178）。 */
+function Stepper({ label, value, unit, onDown, onUp, hot, pill, pillTone, edit }: { label: string; value: number | null; unit: string; onDown: () => void; onUp: () => void; hot?: boolean; pill?: string; pillTone?: "green"; edit?: { range: NumRange; set: (v: number) => void } }) {
   return (
     <View style={s.stepper}>
       <View style={s.stepHead}>
@@ -104,7 +121,7 @@ function Stepper({ label, value, unit, onDown, onUp, hot, pill, pillTone }: { la
       <View style={s.stepRow}>
         <Pressable accessibilityRole="button" accessibilityLabel={`${label}减`} onPress={onDown} style={s.stepBtn}><Text style={s.stepSign}>−</Text></Pressable>
         <View style={s.stepVal}>
-          <Text style={[s.stepNum, hot && s.hot]}>{value == null ? "–" : String(value)}</Text>
+          {edit ? <BigNum label={label} value={value} hot={hot} range={edit.range} onSet={edit.set} /> : <Text style={[s.stepNum, hot && s.hot]}>{value == null ? "–" : String(value)}</Text>}
           <Text style={s.unit}>{unit}</Text>
         </View>
         <Pressable accessibilityRole="button" accessibilityLabel={`${label}加`} onPress={onUp} style={[s.stepBtn, s.stepUp]}><Text style={[s.stepSign, s.stepSignUp]}>+</Text></Pressable>
@@ -202,6 +219,15 @@ export function Recorder({ data, onReload }: { data: LiveResp & { live: Live }; 
 
   const commitKg = (i: number, j: number, prev: number | null) => {
     setWarn(checkKg(L, i, j, prev, steps, okKg, warn));
+    redraw();
+  };
+  /** 自己填的数（§178）：和 − / + 一样存、一样做加重检查。 */
+  const setValue = (i: number, j: number, key: "weight_kg" | "reps", v: number) => {
+    const st = L.items[i].sets[j];
+    const prev = st[key];
+    st[key] = v;
+    if (key === "weight_kg") setWarn(checkKg(L, i, j, prev, steps, okKg, warn));
+    void save();
     redraw();
   };
   const bump = (i: number, j: number, key: "weight_kg" | "reps", d: number) => {
@@ -306,8 +332,10 @@ export function Recorder({ data, onReload }: { data: LiveResp & { live: Live }; 
         {it.timed ? null : (
           <View style={s.steps}>
             <Stepper label="重量" value={st.weight_kg} unit="公斤" hot={hot} onDown={() => bump(i, j, "weight_kg", -stepOf(steps, it))} onUp={() => bump(i, j, "weight_kg", stepOf(steps, it))}
-              pill={bestKg[it.exercise] ? `最近最佳 ${bestKg[it.exercise]} kg` : undefined} pillTone="green" />
-            <Stepper label="次数" value={st.reps} unit="次" onDown={() => bump(i, j, "reps", -1)} onUp={() => bump(i, j, "reps", 1)} pill={targetPill(it.target) || undefined} />
+              pill={bestKg[it.exercise] ? `最近最佳 ${bestKg[it.exercise]} kg` : undefined} pillTone="green"
+              edit={{ range: KG_RANGE, set: (v) => setValue(i, j, "weight_kg", v) }} />
+            <Stepper label="次数" value={st.reps} unit="次" onDown={() => bump(i, j, "reps", -1)} onUp={() => bump(i, j, "reps", 1)} pill={targetPill(it.target) || undefined}
+              edit={{ range: REPS_RANGE, set: (v) => setValue(i, j, "reps", v) }} />
           </View>
         )}
         {warn && warn.i === i ? (
@@ -529,6 +557,7 @@ const s = StyleSheet.create({
   stepUp: { backgroundColor: color.accent },
   stepSignUp: { color: "#ffffff" },
   stepNum: { color: color.ink, fontSize: 44, fontWeight: "800" },
+  stepIn: { minWidth: 96, maxWidth: 150, paddingVertical: 0, paddingHorizontal: 2, textAlign: "center", borderBottomWidth: 2, borderStyle: "dashed", borderBottomColor: `${color.accent}66` },
   pill: { color: color.ink2, backgroundColor: color.paper, fontSize: 11, fontWeight: "700", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, overflow: "hidden" },
   pillGreen: { color: color.good, backgroundColor: color.goodSoft },
   flashRow: { flexDirection: "row", alignItems: "center", gap: space.s },

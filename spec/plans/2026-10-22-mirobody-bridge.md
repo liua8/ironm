@@ -98,7 +98,7 @@ iron-m/
 - [ ] **Step 1：初始化仓库与子模块**
 
 ```bash
-cd /Users/admin/iron-m && git init -b main
+cd <iron-m 目录> && git init -b main
 git submodule add https://github.com/thetahealth/mirobody vendor/mirobody
 git -C vendor/mirobody checkout 7775b50
 ```
@@ -186,9 +186,9 @@ git commit -m "建立 iron-m：mirobody 1.5.8 作为子模块，本机 PostgreSQ
 - [ ] **Step 1：导出快照**
 
 ```bash
-mkdir -p /Users/admin/iron-m/.import
-git -C /Users/admin/IronM archive 2be2826 ironm rules config migrations schemas sim evals tools tests \
-  .python-version .editorconfig .pre-commit-config.yaml pyproject.toml Makefile | tar -x -C /Users/admin/iron-m/.import
+mkdir -p <iron-m 目录>/.import
+git -C <IronM 目录> archive 2be2826 ironm rules config migrations schemas sim evals tools tests \
+  .python-version .editorconfig .pre-commit-config.yaml pyproject.toml Makefile | tar -x -C <iron-m 目录>/.import
 ```
 
 - 从 `.import` 里挑出代码目录和点文件搬到项目根。

@@ -1,0 +1,5 @@
+# 在自己电脑上跑（scripts/start.sh，spec §177）叠在开发配置上的设置。
+# mirobody 自带的 config.yaml 预置了演示账号和固定验证码（you@ / mom@mirobody.ai，111111），
+# 自己用的时候不要：清空后只能注册自己的账号登录。后加载的同名设置整项覆盖前面的。
+EMAIL_PREDEFINE_CODES: {}
+SEED_DEMO_DATA: false

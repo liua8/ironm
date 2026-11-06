@@ -1,4 +1,7 @@
-.PHONY: setup pg-install pg-init pg-start pg-stop pg-check run stop health replay replay-agent
+.PHONY: start setup pg-install pg-init pg-start pg-stop pg-check run stop health replay replay-agent
+
+start:            ## 在自己电脑上跑（§177）：第一次装好环境、数据库、.env、配图再启动，以后直接启动；Ctrl+C 停
+	scripts/start.sh $(ARGS)
 
 setup:            ## 安装 Python 环境（mirobody 以可编辑方式安装自 vendor/mirobody）
 	uv sync

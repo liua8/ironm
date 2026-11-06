@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 本机 PostgreSQL（含 pgvector）：装在项目目录 .pg/ 里，只监听 127.0.0.1:55432
+# 本机 PostgreSQL（含 pgvector）：装在项目目录 .pg/ 里，只监听 127.0.0.1:55432（IRONM_PG_PORT 可换，§177）
 # 用法：scripts/pg.sh install | init | start | stop | status | check
 set -euo pipefail
 
@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PG="$ROOT/.pg"
 BIN="$PG/env/bin"
 DATA="$PG/data"
-PORT=55432
+PORT="${IRONM_PG_PORT:-55432}"
 DB=mirobody
 USER_NAME=ironm
 
@@ -23,7 +23,7 @@ psql_db() {
 
 case "${1:-}" in
   install)
-    MAMBA_ROOT_PREFIX="$PG/mamba" micromamba create -y -q -p "$PG/env" -c conda-forge "postgresql=18" "pgvector=0.8.6"
+    MAMBA_ROOT_PREFIX="$PG/mamba" "${MICROMAMBA:-micromamba}" create -y -q -p "$PG/env" -c conda-forge "postgresql=18" "pgvector=0.8.6"
     ;;
   init)
     load_env
@@ -34,14 +34,15 @@ case "${1:-}" in
     {
       echo "listen_addresses = '127.0.0.1'"
       echo "port = $PORT"
-      echo "unix_socket_directories = '$PG'"
+      # 套接字路径有长度上限（macOS 103 字节）：项目放得深时不建套接字，只走 127.0.0.1（§177）
+      if [ "${#PG}" -le 80 ]; then echo "unix_socket_directories = '$PG'"; else echo "unix_socket_directories = ''"; fi
     } >> "$DATA/postgresql.conf"
     "$0" start
     PGPASSWORD="$PG_PASSWORD" "$BIN/createdb" -h 127.0.0.1 -p "$PORT" -U "$USER_NAME" "$DB"
     echo "已初始化：库 ${DB}，端口 ${PORT}"
     ;;
   start)
-    "$BIN/pg_ctl" -D "$DATA" -l "$PG/postgres.log" -w start >/dev/null && echo "已启动（端口 ${PORT}）"
+    "$BIN/pg_ctl" -D "$DATA" -l "$PG/postgres.log" -o "-p $PORT" -w start >/dev/null && echo "已启动（端口 ${PORT}）"
     ;;
   stop)
     "$BIN/pg_ctl" -D "$DATA" -w stop >/dev/null && echo "已停止"

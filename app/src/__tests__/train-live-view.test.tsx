@@ -97,6 +97,37 @@ it("live: tick a set, rest starts, finish saves and shows the done card", async 
   expect(screen.getByText("本周第 2 练，还差 1 练。")).toBeTruthy();
 });
 
+it("live: the big numbers can be typed (§178) and go through the weight check", async () => {
+  liveNow = JSON.parse(JSON.stringify({ ...live, items: [{ ...live.items[0], sets: [liveSet(40, 8), liveSet(40, 8)] }] }));
+  await render(<LivePage />);
+  expect(await screen.findByText("训练中 · 上肢")).toBeTruthy();
+  const kg = screen.getByLabelText("重量，点一下直接填");
+  await fireEvent.changeText(kg, "50");
+  await fireEvent(kg, "blur");
+  expect(await screen.findByText("比计划重 25%，超过一档或一成，确定吗？")).toBeTruthy();
+  const reps = screen.getByLabelText("次数，点一下直接填");
+  await fireEvent.changeText(reps, "abc");
+  await fireEvent(reps, "blur");
+  expect(screen.getByLabelText("次数，点一下直接填").props.value).toBe("8");
+  await fireEvent.changeText(reps, "10");
+  await fireEvent(reps, "blur");
+  await new Promise((r) => setTimeout(r, 700));
+  const puts = seen.filter((x) => x.method === "PUT");
+  const last = puts[puts.length - 1]?.body as { items: typeof live.items };
+  expect(last.items[0].sets[0]).toMatchObject({ weight_kg: 50, reps: 10 });
+});
+
+it("live: typing heavier than plan is refused when no_heavier is on (§178)", async () => {
+  liveNow = JSON.parse(JSON.stringify({ ...live, no_heavier: true, items: [{ ...live.items[0], sets: [liveSet(40, 8), liveSet(40, 8)] }] }));
+  await render(<LivePage />);
+  expect(await screen.findByText("训练中 · 上肢")).toBeTruthy();
+  const kg = screen.getByLabelText("重量，点一下直接填");
+  await fireEvent.changeText(kg, "45");
+  await fireEvent(kg, "blur");
+  expect(await screen.findByText("今天不比计划加重（身体情况或刚说过疼），按原来的重量练。")).toBeTruthy();
+  expect(screen.getByLabelText("重量，点一下直接填").props.value).toBe("40");
+});
+
 it("live: nothing in progress offers to start", async () => {
   await render(<LivePage />);
   expect(await screen.findByText("现在没有进行中的训练。")).toBeTruthy();

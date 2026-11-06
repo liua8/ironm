@@ -2586,3 +2586,11 @@ button.tag { border: 0; cursor: pointer; font: inherit; font-size: 12px; font-we
 .lf-steps .step-val b { font-size: 48px; }
 .btn.lf-done { border-radius: 999px; padding: 16px 0; }
 .live-rest > div.lr-head { flex-direction: row; justify-content: space-between; align-items: center; }
+
+/* §178 训练中大数字点一下自己填：看着和原来的大数字一样，底下一条虚线提示能点 */
+.step-in { width: 3.6em; min-width: 0; padding: 0 2px; border: 0; border-bottom: 2px dashed var(--line-hi); border-radius: 0;
+  background: transparent; color: var(--ink); text-align: center; font-family: inherit; font-size: 24px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.step-in:focus { outline: none; border-bottom-color: var(--accent); }
+.step-in.hot { color: var(--warn); }
+.lf-steps .step-in { width: 3.2em; font-size: 40px; font-weight: 800; }
+.lf-steps .step-val small { white-space: nowrap; }

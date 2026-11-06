@@ -1,7 +1,7 @@
 // 训练记录器的纯逻辑（同网页 livePage 的 checkKg、markDone、addSet、finish）。
 import {
   addSet, bumpValue, checkKg, clampRest, clock, completeSet, curPos, doneWords, e1rm, emptyMsg, type Live, type LiveItem,
-  minutesToSeconds, moveItem, progress, secondsToMinutes, summarize, toNum,
+  minutesToSeconds, moveItem, progress, secondsToMinutes, summarize, toNum, typedNum,
 } from "@/features/live/logic";
 
 const set = (w: number | null, r: number | null, done = false) => ({ weight_kg: w, reps: r, seconds: null, done, at: null });
@@ -138,5 +138,18 @@ describe("doneWords", () => {
   });
   it("extra after goal", () => {
     expect(doneWords({ ...base, workout: { id: "w", celebrate: { week: { done: 4, planned: 3 } } } }).week).toBe("本周目标已经达成，这一练是额外加分。");
+  });
+});
+
+describe("typedNum (§178)", () => {
+  const kg = { max: 500, dec: true };
+  const reps = { max: 100 };
+  it("parses weight with one decimal and whole reps", () => {
+    expect(["62.5", " 70 ", "70，5", "７５", "62.55", "0"].map((t) => typedNum(t, kg))).toEqual([62.5, 70, 70.5, 75, 62.6, 0]);
+    expect(["8", "8.6"].map((t) => typedNum(t, reps))).toEqual([8, 9]);
+  });
+  it("bad input keeps the old value", () => {
+    expect(["", "abc", "-5", "600", "1e3"].map((t) => typedNum(t, kg))).toEqual([null, null, null, null, null]);
+    expect(typedNum("101", reps)).toBeNull();
   });
 });

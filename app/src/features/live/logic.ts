@@ -148,6 +148,18 @@ export function bumpValue(s: LiveSet, key: "weight_kg" | "reps", d: number): num
   return prev;
 }
 
+export type NumRange = { min?: number; max: number; dec?: boolean };
+export const KG_RANGE: NumRange = { max: 500, dec: true };
+export const REPS_RANGE: NumRange = { max: 100 };
+
+/** 自己填的数（§178，同网页 typedNum）：重量 0–500、最多一位小数，次数 0–100 的整数；空的、不是数、超范围的返回 null（不改原来的值）。 */
+export function typedNum(text: string, { min = 0, max, dec = false }: NumRange): number | null {
+  const t = String(text ?? "").trim().replace(/[，。]/g, ".").replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+  if (!/^\d+(\.\d+)?$/.test(t)) return null;
+  const v = dec ? Math.round(Number(t) * 10) / 10 : Math.round(Number(t));
+  return v >= min && v <= max ? v : null;
+}
+
 /** 加一组：照上一组预填，最多 20 组。 */
 export function addSet(it: LiveItem): boolean {
   if (it.sets.length >= 20) return false;

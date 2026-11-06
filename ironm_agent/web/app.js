@@ -4509,6 +4509,14 @@ function beep() {
   } catch { /* 没有声音也不影响 */ }
 }
 
+// 训练中自己填的数（§178）：重量 0–500、最多一位小数，次数 0–100 的整数；空的、不是数、超范围的返回 null（不改原来的值）
+function typedNum(text, { min = 0, max, dec = false }) {
+  const t = String(text ?? "").trim().replace(/[，。]/g, ".").replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+  if (!/^\d+(\.\d+)?$/.test(t)) return null;
+  const v = dec ? Math.round(Number(t) * 10) / 10 : Math.round(Number(t));
+  return v >= min && v <= max ? v : null;
+}
+
 async function livePage(view) {
   let data;
   try { data = await api("/iron/api/live"); } catch (err) { view.replaceChildren(failed(err, render)); return; }
@@ -4586,12 +4594,13 @@ async function livePage(view) {
     el.addEventListener("input", () => { const m = num(el.value); s.seconds = m ? Math.round(m * 60) : null; save(); });
     return el;
   };
-  const bump = (i, j, key, d) => {
+  const setVal = (i, j, key, v) => {
     const s = L.items[i].sets[j], prev = s[key];
-    s[key] = Math.max(0, Math.round(((prev || 0) + d) * 100) / 100);
+    s[key] = v;
     if (key === "weight_kg") checkKg(i, j, prev);
     save(); draw();
   };
+  const bump = (i, j, key, d) => setVal(i, j, key, Math.max(0, Math.round(((L.items[i].sets[j][key] || 0) + d) * 100) / 100));
   const markDone = (i, j) => {
     const it = L.items[i], s = it.sets[j];
     if (s.done) { s.done = false; s.at = null; save(true); draw(); return; }
@@ -4655,11 +4664,24 @@ async function livePage(view) {
       h("button", { class: "live-done", type: "button", "aria-pressed": String(s.done), "aria-label": s.done ? "取消完成" : "完成这一组", onclick: () => markDone(i, j) }, icon("check", "sm")),
       !s.done && it.sets.length > 1 ? h("button", { class: "live-x", type: "button", "aria-label": "删掉这一组", onclick: () => dropSet(i, j) }, icon("x", "xs")) : h("span", { class: "live-x" }));
   };
+  // 中间的大数字点一下就能自己填（§178）：回车或点别处存，填得不对就还原
+  const bigNum = (label, value, hot, range, onSet) => {
+    const el = h("input", { type: "text", inputmode: range.dec ? "decimal" : "numeric", enterkeyhint: "done", autocomplete: "off",
+      class: `step-in num${hot ? " hot" : ""}`, value: value == null ? "" : String(value), placeholder: "–", "aria-label": `${label}，点一下直接填` });
+    el.addEventListener("focus", () => el.select());
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter") el.blur(); });
+    el.addEventListener("change", () => {
+      const v = typedNum(el.value, range);
+      if (v == null || v === value) { el.value = value == null ? "" : String(value); return; }
+      onSet(v);
+    });
+    return el;
+  };
   // 当前这一组（§104 需求 6）：动作图、一句要点、− / + 一档、一个大按钮
-  const stepper = (label, value, unit, onDown, onUp, hot, pill = null) => h("div", { class: "stepper" },
+  const stepper = (label, value, unit, onDown, onUp, hot, pill = null, edit = null) => h("div", { class: "stepper" },
     h("div", { class: "step-label" }, h("span", {}, label), pill),
     h("button", { class: "step-btn", type: "button", "aria-label": `${label}减`, onclick: onDown }, "−"),
-    h("span", { class: "step-val" }, h("b", { class: `num${hot ? " hot" : ""}` }, value == null ? "–" : String(value)), h("small", {}, unit)),
+    h("span", { class: "step-val" }, edit ? bigNum(label, value, hot, edit.range, edit.set) : h("b", { class: `num${hot ? " hot" : ""}` }, value == null ? "–" : String(value)), h("small", {}, unit)),
     h("button", { class: "step-btn", type: "button", "aria-label": `${label}加`, onclick: onUp }, "+"));
   const focus = (it, i) => {
     const here = curPos();
@@ -4675,9 +4697,11 @@ async function livePage(view) {
         h("div", { class: "row-main" }, move?.cues?.[0] ? h("span", { class: "lf-cue" }, icon("info", "xs"), move.cues[0]) : null)),
       it.timed ? null : h("div", { class: "lf-steps" },
         stepper("重量", s.weight_kg, "公斤", () => bump(i, j, "weight_kg", -stepOf(it)), () => bump(i, j, "weight_kg", stepOf(it)), hot,
-          bestKg[it.exercise] ? h("span", { class: "tag green" }, `最近最佳 ${bestKg[it.exercise]} kg`) : null),
+          bestKg[it.exercise] ? h("span", { class: "tag green" }, `最近最佳 ${bestKg[it.exercise]} kg`) : null,
+          { range: { max: 500, dec: true }, set: (v) => setVal(i, j, "weight_kg", v) }),
         stepper("次数", s.reps, "次", () => bump(i, j, "reps", -1), () => bump(i, j, "reps", 1), false,
-          target ? h("span", { class: "tag" }, target) : null)),
+          target ? h("span", { class: "tag" }, target) : null,
+          { range: { max: 100 }, set: (v) => setVal(i, j, "reps", v) })),
       warn && warn.i === i ? h("div", { class: "lf-warn", role: "status" }, h("span", {}, warn.text),
         warn.back != null ? h("button", { class: "btn small warn-ok", type: "button", onclick: () => { okKg[i] = warn.w; warn = null; draw(); } }, "确定") : null,
         warn.back != null ? h("button", { class: "link warn-back", type: "button", onclick: () => { s.weight_kg = warn.back; warn = null; save(); draw(); } }, `改回 ${warn.back}`) : null) : null,
