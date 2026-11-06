@@ -319,6 +319,8 @@ class CaseFile:
     day: tuple[str, ...] = ()  # 今日状态（spec [2026-10-23] §54）：打卡、口头说的状态、生病、说疼
     insights: tuple[tuple[str, str], ...] = ()  # 指标解读（§84）：(编号, 一句话)，依据在 calcs 里
     sore: tuple[str, ...] = ()  # 最近 3 天说过疼的部位（§158）：只给排计划、换动作的工具避开，不当成伤病写进回答
+    meals: str = ""  # 今天的饮食账单（§187）：和首页饮食账单同一份；读不到时为空
+    meals_id: str = ""
 
     def text(self, *, calcs: bool = True) -> str:
         lines = [
@@ -335,6 +337,10 @@ class CaseFile:
                 lines += [f"  {x}" for x in self.day]
             else:
                 lines.append(head)
+        if self.meals:
+            lines.append(
+                f"- 今天的饮食（和首页饮食账单同一份，以这里为准；用到其中的数字时写这个编号）〔{self.meals_id}〕：{self.meals}"
+            )
         if self.weather:
             lines.append(f"- {self.weather}（安排户外运动、饮食和补水时要照顾到）")
         if self.limits:
@@ -396,6 +402,7 @@ def build(
     insights: Sequence[tuple[str, str]] = (),
     target: str = "",
     sore: Sequence[str] = (),
+    meals: str = "",
 ) -> CaseFile:
     """insights：指标解读（§84），每条是 (给角色看的一句话, 追问依据时讲的详细说法)。
     sore：最近 3 天说过疼的部位（§158），和记着的伤病一样避开。"""
@@ -440,6 +447,9 @@ def build(
         cid = f"C{len(metrics) + 3 + i}"
         calcs[cid] = f"指标解读：{detail}"
         found.append((cid, line))
+    meals_id = f"C{len(metrics) + 3 + len(found)}" if meals else ""
+    if meals:
+        calcs[meals_id] = f"今天的饮食账单：{meals}"
     return CaseFile(
         basics=basics,
         limits=limits,
@@ -457,6 +467,8 @@ def build(
         day=tuple(day),
         insights=tuple(found),
         sore=tuple(dict.fromkeys(sore)),
+        meals=meals,
+        meals_id=meals_id,
     )
 
 

@@ -469,6 +469,26 @@ def totals(meals: Sequence[StoredMeal]) -> Macros:
     )
 
 
+def day_bill(meals: Sequence[StoredMeal], kcal: float | None, protein: float | None) -> str:
+    """今天的饮食账单一行（§187，和首页饮食账单同一份）：各餐、合计、目标、还能吃多少。"""
+    order = {k: i for i, k in enumerate(MEAL_KINDS)}
+    got = totals(meals)
+    if meals:
+        each = "、".join(f"{m.meal.kind}{m.meal.name}约 {round(m.meal.macros.kcal)} 千卡"
+                         for m in sorted(meals, key=lambda m: (order.get(m.meal.kind, 99), m.created)))  # fmt: skip
+        parts = [f"已记 {len(meals)} 餐：{each}",
+                 f"合计约 {round(got.kcal)} 千卡、蛋白质 {round(got.protein_g)} 克"]  # fmt: skip
+    else:
+        parts = ["今天还没记饮食"]
+    if kcal:
+        left = max(0, round(kcal - got.kcal))
+        parts.append(f"热量目标约 {round(kcal)} 千卡，还能吃约 {left} 千卡")
+    if protein:
+        short = max(0, round(protein - got.protein_g))
+        parts.append(f"蛋白质目标约 {round(protein)} 克，还差约 {short} 克")
+    return "；".join(parts)
+
+
 class MealBook:
     """内存版（测试与考题用）。"""
 

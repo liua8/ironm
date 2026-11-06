@@ -983,6 +983,18 @@ class IronMAgent:
             )
         return out
 
+    async def _meals_line(self, user_id: str, snapshot: Snapshot) -> str:
+        """今天的饮食账单（§187）：目标用档案里同一份热量、蛋白质目标；读不到记录时为空。"""
+        from ironm_agent.meals import day_bill
+
+        try:
+            rows = await self._meals_store().day(user_id, snapshot.today)
+        except Exception as e:
+            _log.warning("meals unavailable: error_type=%s", type(e).__name__)
+            return ""
+        by = {m.key: m.value for m in snapshot.metrics}
+        return day_bill(rows, by.get("kcal_target"), by.get("protein_target"))
+
     async def _illness_followup(self, user_id: str, run: dict[str, Any]) -> str:
         """今天还没问过、也还没回答的生病：返回追问的一句，并记下今天问过了。"""
         today = date.today()
@@ -2533,6 +2545,7 @@ class IronMAgent:
             snapshot, recall, text, plan=lines + target_lines(plan, steady, snapshot.today, decided),
             illness=state, day=today_lines,
             insights=insight_lines, target=target, sore=sore_parts,
+            meals=await self._meals_line(user_id, snapshot),
         )  # fmt: skip
         current = await wx if wx is not None else None
         if current is not None:
