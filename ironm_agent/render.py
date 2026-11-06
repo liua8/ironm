@@ -175,9 +175,10 @@ def goal_card(draft: Draft, content: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def diet_card(draft: Draft, content: dict[str, Any]) -> list[dict[str, Any]]:
-    """换饮食方案的预览（§190）：网页沿用训练记录那种卡片（标题、一句说明、几行）。"""
-    body = {"headline": content.get("headline", ""), "items": list(content.get("items") or [])}
-    return _card(draft, "换饮食方案预览", body)
+    """换饮食方案（§190）、按他情况排的饮食计划（§192）的预览：网页沿用训练记录那种卡片（标题、一句说明、几行、说明）。"""
+    body = {"headline": content.get("headline", ""), "items": list(content.get("items") or []),
+            "note": str(content.get("note") or "")}  # fmt: skip
+    return _card(draft, f"{content.get('title') or '换饮食方案'}预览", body)
 
 
 def temp_card(draft: Draft, content: dict[str, Any]) -> list[dict[str, Any]]:

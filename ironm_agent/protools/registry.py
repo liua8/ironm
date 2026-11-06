@@ -201,6 +201,14 @@ async def _templates(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
     )
 
 
+async def _cardio(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
+    from ironm_agent.protools.cardio import cardio
+
+    return cardio(ctx.weight_kg, str(args.get("kind") or ""), weekly_kcal=_num(args, "weekly_kcal"),
+                  session_kcal=_num(args, "session_kcal"), sessions=_int(args, "sessions"),
+                  minutes=_num(args, "minutes"))  # fmt: skip
+
+
 async def _diet_templates(ctx: ToolContext, args: Mapping[str, Any]) -> Result:
     """饮食方案库（§184）：不填 name 给目录，填了给那一份（有热量目标时按目标缩放份数）。"""
     from ironm_agent.diet_library import diet_templates
@@ -486,12 +494,30 @@ TOOLS: dict[str, ProTool] = {
             _nutrition,
         ),
         ProTool(
+            "cardio_calc",
+            frozenset({"trainer", "general"}),
+            "有氧按热量算时长（§193）：kind 选快走 walk、慢跑 jog、骑行 bike、椭圆机 elliptical、划船机 row、跳绳 rope，"
+            "写每周想多消耗多少千卡 weekly_kcal（配每周几次 sessions）或每次多少 session_kcal，按代谢当量 × 他的体重算每次、"
+            "每周练多久；写 minutes 就反过来算一次多消耗多少。选哪种由你按他的伤病、器械、喜好定。力量训练不按动作凑热量。",
+            _obj(
+                {
+                    "kind": {"type": "string", "enum": ["walk", "jog", "bike", "elliptical", "row", "rope"]},
+                    "weekly_kcal": {"type": "number", "description": "每周想靠有氧多消耗多少千卡"},
+                    "session_kcal": {"type": "number", "description": "每次多消耗多少千卡"},
+                    "sessions": {"type": "integer", "description": "每周几次，1–7"},
+                    "minutes": {"type": "number", "description": "反过来算：练多少分钟"},
+                },
+                ("kind",),
+            ),
+            _cardio,
+        ),
+        ProTool(
             "diet_templates",
             frozenset({"nutrition", "general"}),
             "饮食方案库：每份是一整天怎么吃（均衡家常、减脂高蛋白、外卖食堂、增肌、地中海、控血压、控糖、蛋奶素、"
             "60 岁以上、限时进食等），写明适合谁、谁要先问医生、热量和三大营养素怎么定、吃法要点、工作日和周末各四顿。"
             "要给他排饮食、他问有哪些饮食方案时先调它：什么都不填给目录；name 填方案编号或名字给那一份的内容，"
-            "按他的热量目标算好每顿几份。推荐时说清参考的是哪一份；套用由他在图鉴里点，不要自己改他的饮食计划。",
+            "按他的热量目标算好每顿几份。推荐时说清参考的是哪一份；他要换就用 propose_diet_plan 出卡片，他确认才换（§190）。",
             _obj({"name": {"type": "string", "description": "方案编号或名字，如“地中海”“控糖”；要目录时不填"}}),
             _diet_templates,
         ),

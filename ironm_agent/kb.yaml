@@ -2385,7 +2385,11 @@ entries:
         where: "Conditioning exercise（02050）"
       - text: "代谢当量是按成年人平均整理的，用来估算个人消耗时有误差。"
         where: "Introduction"
-    keywords: ["消耗", "热量消耗", "千卡", "卡路里", "代谢当量", "MET", "练一次消耗多少"]
+      - text: "有氧（中等强度）：平地快走每小时约 5.6 公里 4.3 MET；跑步每小时约 8 公里 8.3 MET；健身车中等用力 7.0 MET；椭圆机中等用力 5.0 MET；划船机中等用力 7.0 MET；跳绳每分钟 100–120 下 11.8 MET（§193 补，待按原表逐项核对）。"
+        where: "Walking、Running、Conditioning exercise"
+      - text: "1 个代谢当量是安静坐着的消耗；算\"比不练多消耗多少\"时减去这 1 个。"
+        where: "Introduction"
+    keywords: ["消耗", "热量消耗", "千卡", "卡路里", "代谢当量", "MET", "练一次消耗多少", "有氧消耗", "跑步消耗", "快走消耗"]
     url: https://doi.org/10.1016/j.jshs.2023.10.010
     review: claude_draft
 

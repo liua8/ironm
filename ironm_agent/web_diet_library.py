@@ -129,12 +129,19 @@ def plan_raw(p: DietPlan, kcal: float | None) -> dict[str, Any]:
     return raw
 
 
-async def apply_plan(user_id: str, p: DietPlan, store: DietStore, kcal: float | None, draft: str = "") -> None:
-    """换成这份方案：先存现在的计划（存不上就不换），再写新的。draft 是对话里那张卡片（撤销时核对，§190）。"""
+async def apply_raw(user_id: str, raw: dict[str, Any], store: DietStore, *, applied: str, name: str,
+                    draft: str = "") -> None:  # fmt: skip
+    """换成这份计划：先存现在的（存不上就不换），再写新的。draft 是对话里那张卡片（撤销时核对，§190）；
+    applied 是方案库编号，按他情况排的写 custom（§192）。"""
     current = await store.get(user_id, "plan", "plan") or {}
-    await store.put(user_id, "plan", BACKUP, {"plan": current, "applied": p.id, "draft": draft})
-    await store.put(user_id, "plan", "plan", plan_raw(p, kcal))
-    _log.info("diet library applied: plan=%s scaled=%s card=%s", p.id, bool(kcal), bool(draft))
+    await store.put(user_id, "plan", BACKUP, {"plan": current, "applied": applied, "name": name, "draft": draft})
+    await store.put(user_id, "plan", "plan", raw)
+    _log.info("diet plan applied: plan=%s card=%s", applied, bool(draft))
+
+
+async def apply_plan(user_id: str, p: DietPlan, store: DietStore, kcal: float | None, draft: str = "") -> None:
+    """换成方案库里这份：按热量目标算好份数再换。"""
+    await apply_raw(user_id, plan_raw(p, kcal), store, applied=p.id, name=p.name, draft=draft)
 
 
 async def restore_plan(user_id: str, store: DietStore, draft: str = "") -> bool:
@@ -148,10 +155,13 @@ async def restore_plan(user_id: str, store: DietStore, draft: str = "") -> bool:
     return True
 
 
-async def applied_plan(user_id: str, store: DietStore) -> DietPlan | None:
-    """最近从方案库套用、还没撤销的那份（档案里写名字用，§190）。"""
+async def applied_name(user_id: str, store: DietStore) -> str:
+    """最近换上、还没撤销的那份叫什么（档案里写名字用，§190、§192）；没有时为空。"""
     backup = await store.get(user_id, "plan", BACKUP)
-    return by_id(str(backup.get("applied") or "")) if backup else None
+    if not backup:
+        return ""
+    p = by_id(str(backup.get("applied") or ""))
+    return str(backup.get("name") or (p.name if p is not None else ""))
 
 
 def preview_lines(p: DietPlan, kcal: float | None) -> list[str]:

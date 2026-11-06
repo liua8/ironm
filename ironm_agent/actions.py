@@ -35,9 +35,10 @@ REMEMBER = "remember"  # 记忆（§145，取代回答 JSON 里的 memory）
 SET_GOAL = "propose_goal"  # 改正式目标：目标类型和目标体重，出卡片确认（§151）
 TEMP_CHANGE = "propose_temporary_change"  # 这几天临时这样练：带起止日期，出卡片确认，到期回到原计划（§163）
 DIET_PLAN = "propose_diet_plan"  # 换饮食方案：从方案库挑一份，按热量目标算份数，出卡片确认（§190）
+COMPOSE_DIET = "compose_diet_plan"  # 按他情况排饮食计划：管家挑四顿，系统定份数、检查，出卡片确认（§192）
 ACTION_TOOLS = (
     PLAN_EDIT, NEW_PLAN, LOG_WORKOUT, ASK_TERMS, RECORD_STATE, LOG_BODY, LOG_MEAL, ADJUST_TODAY,
-    KCAL_CHANGE, REMEMBER, SET_GOAL, TEMP_CHANGE, DIET_PLAN,
+    KCAL_CHANGE, REMEMBER, SET_GOAL, TEMP_CHANGE, DIET_PLAN, COMPOSE_DIET,
 )  # fmt: skip
 ALWAYS = (
     RECORD_STATE,
@@ -519,6 +520,36 @@ DIET_PLAN_SCHEMA: dict[str, Any] = {
     },
 }
 
+_DAY_MEALS = {
+    "type": "object",
+    "description": "四顿各写一个编号：recipe:推荐食谱、mine:他自建的食谱、preset:常见减脂餐（编号见不带参数调一次给的清单）",
+    "properties": {k: {"type": "string"} for k in ("早餐", "午餐", "晚餐", "加餐")},
+}
+COMPOSE_DIET_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": COMPOSE_DIET,
+        "description": (
+            "按他的情况排一份饮食计划（首页\"今天吃什么\"照着排的工作日、周末四顿）：先不带参数调一次拿到可选的食谱和减脂餐清单，"
+            "再按他的忌口、过敏、吃饭场景（外卖、带饭、食堂、自己做）、口味和目标挑四顿交上来。系统按食物库算营养、定每顿几份，"
+            "检查一天热量在目标上下 8% 以内、蛋白质够、脂肪占 20–35%、没有他不吃的；没过会告诉你哪天哪顿要换，改了再交；"
+            "过了出预览卡片，他确认才换，能撤销一次。方案库里有正好合适的整份方案就用 propose_diet_plan。"
+            "孕期、未成年、肾病、糖尿病在用药的不排，建议先问医生。没确认前计划没换，不要说已经换了。"
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "weekday": _DAY_MEALS,
+                "weekend": {**_DAY_MEALS, "description": "周末四顿；和工作日一样就不写"},
+                "avoid": {"type": "array", "items": {"type": "string"},
+                          "description": "他说过不吃、过敏的，如 [\"猪肉\", \"奶\", \"花生\"]；系统按这些查每顿的原料"},
+                "why": {"type": "string", "description": "一句话：这份是怎么照顾他的，像当面对他说"},
+            },
+        },
+    },
+}  # fmt: skip
+
 
 SCHEMAS = {
     PLAN_EDIT: PLAN_EDIT_SCHEMA,
@@ -534,6 +565,7 @@ SCHEMAS = {
     SET_GOAL: SET_GOAL_SCHEMA,
     TEMP_CHANGE: TEMP_CHANGE_SCHEMA,
     DIET_PLAN: DIET_PLAN_SCHEMA,
+    COMPOSE_DIET: COMPOSE_DIET_SCHEMA,
 }
 _CONFIRMED = (
     f"他刚回应了你列的条件清单，算确认，不要再问一遍：调用 {NEW_PLAN}（kind 写 new）交计划，他改了哪几项就按改了的排；"

@@ -8,7 +8,7 @@ not_for: 补剂、蛋白粉、维生素吃不吃看饮食基础的补剂与用�
 when: [吃多少, 热量, 蛋白质, 卡路里, 千卡, 摄入, 怎么吃, 吃什么, 三餐, 早餐, 晚餐, 减脂餐, 增肌餐, 增重, 吃不胖, 热量缺口, 掉秤, 练前, 练后, 训练前, 训练后, 空腹, 外卖, 食堂, 在外面吃, 点餐, 这顿, 这餐, 照片, 体重不降, 不掉秤, 体重不动, 瘦不下来, 平台期]
 on: [image]
 default: true
-tools: [compute_metrics, nutrition_calc, diet_templates, trend_analysis, query_health_indicators, recall_memory, log_meal, propose_kcal_change, propose_diet_plan]
+tools: [compute_metrics, nutrition_calc, diet_templates, trend_analysis, query_health_indicators, recall_memory, log_meal, propose_kcal_change, propose_diet_plan, compose_diet_plan]
 refs: [K09, K16, K17, K36, K37, K38, K87, K88, K89, K90, K12, K97]
 ---
 ## 步骤卡
@@ -28,6 +28,7 @@ refs: [K09, K16, K17, K36, K37, K38, K87, K88, K89, K90, K12, K97]
 - 按体重算蛋白质、碳水、补水，调 `nutrition_calc`。
 - 忌口、过敏、吃饭习惯（食堂、外卖、自己做），调 `recall_memory`。
 - 他要一份饮食方案、问"有哪些饮食方案"：调 `diet_templates`（不填看目录，填名字看那一份，按他的热量目标算好每顿几份），挑一份最合适的推荐，说清参考的是方案库的哪一份。他想用、或者目标变了（档案里饮食计划一天的热量和热量目标差得多），调 `propose_diet_plan` 交那一份的编号，出换饮食方案的卡片（按他的热量目标算好份数，他点确认才换，能撤销一次）；他也可以自己在「图鉴 → 方案 → 饮食方案」里点。卡片没确认前计划没换，不要说已经替他换好了。孕期、未成年、肾病、糖尿病在用药的不从方案库直接套，先问医生。
+- 要一份按他情况排的饮食计划（方案库没有正好合适的，或者他有忌口、只吃外卖、只吃食堂这类）：调 `compose_diet_plan`，先不带参数拿清单，再按他的忌口、过敏、吃饭场景、口味挑工作日和周末四顿交上来，他不吃的写进 avoid（先用 `recall_memory` 看他说过的）；系统定份数、查热量蛋白脂肪和忌口，没过照它说的换，过了出卡片，他确认才换。
 
 ## 定量
 1. **蛋白质**：每天 1.4–2.0 克/公斤〔K09〕，分 3–4 餐、每餐 20–40 克〔K36〕。减脂期往高的一端吃〔K37〕。健康人吃到这个量不伤肾；有肾病的不适用，先问医生〔K90〕。

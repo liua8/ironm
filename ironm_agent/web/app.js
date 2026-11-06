@@ -4373,7 +4373,7 @@ function cardView(msg, card) {
   const diet = card.kind === "diet";  // 换饮食方案（§190）：确认时按当时的热量目标算份数
   const body = diet
     ? [(d.items || []).length ? h("ul", {}, d.items.map((it) => h("li", {}, it))) : null,
-      state === "pending" && !expired ? h("p", { class: "caption" }, "确认后换掉工作日、周末四顿，份数按确认时的热量目标算；同时改了目标的，先确认改目标。") : null]
+      state === "pending" && !expired ? h("p", { class: "caption" }, d.note || "确认后换掉工作日、周末四顿，份数按确认时的热量目标算；同时改了目标的，先确认改目标。") : null]
     : temp
     ? [(d.items || []).length ? h("ul", { class: "temp-lines" }, d.items.map((it) => h("li", {}, it))) : null,
       state === "pending" && !expired ? h("p", { class: "caption" }, `${TEMP_RULE}没确认的过了开始日期就作废。`)

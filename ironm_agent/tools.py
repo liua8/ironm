@@ -25,10 +25,10 @@ _OUTCOME: ContextVar[str] = ContextVar("tool_outcome", default="ok")
 STEP_NAMES = {
     "search_knowledge": "查资料", "search_exercises": "查动作", "query_health_indicators": "看你的健康数据",
     "compute_metrics": "算指标", "plan_templates": "挑方案", "check_plan": "检查计划",
-    "propose_new_plan": "排计划", "propose_plan_edit": "改计划", "propose_temporary_change": "排临时调整", "propose_diet_plan": "换饮食方案",
+    "propose_new_plan": "排计划", "propose_plan_edit": "改计划", "propose_temporary_change": "排临时调整", "propose_diet_plan": "换饮食方案", "compose_diet_plan": "排饮食计划",
     "log_workout": "记训练", "recall_memory": "翻你以前说的", "estimate_strength": "估重量",
     "find_substitutes": "找替代动作", "training_patterns": "看训练记录", "pain_check": "判断疼痛",
-    "nutrition_calc": "算营养", "diet_templates": "查饮食方案", "trend_analysis": "看趋势", "explain_trends": "解读数据",
+    "nutrition_calc": "算营养", "cardio_calc": "算有氧时长", "diet_templates": "查饮食方案", "trend_analysis": "看趋势", "explain_trends": "解读数据",
     "app_help": "查 App 用法", "search_web": "联网查", "query_weather": "查天气", "load_skill": "翻做法", "timeline": "看时间线",
 }  # fmt: skip
 QUIET_STEPS = frozenset({"record_state", "remember"})  # 每轮顺手记的，不当一步给他看

@@ -429,17 +429,24 @@ async def _confirm_diet(user_id: str, draft_id: str, store: TrainingStore, kitch
     """换饮食方案的卡片（§190）：真把它从待确认改成已确认的这一次才换，按确认时的热量目标算份数；
     换不成时卡片退回、计划不动。"""
     from ironm_agent.diet_library import by_id
-    from ironm_agent.web_diet_library import _target, apply_plan
+    from ironm_agent.recipes import SlotRef
+    from ironm_agent.web_diet_library import _target, apply_plan, apply_raw
 
     done = await store.confirm(user_id, draft_id)
     if done is None:
         return await _draft_action(store, user_id, draft_id, "confirm")
     try:
-        p = by_id(str((done.content.get("diet") or {}).get("id") or ""))
-        if p is None:
-            raise LookupError("diet plan gone")
-        target = await _target(user_id)
-        await apply_plan(user_id, p, kitchen, target.kcal if target else None, draft=draft_id)
+        diet = done.content.get("diet") or {}
+        if diet.get("custom"):  # 按他情况排的（§192）：份数出卡片时已经按目标定好，原样换上
+            raw = {s: {k: SlotRef.model_validate(v).model_dump(mode="json") for k, v in (diet["custom"].get(s) or {}).items()}
+                   for s in ("weekday", "weekend")}  # fmt: skip
+            await apply_raw(user_id, raw, kitchen, applied="custom", name=str(diet.get("name") or ""), draft=draft_id)
+        else:
+            p = by_id(str(diet.get("id") or ""))
+            if p is None:
+                raise LookupError("diet plan gone")
+            target = await _target(user_id)
+            await apply_plan(user_id, p, kitchen, target.kcal if target else None, draft=draft_id)
     except Exception as e:
         _log.warning("diet apply failed: error_type=%s", type(e).__name__)
         await store.undo(user_id, draft_id)
