@@ -190,15 +190,6 @@ AI 出错了，不会退回"规则"偷偷替你决定，而是如实告诉你"�
 - **随时导出、随时注销**：在「我 → 账号与隐私」里下载你的数据；注销后，IronM 里你的数据马上删除。
 - **它不是医生**：IronM 的建议仅供参考，不能代替医生、营养师或康复师。胸痛、头晕、呼吸困难请立刻停止并就医。
 
-## 🗺️ 路线图
-
-- [x] 网页版：训练、饮食、身体数据、对话、图鉴、排行榜
-- [x] 自己部署：一条命令的脚本、Docker
-- [x] 饮食方案库；账号与隐私（导出、注销）
-- [ ] 手机 App 打包（代码在 `app/`，已能在网页预览里跑）
-- [ ] 手机连自己电脑上的 IronM（同一个 Wi‑Fi）
-- [ ] 隐私政策、方案和依据请专业人士审定
-
 觉得有用，点个 ⭐ 让更多人看到。有想法欢迎提 Issue。
 
 ## 🛠️ 开发
@@ -208,8 +199,6 @@ AI 出错了，不会退回"规则"偷偷替你决定，而是如实告诉你"�
 | 后端 | Python 3.13 · FastAPI · PostgreSQL + pgvector；以插件方式接在 [mirobody](https://github.com/thetahealth/mirobody) 上 |
 | 网页 | 原生 JavaScript，不加载外部资源 |
 | App | React Native · Expo · TypeScript（`app/`） |
-| 测试 | 后端 1400+ 条 pytest，App 230+ 条 jest；另有用真实模型跑的回放和两周模拟 |
-| 需求 | 每个功能先写进 [spec/spec.md](spec/spec.md)，对应的验证清单在 [spec/testing.md](spec/testing.md) |
 
 本机开发需要 uv、git-lfs、micromamba（都可装在 `~/.local/bin`，不需要管理员权限）：
 
@@ -219,8 +208,7 @@ cp .env.example .env              # 填写各项，然后 chmod 600 .env
 make setup                        # Python 环境
 make pg-install pg-init           # 本机 PostgreSQL 18 + pgvector，只监听 127.0.0.1:55432
 make run                          # http://127.0.0.1:18090
-uv run pytest -q                  # 后端测试
-cd app && npm install && npx jest # App 测试
+cd app && npm install && npm run web       # 手机 App 的网页预览
 ```
 
 开发模式下有演示账号 `you@mirobody.ai`，验证码 `111111`（mirobody 自带的合成数据）。

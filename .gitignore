@@ -16,3 +16,21 @@ evals/sim/reports/
 app/node_modules/
 app/.expo/
 app/dist/
+
+# 只留在本机、不上传（项目负责人 11-06："有可以不上传的东西尽量不上传"）：
+# 需求和验证清单、考题和报告、测试、开发用的脚本和方案。运行（脚本和 Docker 两种装法）都用不到。
+spec/
+evals/
+tests/
+scripts/ask.py
+scripts/debug_compose.py
+scripts/replay.py
+scripts/simulate.py
+scripts/sim_report.py
+scripts/fetch_everkinetic_images.py
+scripts/fetch_exercise_images.py
+scripts/fetch_food_images.py
+scripts/fetch_rank_images.py
+scripts/fetch_stock_images.py
+scripts/setup_mail.sh
+deploy/mirobody.md
