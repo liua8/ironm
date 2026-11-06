@@ -8,7 +8,7 @@ import { api } from "@/api/client";
 import { Button, LinkButton, Note, Panel, PixelText, T } from "@/ui/pixel";
 import { color, space } from "@/ui/theme";
 
-import { budgetOf, macroLine, observedFacts, stripRefs, targetFacts } from "./logic";
+import { budgetOf, macroLine, observedFacts, periodFacts, targetFacts } from "./logic";
 import { Facts, SubTitle } from "./parts";
 import type { Day, DietReview, Metric } from "./types";
 
@@ -70,6 +70,7 @@ export function HowTarget({ metrics }: { metrics: Record<string, Metric> }) {
   }, []);
   const items = targetFacts(metrics);
   const seen = review && review !== "fail" ? observedFacts(review) : null;
+  const period = review && review !== "fail" ? periodFacts(review) : [];
   return (
     <View style={s.stack}>
       {items.length ? items.map((x) => (
@@ -80,8 +81,11 @@ export function HowTarget({ metrics }: { metrics: Record<string, Metric> }) {
       )) : <Note>指标这次没读到，稍后再试。</Note>}
       <SubTitle>按你记的估的实际消耗</SubTitle>
       {review === null ? <Note>正在算…</Note> : review === "fail" ? <Note>这次没算出来。</Note> : seen && "facts" in seen ? <Facts items={seen.facts} /> : <Note>{seen?.lack}</Note>}
-      {review && review !== "fail" && review.proposal ? (
-        <T muted style={s.small}>{`IronM 的建议：${stripRefs(review.proposal.reason)}，目标从 ${review.proposal.before} 调到 ${review.proposal.after} 千卡，在"今天吃什么"里确认。`}</T>
+      {period.length ? (
+        <>
+          <SubTitle>最近两周</SubTitle>
+          <Facts items={period} />
+        </>
       ) : null}
     </View>
   );

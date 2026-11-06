@@ -77,6 +77,41 @@ def test_start_from_today_plan_with_targets_timed_and_barbell_rest(
     assert plank["timed"] and plank["sets"][0]["reps"] is None and plank["rest"] == 90
 
 
+SQUAT_LAST = WorkoutLog(day=TODAY - timedelta(days=3), items=[LogItem(exercise="杠铃深蹲", done_sets=[
+    SetDone(reps=10, weight_kg=60), SetDone(reps=10, weight_kg=60)])])  # fmt: skip
+
+
+def test_plan_prefill_without_the_coach_is_last_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    """§163 需求 6：管家没定下次目标，开练预填照上次的重量和次数（不按规则加重），组数照计划。"""
+    c, _, _ = client(monkeypatch, plan=PLAN, logs=(SQUAT_LAST,))
+    squat = c.post("/iron/api/live/start", json={"today_plan": True}).json()["live"]["items"][0]
+    assert [(s["weight_kg"], s["reps"]) for s in squat["sets"]] == [(60, 10)] * 3  # 少做的组照上次最后一组
+    assert squat["target"] == "上次 60×10、60×10" and squat["plan_kg"] == 60
+
+
+def test_plan_prefill_uses_the_coach_target_while_it_holds(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ironm_agent import web_more
+    from ironm_agent.progression import Decided, day_mark
+
+    d = Decided(exercise="杠铃深蹲", sets=4, reps="8–10", weight_kg=62.5, why="上次轻松，加 2.5", after=SQUAT_LAST.day,
+                mark=day_mark("杠铃深蹲", [SQUAT_LAST], SQUAT_LAST.day), plan="3×8–10")  # fmt: skip
+
+    async def mine(_: str) -> dict[str, Any]:
+        return {"杠铃深蹲": d}
+
+    monkeypatch.setattr(web_more, "decided_targets", mine)
+    c, book, _ = client(monkeypatch, plan=PLAN, logs=(SQUAT_LAST,))
+    squat = c.post("/iron/api/live/start", json={"today_plan": True}).json()["live"]["items"][0]
+    assert [(s["weight_kg"], s["reps"]) for s in squat["sets"]] == [(62.5, 8)] * 4  # 管家定的组数、重量
+    assert squat["target"] == "目标 62.5 公斤 × 8–10 次 × 4 组"
+    c.delete("/iron/api/live")
+    newer = WorkoutLog(day=TODAY - timedelta(days=1), items=[LogItem(exercise="杠铃深蹲", done_sets=[
+        SetDone(reps=9, weight_kg=60)] * 3)])  # fmt: skip
+    asyncio.run(book.log("42", newer))  # 之后又练了一次：管家定的不再算数，照上次
+    squat = c.post("/iron/api/live/start", json={"today_plan": True}).json()["live"]["items"][0]
+    assert [(s["weight_kg"], s["reps"]) for s in squat["sets"]] == [(60, 9)] * 3
+
+
 def test_unknown_move_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     c, _, _ = client(monkeypatch)
     assert c.post("/iron/api/live/start", json={"exercises": ["自创动作"]}).status_code == 422

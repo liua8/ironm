@@ -66,7 +66,7 @@ export function EatSection({ compact = false, refresh = 0 }: { compact?: boolean
     if (flashTimer.current) clearTimeout(flashTimer.current);
   }, []);
 
-  // 计划和复盘：每次记完一餐跟着重读（复盘建议会随记录变）
+  // 计划和热量调整：每次记完一餐跟着重读
   const loadSide = useCallback(() => {
     api<DietPlan>("/iron/api/diet/plan").then(setPlan).catch(() => {});
     api<DietReview>("/iron/api/diet/review").then(setReview).catch(() => {});
@@ -117,10 +117,10 @@ export function EatSection({ compact = false, refresh = 0 }: { compact?: boolean
     }
   };
 
-  const act = async (action: "confirm" | "undo") => {
+  const undoKcal = async () => {
     setReviewErr("");
     try {
-      await api(action === "confirm" ? "/iron/api/diet/adjust" : "/iron/api/diet/adjust/undo", { method: "POST" });
+      await api("/iron/api/diet/adjust/undo", { method: "POST" });
       await loadAll(); // 目标变了：余额、计划、复盘都重读
     } catch (e) {
       setReviewErr(errText(e));
@@ -208,7 +208,7 @@ export function EatSection({ compact = false, refresh = 0 }: { compact?: boolean
         onMeal={(m) => open({ type: "meal", meal: m })}
         onLog={logPlan}
         onAdd={(kind) => open({ type: "add", kind })}
-        onReview={act}
+        onReview={undoKcal}
       />
       {sheetView}
     </View>

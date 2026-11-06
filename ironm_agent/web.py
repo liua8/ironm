@@ -76,7 +76,7 @@ async def snapshot_for(user_id: str, today: date | None = None) -> Snapshot:
 
 
 async def kcal_adjust(user_id: str) -> KcalAdjust | None:
-    """两周饮食复盘确认过的热量调整量（spec [2026-10-23] §18）；读不到时当作没有调整。"""
+    """现在的热量调整量（管家复盘里调的，§163 需求 6）；读不到时当作没有调整。"""
     from ironm_agent.diet_adjust import default_diet
 
     try:
@@ -561,7 +561,7 @@ async def get_training(
                 "weight_kg": t.weight_kg,
                 "reps": t.reps,
                 "sets": t.sets,
-                "by": t.by,  # coach：管家练完后定的；rule：按规则算的（§132）
+                "by": t.by,  # coach：管家练完后定的（§132）；last：管家没定，照上次（§163 需求 6）
             }
             for k, t in found.items()
         },

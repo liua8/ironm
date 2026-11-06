@@ -1,8 +1,9 @@
-"""两周饮食复盘（spec [2026-10-23] §18 需求 2）：按体重趋势用规则提出热量调整，用户确认后保存，可以撤销。
+"""热量调整（spec [2026-10-23] §18 需求 2、§118、§163 需求 6）：调不调、调多少由管家在复盘里定（他在对话里
+要求的由管家当场调），代码不再按体重趋势出规则建议，只算事实、守上下限、存储和撤销。
 
-- 减脂：体重几周没下降，每天少吃约 200 千卡；掉得比每周体重的 1% 还快（K37），每天加回约 150 千卡；
-- 增肌：体重没上升，每天多吃约 150 千卡；涨得比每周体重的 0.5% 还快，每天少吃约 150 千卡（经验）；
-- 调整后的目标不低于基础代谢与女 1200、男 1500 千卡；累计调整不超过 ±500；距上次调整不到 14 天不再调整。
+- 事实：按记的吃和体重变化估的每天实际消耗（observed）；
+- 上下限（_apply）：单次不超过 ±300 千卡，累计不超过原目标 ±500，不低于基础代谢与女 1200、男 1500 千卡；
+  被下限推成反方向的不调。
 调整量和原因加密存储；日志不写内容。
 """
 
@@ -14,14 +15,10 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Literal, Protocol
 
-from ironm_agent.metrics import KcalAdjust, Metric, Profile, safe_floor
+from ironm_agent.metrics import KcalAdjust, Profile, safe_floor
 
-CUT = 200
-ADD = 150
-MAX_TOTAL = 500
-COOLDOWN_DAYS = 14
-FAST_LOSS = 0.01  # 每周掉体重的 1% 以上算太快（K37 建议每周 0.5–1%）
-FAST_GAIN = 0.005  # 增肌每周涨体重的 0.5% 以上算太快（经验）
+MAX_STEP = 300  # 单次最多调多少千卡（§182）
+MAX_TOTAL = 500  # 累计最多比原目标多或少多少千卡
 
 
 # 按实际估消耗（spec [2026-10-23] §118 需求 7）
@@ -31,8 +28,7 @@ MIN_MEALS = 2  # 每天至少记了几餐才算这天记了
 MIN_WEIGHINS = 6
 MIN_SPAN = 10  # 称重的跨度至少几天
 KCAL_PER_KG = 7700  # 每公斤体重约 7700 千卡，粗算（经验）
-GAP = 300  # 和公式算的差这么多才提议
-MIN_STEP = 50  # 被基础代谢和安全下限卡住、只剩几十千卡以内的变化：不提（两周模拟 11-05：每天建议少吃 4–6 千卡）
+MIN_STEP = 50  # 被基础代谢和安全下限卡住、只剩几十千卡以内的变化：不调（两周模拟 11-05：每天少吃 4–6 千卡）
 
 
 @dataclass(frozen=True)
@@ -99,77 +95,22 @@ class Proposal:
     basis: str  # 用了哪些数据
 
 
-def _metric(metrics: Sequence[Metric], key: str) -> Metric | None:
-    return next((m for m in metrics if m.key == key), None)
-
-
-def propose(
-    metrics: Sequence[Metric],
-    profile: Profile,
-    current: KcalAdjust | None,
-    today: date,
-    seen: Observed | None = None,
-) -> tuple[Proposal | None, str]:
-    """返回调整方案，或者为什么这次不调整。有按实际估的消耗、和公式差得多时先按它（§118）。"""
-    if profile.goal not in ("fat_loss", "muscle"):
-        return None, "目标是减脂或增肌时，才按体重趋势调整热量。"
-    target, bmr, trend, weight = (
-        _metric(metrics, k) for k in ("kcal_target", "bmr", "weight_trend", "weight")
-    )
-    if target is None or target.value is None or bmr is None or bmr.value is None:
-        return None, "还算不出每日热量目标：先在个人中心填好身高、出生日期、性别和活动水平。"
-    if current is not None and (today - current.since).days < COOLDOWN_DAYS:
-        return (
-            None,
-            f"上次调整在 {current.since.month}月{current.since.day}日，两周后再看体重趋势。",
-        )
-    total_burn = _metric(metrics, "tdee")
-    if seen is not None and total_burn is not None and total_burn.value:
-        diff = seen.tdee - round(total_burn.value)
-        if abs(diff) >= GAP:
-            delta = min(ADD, diff) if diff > 0 else -min(CUT, -diff)
-            reason = (f"按你记的吃和体重变化，每天实际消耗约 {seen.tdee} 千卡，"
-                      f"比公式算的 {round(total_burn.value)} 千卡{'高' if diff > 0 else '低'} {abs(diff)} 千卡")  # fmt: skip
-            basis = (f"最近 {seen.days} 天平均每天吃 {seen.intake} 千卡；体重每周 {seen.kg_per_week:+.2f} 公斤"
-                     f"（称了 {seen.weighins} 次）；每公斤约 {KCAL_PER_KG} 千卡粗算")  # fmt: skip
-            return _apply(delta, reason, basis, target.value, bmr.value, profile, current)
-    if trend is None or trend.value is None or weight is None or weight.value is None:
-        why = "；".join(trend.missing) if trend is not None and trend.missing else "体重记录"
-        return None, f"体重记录还不够，看不出趋势（还缺：{why}）。"
-    w, wk = weight.value, trend.value
-    basis = f"{trend.text}；最新体重 {w:g} 公斤"
-    delta = 0
-    if profile.goal == "fat_loss":
-        if trend.brief in ("基本持平", "在上升"):
-            delta, reason = -CUT, "减脂期体重这几周没有下降"
-        elif -wk > w * FAST_LOSS:
-            delta = ADD
-            reason = f"体重每周掉 {-wk:.2f} 公斤，超过体重的 1%（{w * FAST_LOSS:.2f} 公斤），掉得太快容易丢肌肉"
-    elif trend.brief in ("基本持平", "在下降"):
-        delta, reason = ADD, "增肌期体重这几周没有上升"
-    elif wk > w * FAST_GAIN:
-        delta = -ADD
-        reason = (
-            f"体重每周涨 {wk:.2f} 公斤，超过体重的 0.5%（{w * FAST_GAIN:.2f} 公斤），可能多长了脂肪"
-        )
-    if not delta:
-        return None, "体重变化在合适的范围内，这两周不用调整热量。"
-    return _apply(delta, reason, basis, target.value, bmr.value, profile, current)
-
-
 def _apply(
     delta: int, reason: str, basis: str, target_now: float, bmr: float, profile: Profile,
     current: KcalAdjust | None,
 ) -> tuple[Proposal | None, str]:  # fmt: skip
-    """在现有调整量上加 delta：累计不超过 ±500，不低于基础代谢和安全下限。"""
+    """在现有调整量上加 delta：单次不超过 ±300，累计不超过 ±500，不低于基础代谢和安全下限；
+    被下限推成反方向、或者被下限卡得只剩几十千卡的不调。返回的 delta 是实际调了多少。"""
+    step = max(-MAX_STEP, min(MAX_STEP, delta))
     now_total = current.kcal if current else 0
-    total = max(-MAX_TOTAL, min(MAX_TOTAL, now_total + delta))
+    total = max(-MAX_TOTAL, min(MAX_TOTAL, now_total + step))
     if total == now_total:
         return None, f"累计调整已经到了 ±{MAX_TOTAL} 千卡的上限，建议先找营养师看看。"
     before = round(target_now)
     formula = before - now_total  # 公式算出的目标（不含调整量）
     after = round(max(formula + total, safe_floor(bmr, profile)))
-    if abs(after - before) < MIN_STEP or (after - before) * delta < 0:  # 只剩几十千卡、或者被下限推成反方向：不提
+    if after == before or (after - before) * delta < 0 or (after != formula + total and abs(after - before) < MIN_STEP):
+        # 被下限推成反方向、或者被下限卡得只剩几十千卡：不调
         return None, "热量目标已经到了基础代谢和安全下限，不能再减；可以多活动或找营养师看看。"
     return Proposal(after - before, after - formula, before, after, reason, basis), ""
 

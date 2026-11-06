@@ -10,14 +10,14 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timedelta
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from ironm_agent.exercises import library
-from ironm_agent.progression import history, next_target
+from ironm_agent.progression import Decided, coach_target, history
 from ironm_agent.training import LogItem, Plan, SetDone, WorkoutLog
 
 IDLE = timedelta(hours=6)
@@ -189,9 +189,14 @@ def rest_of(name: str, rests: dict[str, int]) -> int:
 
 
 def new_item(
-    name: str, plan: Plan | None, logs: Sequence[WorkoutLog], rests: dict[str, int]
+    name: str,
+    plan: Plan | None,
+    logs: Sequence[WorkoutLog],
+    rests: dict[str, int],
+    decided: Mapping[str, Decided] | None = None,
 ) -> LiveItem:
-    """一个动作：重量和次数按计划目标、上次做的预先填好；都没有时空着。"""
+    """一个动作：重量和次数按管家定的下次目标预先填好；管家没定（或已经不适用）的逐组照上次，
+    没做过的按计划写组数；都没有时空着（§163 需求 6：不按规则算进阶）。"""
     move = _move(name)
     cardio = bool(move is not None and move.part == "有氧")
     timed = bool(move is not None and move.timed) or cardio
@@ -207,9 +212,10 @@ def new_item(
     reps: int | None = None
     seconds: int | None = None
     target = ""
-    if planned is not None and (t := next_target(planned, logs)) is not None:
-        weight, target = t.weight_kg, f"目标 {t.text()}"
-        nums = [int(x) for x in t.reps.replace("–", "-").split("-") if x.strip().isdigit()]
+    mine = coach_target(planned, logs, decided) if planned is not None else None
+    if mine is not None:
+        weight, target, n = mine.weight_kg, f"目标 {mine.text()}", mine.sets
+        nums = [int(x) for x in mine.reps.replace("–", "-").split("-") if x.strip().isdigit()]
         reps = nums[0] if nums else None
     elif last:
         prev = last[0][1][-1]
@@ -238,9 +244,11 @@ def new_item(
         weight_kg=weight, reps=None if timed else reps, seconds=seconds if timed else None
     )
     sets = [one.model_copy() for _ in range(max(1, min(n, 20)))]
-    if planned is None and last:  # 没有计划目标：逐组照上次填
-        sets = [LiveSet(weight_kg=x.weight_kg, reps=None if timed else (x.reps or None),
-                        seconds=x.seconds if timed else None) for x in last[0][1][:20]]  # fmt: skip
+    if mine is None and last:  # 管家没定：逐组照上次填，组数照计划（多出的组照上次最后一组）
+        was = [LiveSet(weight_kg=x.weight_kg, reps=None if timed else (x.reps or None),
+                       seconds=x.seconds if timed else None) for x in last[0][1][:20]]  # fmt: skip
+        k = max(1, min(n, 20)) if planned is not None else len(was)
+        sets = [(was[i] if i < len(was) else was[-1]).model_copy() for i in range(k)]
     return LiveItem(exercise=name, timed=timed, rest=rest_of(name, rests), target=target[:40],
                     best=best_e1rm(name, logs), plan_kg=sets[0].weight_kg, sets=sets)  # fmt: skip
 

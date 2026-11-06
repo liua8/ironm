@@ -93,7 +93,7 @@ export function TodayPlan({ day, plan, review, reviewErr, flash, onEdit, onMeal,
   onMeal: (m: Meal) => void;
   onLog: (kind: string) => Promise<void>;
   onAdd: (kind: string) => void;
-  onReview: (action: "confirm" | "undo") => void;
+  onReview: () => void;
 }) {
   const r = reviewLine(review);
   const meta = planMeta(plan);
@@ -110,7 +110,7 @@ export function TodayPlan({ day, plan, review, reviewErr, flash, onEdit, onMeal,
             <T style={s.reviewTitle}>{r.title}</T>
             <T muted style={s.small}>{r.sub}</T>
           </View>
-          {r.action === "confirm" ? <Button title="确认" small onPress={() => onReview("confirm")} /> : <LinkButton title="撤销" onPress={() => onReview("undo")} />}
+          <LinkButton title="撤销" onPress={onReview} />
         </View>
       ) : null}
       {reviewErr ? <Note tone="error">{reviewErr}</Note> : null}

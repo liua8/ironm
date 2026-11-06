@@ -1,4 +1,5 @@
-"""练完打卡后叫醒管家定下次怎么练（spec [2026-10-23] §132）：规则降为参考和兜底，代码只管算对和安全。
+"""练完打卡后叫醒管家定下次怎么练（spec [2026-10-23] §132）：下次目标只由管家定，没定的照上次（§163 需求 6）；
+代码只管算对和安全，不给规则的参考、不按规则兜底。
 
 不连数据库、不调用真实模型。
 """
@@ -57,19 +58,20 @@ def held(logs: list[WorkoutLog]) -> Decided:
                    mark=day_mark("杠铃深蹲", logs, TODAY), plan="4×6–8")  # fmt: skip
 
 
-def test_the_coach_gets_this_session_the_last_two_today_and_the_rule() -> None:
+def test_the_coach_gets_this_session_the_last_two_and_today_without_a_rule() -> None:
     pain = PainBook()
     asyncio.run(pain.add("42", "joint.knee", TODAY))
     dp = setup(squat(4), HARD, pain=pain)
     llm = coach()
     got = asyncio.run(next_targets.run("42", dp, llm, HARD))
-    assert got == {}  # 没调用工具：什么都不存，照规则
+    assert got == {}  # 没调用工具：什么都不存，照上次
     system, user = (str(m["content"]) for m in llm.seen[0][1])
     assert "【记训练与复盘 · 练完定下次】" in system and "set_next_target" in system
     assert "感受 10 分" in user and "备注：最后一组练到力竭，膝盖有点不舒服" in user
     assert "杠铃深蹲：计划 4 组 × 6–8 次" in user and "60 公斤 × 9" in user
     assert user.count("60 公斤 × 9、60 公斤 × 9、60 公斤 × 9、60 公斤 × 9") == 2  # 最近两次
-    assert "规则的参考：62.5 公斤" in user  # 连续两次每组超过上限：规则说加重
+    assert "规则" not in user and "62.5" not in user  # 不再给规则算的参考（§163 需求 6）
+    assert "规则的参考" not in system and "照上次" in system
     assert "说膝关节疼" in user or "说膝盖疼" in user
     assert "罗马尼亚硬拉" not in user  # 这次没练到的不定
     state = asyncio.run(dp.store.get("42"))
@@ -86,9 +88,7 @@ def test_a_valid_target_is_stored_and_used_until_a_newer_log() -> None:
     state = asyncio.run(dp.store.get("42"))
     item = state.item("target:杠铃深蹲")
     assert item.title == "杠铃深蹲 下次 60 公斤 × 6–8 次 × 4 组" and item.value["by"] == "coach"
-    assert (
-        "先保持 60 公斤" in item.why and "规则算的是 62.5 公斤" in item.why
-    )  # 和规则不同：说明带上规则
+    assert item.why == "这次练到力竭还说膝盖不舒服，先保持 60 公斤"  # 说明只是管家的，不带规则
     assert item.basis.startswith("管家")
     hist = asyncio.run(dp.store.history("42", 20))
     assert any(
@@ -97,10 +97,14 @@ def test_a_valid_target_is_stored_and_used_until_a_newer_log() -> None:
     # 再评估（比如第二天打开）照样用管家定的
     again, _ = asyncio.run(evaluate("42", dp, reason="打开对话"))
     assert again.item("target:杠铃深蹲").value["by"] == "coach" and again.targets
-    # 之后又记了一次：回到规则
+    # 之后又记了一次：照上次
     asyncio.run(dp.training.log("42", squat(-1, reps=9)))
     later, _ = asyncio.run(evaluate("42", dp, reason="打卡", today=TODAY + timedelta(days=1)))
-    assert later.item("target:杠铃深蹲").value["by"] == "rule"
+    later_item = later.item("target:杠铃深蹲")
+    assert (
+        later_item.value["by"] == "last"
+        and later_item.title == "杠铃深蹲 下次 60 公斤 × 9 次 × 4 组"
+    )
 
 
 @pytest.mark.parametrize(
@@ -150,7 +154,7 @@ def test_model_failure_stores_nothing_but_keeps_what_was_already_stored() -> Non
     dp = setup(squat(4), HARD)
     assert asyncio.run(next_targets.run("42", dp, failing(), HARD)) == {}
     state = asyncio.run(dp.store.get("42"))
-    assert state is None or not state.targets  # 一个都没定成：什么都不存，照规则
+    assert state is None or not state.targets  # 一个都没定成：什么都不存，照上次
     ok = call(
         next_targets.TOOL, exercise="杠铃深蹲", weight_kg=60, reps="6–8", sets=4, why="先保持"
     )
@@ -173,13 +177,15 @@ def test_targets_and_lines_say_who_decided() -> None:
     d = held(logs)
     found = targets(plan, logs, {"杠铃深蹲": d})
     assert found["杠铃深蹲"].by == "coach" and found["杠铃深蹲"].action == "hold"
-    assert targets(plan, logs)["杠铃深蹲"].by == "rule"
+    assert targets(plan, logs)["杠铃深蹲"].by == "last"
     stale = d.model_copy(update={"after": TODAY - timedelta(days=4)})
     assert (
-        targets(plan, logs, {"杠铃深蹲": stale})["杠铃深蹲"].by == "rule"
-    )  # 定的不是最新这次：照规则
+        targets(plan, logs, {"杠铃深蹲": stale})["杠铃深蹲"].by == "last"
+    )  # 定的不是最新这次：照上次
     line = target_lines(plan, logs, TODAY, {"杠铃深蹲": d})[0]
-    assert "〔管家定的〕" in line and "杠铃深蹲 下次 60 公斤" in line
+    assert "〔管家定的〕" in line and "杠铃深蹲 下次 60 公斤" in line and "规则" not in line
+    plain = target_lines(plan, logs, TODAY)[0]  # 管家没定：照上次，档案里没有"规则"
+    assert "杠铃深蹲 下次 60 公斤 × 9 次 × 4 组（照上次：" in plain and "规则" not in plain
 
 
 def test_web_training_and_triggers(
@@ -263,8 +269,8 @@ def test_not_woken_for_a_session_while_sick() -> None:
     assert asyncio.run(next_targets.run("42", dp, llm, HARD)) == {} and not llm.seen
 
 
-def test_agreeing_with_the_rule_still_shows_the_coach_and_its_reason() -> None:
-    """管家定的和规则一样：标题不变，但首页的说明换成管家的、标成管家定的；不加版本、不记经历。"""
+def test_a_coach_target_replaces_the_last_time_one() -> None:
+    """管家定了加重：首页那一项从"照上次"换成管家定的、说明是管家的；改了就记一次调整（新的版本）。"""
     easy = squat(0, reps=9, rpe=6, note="挺轻松")
     dp = setup(squat(4), easy)
     first, _ = asyncio.run(evaluate("42", dp, reason="打卡"))
@@ -272,27 +278,29 @@ def test_agreeing_with_the_rule_still_shows_the_coach_and_its_reason() -> None:
         {"exercise": "杠铃深蹲", "weight_kg": 62.5, "reps": "6–8", "sets": 4, "why": "这次挺轻松，加到 62.5"}), easy))  # fmt: skip
     state = asyncio.run(dp.store.get("42"))
     item = state.item("target:杠铃深蹲")
+    assert first.item("target:杠铃深蹲").value["by"] == "last"
     assert (
         item.value["by"] == "coach"
         and item.why == "这次挺轻松，加到 62.5"
-        and state.version == first.version
+        and item.title == "杠铃深蹲 下次 62.5 公斤 × 6–8 次 × 4 组"
+        and state.version == first.version + 1
     )
 
 
-def test_a_second_log_the_same_day_or_a_plan_change_goes_back_to_the_rule() -> None:
-    """同一天又记了一次、或者改了计划的组次：之前定的对不上了，回到规则（审查 11-03）。"""
+def test_a_second_log_the_same_day_or_a_plan_change_goes_back_to_last_time() -> None:
+    """同一天又记了一次、或者改了计划的组次：之前定的对不上了，照上次（审查 11-03、§163 需求 6）。"""
     from ironm_agent.training import Plan
 
     plan, logs = plan_today(), [squat(4), HARD]
     d = held(logs)
     assert targets(plan, logs, {"杠铃深蹲": d})["杠铃深蹲"].by == "coach"
     again = [*logs, squat(0, reps=5)]  # 同一天第二次
-    assert targets(plan, again, {"杠铃深蹲": d})["杠铃深蹲"].by == "rule"
+    assert targets(plan, again, {"杠铃深蹲": d})["杠铃深蹲"].by == "last"
     redone = [squat(4), squat(0, reps=7)]  # 删了重记
-    assert targets(plan, redone, {"杠铃深蹲": d})["杠铃深蹲"].by == "rule"
+    assert targets(plan, redone, {"杠铃深蹲": d})["杠铃深蹲"].by == "last"
     raw = plan.model_dump()
     raw["sessions"][0]["items"][0].update(sets=3, reps="10–12")
-    assert targets(Plan.model_validate(raw), logs, {"杠铃深蹲": d})["杠铃深蹲"].by == "rule"
+    assert targets(Plan.model_validate(raw), logs, {"杠铃深蹲": d})["杠铃深蹲"].by == "last"
 
 
 @pytest.mark.parametrize(
@@ -365,14 +373,14 @@ def test_mcp_marks_who_decided() -> None:
 
 
 def test_relogging_the_same_sets_does_not_bring_back_the_old_decision() -> None:
-    """删了按同样的组次重记，这次管家没调：以前定的清掉，照规则（复核 11-03）。"""
+    """删了按同样的组次重记，这次管家没调：以前定的清掉，照上次（复核 11-03）。"""
     dp = setup(squat(4), HARD)
     asyncio.run(next_targets.run("42", dp, coach(
         {"exercise": "杠铃深蹲", "weight_kg": 62.5, "reps": "6–8", "sets": 4, "why": "加"}), HARD))  # fmt: skip
     assert "杠铃深蹲" in asyncio.run(dp.store.get("42")).targets
     asyncio.run(next_targets.run("42", dp, coach(), HARD))  # 重记后再叫醒，这次没调
     state = asyncio.run(dp.store.get("42"))
-    assert "杠铃深蹲" not in state.targets and state.item("target:杠铃深蹲").value["by"] == "rule"
+    assert "杠铃深蹲" not in state.targets and state.item("target:杠铃深蹲").value["by"] == "last"
 
 
 def test_two_logs_the_same_day_compare_with_the_heaviest_set() -> None:

@@ -39,7 +39,7 @@ HISTORY_DAYS = 63  # 读多久的训练记录（平台期要看 9 周）
 
 
 class Item(BaseModel):
-    key: str  # 同一项在各版本里的编号，如 today、target:杠铃深蹲、proposal:diet
+    key: str  # 同一项在各版本里的编号，如 today、target:杠铃深蹲、review:kcal
     kind: Kind
     title: str  # 给人看的一句话
     why: str = ""  # 原因
@@ -269,8 +269,7 @@ def _target_items(inp: Inputs) -> list[Item]:
     recovering = recovering_days(inp.illness, date.today())
     steady = [x for x in inp.logs if x.day not in recovering]
     for name, t in targets(inp.plan, steady, inp.decided).items():
-        basis = ("管家按这次的记录定的（规则作参考）" if t.by == "coach"
-                 else {"up": "加重 2–10%〔K03〕", "down": "减重约 10%（经验）"}.get(t.action, "进阶规则"))  # fmt: skip
+        basis = "管家按这次的记录定的" if t.by == "coach" else "管家没定，照上次的重量和次数"
         out.append(Item(key=f"target:{name}", kind="target", title=f"{name} 下次 {t.text()}",
                         why=t.why, basis=basis, action="auto",
                         value={"exercise": name, "weight_kg": t.weight_kg, "reps": t.reps,
@@ -279,8 +278,7 @@ def _target_items(inp: Inputs) -> list[Item]:
 
 
 def _food_items(inp: Inputs) -> list[Item]:
-    from ironm_agent.diet_adjust import propose
-
+    """每日热量和蛋白质（事实）。规则的热量调整建议去掉了：热量只在管家复盘里调（§163 需求 6）。"""
     by = {m.key: m for m in inp.snapshot.metrics}
     kcal, protein = by.get("kcal_target"), by.get("protein_target")
     out = []
@@ -296,15 +294,6 @@ def _food_items(inp: Inputs) -> list[Item]:
                         why=why, basis=kcal.source, action="auto",
                         value={"kcal": round(kcal.value),
                                "protein": protein.value if protein else None}))  # fmt: skip
-    proposal, _ = propose(
-        inp.snapshot.metrics, inp.snapshot.profile, inp.diet, inp.snapshot.today, inp.seen
-    )
-    if proposal is not None:
-        more = "多" if proposal.delta > 0 else "少"
-        out.append(Item(key="proposal:diet", kind="proposal", action="confirm",
-                        title=f"建议每天{more}吃约 {abs(proposal.delta)} 千卡（{proposal.before} → {proposal.after}）",
-                        why=proposal.reason, basis=f"减重速度〔K37〕；{proposal.basis}",
-                        value={"delta": proposal.delta, "after": proposal.after}))  # fmt: skip
     return out
 
 
@@ -625,7 +614,7 @@ async def _gather(user_id: str, deps: Deps, today: date) -> Inputs:
         inp.pain_details = [x for x in rows if (x["part"], x["day"]) in kept]
     inp.goal = await safely("goal", deps.goals.get(user_id))
     inp.diet = await safely("diet", deps.diet.current(user_id))
-    if deps.meals is not None:  # 和饮食页同一个算法，管家和饮食页的提议一致（§118）
+    if deps.meals is not None:  # 和饮食页同一个算法：管家复盘看到的实际消耗和饮食页一致（§118）
         from ironm_agent.diet_adjust import OBSERVE_DAYS, by_day, observed
 
         rows = await safely(

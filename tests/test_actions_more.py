@@ -519,9 +519,12 @@ def test_kcal_cut_stops_at_the_safe_floor(monkeypatch: pytest.MonkeyPatch) -> No
     by = {m.key: m.value for m in snap.metrics}
     floor = safe_floor(by["bmr"], snap.profile)  # type: ignore[arg-type]
     room = by["kcal_target"] - floor  # type: ignore[operator]
-    assert 0 < room < 450  # 前提：碰到下限比碰到 ±500 先（档案变了这里会先报出来）
+    assert 300 < room < 450  # 前提：一次调不到下限、碰到下限比碰到 ±500 先（档案变了这里会先报出来）
     a, desk, _, _ = harness(monkeypatch, "少吃一点", snapshot=snap)
     said = go(a, desk, KCAL_CHANGE, delta=-round(room) - 50, reason="他要")
+    before = round(by["kcal_target"])  # type: ignore[arg-type]
+    assert said.startswith("已调好") and f"→ {before - 300} 千卡" in said and "按上下限" in said  # 一次最多 300（§182）
+    said = go(a, desk, KCAL_CHANGE, delta=-300, reason="他要")
     assert said.startswith("已调好") and f"→ {round(floor)} 千卡" in said and "按上下限" in said
     assert "不能再减" in go(a, desk, KCAL_CHANGE, delta=-50, reason="再少点")
 

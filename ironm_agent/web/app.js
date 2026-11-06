@@ -690,19 +690,13 @@ async function confirmPending(x, draft, row) {
   } }, "撤销");
   flash(h("span", { class: "flash-row" }, h("span", {}, draftDone(draft)), undo), 8000);
 }
-// 没带预览的待确认（饮食热量、要现出方案的）：和对话里一样，点了再调热量或出方案，方案确认后才生效
+// 没带预览的待确认（要现出方案的）：和对话里一样，点了再出方案，方案确认后才生效
 async function acceptPending(x, row) {
   for (const b of row.querySelectorAll("button")) b.disabled = true;
   const out = h("div", { class: "inbox-result" });
   try {
     await api("/iron/api/coach/decide", { method: "POST", body: JSON.stringify({ key: x.key, decision: "accept" }) });
     row.replaceChildren(h("p", {}, x.title), out);
-    if (x.key === "proposal:diet") {
-      const d = await api("/iron/api/diet/adjust", { method: "POST" });
-      cache.metrics = null;
-      out.append(h("p", { class: "muted" }, `已调整：每日热量目标约 ${Math.round(d.target)} 千卡。想撤销可以在饮食页撤销。`));
-      return;
-    }
     if (x.kind !== "proposal" && x.kind !== "alert") { out.append(h("p", { class: "muted" }, "好的，已经按这个安排。")); return; }
     out.append(h("p", { class: "muted" }, "正在拿 IronM 的方案…"));
     const trigger = x.kind === "alert" && x.value?.trigger ? `?trigger=${encodeURIComponent(x.value.trigger)}` : "";
@@ -2238,21 +2232,20 @@ function logMealSheet(photo, day, redraw, kind0 = null) {
 }
 
 // 今天吃什么（§119）：按顿一行。记了的显示图、名字、热量；没记、今天这套计划里有的淡色显示和"照计划记"；
-// 都没有的一个"＋ 记早餐"。两周复盘的建议有时才在顶上一行出现
+// 都没有的一个"＋ 记早餐"。热量调整过（IronM 复盘里调的）时顶上一行写明、能撤销；规则建议去掉了（§163 需求 6）
 const MAIN_KINDS = ["早餐", "午餐", "晚餐", "加餐"];
 // 今天的饮食计划（§125）：按顿逐样列吃什么、多少克、多少千卡；吃过的列实际记的，没吃的列计划，没排的能记
 function todayPlan(d, redraw, meta) {
   const review = h("div", { class: "diet-review", hidden: true });
   api("/iron/api/diet/review").then((r) => {
-    const p = r.proposal, c = r.current;
-    if (!p && !c) return;
-    const act = async (path) => { try { await api(path, { method: "POST" }); cache.metrics = null; render(); } catch (err) { review.append(h("p", { class: "error" }, err.message)); } };
+    const c = r.current;
+    if (!c) return;
+    const undo = async () => { try { await api("/iron/api/diet/adjust/undo", { method: "POST" }); cache.metrics = null; render(); } catch (err) { review.append(h("p", { class: "error" }, err.message)); } };
     review.hidden = false;
     review.replaceChildren(
-      h("div", { class: "dr-text" }, h("b", {}, p ? `建议每天${p.delta > 0 ? "多" : "少"}吃 ${Math.abs(p.delta)} 千卡` : `热量目标调整过 ${c.kcal > 0 ? "+" : "−"}${Math.abs(c.kcal)} 千卡`),
-        h("small", {}, p ? `${p.reason}，目标从 ${p.before} 调到 ${p.after}` : `${c.reason}（${md(c.since)}起）`)),
-      p ? h("button", { class: "btn small", type: "button", onclick: () => act("/iron/api/diet/adjust") }, "确认") : null,
-      c && !p ? h("button", { class: "link", type: "button", onclick: () => act("/iron/api/diet/adjust/undo") }, "撤销") : null);
+      h("div", { class: "dr-text" }, h("b", {}, `热量目标调整过 ${c.kcal > 0 ? "+" : "−"}${Math.abs(c.kcal)} 千卡`),
+        h("small", {}, `${c.reason}（${md(c.since)}起）`)),
+      h("button", { class: "link", type: "button", onclick: undo }, "撤销"));
   }).catch(() => {});
   const list = h("div", { class: "tp-list" });
   const lines = (foods) => h("ul", { class: "tp-foods" }, foods.map((f) => h("li", {},
@@ -2430,7 +2423,7 @@ function editFoods(x, redraw) {
   return h("div", { class: "edit-foods" }, h("h3", {}, "吃了什么（可以改克数）"), lines.el, h("div", { class: "btn-row" }, save), msg);
 }
 
-// 按记的吃和体重变化估的实际消耗（§118 需求 7）：和公式算的并排；条件不够时说还差什么
+// 按记的吃和体重变化估的实际消耗（§118 需求 7）：和公式算的并排；条件不够时说还差什么。只给事实（§163 需求 6）
 function observedBox() {
   const box = h("div", {}, h("h3", {}, "按你记的估的实际消耗"), h("p", { class: "muted" }, "正在算…"));
   api("/iron/api/diet/review").then((r) => {
@@ -2441,7 +2434,9 @@ function observedBox() {
         ["用了哪些数据", `最近 ${o.days} 天平均每天吃 ${o.intake} 千卡；体重每周 ${o.kg_per_week > 0 ? "+" : ""}${o.kg_per_week} 公斤（称了 ${o.weighins} 次）`],
         ["怎么算的", o.how]].map(([k, v]) => h("div", {}, h("dt", {}, k), h("dd", {}, v))))
       : h("p", { class: "muted" }, `还算不出来：${r.observed_lack || "饮食和体重记录不够"}。`),
-      r.proposal ? h("p", { class: "caption" }, `IronM 的建议：${r.proposal.reason}，目标从 ${r.proposal.before} 调到 ${r.proposal.after} 千卡，在"吃了什么"上面确认。`) : null);
+      r.intake || r.weight_trend ? h("dl", { class: "facts" }, [
+        r.intake ? ["平均每天吃", `${r.intake.kcal} 千卡（最近 ${r.intake.of} 天里记了 2 餐以上的 ${r.intake.days} 天）`] : null,
+        r.weight_trend ? ["体重趋势", r.weight_trend] : null].filter(Boolean).map(([k, v]) => h("div", {}, h("dt", {}, k), h("dd", {}, v)))) : null);
   }).catch(() => box.replaceChildren(h("p", { class: "muted" }, "这次没算出来。")));
   return box;
 }
@@ -2656,7 +2651,7 @@ const CALC_FROM = {
   bmi: ["由体重和身高算出。", "体重和身高都在「我」里改。"],
   bmr: ["由体重、身高、年龄、性别算出。", "身高、出生日期、性别、体重都在「我」里改。"],
   tdee: ["基础代谢乘以日常活动水平。", "活动水平在「我」里改。"],
-  kcal_target: ["每日总消耗按目标加减，再加上两周饮食复盘的调整量。", "目标在「我」里改；调整量在饮食页确认或撤销。"],
+  kcal_target: ["每日总消耗按目标加减，再加上 IronM 复盘里调的调整量。", "目标在「我」里改；调整量在饮食页能撤销。"],
   protein_target: ["按体重和目标算出。", "目标和体重都在「我」里改。"],
 };
 
@@ -4157,12 +4152,6 @@ function inboxView(r) {
       await api("/iron/api/coach/decide", { method: "POST", body: JSON.stringify({ key: x.key, decision }) });
       if (decision === "later") { row.replaceChildren(h("p", { class: "muted" }, `好的，「${x.title}」今天不再提。`)); return; }
       row.replaceChildren(h("b", {}, x.title), out);
-      if (x.key === "proposal:diet") {
-        const d = await api("/iron/api/diet/adjust", { method: "POST" });
-        cache.metrics = null;
-        out.append(h("p", {}, `已调整：每日热量目标约 ${Math.round(d.target)} 千卡。想撤销可以在饮食页撤销。`));
-        return;
-      }
       out.append(h("p", { class: "muted" }, "训练教练在改计划，大约要半分钟…"));
       const trigger = x.kind === "alert" ? `?trigger=${x.value.trigger}` : "";
       const p = await api(`/iron/api/review/proposal${trigger}`, { method: "POST" });
@@ -4182,7 +4171,7 @@ function inboxView(r) {
         c.kind === "review" && c.change === "added" ? reviewExtra(c) : null)))) : null,
     r.pending.length ? h("div", { class: "inbox-pending" }, r.pending.map((x) => {
       const row = h("div", { class: "inbox-item" });
-      const yes = h("button", { class: "btn small", type: "button" }, x.key === "proposal:diet" ? "确认调整" : "确认，出方案");
+      const yes = h("button", { class: "btn small", type: "button" }, "确认，出方案");
       const no = h("button", { class: "btn ghost small", type: "button" }, "暂不");
       yes.addEventListener("click", () => decide(x, "accept", row, [yes, no]));
       no.addEventListener("click", () => decide(x, "later", row, [yes, no]));

@@ -1520,7 +1520,7 @@ class IronMAgent:
         note = "\n".join(x for x in (
             "现在的情况：\n" + "\n".join(follow) if follow else "",
             "排新计划要用的条件（旧答案带来源和日期）：\n" + "\n".join(terms),
-            CONFIRMED_NOTE + (f"他的目标：{aim}。要写计划时，计划说明第一句写这份计划为了这个目标怎么排，目标的数和日期照写。" if aim else "")
+            CONFIRMED_NOTE + (f"他的目标：{aim}。要写计划时，说明里写这份计划怎么为这个目标排，目标的数和日期照写；他这句还问了别的，先答问的（§182）。" if aim else "")
             if confirmed_now else "",
             PREVIEWED_NOTE if previewed_now else "",
             f"他这句话说这些天没空：{busy}。挪训练不要挪到这些天。" if busy else "",

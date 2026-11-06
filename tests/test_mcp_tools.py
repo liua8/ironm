@@ -90,7 +90,11 @@ def test_tools_load_with_hidden_identity() -> None:
 
 def test_personal_tools_read_only_the_signed_in_person(data: mcp_tools.Sources) -> None:
     mine = text(call("query_my_training"))
-    assert "增肌三练" in mine and "杠铃深蹲 80×9" in mine and "下次 85 公斤" in mine
+    assert (
+        "增肌三练" in mine
+        and "杠铃深蹲 80×9" in mine
+        and "下次 80 公斤 × 9 次 × 3 组（照上次" in mine
+    )
     other = text(call("query_my_training", {"user_info": {"user_id": "42"}}, user_id="7"))
     assert "还没有" in other and "杠铃深蹲" not in other  # 模型传别人的编号也没用：只认登录身份
     assert asyncio.run(mcp_tools.MyFitnessService().query_my_training({})) == mcp_tools.NEED_LOGIN

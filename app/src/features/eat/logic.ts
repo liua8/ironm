@@ -76,6 +76,14 @@ export function observedFacts(r: DietReview): { facts: [string, string][] } | { 
   };
 }
 
+/** 这段时间的事实（§163 需求 6）：平均每天吃多少、体重趋势；都没有时为空。 */
+export function periodFacts(r: DietReview): [string, string][] {
+  const out: [string, string][] = [];
+  if (r.intake) out.push(["平均每天吃", `${r.intake.kcal} 千卡（最近 ${r.intake.of} 天里记了 2 餐以上的 ${r.intake.days} 天）`]);
+  if (r.weight_trend) out.push(["体重趋势", r.weight_trend]);
+  return out;
+}
+
 /** 计划标题下那一行：今天用哪一套、一共多少千卡。 */
 export function planMeta(plan: DietPlan | null): string {
   if (!plan) return "";
@@ -108,18 +116,11 @@ export function slotRows(d: Day, plan: DietPlan | null): SlotRow[] {
   return shownKinds(d.meals).map((k) => slotRow(k, d.meals, plan));
 }
 
-/** 两周复盘那一行：有建议时"建议每天多/少吃"+确认；已调整过、没新建议时"调整过"+撤销。 */
-export function reviewLine(r: DietReview | null): { title: string; sub: string; action: "confirm" | "undo" } | null {
-  if (!r) return null;
-  const p = r.proposal;
-  const c = r.current;
-  if (p) {
-    return { title: `建议每天${p.delta > 0 ? "多" : "少"}吃 ${Math.abs(p.delta)} 千卡`, sub: `${stripRefs(p.reason)}，目标从 ${p.before} 调到 ${p.after}`, action: "confirm" };
-  }
-  if (c) {
-    return { title: `热量目标调整过 ${c.kcal > 0 ? "+" : "−"}${Math.abs(c.kcal)} 千卡`, sub: `${stripRefs(c.reason)}（${md(c.since)}起）`, action: "undo" };
-  }
-  return null;
+/** 热量调整那一行：调整过（IronM 复盘里调的、对话里让它调的）时"调整过"+撤销；规则建议去掉了（§163 需求 6）。 */
+export function reviewLine(r: DietReview | null): { title: string; sub: string } | null {
+  const c = r?.current;
+  if (!c) return null;
+  return { title: `热量目标调整过 ${c.kcal > 0 ? "+" : "−"}${Math.abs(c.kcal)} 千卡`, sub: `${stripRefs(c.reason)}（${md(c.since)}起）` };
 }
 
 /** 选到今天已经记过的那一餐时的提示：记下后会替换（每种餐每天只留一份）。 */

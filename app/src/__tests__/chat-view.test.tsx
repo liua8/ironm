@@ -40,10 +40,10 @@ it("shows the answer without reference codes, and a plan card that can be confir
 
 it("lets the user put off a coach suggestion", async () => {
   mockApi.mockResolvedValue({});
-  await render(<InboxMsg inbox={{ version: 1, changes: [], pending: [{ key: "proposal:diet", kind: "proposal", title: "热量往下调一点" }] }} />);
+  await render(<InboxMsg inbox={{ version: 1, changes: [], pending: [{ key: "proposal:review", kind: "proposal", title: "这周的安排要调一下" }] }} />);
   await fireEvent.press(screen.getByText("暂不"));
-  expect(mockApi).toHaveBeenCalledWith("/iron/api/coach/decide", { method: "POST", json: { key: "proposal:diet", decision: "later" } });
-  expect(await screen.findByText("好的，「热量往下调一点」今天不再提。")).toBeTruthy();
+  expect(mockApi).toHaveBeenCalledWith("/iron/api/coach/decide", { method: "POST", json: { key: "proposal:review", decision: "later" } });
+  expect(await screen.findByText("好的，「这周的安排要调一下」今天不再提。")).toBeTruthy();
 });
 
 it("puts a 去填模型 button under the no-model reply (§167)", async () => {

@@ -77,12 +77,13 @@ export type DietPlan = {
   today_set: PlanSet;
 };
 
-/** 两周饮食复盘（GET /iron/api/diet/review）。 */
+/** 饮食复盘（GET /iron/api/diet/review）：只给事实，不给规则的热量建议；热量由 IronM 在复盘里调（§163 需求 6）。 */
 export type DietReview = {
   observed: { tdee: number; intake: number; kg_per_week: number; days: number; weighins: number; formula: number | null; how: string } | null;
   observed_lack?: string;
+  intake?: { kcal: number; days: number; of: number } | null;
+  weight_trend?: string | null;
   current: { kcal: number; since: string; reason: string } | null;
-  proposal: { delta: number; total: number; before: number; after: number; reason: string } | null;
 };
 
 /** 常吃的（GET /iron/api/meals/usual）。 */

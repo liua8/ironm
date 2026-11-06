@@ -114,29 +114,88 @@ def test_plan_change_is_proposed_on_a_stage_day_and_needs_his_ok() -> None:
     assert not asyncio.run(review.run("42", dp, plain, force=True)).done
 
 
+def live_kcal(dp: Any, profile: Any = ME) -> Any:
+    """快照跟着热量调整走（和线上一样：每日热量目标算上现在的调整量）。"""
+    from dataclasses import replace
+
+    base = asyncio.run(dp.snapshot("42"))
+
+    async def snapshot(_: str) -> Snapshot:
+        adj = await dp.diet.current("42")
+        return Snapshot(profile, base.readings, tuple(compute_all(base.readings, profile, TODAY, adj)), TODAY)
+
+    return replace(dp, snapshot=snapshot)
+
+
+def kcal_of(dp: Any) -> tuple[int, int]:
+    """不算调整量时的每日热量目标和安全下限。"""
+    from ironm_agent.metrics import safe_floor
+
+    s = asyncio.run(dp.snapshot("42"))
+    by = {m.key: m.value for m in compute_all(s.readings, s.profile, TODAY)}
+    return round(by["kcal_target"]), round(safe_floor(by["bmr"], s.profile))
+
+
 def test_kcal_change_respects_the_safety_floor_and_can_be_undone() -> None:
-    dp = setup()
+    """§182：热量只在管家复盘里调；单次最多 300、不低于安全下限、被下限推成反方向不调，能撤销。"""
+    dp = live_kcal(setup())
+    target, floor = kcal_of(dp)
+    assert 300 < target - floor < 500  # 前提：第二次就碰到下限，比累计 ±500 先到
     probe, seen = model()
     asyncio.run(review.run("42", dp, probe))
     f = facts_id(seen, "每日热量目标")
     llm, _ = model({"type": "kcal", "delta": -3000, "why": "想减快点", "basis": [f]})
     got = asyncio.run(review.run("42", dp, llm, force=True))
-    assert got.done and "按基础代谢和安全下限" in got.done[0].title  # 低了按下限执行并写明
-    floor_adj = asyncio.run(dp.diet.current("42"))
-    assert floor_adj is not None and floor_adj.kcal < 0
+    assert got.done and "一次最多调 300 千卡" in got.done[0].title  # 单次最多 300
+    assert asyncio.run(dp.diet.current("42")).kcal == -300  # type: ignore[union-attr]
     soon, _ = model({"type": "kcal", "delta": 200, "why": "减得太快", "basis": [f]})
     assert asyncio.run(review.run("42", dp, soon, force=True)).done == got.done  # 不到 14 天不复查热量（§129）
-    assert asyncio.run(dp.diet.current("42")).kcal == floor_adj.kcal  # type: ignore[union-attr]  # 早上定的照留着
+    assert asyncio.run(dp.diet.current("42")).kcal == -300  # type: ignore[union-attr]  # 早上定的照留着
     later = TODAY + timedelta(days=14)
     probe2, seen2 = model()
     asyncio.run(review.run("42", dp, probe2, force=True, today=later))
     f = facts_id(seen2, "每日热量目标")  # 换了一天，事实重新编号
-    up, _ = model({"type": "kcal", "delta": 200, "why": "减得太快", "basis": [f]})
-    asyncio.run(review.run("42", dp, up, force=True, today=later))
+    down, _ = model({"type": "kcal", "delta": -300, "why": "还想减", "basis": [f]})
+    got2 = asyncio.run(review.run("42", dp, down, force=True, today=later))
+    assert got2.done and "按基础代谢和安全下限" in got2.done[0].title  # 低了按下限执行并写明
+    floor_adj = asyncio.run(dp.diet.current("42"))
+    assert floor_adj is not None and floor_adj.kcal == floor - target
+    again = TODAY + timedelta(days=28)
+    probe3, seen3 = model()
+    asyncio.run(review.run("42", dp, probe3, force=True, today=again))
+    f = facts_id(seen3, "每日热量目标")
+    llm3, _ = model({"type": "kcal", "delta": -100, "why": "再减点", "basis": [f]},  # 已经在下限：不调
+                    {"type": "kcal", "delta": 200, "why": "减得太快", "basis": [f]})  # fmt: skip
+    got3 = asyncio.run(review.run("42", dp, llm3, force=True, today=again))
+    assert [d.title.split("，")[0] for d in got3.done] == ["每日热量目标加 200 千卡"]
     assert asyncio.run(dp.diet.current("42")).kcal == floor_adj.kcal + 200  # type: ignore[union-attr]
-    asyncio.run(review.undo("42", dp, "review:kcal", today=later))
+    asyncio.run(review.undo("42", dp, "review:kcal", today=again))
     assert asyncio.run(dp.diet.current("42")).kcal == floor_adj.kcal  # type: ignore[union-attr]
 
+
+def test_kcal_change_is_not_a_cut_for_minors_and_stays_within_500() -> None:
+    """18 岁以下不减热量（特殊人群硬规则，§90）；加热量累计不超过原目标 +500。"""
+    from dataclasses import replace
+
+    teen = replace(ME, birth=TODAY.replace(year=TODAY.year - 16))
+    dp = live_kcal(setup(), teen)
+    probe, seen = model()
+    asyncio.run(review.run("42", dp, probe))
+    f = facts_id(seen, "每日热量目标")
+    cut, _ = model({"type": "kcal", "delta": -200, "why": "想减", "basis": [f]})
+    assert not asyncio.run(review.run("42", dp, cut, force=True)).done
+    assert asyncio.run(dp.diet.current("42")) is None
+    from ironm_agent.metrics import KcalAdjust
+
+    asyncio.run(dp.diet.apply("42", KcalAdjust(400, TODAY - timedelta(days=20), "以前加的")))
+    later = TODAY + timedelta(days=14)
+    probe2, seen2 = model()
+    asyncio.run(review.run("42", dp, probe2, force=True, today=later))
+    f = facts_id(seen2, "每日热量目标")
+    add, _ = model({"type": "kcal", "delta": 300, "why": "长得慢", "basis": [f]})
+    got = asyncio.run(review.run("42", dp, add, force=True, today=later))
+    assert got.done and "累计最多调 500 千卡" in got.done[0].title
+    assert asyncio.run(dp.diet.current("42")).kcal == 500  # type: ignore[union-attr]
 
 def test_only_correctness_is_checked_not_the_models_choice() -> None:
     dp = setup()

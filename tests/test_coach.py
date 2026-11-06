@@ -55,13 +55,11 @@ def test_compute_lists_each_item_with_reason_and_basis() -> None:
     assert (
         today.title == "管家正在看今天的情况" and "组数减半" not in today.title
     )  # 只睡 4 小时也不按规则减半（§163）
-    assert (
-        items["target:杠铃深蹲"].title.startswith("杠铃深蹲 下次 62.5 公斤")
-        and "〔K03〕" in items["target:杠铃深蹲"].basis
-    )
+    target = items["target:杠铃深蹲"]  # 管家没定：照上次，不按规则加重（§163 需求 6）
+    assert target.title == "杠铃深蹲 下次 60 公斤 × 9 次 × 4 组" and target.why.startswith("照上次")
+    assert "照上次" in target.basis and "规则" not in target.basis + target.why and target.value["by"] == "last"
     assert items["kcal"].title.startswith("每天约") and items["kcal"].action == "auto"
-    diet = items["proposal:diet"]  # 减脂体重持平：建议少吃
-    assert diet.action == "confirm" and "少吃约 200 千卡" in diet.title and "〔K37〕" in diet.basis
+    assert not any(k.startswith("proposal:") for k in items)  # 减脂体重持平也不出规则的热量建议
     assert (
         "alert:pain" not in items and "proposal:review" not in items
     )  # 规则的提醒、每周建议都交给管家（§163）
@@ -144,12 +142,12 @@ def test_diff_detects_title_changes() -> None:
 
     first = compute(Inputs(snapshot=snap(), plan=plan_today(), logs=[squat(3, reps=7)]), TODAY)
     old = State(version=1, day=TODAY, at=datetime.now(), reason="x", items=first)
-    logs = [squat(5), squat(3)]  # 连续两次都超过次数上限：下次加重
+    logs = [squat(5), squat(3)]  # 又记了一次：照上次的次数变了
     changed = diff(
         old, compute(Inputs(snapshot=snap(), plan=plan_today(), logs=logs), TODAY), TODAY, 2
     )
     assert [(c.key, c.change) for c in changed] == [("target:杠铃深蹲", "changed")]
-    assert "60 公斤" in changed[0].before and "62.5 公斤" in changed[0].after
+    assert "× 7 次" in changed[0].before and "× 9 次" in changed[0].after
 
 
 def test_coach_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,9 +169,8 @@ def test_coach_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     r = c.get("/iron/api/coach").json()
     assert woke == ["42"]  # 首页打开也叫醒管家跑当天的复盘（两周模拟 11-05）
     assert r["version"] == 1 and r["items"][0]["key"] == "today"
-    assert {x["key"] for x in r["pending"]} >= {"proposal:diet"} and "alert:pain" not in {
-        x["key"] for x in r["items"]
-    }
+    assert "proposal:diet" not in {x["key"] for x in r["pending"]}  # 规则的热量建议去掉了（§163 需求 6）
+    assert "alert:pain" not in {x["key"] for x in r["items"]}
     assert r["changes"] and all(x["day"] == TODAY.isoformat() for x in r["changes"])
     assert c.get("/iron/api/coach").json()["version"] == 1  # 同一天再打开不重复算
     assert c.get("/iron/api/coach/history").json()["changes"]
@@ -241,37 +238,48 @@ def test_chat_triggers_daily_and_pain_reevaluation(
 # ---- 对话里的管家消息（spec [2026-10-23] §26）--------------------------------------------------
 
 
+def coach_proposed(dp: Deps) -> None:
+    """管家今天的复盘提了一条改计划（要他确认）：规则的热量建议去掉后，用它测待确认的流程。"""
+    from ironm_agent.coach_state import Done, Review
+
+    s, _ = asyncio.run(evaluate("42", dp, reason="打卡"))
+    done = [Done(key="review:propose", type="propose", title="建议这样改计划：深蹲换高脚杯深蹲",
+                 why="膝盖不舒服", basis="F1")]  # fmt: skip
+    asyncio.run(dp.store.save("42", s.model_copy(update={"review": Review(day=TODAY, done=done)}), []))
+
+
 def test_inbox_pending_unseen_and_choices() -> None:
     from ironm_agent.coach_state import decide, mark_seen, pending, unseen
 
     pain = PainBook()
     pain.rows["42"] = [("joint.knee", TODAY), ("joint.knee", TODAY - timedelta(days=2))]
     dp = deps(training=with_plan(), pain=pain)
+    coach_proposed(dp)
     s1, _ = asyncio.run(evaluate("42", dp, reason="打卡"))
     history = asyncio.run(dp.store.history("42"))
     news = unseen(s1, history)
     assert news and all(c.status != "confirm" for c in news)  # 要确认的不在"改了什么"里重复
-    assert "proposal:diet" in {x.key for x in pending(s1, TODAY)}
+    assert "review:propose" in {x.key for x in pending(s1, TODAY)}
     asyncio.run(mark_seen(dp.store, "42", s1.version))
     s1b = asyncio.run(dp.store.get("42"))
-    assert s1b is not None and s1b.seen == 1 and unseen(s1b, history) == []
-    item = asyncio.run(decide(dp.store, "42", "proposal:diet", "later"))
-    assert item is not None and item.key == "proposal:diet"
+    assert s1b is not None and s1b.seen == s1.version and unseen(s1b, history) == []
+    item = asyncio.run(decide(dp.store, "42", "review:propose", "later"))
+    assert item is not None and item.key == "review:propose"
     s2 = asyncio.run(dp.store.get("42"))
-    assert s2 is not None and "proposal:diet" not in {
+    assert s2 is not None and "review:propose" not in {
         x.key for x in pending(s2, TODAY)
     }  # 暂不：今天不再问
-    assert "proposal:diet" in {x.key for x in pending(s2, TODAY + timedelta(days=1))}  # 明天再问
-    asyncio.run(decide(dp.store, "42", "proposal:diet", "accept"))
+    assert "review:propose" in {x.key for x in pending(s2, TODAY + timedelta(days=1))}  # 明天再问
+    asyncio.run(decide(dp.store, "42", "review:propose", "accept"))
     s3 = asyncio.run(dp.store.get("42"))
-    assert s3 is not None and "proposal:diet" not in {
+    assert s3 is not None and "review:propose" not in {
         x.key for x in pending(s3, TODAY + timedelta(days=3))
     }
     kinds = [c.change for c in asyncio.run(dp.store.history("42"))[:2]]
     assert kinds == ["accepted", "declined"]  # 选择写进调整经历
     assert asyncio.run(decide(dp.store, "42", "kcal", "accept")) is None  # 不用确认的不接受选择
     s4, _ = asyncio.run(evaluate("42", dp, reason="说疼"))  # 重新评估时保留看过的版本和选择
-    assert s4.seen == 1 and "proposal:diet" in s4.choices
+    assert s4.seen == s1.version and "review:propose" in s4.choices
 
 
 def test_inbox_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -282,6 +290,8 @@ def test_inbox_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
     pain = PainBook()
     pain.rows["42"] = [("joint.knee", TODAY), ("joint.knee", TODAY - timedelta(days=1))]
     dp = deps(training=with_plan(), pain=pain)
+    coach_proposed(dp)
+    asyncio.run(evaluate("42", dp, reason="打卡"))
     monkeypatch.setattr(web_more, "coach_deps", lambda: dp)
     from ironm_agent import review as review_mod
 
@@ -291,12 +301,12 @@ def test_inbox_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
     app.dependency_overrides[verify_token] = lambda: "42"
     c = TestClient(app)
     r = c.get("/iron/api/coach/inbox").json()
-    assert r["changes"] and {x["key"] for x in r["pending"]} >= {"proposal:diet"}
+    assert r["changes"] and {x["key"] for x in r["pending"]} >= {"review:propose"}
     assert c.post("/iron/api/coach/seen", json={"version": r["version"]}).status_code == 200
     assert c.get("/iron/api/coach/inbox").json()["changes"] == []  # 看过的不再出现
-    d = c.post("/iron/api/coach/decide", json={"key": "proposal:diet", "decision": "later"})
-    assert d.status_code == 200 and d.json()["item"]["key"] == "proposal:diet"
-    assert "proposal:diet" not in {
+    d = c.post("/iron/api/coach/decide", json={"key": "review:propose", "decision": "later"})
+    assert d.status_code == 200 and d.json()["item"]["key"] == "review:propose"
+    assert "review:propose" not in {
         x["key"] for x in c.get("/iron/api/coach/inbox").json()["pending"]
     }
     assert (

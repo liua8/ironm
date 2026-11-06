@@ -295,7 +295,7 @@ def tdee(base: Metric, p: Profile) -> Metric:
 
 @dataclass(frozen=True)
 class KcalAdjust:
-    """两周饮食复盘确认过的热量调整量（spec [2026-10-23] §18 需求 2）：加在公式算出的目标上。"""
+    """热量调整量（spec [2026-10-23] §18 需求 2；§163 起由管家在复盘里调）：加在公式算出的目标上。"""
 
     kcal: int
     since: date
@@ -338,7 +338,7 @@ def calorie_target(
         raw = value + adjust.kcal
         value = max(raw, safe_floor(b, p))
         how += (
-            f"；按两周饮食复盘调整 {adjust.kcal:+d}（{adjust.since.month}月{adjust.since.day}日起：{adjust.reason}）"
+            f"；IronM 调整 {adjust.kcal:+d}（{adjust.since.month}月{adjust.since.day}日起：{adjust.reason}）"
             + (
                 f"，不低于基础代谢与安全下限，取 {round(value)}"
                 if value > raw

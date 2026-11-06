@@ -809,7 +809,7 @@ async def _checkup_proposal(user_id: str, training: TrainingStore) -> dict[str, 
             "changed_days": 0, "warning": "", "more": len(waiting) - 1}  # fmt: skip
 
 
-# ---- 两周饮食复盘（spec [2026-10-23] §18 需求 2）------------------------------------------------
+# ---- 饮食复盘：只给事实，热量由管家调（spec [2026-10-23] §18 需求 2、§163 需求 6）-------------------
 
 
 def diet_store() -> Any:
@@ -821,27 +821,30 @@ def diet_store() -> Any:
 DIET = Depends(diet_store)  # 测试时用 dependency_overrides 换成内存版
 
 
-async def _seen(user_id: str, snap: Any, meals: MealStore) -> tuple[Any, str]:
-    """按记的吃和体重变化估的每天实际消耗（§118 需求 7）；读不到饮食记录当作条件不够。"""
+async def _seen(user_id: str, snap: Any, meals: MealStore) -> tuple[Any, str, Any]:
+    """按记的吃和体重变化估的每天实际消耗（§118 需求 7）和每天记了几餐、多少千卡；读不到饮食记录当作条件不够。"""
     from ironm_agent.diet_adjust import OBSERVE_DAYS, by_day, observed
 
     try:
         rows = await meals.since(user_id, snap.today - timedelta(days=OBSERVE_DAYS - 1))
     except Exception as e:
         _log.warning("meals unavailable: error_type=%s", type(e).__name__)
-        return None, "饮食记录这次没读到"
-    return observed(by_day(rows), snap.readings.weight, snap.today)
+        return None, "饮食记录这次没读到", None
+    days = by_day(rows)
+    return (*observed(days, snap.readings.weight, snap.today), days)
 
 
 async def _diet_state(user_id: str, diet: Any, meals: MealStore) -> dict[str, Any]:
-    from ironm_agent.diet_adjust import propose
+    """饮食复盘页只给事实（§163 需求 6）：这段时间平均每天吃多少、体重趋势、按记录算的实际消耗、还缺什么；
+    不出规则的热量建议，热量由管家在复盘里调。"""
+    from ironm_agent.diet_adjust import MIN_MEALS, OBSERVE_DAYS
 
     snap = await _web().snapshot_for(user_id)
     current = await diet.current(user_id)
-    seen, lack = await _seen(user_id, snap, meals)
-    proposal, why = propose(snap.metrics, snap.profile, current, snap.today, seen)
-    target = next((m for m in snap.metrics if m.key == "kcal_target"), None)
-    formula = next((m for m in snap.metrics if m.key == "tdee"), None)
+    seen, lack, days = await _seen(user_id, snap, meals)
+    by = {m.key: m for m in snap.metrics}
+    target, formula, trend = by.get("kcal_target"), by.get("tdee"), by.get("weight_trend")
+    logged = [k for n, k in (days or {}).values() if n >= MIN_MEALS]
     return {
         "observed": {
             "tdee": seen.tdee,
@@ -856,25 +859,16 @@ async def _diet_state(user_id: str, diet: Any, meals: MealStore) -> dict[str, An
         if seen
         else None,
         "observed_lack": lack,
+        "intake": {"kcal": round(sum(logged) / len(logged)), "days": len(logged), "of": OBSERVE_DAYS}
+        if logged
+        else None,  # 最近两周每天记了 2 餐以上的那些天，平均每天吃多少
+        "weight_trend": trend.text if trend is not None and trend.value is not None else None,
         "target": target.value if target else None,
         "current": (
             {"kcal": current.kcal, "since": current.since.isoformat(), "reason": current.reason}
             if current
             else None
         ),
-        "proposal": (
-            {
-                "delta": proposal.delta,
-                "total": proposal.total,
-                "before": proposal.before,
-                "after": proposal.after,
-                "reason": proposal.reason,
-                "basis": proposal.basis,
-            }
-            if proposal
-            else None
-        ),
-        "message": why,
     }
 
 
@@ -886,24 +880,9 @@ async def diet_review(
 
 
 @router.post("/iron/api/diet/adjust")
-async def diet_apply(
-    user_id: str = Depends(_verify()), diet: Any = DIET, meals: MealStore = MEALS
-) -> dict[str, Any]:
-    """确认调整：服务端按当前数据重新算一遍方案再保存（不信任页面传来的数字）。"""
-    from ironm_agent.diet_adjust import propose
-    from ironm_agent.metrics import KcalAdjust
-
-    snap = await _web().snapshot_for(user_id)
-    seen, _ = await _seen(user_id, snap, meals)
-    proposal, why = propose(
-        snap.metrics, snap.profile, await diet.current(user_id), snap.today, seen
-    )
-    if proposal is None:
-        raise HTTPException(409, why or "这次不需要调整")
-    await diet.apply(user_id, KcalAdjust(proposal.total, snap.today, proposal.reason))
-    _log.info("diet adjusted: delta=%d", proposal.delta)
-    coach_later(user_id, "确认方案")
-    return await _diet_state(user_id, diet, meals)
+async def diet_apply(user_id: str = Depends(_verify())) -> dict[str, Any]:
+    """原来确认规则算的热量建议；规则建议去掉了（§163 需求 6），热量由管家在复盘里调，他想调直接跟管家说。"""
+    raise HTTPException(410, "热量现在由 IronM 在复盘里看你的记录来调，不再按规则给建议；想调可以直接跟 IronM 说。")
 
 
 @router.post("/iron/api/diet/adjust/undo")
@@ -1256,7 +1235,7 @@ def plan_change_later(user_id: str, draft: dict[str, Any], *, undone: bool = Fal
 
 
 async def decided_targets(user_id: str) -> dict[str, Any]:
-    """管家练完后定的下次目标（§132）；读不到当作没有，照规则。"""
+    """管家练完后定的下次目标（§132）；读不到当作没有，照上次（§163 需求 6）。"""
     try:
         state = await coach_deps().store.get(user_id)
     except Exception as e:

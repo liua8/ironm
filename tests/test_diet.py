@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from ironm_agent.diet_adjust import KCAL_PER_KG, Observed, observed, propose
+from ironm_agent.diet_adjust import KCAL_PER_KG, observed
 from ironm_agent.foods import by_id, find, foods
 from ironm_agent.llm import Reply
 from ironm_agent.meals import Macros, Meal, MealBook, StoredMeal, estimate, food_line
@@ -346,21 +346,29 @@ def metrics(tdee: float, target: float = 1800) -> list[Metric]:
     return [m("kcal_target", target), m("bmr", 1500), m("tdee", tdee)]
 
 
-def test_observed_proposal_goes_through_the_same_limits() -> None:
+def test_kcal_limits_single_step_total_floor_and_direction() -> None:
+    """§182：热量只由管家调，代码守上下限：单次 ±300、累计原目标 ±500、不低于安全下限、被下限推成反方向不调。"""
+    from ironm_agent.diet_adjust import MAX_STEP, MAX_TOTAL, _apply
+
     p = Profile(height_cm=175, sex="male", goal="fat_loss", activity="moderate")
-    low = Observed(2000, 1800, 0.0, 12, 7)
-    prop, _ = propose(metrics(2400), p, None, TODAY, low)  # 实际比公式低 400：往下调，一次最多 200
-    assert prop is not None and prop.delta == -200 and "实际消耗约 2000" in prop.reason
-    high = Observed(2800, 2600, 0.0, 12, 7)
-    prop, _ = propose(metrics(2400), p, None, TODAY, high)
-    assert prop is not None and prop.delta == 150  # 往上调一次最多 150
-    near = Observed(2600, 2600, 0.0, 12, 7)  # 差 200：不按实际调，退回按体重趋势（这里没有趋势）
-    prop, why = propose(metrics(2400), p, None, TODAY, near)
-    assert prop is None and "体重记录还不够" in why
-    cool = KcalAdjust(-200, TODAY - timedelta(days=3), "x")
-    assert propose(metrics(2400), p, cool, TODAY, low)[0] is None  # 冷却期照旧
-    capped = KcalAdjust(-500, TODAY - timedelta(days=30), "x")
-    assert propose(metrics(2400), p, capped, TODAY, low)[0] is None  # 累计 ±500 照旧
+    big, _ = _apply(-800, "x", "x", target_now=2400, bmr=1500, profile=p, current=None)
+    assert big is not None and big.delta == -MAX_STEP and big.after == 2100  # 一次最多 300
+    up, _ = _apply(450, "x", "x", target_now=2400, bmr=1500, profile=p, current=None)
+    assert up is not None and up.delta == MAX_STEP
+    had = KcalAdjust(-400, TODAY - timedelta(days=30), "x")
+    more, _ = _apply(-300, "x", "x", target_now=2000, bmr=1500, profile=p, current=had)
+    assert more is not None and more.total == -MAX_TOTAL and more.delta == -100  # 累计不超过 -500
+    capped = KcalAdjust(-MAX_TOTAL, TODAY - timedelta(days=30), "x")
+    none, why = _apply(-100, "x", "x", target_now=1900, bmr=1500, profile=p, current=capped)
+    assert none is None and "上限" in why
+    floor, _ = _apply(-300, "x", "x", target_now=1650, bmr=1400, profile=p, current=None)
+    assert floor is not None and floor.after == 1500  # 男 1500 的安全下限
+    flip, why = _apply(-100, "x", "x", target_now=1450, bmr=1400, profile=p, current=None)
+    assert flip is None and "下限" in why  # 下限比现在高：要减却成了多吃，不调
+    small, _ = _apply(-30, "x", "x", target_now=2400, bmr=1500, profile=p, current=None)
+    assert (
+        small is not None and small.delta == -30
+    )  # 管家要的小调整照调（只有被下限卡成几十千卡才不调）
 
 
 def test_review_shows_observed_or_what_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -390,8 +398,11 @@ def test_review_shows_observed_or_what_is_missing(monkeypatch: pytest.MonkeyPatc
     assert (
         got["observed"]["tdee"] == 2200 and got["observed"]["formula"] == 2600
     )  # 体重不变：吃的就是消耗
-    assert got["proposal"]["delta"] == -200 and "实际消耗约 2200" in got["proposal"]["reason"]
-    assert c.post("/iron/api/diet/adjust").json()["current"]["kcal"] == -200  # 确认走原来的调整
+    assert got["intake"] == {"kcal": 2200, "days": 12, "of": 14}  # 只给事实：平均每天吃多少
+    assert "proposal" not in got and "message" not in got  # 规则的热量建议去掉了（§163 需求 6）
+    r = c.post("/iron/api/diet/adjust")
+    assert r.status_code == 410 and "IronM" in r.json()["detail"]
+    assert asyncio.run(adjust.current("42")) is None  # 没按规则调
 
 
 def test_food_page_has_the_new_parts() -> None:
@@ -407,7 +418,7 @@ def test_food_page_has_the_new_parts() -> None:
 
 
 def test_home_coach_uses_the_same_observed_burn() -> None:
-    """首页管家的提议和饮食页同一个算法（§118）：管家读到的输入里有按实际估的消耗。"""
+    """管家复盘看到的实际消耗和饮食页同一个算法（§118）：管家读到的输入里有按实际估的消耗。"""
     from dataclasses import replace
 
     from ironm_agent.casefile import Snapshot

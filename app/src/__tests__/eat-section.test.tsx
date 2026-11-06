@@ -24,7 +24,7 @@ const plan = {
   target: { kcal: 2000, protein_g: 120 },
   today_set: "weekday",
 };
-const review = { observed: null, current: null, proposal: { delta: -150, total: -150, before: 2000, after: 1850, reason: "两周体重没降" } };
+const review = { observed: null, current: { kcal: -150, since: "2026-10-20", reason: "IronM 复盘：两周体重没降" } };
 
 function reply(body: unknown, status = 200) {
   return Promise.resolve({ status, ok: status < 300, json: () => Promise.resolve(body) } as Response);
@@ -53,7 +53,7 @@ beforeEach(() => {
     if (path === "/iron/api/diet/plan") return reply(plan);
     if (path === "/iron/api/diet/review") return reply(review);
     if (path === "/iron/api/diet/plan/log") return reply(eaten);
-    if (path === "/iron/api/diet/adjust") return reply({ ...review, proposal: null });
+    if (path === "/iron/api/diet/adjust/undo") return reply({ ...review, current: null });
     return reply({ detail: "没有这个接口" }, 404);
   });
 });
@@ -62,7 +62,8 @@ it("shows the budget, the plan rows and logs a planned meal", async () => {
   await render(<EatSection />);
   expect(await screen.findByText("今天还能吃")).toBeTruthy();
   expect(await screen.findByText("按工作日的计划，一共 650 千卡。")).toBeTruthy();
-  expect(screen.getByText("建议每天少吃 150 千卡")).toBeTruthy();
+  expect(screen.getByText("热量目标调整过 −150 千卡")).toBeTruthy();
+  expect(screen.queryByText("确认")).toBeNull();  // 规则的热量建议去掉了，没有"确认"（§163 需求 6）
   expect(screen.getAllByText("没排")).toHaveLength(3);
   await fireEvent.press(screen.getByText("照计划记"));
   expect(await screen.findByText("记下了午餐")).toBeTruthy();
@@ -101,10 +102,11 @@ it("asks to fill a model when the meal estimate needs one", async () => {
   expect(await screen.findByText("记下了午餐")).toBeTruthy();
 });
 
-it("confirms the diet review and reloads", async () => {
+it("undoes a kcal adjustment and reloads", async () => {
   await render(<EatSection />);
-  await fireEvent.press(await screen.findByText("确认"));
-  expect(seen.some((x) => x.url === "/iron/api/diet/adjust" && x.method === "POST")).toBe(true);
+  await fireEvent.press(await screen.findByText("撤销"));
+  expect(seen.some((x) => x.url === "/iron/api/diet/adjust/undo" && x.method === "POST")).toBe(true);
+  expect(seen.some((x) => x.url === "/iron/api/diet/adjust")).toBe(false);
   expect(seen.filter((x) => x.url === "/iron/api/metrics").length).toBeGreaterThanOrEqual(2);
 });
 

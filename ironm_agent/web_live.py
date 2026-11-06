@@ -106,6 +106,13 @@ async def _special(user_id: str, memory: MemoryStore) -> frozenset[str]:
         return frozenset()
 
 
+async def _decided(user_id: str) -> dict[str, Any]:
+    """管家定的下次目标（§132）：开练时预填用；没定的照上次（§163 需求 6）。"""
+    from ironm_agent import web_more
+
+    return await web_more.decided_targets(user_id)
+
+
 async def _context(user_id: str, store: TrainingStore) -> tuple[Any, list[Any]]:
     plan = await store.plan(user_id)
     logs = [x.log for x in await store.workouts(user_id, date.today() - timedelta(days=60))]
@@ -224,7 +231,8 @@ async def start_live(
         if not names and not joins:
             return _out(live, now)
         rests = await lives.rests(user_id)
-        more = [new_item(n, plan, logs, rests) for n in names]
+        decided = await _decided(user_id)
+        more = [new_item(n, plan, logs, rests, decided) for n in names]
         update: dict[str, Any] = {"items": [*live.items, *more][:15], "updated": now}
         if joins and today is not None:
             update["session"] = today.name
@@ -238,7 +246,8 @@ async def start_live(
     if today is not None:
         session = today.name
         names = [*picked, *(x.exercise for x in today.items)]  # 库里没有的也照加（§123）
-    items = [new_item(n, plan, logs, rests) for n in dict.fromkeys(names)][:15]
+    decided = await _decided(user_id)
+    items = [new_item(n, plan, logs, rests, decided) for n in dict.fromkeys(names)][:15]
     live = fresh(session, items, now).model_copy(
         update={"no_heavier": no_heavier(await _special(user_id, memory))}
     )
@@ -302,7 +311,7 @@ async def add_live_item(
     if len(live.items) >= 15:
         raise HTTPException(422, "一次最多 15 个动作")
     plan, logs = await _context(user_id, store)
-    item = new_item(name, plan, logs, await lives.rests(user_id))
+    item = new_item(name, plan, logs, await lives.rests(user_id), await _decided(user_id))
     live = live.model_copy(update={"items": [*live.items, item], "updated": now})
     await lives.save(user_id, live)
     return _out(live, now)

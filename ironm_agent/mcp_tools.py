@@ -331,7 +331,7 @@ class MyFitnessService:
         lines = ["当前计划：" + ("；".join(stored.plan.lines()) if stored else "还没有")]
         lines.append(f"最近 {days} 天的训练记录（{len(logs)} 次）：")
         lines += [f"- {x.line()}" for x in sorted(logs, key=lambda x: x.day, reverse=True)]
-        try:  # 管家练完后定的下次目标（§132）；读不到照规则
+        try:  # 管家练完后定的下次目标（§132）；读不到照上次
             state = await src.coach.get(uid)
         except Exception:
             state = None

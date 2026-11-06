@@ -10,6 +10,7 @@ import {
   planOptions,
   readLines,
   replaceHint,
+  periodFacts,
   reviewLine,
   rowKcal,
   shownKinds,
@@ -95,19 +96,24 @@ describe("today plan rows", () => {
 });
 
 describe("reviewLine", () => {
-  it("shows a proposal with confirm", () => {
-    const r = reviewLine({ observed: null, current: null, proposal: { delta: -150, total: -150, before: 2200, after: 2050, reason: "两周体重没降〔K12〕" } });
-    expect(r).toEqual({ title: "建议每天少吃 150 千卡", sub: "两周体重没降，目标从 2200 调到 2050", action: "confirm" });
-  });
-
-  it("shows a past adjustment with undo when there is no new proposal", () => {
-    const r = reviewLine({ observed: null, proposal: null, current: { kcal: -150, since: "2026-10-20", reason: "两周体重没降" } });
-    expect(r).toEqual({ title: "热量目标调整过 −150 千卡", sub: "两周体重没降（10月20日起）", action: "undo" });
+  it("shows a past adjustment (undo only; no rule suggestion, §163)", () => {
+    const r = reviewLine({ observed: null, current: { kcal: -150, since: "2026-10-20", reason: "两周体重没降〔K12〕" } });
+    expect(r).toEqual({ title: "热量目标调整过 −150 千卡", sub: "两周体重没降（10月20日起）" });
   });
 
   it("shows nothing otherwise", () => {
-    expect(reviewLine({ observed: null, current: null, proposal: null })).toBeNull();
+    expect(reviewLine({ observed: null, current: null })).toBeNull();
     expect(reviewLine(null)).toBeNull();
+  });
+});
+
+describe("periodFacts", () => {
+  it("lists average intake and weight trend when present", () => {
+    expect(periodFacts({ observed: null, current: null, intake: { kcal: 1900, days: 9, of: 14 }, weight_trend: "最近 4 周每周 −0.3 公斤" })).toEqual([
+      ["平均每天吃", "1900 千卡（最近 14 天里记了 2 餐以上的 9 天）"],
+      ["体重趋势", "最近 4 周每周 −0.3 公斤"],
+    ]);
+    expect(periodFacts({ observed: null, current: null })).toEqual([]);
   });
 });
 
@@ -121,8 +127,8 @@ describe("target explanations", () => {
   });
 
   it("explains observed burn or what is missing", () => {
-    expect(observedFacts({ observed: null, observed_lack: "体重只称了 1 次", current: null, proposal: null })).toEqual({ lack: "还算不出来：体重只称了 1 次。" });
-    const o = observedFacts({ observed: { tdee: 2300, intake: 2100, kg_per_week: -0.2, days: 14, weighins: 6, formula: 2400, how: "粗算" }, current: null, proposal: null });
+    expect(observedFacts({ observed: null, observed_lack: "体重只称了 1 次", current: null })).toEqual({ lack: "还算不出来：体重只称了 1 次。" });
+    const o = observedFacts({ observed: { tdee: 2300, intake: 2100, kg_per_week: -0.2, days: 14, weighins: 6, formula: 2400, how: "粗算" }, current: null });
     expect("facts" in o && o.facts[0][1]).toBe("每天约 2300 千卡（公式算的是 2400 千卡）");
   });
 

@@ -114,12 +114,6 @@ function PendingRow({ x }: { x: InboxPending }) {
         setPhase("later");
         return;
       }
-      if (x.key === "proposal:diet") {
-        const d = await api<{ target: number }>("/iron/api/diet/adjust", { method: "POST" });
-        setSaid(`已调整：每日热量目标约 ${Math.round(d.target)} 千卡。想撤销可以在饮食页撤销。`);
-        setPhase("done");
-        return;
-      }
       setPhase("working");
       const trigger = x.kind === "alert" && x.value?.trigger ? `?trigger=${encodeURIComponent(x.value.trigger)}` : "";
       const p = await api<Proposal>(`/iron/api/review/proposal${trigger}`, { method: "POST" });
@@ -149,7 +143,7 @@ function PendingRow({ x }: { x: InboxPending }) {
       {why && x.why ? <Text style={s.muted}>{cleanText(x.why)}</Text> : null}
       {phase === "ask" ? (
         <View style={s.row}>
-          <Button small title={x.key === "proposal:diet" ? "确认调整" : "确认，出方案"} disabled={busy} onPress={() => decide("accept")} />
+          <Button small title="确认，出方案" disabled={busy} onPress={() => decide("accept")} />
           <Button small kind="ghost" title="暂不" disabled={busy} onPress={() => decide("later")} />
         </View>
       ) : null}

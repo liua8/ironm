@@ -136,7 +136,7 @@ def test_chain_sends_back_a_review_plan_that_changes_too_much() -> None:
 
 # ---- 需求 2：饮食目标能真正调整 ------------------------------------------------------------------
 
-from ironm_agent.diet_adjust import DietBook, propose  # noqa: E402
+from ironm_agent.diet_adjust import DietBook  # noqa: E402
 from ironm_agent.metrics import KcalAdjust  # noqa: E402
 
 
@@ -158,45 +158,17 @@ def snap_with(
     return Snapshot(p, r, tuple(compute_all(r, p, TODAY, adjust)), TODAY)
 
 
-def test_propose_rules() -> None:
-    s = snap_with("fat_loss", 0.0)
-    p, _ = propose(s.metrics, s.profile, None, TODAY)
-    assert (
-        p is not None and p.delta == -200 and "没有下降" in p.reason and p.after == p.before - 200
-    )
-    fast = snap_with("fat_loss", -1.2)  # 每周掉 1.2 公斤，超过 80 公斤的 1%
-    p2, _ = propose(fast.metrics, fast.profile, None, TODAY)
-    assert p2 is not None and p2.delta == 150 and "掉得太快" in p2.reason
-    ok = snap_with("fat_loss", -0.5)
-    assert propose(ok.metrics, ok.profile, None, TODAY)[0] is None
-    gain = snap_with("muscle", 0.0)
-    assert propose(gain.metrics, gain.profile, None, TODAY)[0].delta == 150  # type: ignore[union-attr]
-    quick = snap_with("muscle", 0.6)  # 超过 80 公斤的 0.5%
-    assert propose(quick.metrics, quick.profile, None, TODAY)[0].delta == -150  # type: ignore[union-attr]
-    health = snap_with("health", 0.0)
-    assert propose(health.metrics, health.profile, None, TODAY)[0] is None
+def test_kcal_limits_keep_the_safe_floor_for_a_small_woman() -> None:
+    """规则的热量建议去掉了（§163 需求 6）；管家要减多少，代码照样守住基础代谢和女 1200 的下限。"""
+    from ironm_agent.diet_adjust import _apply
 
-
-def test_propose_limits() -> None:
-    recent = KcalAdjust(-200, TODAY - timedelta(days=10), "x")
-    s = snap_with("fat_loss", 0.0, adjust=recent)
-    p, why = propose(s.metrics, s.profile, recent, TODAY)
-    assert p is None and "两周后再看" in why  # 14 天内不重复调整
-    near_cap = KcalAdjust(400, TODAY - timedelta(days=20), "x")
-    s2 = snap_with("muscle", 0.0, adjust=near_cap)
-    p2, _ = propose(s2.metrics, s2.profile, near_cap, TODAY)
-    assert p2 is not None and p2.total == 500 and p2.delta == 100  # 累计不超过 ±500
-    deep = KcalAdjust(-400, TODAY - timedelta(days=20), "x")
-    s3 = snap_with("fat_loss", 0.0, adjust=deep)
-    p4, _ = propose(s3.metrics, s3.profile, deep, TODAY)
-    floor = max(1500, round(next(m for m in s3.metrics if m.key == "bmr").value or 0))
-    assert p4 is None or (p4.total >= -500 and p4.after >= floor)  # 减到下限为止
     small = snap_with("fat_loss", 0.0, sex="female", start=45.0)
-    p3, why3 = propose(small.metrics, small.profile, None, TODAY)
-    bmr = next(m for m in small.metrics if m.key == "bmr").value
-    assert p3 is None or p3.after >= max(1200, round(bmr or 0))  # 不低于基础代谢与安全下限
-    if p3 is None:
-        assert "下限" in why3
+    target = next(m for m in small.metrics if m.key == "kcal_target").value or 0
+    bmr = next(m for m in small.metrics if m.key == "bmr").value or 0
+    p, why = _apply(-300, "x", "x", target_now=target, bmr=bmr, profile=small.profile, current=None)
+    assert p is None or p.after >= max(1200, round(bmr))  # 不低于基础代谢与安全下限
+    if p is None:
+        assert "下限" in why
 
 
 def test_no_tiny_proposals_at_the_floor() -> None:
@@ -251,13 +223,15 @@ def test_diet_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
     app.dependency_overrides[web_more.diet_store] = lambda: book
     c = TestClient(app)
     r = c.get("/iron/api/diet/review").json()
-    assert r["current"] is None and r["proposal"]["delta"] == -200
-    before = r["proposal"]["before"]
-    r2 = c.post("/iron/api/diet/adjust").json()
+    assert r["current"] is None and "proposal" not in r  # 体重没降也不出规则建议（§163 需求 6）
+    assert r["weight_trend"]  # 只给事实：体重趋势
+    before = r["target"]
+    assert c.post("/iron/api/diet/adjust").status_code == 410  # 确认规则建议的接口停用
+    assert asyncio.run(book.current("42")) is None
+    asyncio.run(book.apply("42", KcalAdjust(-200, TODAY, "管家复盘：两周体重没降")))  # 管家复盘调的
+    r2 = c.get("/iron/api/diet/review").json()
     assert r2["current"]["kcal"] == -200 and r2["target"] == before - 200
-    assert r2["proposal"] is None and "两周后再看" in r2["message"]
-    assert c.post("/iron/api/diet/adjust").status_code == 409  # 不在复盘时间：不接受
-    r3 = c.post("/iron/api/diet/adjust/undo").json()
+    r3 = c.post("/iron/api/diet/adjust/undo").json()  # 撤销照旧
     assert r3["current"] is None and r3["target"] == before
     assert c.post("/iron/api/diet/adjust/undo").status_code == 404
 
@@ -382,7 +356,7 @@ def test_today_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
 
 # ---- 需求 4：每组的重量和次数、下次目标 ---------------------------------------------------------
 
-from ironm_agent.progression import next_target, rep_range, step_for, target_lines, targets  # noqa: E402
+from ironm_agent.progression import last_target, rep_range, target_lines, targets  # noqa: E402
 from ironm_agent.training import LogItem, PlanItem, SetDone, WorkoutLog  # noqa: E402
 
 
@@ -405,48 +379,28 @@ def test_performed_from_sets_or_text() -> None:
     assert (
         rep_range("8–12") == (8, 12) and rep_range("10") == (10, 10) and rep_range("30 秒") is None
     )
-    assert (
-        step_for("杠铃深蹲", 60) == 2.5
-        and step_for("哑铃卧推", 8) == 1
-        and step_for("哑铃卧推", 16) == 2
-    )
-    assert step_for("俯卧撑", 0) is None and step_for("哑铃罗马尼亚硬拉", 20) == 2
 
 
-def test_two_sessions_above_range_adds_weight() -> None:
+def test_without_the_coach_next_time_is_the_same_as_last_time() -> None:
+    """§163 需求 6：不再按规则算进阶；管家没定时下次照上次实际做的重量和次数（组数照计划）。"""
     logs = [did("杠铃深蹲", [9, 9, 9], 60, 7), did("杠铃深蹲", [9, 10, 9], 60, 3)]
-    t = next_target(SQUAT, logs)
-    assert t is not None and t.action == "up" and t.weight_kg == 62.5  # 60 × 5% = 3 → 取整 2.5
-    assert "加重 2.5 公斤" in t.why and t.text() == "62.5 公斤 × 6–8 次 × 3 组"
-    once = next_target(SQUAT, logs[1:])
-    assert once is not None and once.action == "hold" and once.weight_kg == 60  # 只有一次：先保持
-
-
-def test_small_dumbbell_or_bodyweight_adds_reps() -> None:
-    press = PlanItem(exercise="哑铃卧推", sets=3, reps="8–10")
-    t = next_target(
-        press, [did("哑铃卧推", [11, 11, 11], 6, 7), did("哑铃卧推", [11, 12, 11], 6, 2)]
-    )
-    assert (
-        t is not None and t.action == "more" and t.reps == "10–12" and t.weight_kg == 6
-    )  # +1 公斤超过 10%
-    push = PlanItem(exercise="俯卧撑", sets=3, reps="10")
-    logs = [WorkoutLog(day=TODAY - timedelta(days=d), items=[LogItem(exercise="俯卧撑", sets=3, reps="12")])
-            for d in (6, 2)]  # fmt: skip
-    t2 = next_target(push, logs)
-    assert t2 is not None and t2.action == "more" and t2.reps == "12" and t2.weight_kg is None
-
-
-def test_missing_low_end_holds_then_drops() -> None:
-    once = next_target(SQUAT, [did("杠铃深蹲", [7, 6, 5], 70, 2)])
-    assert once is not None and once.action == "hold" and once.weight_kg == 70
-    twice = next_target(
+    t = last_target(SQUAT, logs)  # 连续两次都超过上限：以前规则会加重，现在照上次
+    assert t is not None and t.by == "last" and t.action == "hold" and t.weight_kg == 60
+    assert t.text() == "60 公斤 × 9–10 次 × 3 组" and t.why.startswith("照上次")
+    down = last_target(
         SQUAT, [did("杠铃深蹲", [6, 5, 5], 70, 7), did("杠铃深蹲", [7, 6, 5], 70, 2)]
     )
-    assert (
-        twice is not None and twice.action == "down" and twice.weight_kg == 62.5
-    )  # 63 → 取整 62.5
-    assert "减重约 10%" in twice.why
+    assert down is not None and down.weight_kg == 70 and down.reps == "5–7"  # 没做到也不按规则减重
+    push = PlanItem(exercise="俯卧撑", sets=3, reps="10")
+    logs2 = [
+        WorkoutLog(
+            day=TODAY - timedelta(days=2), items=[LogItem(exercise="俯卧撑", sets=3, reps="12")]
+        )
+    ]
+    t2 = last_target(push, logs2)
+    assert t2 is not None and t2.weight_kg is None and t2.reps == "12"
+    assert last_target(SQUAT, []) is None  # 没做过：没有下次目标
+    assert last_target(PlanItem(exercise="平板支撑", sets=3, reps="30 秒"), logs) is None
 
 
 def test_targets_reach_case_file_and_api(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -465,7 +419,8 @@ def test_targets_reach_case_file_and_api(monkeypatch: pytest.MonkeyPatch) -> Non
     logs = [x.model_copy(update={"day": real - (TODAY - x.day)}) for x in logs]
     assert set(targets(plan, logs)) == {"杠铃深蹲"}
     lines = target_lines(plan, logs, real)
-    assert lines and "杠铃深蹲 下次 62.5 公斤" in lines[0]
+    assert lines and "杠铃深蹲 下次 60 公斤 × 9 次 × 3 组（照上次：" in lines[0]  # 管家没定：照上次
+    assert "规则" not in lines[0]
     book = TrainingBook()
     d = asyncio.run(book.add_draft("42", "plan", plan_content(plan)))
     asyncio.run(book.confirm("42", d.id))
@@ -483,10 +438,8 @@ def test_targets_reach_case_file_and_api(monkeypatch: pytest.MonkeyPatch) -> Non
         one = w["items"][0]["done_sets"][0]
         assert (one["reps"], one["weight_kg"]) == (9, 60) and "60×9" in w["line"]
     r = c.get("/iron/api/training").json()
-    assert "杠铃深蹲" in r["targets"]  # 两次都在今天：同样按两次算
-    assert (
-        r["targets"]["杠铃深蹲"]["action"] == "up" and r["targets"]["杠铃深蹲"]["weight_kg"] == 62.5
-    )
+    t = r["targets"]["杠铃深蹲"]  # 管家没定：照上次，不按规则加重
+    assert t["by"] == "last" and t["action"] == "hold" and t["weight_kg"] == 60 and t["reps"] == "9"
 
 
 def test_chat_log_keeps_only_said_set_numbers() -> None:

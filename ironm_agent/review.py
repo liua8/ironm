@@ -160,6 +160,9 @@ def facts(
             lines.append(f"{m.name}：{m.text}")
     if inp.diet is not None:
         lines.append(f"现在的热量调整：每天 {inp.diet.kcal:+d} 千卡（{inp.diet.reason}）")
+    if (o := inp.seen) is not None:  # 按记录估的实际消耗（§118），调不调热量由管家定（§163 需求 6）
+        lines.append(f"按记录估的实际消耗：每天约 {o.tdee} 千卡（最近 {o.days} 天平均每天吃 {o.intake} 千卡，"
+                     f"体重每周 {o.kg_per_week:+.2f} 公斤，称了 {o.weighins} 次）")  # fmt: skip
     lines += [f"生病：{x}" for x in ill]
     for e in inp.illness:  # 好了的也给：病后第一次怎么练由管家定（§163）
         if not e.active and e.ended is not None and (today - e.ended).days <= 14:
@@ -610,29 +613,39 @@ async def _kcal(
     expect: str,
     today: date,
 ) -> Done | None:
+    """管家定的热量调整（§163 需求 6）：调多少由它定，代码只守上下限（同对话里调热量，diet_adjust._apply）：
+    单次不超过 ±300、累计不超过原目标 ±500、不低于基础代谢和安全下限、被下限推成反方向的不调；
+    18 岁以下、孕期不减。超了按上下限执行并写明。"""
+    from ironm_agent.diet_adjust import MAX_STEP, MAX_TOTAL
+    from ironm_agent.diet_adjust import _apply as within_limits
+    from ironm_agent.special import MINOR, PREGNANCY, flags
+
     delta = a.get("delta")
     by = {m.key: m for m in inp.snapshot.metrics}
     target, bmr = by.get("kcal_target"), by.get("bmr")
-    if not isinstance(delta, int | float) or not delta or target is None or target.value is None:
+    if not isinstance(delta, int | float) or isinstance(delta, bool) or not delta:
         return None
-    if bmr is None or bmr.value is None:
+    if target is None or target.value is None or bmr is None or bmr.value is None:
         return None
-    floor = safe_floor(bmr.value, inp.snapshot.profile)
     want = round(float(delta))
-    new = target.value + want
-    note = ""
-    if new < floor:  # 安全底线：不低于基础代谢和安全下限，低了按下限执行并写明
-        want = round(floor - target.value)
-        new = floor
-        note = f"（按基础代谢和安全下限，只调到 {round(floor)} 千卡）"
-        if want >= 0:
-            return None
+    special = flags(inp.snapshot.profile, risks(inp.snapshot.readings, inp.memory, today), today)
+    if want < 0 and special & {MINOR, PREGNANCY}:  # 特殊人群硬规则：不减热量（§90）
+        return None
+    prop, _ = within_limits(want, why, basis, target.value, bmr.value, inp.snapshot.profile, inp.diet)
+    if prop is None:
+        return None
     before = inp.diet.kcal if inp.diet is not None else 0
-    after = before + want
-    await deps.diet.apply(user_id, KcalAdjust(kcal=after, since=today, reason=why or "管家复盘"))
-    title = f"每日热量目标{'加' if want > 0 else '减'} {abs(want)} 千卡，约 {round(new)} 千卡{note}"
+    note = ""
+    if prop.after == round(safe_floor(bmr.value, inp.snapshot.profile)) and prop.delta != want:
+        note = f"（按基础代谢和安全下限，只调到 {prop.after} 千卡）"
+    elif abs(prop.total) == MAX_TOTAL and prop.delta != want:
+        note = f"（累计最多调 {MAX_TOTAL} 千卡，只调到 {prop.after} 千卡）"
+    elif abs(want) > MAX_STEP:
+        note = f"（一次最多调 {MAX_STEP} 千卡）"
+    await deps.diet.apply(user_id, KcalAdjust(kcal=prop.total, since=today, reason=why or "管家复盘"))
+    title = f"每日热量目标{'加' if prop.delta > 0 else '减'} {abs(prop.delta)} 千卡，约 {prop.after} 千卡{note}"
     return Done(key="review:kcal", type="kcal", title=title, why=why, basis=basis, expect=expect,
-                value={"before": before, "after": after})  # fmt: skip
+                value={"before": before, "after": prop.total})  # fmt: skip
 
 
 async def _save(user_id: str, deps: Deps, review: Review, today: date) -> None:
