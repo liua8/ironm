@@ -38,7 +38,7 @@ export function TodayBudget({ day, metrics, onHow }: { day: Day; metrics: Record
         </View>
         <View style={s.main}>
           <T muted style={s.label}>{b.over ? "今天多吃了" : "今天还能吃"}</T>
-          <PixelText size={48} numberOfLines={1}>
+          <PixelText size={36} numberOfLines={1} style={s.bigNum}>
             {String(b.left)}
             <T style={s.bigUnit}> 千卡</T>
           </PixelText>
@@ -99,6 +99,7 @@ const s = StyleSheet.create({
   energyFill: { backgroundColor: color.accent, borderWidth: 1, borderColor: "#2e5410", borderTopColor: "#b7e86a", borderTopWidth: 1 },
   main: { flex: 1, minWidth: 0, gap: 6 },
   label: { fontSize: 13, letterSpacing: 1 },
+  bigNum: { fontSize: 32, lineHeight: 40 },  // "今天还能吃"的数字（11-06："卡路里字太大了"：48 → 32，同网页）
   bigUnit: { fontSize: 16, fontWeight: "700", color: color.muted },
   small: { fontSize: 14, lineHeight: 20 },
   bar: { height: 10, backgroundColor: "#3a1e08", borderWidth: 1, borderRadius: 14, borderColor: color.wood, overflow: "hidden" },

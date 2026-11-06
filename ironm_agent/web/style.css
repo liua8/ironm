@@ -2613,3 +2613,6 @@ button.tag { border: 0; cursor: pointer; font: inherit; font-size: 12px; font-we
 .legal-draft { padding: 8px 12px; border-radius: var(--radius-sm); background: var(--warn-soft); color: var(--ink); font-size: 13px; }
 .legal-line { text-align: center; margin-top: 4px; }
 .legal-list { margin: 0; padding-left: 1.2em; line-height: 1.7; }
+
+/* 饮食账单"今天还能吃"的数字小一点（项目负责人 11-06："卡路里字太大了"）：44 → 32 */
+.bg-big.fig-n { font-size: 32px; }
