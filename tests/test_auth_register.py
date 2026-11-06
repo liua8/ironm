@@ -144,3 +144,48 @@ def test_login_page_wiring() -> None:
         and "这个邮箱已经注册过，直接登录" in page
     )
     assert "you@mirobody.ai" not in page and "111111" not in page  # 不再预填演示账号
+
+
+def _pw_client(monkeypatch: pytest.MonkeyPatch, row: dict[str, Any] | None) -> tuple[Any, list[Any]]:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from mirobody.server.auth import verify_token
+
+    from ironm_agent import web_password
+
+    seen: list[Any] = []
+
+    async def query(sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+        seen.append((sql, params))
+        if sql.lstrip().startswith("UPDATE"):
+            return [{"id": 5}]
+        return [row] if row is not None else []
+
+    monkeypatch.setattr(web_password, "_query", query)
+    app = FastAPI()
+    app.include_router(web_password.router)
+    app.dependency_overrides[verify_token] = lambda: "5"
+    return TestClient(app), seen
+
+
+def test_set_password_for_a_code_only_account(monkeypatch: pytest.MonkeyPatch) -> None:
+    """§174：以前用验证码建的账号没有密码，登录后直接设一个。"""
+    c, seen = _pw_client(monkeypatch, {"has": False, "ok": False})
+    assert c.get("/iron/api/auth/password").json() == {"has_password": False}
+    r = c.put("/iron/api/auth/password", json={"password": "short"})
+    assert r.status_code == 422 and r.json()["detail"] == "密码至少 8 位"
+    assert not any(s.lstrip().startswith("UPDATE") for s, _ in seen)
+    r = c.put("/iron/api/auth/password", json={"password": "newpass88"})
+    assert r.json() == {"has_password": True}
+    sql, params = seen[-1]
+    assert "crypt(:password, gen_salt('bf', 12))" in sql and params == {"id": 5, "password": "newpass88"}
+
+
+def test_change_password_needs_the_current_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    c, seen = _pw_client(monkeypatch, {"has": True, "ok": False})
+    r = c.put("/iron/api/auth/password", json={"password": "newpass88", "current": "wrong"})
+    assert r.status_code == 422 and r.json()["detail"] == "原来的密码不对"
+    assert not any(s.lstrip().startswith("UPDATE") for s, _ in seen)  # 旧密码不对：不改
+    c, seen = _pw_client(monkeypatch, {"has": True, "ok": True})
+    assert c.put("/iron/api/auth/password", json={"password": "newpass88", "current": "oldpass88"}).json() == {"has_password": True}
+    assert seen[0][1] == {"id": 5, "current": "oldpass88"}  # 旧密码交给数据库核对

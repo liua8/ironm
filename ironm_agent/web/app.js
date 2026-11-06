@@ -4388,12 +4388,19 @@ const AUTH_ERRORS = {
   "/password/reset": { "-2": "填一下邮箱和验证码", "-3": "密码至少 8 位", "-6": "验证码不对或已过期", "-7": "邮件服务还没配好，暂时不能找回密码" },
   "/email/verify": {},
 };
+// 验证码没通过时服务端写了原因（不对 / 过期 / 试错太多次）：如实说，不笼统写"不对或已过期"
+function codeReason(msg) {
+  if (/expired/i.test(msg)) return "验证码过期了（10 分钟内有效），重新获取一个";
+  if (/too many/i.test(msg)) return "这个验证码试错太多次已经作废，重新获取一个";
+  if (/code/i.test(msg)) return "验证码不对：用最新一封邮件里的 6 位数字（重新获取后，旧的就不能用了）";
+  return "";
+}
 async function authCall(path, body) {
   let r;
   try { r = await api(path, { method: "POST", body: JSON.stringify(body) }); } catch (err) { throw new Error(err.message); }
   if (r?.code !== undefined && r.code !== 0) {
     const msg = String(r.msg || "");
-    throw new Error(AUTH_ERRORS[path]?.[String(r.code)] || (/SMTP|mail/i.test(msg) ? "邮件服务还没配好，暂时发不了验证码" : path === "/email/verify" ? "验证码不对或已过期" : "没有成功，稍后再试"));
+    throw new Error((r.code === -6 || path === "/email/verify" ? codeReason(msg) : "") || AUTH_ERRORS[path]?.[String(r.code)] || (/SMTP|mail/i.test(msg) ? "邮件服务还没配好，暂时发不了验证码" : path === "/email/verify" ? "验证码不对或已过期" : "没有成功，稍后再试"));
   }
   return r;
 }
@@ -4409,15 +4416,16 @@ function loginView(view) {
   sendCode.addEventListener("click", async () => {
     msg.className = "error"; msg.textContent = "";
     if (!email.value.includes("@")) { msg.textContent = "先填邮箱"; return; }
-    sendCode.disabled = true;
+    sendCode.disabled = true; sendCode.textContent = "发送中…";  // 发信要十几秒：先变灰、说一声，免得连点（每点一次发一封，新码让旧码作废）
+    msg.className = "muted"; msg.textContent = "正在发送验证码，一般十几秒内到。";
     try {
       const r = await api("/email/login", { method: "POST", body: JSON.stringify({ email: email.value.trim() }) });
       if (r?.code !== undefined && r.code !== 0) throw new Error(/SMTP|mail/i.test(String(r.msg)) ? "邮件服务还没配好，暂时发不了验证码" : "验证码没发出去，稍后再试");
-      msg.className = "muted"; msg.textContent = "验证码已发到邮箱，10 分钟内有效。";
+      msg.className = "muted"; msg.textContent = "验证码已发到邮箱，10 分钟内有效；收到几封时以最新一封为准。";
       wait = 60;
       const tick = () => { sendCode.textContent = wait > 0 ? `${wait} 秒后重发` : "获取验证码"; sendCode.disabled = wait > 0; if (wait-- > 0) setTimeout(tick, 1000); };
       tick();
-    } catch (err) { msg.textContent = err.message; sendCode.disabled = false; }
+    } catch (err) { msg.className = "error"; msg.textContent = err.message; sendCode.disabled = false; sendCode.textContent = "获取验证码"; }
   });
   const submit = h("button", { class: "btn block", type: "submit" }, "登录");
   const tabs = h("div", { class: "seg login-seg", role: "tablist" });
@@ -4459,7 +4467,7 @@ function loginView(view) {
       const token = r?.data?.access_token;
       if (!token) throw new Error("没有成功，稍后再试");
       store.set(token); render();
-    } catch (err) { msg.textContent = err.message; }
+    } catch (err) { msg.textContent = err.message; await new Promise((ok) => setTimeout(ok, 1500)); }  // 没成功先停一下：连点会把验证码的 5 次机会用完
     submit.disabled = false;
   });
   draw();

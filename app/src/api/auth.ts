@@ -11,8 +11,18 @@ const ERRORS: Record<string, Record<string, string>> = {
 };
 const NO_MAIL = "邮件服务还没配好，暂时发不了验证码";
 
+/** 验证码没通过时服务端写了原因（不对 / 过期 / 试错太多次）：如实说，不笼统写"不对或已过期"。 */
+export function codeReason(msg: string): string {
+  if (/expired/i.test(msg)) return "验证码过期了（10 分钟内有效），重新获取一个";
+  if (/too many/i.test(msg)) return "这个验证码试错太多次已经作废，重新获取一个";
+  if (/code/i.test(msg)) return "验证码不对：用最新一封邮件里的 6 位数字（重新获取后，旧的就不能用了）";
+  return "";
+}
+
 function failed(path: string, r: Reply): string {
   const msg = String(r.msg ?? "");
+  const why = r.code === -6 || path === "/email/verify" ? codeReason(msg) : "";
+  if (why) return why;
   return ERRORS[path]?.[String(r.code)] ?? (/SMTP|mail/i.test(msg) ? NO_MAIL : path === "/email/verify" ? "验证码不对或已过期" : "没有成功，稍后再试");
 }
 

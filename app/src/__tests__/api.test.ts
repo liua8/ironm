@@ -1,5 +1,5 @@
 // 第一期（spec §164）：接口客户端带凭证；401 回登录页；出错给中文说明；登录注册的错误码换成中文。
-import { mailReady, signInWith } from "@/api/auth";
+import { mailReady, signInWith, codeReason } from "@/api/auth";
 import { api, ApiError, configureApi, isNoModel, NO_MODEL, setFetcher } from "@/api/client";
 
 function reply(status: number, body: unknown) {
@@ -71,5 +71,14 @@ describe("api client", () => {
     setFetcher(() => Promise.reject(new Error("x")));
     await expect(mailReady()).resolves.toBeNull();
     expect(new ApiError("invalid", "x").name).toBe("ApiError");
+  });
+});
+
+describe("code failure reasons (§174)", () => {
+  it("says which: wrong, expired, or too many tries", () => {
+    expect(codeReason("Invalid code.")).toMatch(/最新一封/);
+    expect(codeReason("Code expired.")).toMatch(/过期/);
+    expect(codeReason("Too many attempts.")).toMatch(/试错太多次/);
+    expect(codeReason("Incorrect email or password.")).toBe("");
   });
 });

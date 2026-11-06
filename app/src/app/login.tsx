@@ -23,6 +23,7 @@ export default function Login() {
   const [msg, setMsg] = useState<{ tone: "error" | "muted"; text: string }>({ tone: "error", text: "" });
   const [busy, setBusy] = useState(false);
   const [wait, setWait] = useState(0);
+  const [sending, setSending] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -42,12 +43,16 @@ export default function Login() {
   const newPassword = mode === "register" || mode === "reset";
   const noMail = newPassword && mail === false;
 
+  // 发信要十几秒：按下就变灰、说"正在发送"，发完再倒计时；免得连点（每点一次发一封，新码让旧码作废）
   const askCode = async () => {
+    if (sending || wait) return;
     setMsg({ tone: "error", text: "" });
     if (!email.includes("@")) return setMsg({ tone: "error", text: "先填邮箱" });
+    setSending(true);
+    setMsg({ tone: "muted", text: "正在发送验证码，一般十几秒内到。" });
     try {
       await sendCode(email.trim());
-      setMsg({ tone: "muted", text: "验证码已发到邮箱，10 分钟内有效。" });
+      setMsg({ tone: "muted", text: "验证码已发到邮箱，10 分钟内有效；收到几封时以最新一封为准。" });
       setWait(60);
       timer.current = setInterval(() => setWait((w) => {
         if (w <= 1 && timer.current) clearInterval(timer.current);
@@ -55,6 +60,8 @@ export default function Login() {
       }), 1000);
     } catch (e) {
       setMsg({ tone: "error", text: (e as Error).message });
+    } finally {
+      setSending(false);
     }
   };
 
@@ -73,6 +80,8 @@ export default function Login() {
       router.replace("/");
     } catch (e) {
       setMsg({ tone: "error", text: (e as Error).message });
+      // 没成功先停一下再让点：连点会把验证码的 5 次机会很快用完
+      await new Promise((r) => setTimeout(r, 1500));
     } finally {
       setBusy(false);
     }
@@ -91,7 +100,7 @@ export default function Login() {
         {withCode && (
           <View style={s.row}>
             <Field style={s.flex} placeholder="验证码" value={code} onChangeText={setCode} keyboardType="number-pad" maxLength={8} autoComplete="one-time-code" />
-            <Button kind="wood" small title={wait ? `${wait} 秒后重发` : "获取验证码"} onPress={askCode} disabled={wait > 0} />
+            <Button kind="wood" small title={sending ? "发送中…" : wait ? `${wait} 秒后重发` : "获取验证码"} onPress={askCode} disabled={sending || wait > 0} />
           </View>
         )}
         {newPassword && (
