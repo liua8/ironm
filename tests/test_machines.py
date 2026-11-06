@@ -111,7 +111,7 @@ def test_page_wiring() -> None:
     )
     assert (
         '["machines", "器械"]' in src
-        and 'chip === "machines" ? machinesPage(view)' in src
+        and 'if (cur === "machines") return machinesPage(view);' in src  # §175 器械是图鉴的大标签
     )
     assert (
         "照片会发给识别服务，认完不保存。" in src

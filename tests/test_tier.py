@@ -271,7 +271,7 @@ def test_db_version_writes_votes_without_names(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_nav_tabs_and_old_addresses() -> None:
-    """§121：底部是 首页 / 图鉴 / 战绩 / 我；夯榜在图鉴里；右上角头像和夯榜入口去掉；旧地址跳新位置。"""
+    """§121、§175：底部是 首页 / IronM / 图鉴 / 记录 / 我；夯榜入口去掉；旧地址跳新位置。"""
     from pathlib import Path
 
     web = Path(__file__).resolve().parents[1] / "ironm_agent" / "web"
@@ -279,11 +279,12 @@ def test_nav_tabs_and_old_addresses() -> None:
     tabs = html[html.index('id="tabs"') : html.index("</nav>")]
     assert [x.split('"')[0] for x in tabs.split('data-tab="')[1:]] == [
         "home",
+        "chat",
         "atlas",
         "record",
         "me",
     ]
-    assert all(f"</span>{n}</a>" in tabs for n in ("首页", "图鉴", "战绩", "我"))
+    assert all(f"</span>{n}</a>" in tabs for n in ("首页", "IronM", "图鉴", "记录", "我"))
     assert 'id="tierlink"' not in html and 'id="avatar"' not in html
     assert "#me/profile" not in js and "#me/data" not in js
     assert 'const tierHref = (board, part = "") => `#rank/' in js  # §161：榜单在排行榜里

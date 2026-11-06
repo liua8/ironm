@@ -31,14 +31,14 @@ def test_no_old_names_on_the_page() -> None:
 
 
 def test_segments() -> None:
-    assert 'const HOME_SEGS = [["home", "练"], ["home/eat", "干饭"], ["chat", "IronM"]];' in JS
+    assert 'const HOME_SEGS = [["home", "练"], ["home/eat", "干饭"]];' in JS  # §175：IronM 在底栏单独一格
     assert (
-        'const ATLAS_SEGS = [["moves", "动作"], ["food", "饮食"], ["plans", "方案"]];'
-        in JS  # §136 整合成三段
+        'const ATLAS_SEGS = [["moves", "动作"], ["machines", "器械"], ["food", "食物"], ["plans", "方案"]];'
+        in JS  # §175 照参照图四段
     )
     assert "RECORD_SEGS" not in JS and "recordPage(view); }" in JS  # §137 战绩不分段
     chat = JS[JS.index("function chatPage(view)") : JS.index("function reviewExtra")]
-    assert 'homeSeg("chat")' in chat and "mech(40)" in chat  # 对话页顶上三段、页头头盔
+    assert "homeSeg(" not in chat and "mech(40)" in chat  # §175：对话页顶上不再分段；页头是企鹅头像
 
 
 def test_home_shows_only_what_it_has() -> None:
@@ -50,11 +50,11 @@ def test_home_shows_only_what_it_has() -> None:
     )
     assert "return cells.length ?" in vit  # 一格都没有就整排不显示
     card = JS[JS.index("function trainCard") : JS.index("function vitalsRow")]
-    assert "先热身，约" in card and '"正式训练"' in card and '"开练"' in card
+    assert "先热身约" in card and '"开始训练"' in card and '"已经练完了，直接打卡"' in card  # §175 照参照图
     assert (
         "(planned[it.exercise] || 0) - (it.sets || 0)" in card and "`比计划少 ${cut} 组`" in card
     )  # 被减掉的组标出来
-    assert " · " not in card and "TODAY" not in card  # §127：不用中间点拼接、不用标题上的小标签
+    assert "TODAY" not in card  # §175 照参照图标题用"今日委托 · 名字"，不用英文小标签
 
 
 def test_pr_wall_rules() -> None:
@@ -66,12 +66,13 @@ def test_pr_wall_rules() -> None:
     assert "x.weight_kg === a.weight_kg && x.reps > a.reps" in JS  # 一样重次数多的算更好
 
 
-def test_helmet_is_our_own() -> None:
-    helmet = JS[JS.index("function mech(") : JS.index("async function api(")]
-    assert (
-        "#0a7f4b" in helmet and "#e2b866" in helmet and "#7cff4f" in helmet
-    )  # 绿色面罩、钛金天线、下巴绿灯
-    assert "arc" not in helmet.lower() and "jarvis" not in helmet.lower()
+def test_mascot_is_our_own() -> None:
+    """§175 需求 3：IronM 的头像是自己画的黄色胖企鹅，头顶一滴牛奶；顶栏标志也用它。"""
+    pen = JS[JS.index("function mech(") : JS.index("async function api(")]
+    assert "#ffd83d" in pen and "#ffefa6" in pen  # 纯黄身子、浅黄肚子
+    assert '"#fff", stroke: "#cbd5dd"' in pen  # 头顶白色的一滴牛奶
+    assert "image" not in pen and "href" not in pen  # 全是自己画的形状，不引图片
+    assert '$("logo").append(mech(30))' in JS
 
 
 def test_motion_and_no_external() -> None:

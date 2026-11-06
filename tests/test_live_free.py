@@ -42,10 +42,10 @@ def test_page_header_scrolls_away() -> None:
 
 
 def test_atlas_is_three_sections_without_a_separate_tier() -> None:
-    """§136 起图鉴是 动作 / 饮食 / 方案；§161 起只放资料，榜单都在排行榜（首页"今日热搜"进去）。"""
-    assert 'const ATLAS_SEGS = [["moves", "动作"], ["food", "饮食"], ["plans", "方案"]];' in JS
+    """§136 起分段，§175 照参照图是 动作 / 器械 / 食物 / 方案；§161 起只放资料，榜单都在排行榜（首页"今日热搜"进去）。"""
+    assert 'const ATLAS_SEGS = [["moves", "动作"], ["machines", "器械"], ["food", "食物"], ["plans", "方案"]];' in JS
     chips = JS[JS.index("const ATLAS_CHIPS") : JS.index("function pageSeg(")]
-    for name in ("动作库", "器械", "食材", "食谱"):
+    for name in ("食材", "食谱"):
         assert f'"{name}"' in chips, name
     for gone in ("大家推荐", "器材", "健身餐", "补剂", "蛋白粉"):
         assert f'"{gone}"' not in chips, gone
@@ -65,7 +65,7 @@ def test_atlas_is_three_sections_without_a_separate_tier() -> None:
 def test_record_is_one_page_without_repeats() -> None:
     """§137：战绩一页到底；这周练了几次只说一次；没有小柱、圆环、单列的照片格。"""
     page = JS[JS.index("async function recordPage(view)") : JS.index("// ---- 身体")]
-    for part in ('"这周"', "calendarCard(cal)", 'section("成就"', '"训练时间线"'):
+    for part in ('"这周表现"', "calendarCard(cal)", "bodyCard()", 'section("成就"', '"训练时间线"'):  # §175 身体数据挪进来
         assert part in page, part
     assert "ws-bars" not in page and "ring(" not in page and "ws-photos" not in page
     assert "reportCard" not in JS and "trainLog" not in JS
@@ -92,7 +92,7 @@ def test_timeline_is_its_own_page_with_a_picture_per_workout() -> None:
 def test_me_page_is_a_character_sheet_without_memory_notes() -> None:
     """§140、§141：我 = 角色卡、我的目标、设置一列；记忆不上页面，设置里一行能看能删。"""
     me = JS[JS.index("async function me(view)") : JS.index("// 头部：头像、账号")]
-    assert "meHead(mine), goalBlock()," in me and "memoryBoard" not in JS
+    assert "meHead(mine, [" in me and "goalBlock()," in me and "memoryBoard" not in JS  # §175 资料卡带累计
     for name in (
         "身体数据",
         "IronM 记得的事",
@@ -102,8 +102,8 @@ def test_me_page_is_a_character_sheet_without_memory_notes() -> None:
         "城市和天气",
         "说明",
     ):
-        assert f'row("{name}"' in me, name
-    assert 'row("IronM 记得的事", "记错了可以删", memorySheet)' in me
+        assert f'"{name}"' in me, name
+    assert 'row("coach", "IronM 记得的事", "记错了可以删", memorySheet)' in me  # §175 每行带图标
     assert (
         'openSheet("器材和场所", gearSection())' in me
         and 'openSheet("城市和天气", citySection())' in me
@@ -113,8 +113,8 @@ def test_me_page_is_a_character_sheet_without_memory_notes() -> None:
 def test_rank_moves_to_its_own_page_with_a_home_entry() -> None:
     """§161：首页最上面"今日热搜"一条是排行榜唯一入口；排行榜页有返回首页；没人评时不写空话。"""
     assert 'rank: { title: "排行榜", tab: "home", render: rankPage' in JS
-    home = JS[JS.index("async function homePage(") : JS.index("async function home(")]
-    assert "await hotStrip()" in home
+    home = JS[JS.index("async function home(") : JS.index("function trainCard(")]
+    assert "await hotStrip()" in home  # §175 首页一页放练和吃，热搜在日期那一行下面
     strip = JS[JS.index("async function hotStrip(") : JS.index("async function hotStrip(") + 1600]
     assert 'href: "#rank"' in strip and "排行榜刚开，去评第一个" in strip
     assert 'rankBar("#home", "首页", null)' in JS

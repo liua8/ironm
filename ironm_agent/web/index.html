@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#7ec850">
+  <meta name="theme-color" content="#f6f4fa">
   <title>IronM · AI 健身</title>
   <link rel="stylesheet" href="/iron/style.css">
   <script src="/iron/app.js" defer></script>
@@ -11,19 +11,22 @@
 <body>
   <div class="app">
     <header class="bar" id="bar" hidden>
+      <a class="bar-brand" href="#home" aria-label="IronM 首页"><span class="bar-logo" id="logo"></span><b>IronM</b></a>
       <div class="bar-text">
-        <div class="bar-kicker" id="kicker"></div>
         <h1 class="bar-title" id="title"></h1>
+        <div class="bar-kicker" id="kicker"></div>
       </div>
+      <a class="bar-me" href="#me" aria-label="我" id="me-avatar"></a>
     </header>
     <main id="view" class="view" aria-live="polite"></main>
   </div>
   <nav class="tabs" id="tabs" hidden aria-label="主导航">
     <div class="tabs-inner">
-      <a href="#home" data-tab="home"><span class="ti" data-icon="hexhome"></span>首页</a>
-      <a href="#atlas" data-tab="atlas"><span class="ti" data-icon="atlas"></span>图鉴</a>
-      <a href="#record" data-tab="record"><span class="ti" data-icon="record"></span>战绩</a>
-      <a href="#me" data-tab="me"><span class="ti" data-icon="pilot"></span>我</a>
+      <a href="#home" data-tab="home"><span class="ti" data-icon="dumbbell"></span>首页</a>
+      <a href="#chat" data-tab="chat"><span class="ti" data-icon="bubble"></span>IronM</a>
+      <a href="#atlas" data-tab="atlas"><span class="ti" data-icon="book"></span>图鉴</a>
+      <a href="#record" data-tab="record"><span class="ti" data-icon="bars"></span>记录</a>
+      <a href="#me" data-tab="me"><span class="ti" data-icon="user"></span>我</a>
     </div>
   </nav>
   <button class="fab" id="fab" type="button" hidden aria-label="快捷记录：补打卡、记一餐、记体重、记腰围体脂"><span class="ti" data-icon="plus"></span></button>

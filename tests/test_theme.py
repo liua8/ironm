@@ -1,4 +1,4 @@
-"""spec [2026-10-23] §58、§121、§124、§126：现在是像素农场风（§131）；不用蓝、青；文字对比度够；不再有更早那版白色基调的写死颜色。"""
+"""spec [2026-10-23] §58、§121、§124、§126、§131：现在是白底圆角卡片风（§175）；不用蓝、青；文字对比度够；不再有更早那版白色基调的写死颜色。"""
 
 import re
 from pathlib import Path
@@ -25,15 +25,17 @@ def contrast(a: str, b: str) -> float:
     return (x + 0.05) / (y + 0.05)
 
 
-def test_pixel_farm_palette() -> None:
-    """§131：像素农场风——草地绿底、羊皮纸面板、深木棕正文、深草绿按钮。"""
+def test_card_palette() -> None:
+    """§175：浅灰紫底、白卡片、深色正文、珊瑚红主色；不再加载像素字体。"""
     t = _tokens()
     r, g, b = (int(t["bg"][i : i + 2], 16) for i in (1, 3, 5))
-    assert g > r > b  # 草地绿
-    r, g, b = (int(t["surface"][i : i + 2], 16) for i in (1, 3, 5))
-    assert _lum(t["surface"]) > 0.7 and r > g > b  # 羊皮纸
-    assert _lum(t["ink"]) < 0.05  # 深木棕
-    assert "Fusion Pixel" in CSS and "fusion-pixel-12px-zh_hans.woff2" in CSS  # 像素字体放在项目里
+    assert _lum(t["bg"]) > 0.85 and b > r >= g  # 浅灰紫（偏紫不偏蓝）
+    assert t["surface"] == "#ffffff"
+    assert _lum(t["ink"]) < 0.05
+    r, g, b = (int(t["accent"][i : i + 2], 16) for i in (1, 3, 5))
+    assert r > 200 and r > g > b  # 珊瑚红
+    assert "Fusion Pixel" not in CSS and "@font-face" not in CSS  # 像素字体去掉了（§175）
+    assert not list(WEB.glob("*.woff2"))
     assert "color-scheme: light" in CSS[: CSS.index("}", CSS.index(":root {"))]
 
 
@@ -84,4 +86,4 @@ def test_no_light_theme_leftovers() -> None:
         "rgb(255 255 255 / 88%)",
     ):
         assert old not in CSS, old
-    assert 'content="#7ec850"' in (WEB / "index.html").read_text()  # §131 草地绿
+    assert 'content="#f6f4fa"' in (WEB / "index.html").read_text()  # §175 浅灰紫

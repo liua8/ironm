@@ -37,10 +37,6 @@ Feather 部分（MIT License）：Copyright (c) 2013-2022 Cole Bemis
 
 训练（按部位）、推荐食谱、减脂餐、常见食物的照片来自 Unsplash（Unsplash License，https://unsplash.com/license）和 Pexels（Pexels License，https://www.pexels.com/license/），都是免费许可，不收 Unsplash+ 付费图。每张照片的作者、来源页写在 `ironm_agent/food_images.yaml`，页面上署名。照片文件由 `scripts/fetch_stock_images.py` 下载到本机数据目录，不随仓库分发。
 
-## 像素字体（缝合像素字体 Fusion Pixel Font）
-
-`fusion-pixel-12px-zh_hans.woff2`：缝合像素字体 12px 比例宽度简体中文版 v2026.10.25，作者 TakWolf，来源 https://github.com/TakWolf/fusion-pixel-font ，SIL Open Font License 1.1；字体合并了方舟像素字体、俐方体11号、Galmuri 的字形。许可原文（含合并字体的许可）在 `fusion-pixel-LICENSE.txt`。
-
 ## 食物营养数据（USDA FoodData Central）
 
 食物库（`ironm_agent/foods.yaml`）里原料每 100 克的营养，主要按美国农业部 USDA FoodData Central（https://fdc.nal.usda.gov，公有领域）等公开资料整理并取整，个别中式食物参考常见公开数据；内容待审定。

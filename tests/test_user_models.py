@@ -185,7 +185,7 @@ def test_page_wiring() -> None:
     src = (Path(__file__).resolve().parents[1] / "ironm_agent" / "web" / "app.js").read_text(
         encoding="utf-8"
     )
-    assert 'row("模型和 API", "可以用自己的模型", modelSheet)' in src
+    assert 'row("coach", "模型和 API", "可以用自己的模型", modelSheet)' in src
     sheet = src[src.index("async function modelSheet()") : src.index("// 搭子记得的事")]
     assert (
         'type: "password"' in sheet

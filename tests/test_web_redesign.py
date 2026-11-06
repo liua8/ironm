@@ -79,7 +79,7 @@ def test_body_page_top_three_and_folds() -> None:
     assert "lackRow" in part and "catalogSection()" in part  # 还缺几项并进全部指标；原始记录点开才取
     assert "weekCard(brief.week)" in part and "bodyMap(" in part
     assert 'h("details", { class: "me-more body-fold" }' in src  # 默认收起
-    assert 'row("身体数据", "体重、BMI、体脂率", "#body")' in src
+    assert 'row("wave", "身体数据", "体重、BMI、体脂率", "#body")' in src
 
 
 def test_weekly_review_only_gives_advice() -> None:
