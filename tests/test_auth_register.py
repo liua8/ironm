@@ -56,7 +56,10 @@ class Req:
 
 
 def _call(
-    users: Users | None, body: dict[str, Any], monkeypatch: pytest.MonkeyPatch, rows: list[dict[str, Any]]
+    users: Users | None,
+    body: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    rows: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], list[Any]]:
     from ironm_agent import web_password
 
@@ -73,7 +76,9 @@ def _call(
 
 def test_reset_needs_mail_and_the_right_code(monkeypatch: pytest.MonkeyPatch) -> None:
     body = {"email": "A@x.com", "code": "123456", "password": "newpass88"}
-    got, seen = _call(Users(DummyEmailCodeValidator({}), mail=False), body, monkeypatch, [{"id": 5}])
+    got, seen = _call(
+        Users(DummyEmailCodeValidator({}), mail=False), body, monkeypatch, [{"id": 5}]
+    )
     assert got["code"] == -7 and not seen  # 没配发信：不改
     got, seen = _call(None, body, monkeypatch, [{"id": 5}])
     assert got["code"] == -7 and not seen  # 取不到 mirobody 的用户服务：也不改
@@ -139,14 +144,17 @@ def test_login_page_wiring() -> None:
     ):
         assert path in page, path
     assert (
-        "邮件服务还没配好，暂时不能注册。" in page
+        "现在不发验证码，邮箱就是登录名；暂时不能找回密码，请记好密码。" in page
         and "两次输的密码不一样" in page
+        and "密码至少 8 位" in page
         and "这个邮箱已经注册过，直接登录" in page
     )
     assert "you@mirobody.ai" not in page and "111111" not in page  # 不再预填演示账号
 
 
-def _pw_client(monkeypatch: pytest.MonkeyPatch, row: dict[str, Any] | None) -> tuple[Any, list[Any]]:
+def _pw_client(
+    monkeypatch: pytest.MonkeyPatch, row: dict[str, Any] | None
+) -> tuple[Any, list[Any]]:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from mirobody.server.auth import verify_token
@@ -178,7 +186,10 @@ def test_set_password_for_a_code_only_account(monkeypatch: pytest.MonkeyPatch) -
     r = c.put("/iron/api/auth/password", json={"password": "newpass88"})
     assert r.json() == {"has_password": True}
     sql, params = seen[-1]
-    assert "crypt(:password, gen_salt('bf', 12))" in sql and params == {"id": 5, "password": "newpass88"}
+    assert "crypt(:password, gen_salt('bf', 12))" in sql and params == {
+        "id": 5,
+        "password": "newpass88",
+    }
 
 
 def test_change_password_needs_the_current_one(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -187,5 +198,26 @@ def test_change_password_needs_the_current_one(monkeypatch: pytest.MonkeyPatch) 
     assert r.status_code == 422 and r.json()["detail"] == "原来的密码不对"
     assert not any(s.lstrip().startswith("UPDATE") for s, _ in seen)  # 旧密码不对：不改
     c, seen = _pw_client(monkeypatch, {"has": True, "ok": True})
-    assert c.put("/iron/api/auth/password", json={"password": "newpass88", "current": "oldpass88"}).json() == {"has_password": True}
+    assert c.put(
+        "/iron/api/auth/password", json={"password": "newpass88", "current": "oldpass88"}
+    ).json() == {"has_password": True}
     assert seen[0][1] == {"id": 5, "current": "oldpass88"}  # 旧密码交给数据库核对
+
+
+def test_register_without_mail_and_then_fill_the_profile() -> None:
+    """§174：没配发信时注册不带验证码、不给验证码登录和找回密码；注册后先到完善资料，存档案和体重再提示填模型。"""
+    src = (Path(__file__).resolve().parents[1] / "ironm_agent" / "web" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    page = src[src.index("function loginView") : src.index("// ---- 训练记录器")]
+    assert 'mail === false && (mode === "code" || mode === "reset")) mode = "login"' in page
+    assert '(mode === "register" && mail !== false)' in page  # 只有配了发信才要验证码
+    assert 'mode === "register" && mail === false ? {} : { code: code.value.trim() }' in page
+    assert page.count('mail !== false ? h("button"') == 2  # 用验证码登录、忘记密码
+    assert 'if (mode === "register") location.hash = "#welcome"' in page
+    welcome = src[src.index("async function welcomePage") : src.index("// ---- 训练记录器")]
+    for need in ('"/iron/api/profile", { method: "PUT"', '"/iron/api/readings", { method: "POST"',
+                 'kind: "weight"', "modelSheet()", "以后再说，先进首页", "出生日期不能晚于今天",
+                 "身高填 100–250 厘米之间", "体重填 20–300 公斤之间"):  # fmt: skip
+        assert need in welcome, need
+    assert 'welcome: { title: "完善资料", full: true, render: welcomePage }' in src

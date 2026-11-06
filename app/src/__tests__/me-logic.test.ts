@@ -2,6 +2,7 @@
 import {
   addGear,
   ageOf,
+  checkWelcome,
   fileState,
   freshLine,
   gearLine,
@@ -146,5 +147,20 @@ describe("memory and files", () => {
     expect(readable({ latest_value: 25200000, unit: "ms" })).toEqual(["7", "小时"]);
     expect(readable({ latest_value: 8123.4, unit: "count" })).toEqual(["8,123", ""]);
     expect(readable({ latest_value: "72.0", unit: "kg" })).toEqual(["72", "kg"]);
+  });
+});
+
+
+describe("checkWelcome (§174)", () => {
+  const ok = { height: "172", birth: "1995-06-18", weight: "65.5", sex: "male", goal: "", activity: "" };
+  it("height, birth and weight are required and checked", () => {
+    expect(checkWelcome({ ...ok, height: "" }, "2026-11-06")).toEqual({ error: "身高填 100–250 厘米之间" });
+    expect(checkWelcome({ ...ok, birth: "" }, "2026-11-06")).toEqual({ error: "填一下出生日期" });
+    expect(checkWelcome({ ...ok, birth: "2027-01-01" }, "2026-11-06")).toEqual({ error: "出生日期写成 1995-06-18 这样，不能晚于今天" });
+    expect(checkWelcome({ ...ok, birth: "1995-02-30" }, "2026-11-06")).toEqual({ error: "出生日期写成 1995-06-18 这样，不能晚于今天" });
+    expect(checkWelcome({ ...ok, weight: "abc" }, "2026-11-06")).toEqual({ error: "体重填 20–300 公斤之间" });
+  });
+  it("returns what to save; empty optional fields are left out", () => {
+    expect(checkWelcome(ok, "2026-11-06")).toEqual({ profile: { height_cm: 172, birth: "1995-06-18", sex: "male" }, weight: 65.5 });
   });
 });

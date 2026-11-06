@@ -170,6 +170,23 @@ export function validDay(s: string, max?: string): boolean {
   return !max || s <= max;
 }
 
+/** 注册后完善资料（§174）：身高、出生日期、体重必填；对就返回要存的，不对返回给人看的一句。 */
+export function checkWelcome(
+  f: { height: string; birth: string; weight: string; sex?: string; goal?: string; activity?: string },
+  today: string,
+): { error: string } | { profile: Record<string, string | number>; weight: number } {
+  const height = Number(f.height.trim());
+  if (!f.height.trim() || !Number.isFinite(height) || height < 100 || height > 250) return { error: "身高填 100–250 厘米之间" };
+  const birth = f.birth.trim();
+  if (!birth) return { error: "填一下出生日期" };
+  if (!validDay(birth, today)) return { error: "出生日期写成 1995-06-18 这样，不能晚于今天" };
+  const weight = Number(f.weight.trim());
+  if (!f.weight.trim() || !Number.isFinite(weight) || weight < 20 || weight > 300) return { error: "体重填 20–300 公斤之间" };
+  const profile: Record<string, string | number> = { height_cm: height, birth };
+  for (const k of ["sex", "goal", "activity"] as const) if (f[k]) profile[k] = f[k] as string;
+  return { profile, weight };
+}
+
 /** 2026-11-05 → 2026年11月5日。 */
 export function fmtDay(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);

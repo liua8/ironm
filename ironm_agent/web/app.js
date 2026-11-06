@@ -4436,37 +4436,43 @@ function loginView(view) {
     msg.className = "error"; msg.textContent = "";
     const tab = (k, label) => h("button", { type: "button", role: "tab", class: (mode === k || (k === "login" && mode === "code")) ? "on" : "", "aria-selected": String(mode === k), onclick: () => { mode = k; draw(); } }, label);
     tabs.replaceChildren(tab("login", "登录"), tab("register", "注册"));
-    const noMail = (mode === "register" || mode === "reset") && mail === false;
+    // 没配发信（§174）：注册只要邮箱和密码、不要验证码；验证码登录和找回密码先不给
+    if (mail === false && (mode === "code" || mode === "reset")) mode = "login";
+    const withCode = mode === "code" || mode === "reset" || (mode === "register" && mail !== false);
     password.placeholder = mode === "reset" ? "新密码（至少 8 位）" : mode === "register" ? "设密码（至少 8 位）" : "密码";
     password.autocomplete = mode === "login" ? "current-password" : "new-password";
     submit.textContent = { login: "登录", code: "登录", register: "注册", reset: "改好并登录" }[mode];
     form.replaceChildren(email,
       mode === "login" ? password : null,
-      mode !== "login" ? codeRow : null,
+      withCode ? codeRow : null,
       mode === "register" || mode === "reset" ? password : null,
       mode === "register" || mode === "reset" ? again : null,
-      noMail ? h("p", { class: "muted" }, mode === "register" ? "邮件服务还没配好，暂时不能注册。" : "邮件服务还没配好，暂时不能找回密码。") : null,
+      mode === "register" && mail === false ? h("p", { class: "muted" }, "现在不发验证码，邮箱就是登录名；暂时不能找回密码，请记好密码。") : null,
       submit, msg);
-    submit.disabled = noMail;
+    submit.disabled = false;
     links.replaceChildren(
-      mode === "login" ? h("button", { type: "button", class: "link", onclick: () => { mode = "code"; draw(); } }, "用验证码登录") : null,
+      mode === "login" && mail !== false ? h("button", { type: "button", class: "link", onclick: () => { mode = "code"; draw(); } }, "用验证码登录") : null,
       mode === "code" ? h("button", { type: "button", class: "link", onclick: () => { mode = "login"; draw(); } }, "用密码登录") : null,
-      mode === "login" || mode === "code" ? h("button", { type: "button", class: "link", onclick: () => { mode = "reset"; draw(); } }, "忘记密码") : null,
+      (mode === "login" || mode === "code") && mail !== false ? h("button", { type: "button", class: "link", onclick: () => { mode = "reset"; draw(); } }, "忘记密码") : null,
       mode === "reset" ? h("button", { type: "button", class: "link", onclick: () => { mode = "login"; draw(); } }, "想起来了，去登录") : null);
   };
   form.addEventListener("submit", async (e) => {
     e.preventDefault(); msg.className = "error"; msg.textContent = "";
     const mail_ = email.value.trim();
     if (!mail_.includes("@")) { msg.textContent = "邮箱格式不对"; return; }
+    if ((mode === "register" || mode === "reset") && password.value.length < 8) { msg.textContent = "密码至少 8 位"; return; }
     if ((mode === "register" || mode === "reset") && password.value !== again.value) { msg.textContent = "两次输的密码不一样"; return; }
     submit.disabled = true;
     try {
       const r = mode === "login" ? await authCall("/password/login", { email: mail_, password: password.value })
         : mode === "code" ? await authCall("/email/verify", { email: mail_, code: code.value.trim() })
-          : await authCall(mode === "register" ? "/password/register" : "/password/reset", { email: mail_, code: code.value.trim(), password: password.value });
+          : await authCall(mode === "register" ? "/password/register" : "/password/reset",
+            { email: mail_, password: password.value, ...(mode === "register" && mail === false ? {} : { code: code.value.trim() }) });
       const token = r?.data?.access_token;
       if (!token) throw new Error("没有成功，稍后再试");
-      store.set(token); render();
+      store.set(token);
+      if (mode === "register") location.hash = "#welcome";  // 新注册的先完善资料（§174 需求 4）
+      render();
     } catch (err) { msg.textContent = err.message; await new Promise((ok) => setTimeout(ok, 1500)); }  // 没成功先停一下：连点会把验证码的 5 次机会用完
     submit.disabled = false;
   });
@@ -4475,6 +4481,52 @@ function loginView(view) {
   view.append(h("div", { class: "login" },
     h("div", {}, h("div", { class: "wordmark" }, "Iron", h("b", {}, "M")), h("p", { class: "lede", style: "margin-top:10px" }, "AI 健身助手：训练、饮食、恢复和身体数据，按你的情况安排。")),
     tabs, form, links));
+}
+
+// ---- 注册后完善资料（§174 需求 4）：身高、出生日期、体重必填，性别、目标、日常活动建议填；存好再提示填模型 ----
+async function welcomePage(view) {
+  const box = h("div", { class: "card login-form welcome-form" }, h("p", { class: "muted" }, "正在读取…"));
+  view.append(h("div", { class: "login" },
+    h("div", {}, h("div", { class: "wordmark" }, "Iron", h("b", {}, "M")),
+      h("p", { class: "lede", style: "margin-top:10px" }, "先填几样，IronM 才能按你的情况算热量、排训练。")),
+    box));
+  let data;
+  try { data = await profile(true); } catch (err) { box.replaceChildren(h("p", { class: "error" }, err.message)); return; }
+  const p = data.profile, today = new Date().toISOString().slice(0, 10);
+  const opts = (map, value) => [h("option", { value: "" }, "请选择"), ...Object.entries(map).map(([k, v]) => h("option", { value: k, selected: k === value }, v))];
+  const msg = h("div", { class: "error", role: "status" });
+  const req = (text) => h("span", {}, text, h("b", { class: "req", "aria-hidden": "true" }, " *"));
+  const form = h("form", {},
+    h("label", {}, req("身高（厘米）"), h("input", { name: "height_cm", type: "number", inputmode: "decimal", step: "0.1", min: "100", max: "250", required: true, value: p.height_cm ?? "" })),
+    h("label", {}, req("出生日期"), h("input", { name: "birth", type: "date", max: today, required: true, value: p.birth ?? "" })),
+    h("label", {}, req("体重（公斤）"), h("input", { name: "weight", type: "number", inputmode: "decimal", step: "0.1", min: "20", max: "300", required: true })),
+    h("label", {}, "性别", h("select", { name: "sex" }, opts(SEX, p.sex))),
+    h("label", {}, "目标", h("select", { name: "goal" }, opts(data.options.goal, p.goal))),
+    h("label", {}, "日常活动", h("select", { name: "activity" }, opts(data.options.activity, p.activity))),
+    h("p", { class: "caption" }, "带 * 的要填；其余建议填，算每天该吃多少会更准。以后都能在「我」里改。"),
+    msg, h("button", { class: "btn block", type: "submit" }, "保存"));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault(); msg.className = "error"; msg.textContent = "";
+    const f = Object.fromEntries(new FormData(form));
+    const height = Number(f.height_cm), weight = Number(f.weight);
+    if (!(height >= 100 && height <= 250)) { msg.textContent = "身高填 100–250 厘米之间"; return; }
+    if (!f.birth || f.birth > today) { msg.textContent = f.birth ? "出生日期不能晚于今天" : "填一下出生日期"; return; }
+    if (!(weight >= 20 && weight <= 300)) { msg.textContent = "体重填 20–300 公斤之间"; return; }
+    const body = { height_cm: height, birth: f.birth };
+    for (const k of ["sex", "goal", "activity"]) if (f[k]) body[k] = f[k];
+    msg.className = "muted"; msg.textContent = "保存中…";
+    try {
+      await api("/iron/api/profile", { method: "PUT", body: JSON.stringify(body) });
+      await api("/iron/api/readings", { method: "POST", body: JSON.stringify({ kind: "weight", value: weight }) });
+      cache.metrics = null;
+    } catch (err) { msg.className = "error"; msg.textContent = err.message; return; }
+    box.replaceChildren(
+      h("p", {}, h("b", {}, "资料存好了。")),
+      h("p", { class: "muted" }, "再填一个自己的模型（DeepSeek、通义千问、智谱等都可以）就能问 IronM、拍照估热量；记训练、看计划不填也能用。"),
+      h("button", { class: "btn block", type: "button", onclick: () => modelSheet() }, "去填模型"),
+      h("button", { class: "link", type: "button", onclick: () => { location.hash = "#home"; } }, "以后再说，先进首页"));
+  });
+  box.replaceChildren(form);
 }
 
 // ---- 训练记录器（spec [2026-10-23] §71）：选动作开始训练，一组一组记重量、次数、用时 ------------------------
@@ -4854,6 +4906,7 @@ const PAGES = {
   body: { title: "身体数据", tab: "me", render: body, skeleton: [120, 320, 320] },
   chat: { title: "IronM", full: true, tabs: true, render: chatPage },  // 底栏一直在（§175）
   live: { title: "训练中", full: true, render: livePage },
+  welcome: { title: "完善资料", full: true, render: welcomePage },  // 新注册的先到这里（§174）
 };
 // 旧地址跳到新位置（§121 需求 1）
 function moved(name, sub, rest) {

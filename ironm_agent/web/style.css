@@ -2594,3 +2594,6 @@ button.tag { border: 0; cursor: pointer; font: inherit; font-size: 12px; font-we
 .step-in.hot { color: var(--warn); }
 .lf-steps .step-in { width: 3.2em; font-size: 40px; font-weight: 800; }
 .lf-steps .step-val small { white-space: nowrap; }
+
+/* §174 完善资料：必填项的星号 */
+.req { color: var(--accent-text); font-weight: 700; }

@@ -20,6 +20,7 @@ function Screens() {
         <Stack.Screen name="eat" />
         <Stack.Screen name="timeline" />
         <Stack.Screen name="body" />
+        <Stack.Screen name="welcome" />
         <Stack.Screen name="rank/index" />
         <Stack.Screen name="rank/[board]/index" />
         <Stack.Screen name="rank/[board]/[item]" />

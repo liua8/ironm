@@ -1,4 +1,5 @@
-// 登录页（同网页 spec §155）：密码登录、验证码登录、邮箱验证码注册设密码、忘记密码；没配发信时注册和找回如实说不能用。
+// 登录页（同网页 spec §155、§174）：密码登录、验证码登录、注册设密码、忘记密码；没配发信时注册只要邮箱和密码、不出验证码，
+// 验证码登录和找回密码先不给。刚注册的先去完善资料。
 import { Redirect, router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
@@ -32,6 +33,10 @@ export default function Login() {
       if (timer.current) clearInterval(timer.current);
     };
   }, []);
+  // 没配发信：停在验证码登录、找回密码的回到密码登录
+  useEffect(() => {
+    if (mail === false && (mode === "code" || mode === "reset")) setMode("login");
+  }, [mail, mode]);
 
   if (ready && token) return <Redirect href="/" />;
 
@@ -39,9 +44,8 @@ export default function Login() {
     setMode(next);
     setMsg({ tone: "error", text: "" });
   };
-  const withCode = mode !== "login";
   const newPassword = mode === "register" || mode === "reset";
-  const noMail = newPassword && mail === false;
+  const withCode = mode === "code" || mode === "reset" || (mode === "register" && mail !== false);
 
   // 发信要十几秒：按下就变灰、说"正在发送"，发完再倒计时；免得连点（每点一次发一封，新码让旧码作废）
   const askCode = async () => {
@@ -69,15 +73,17 @@ export default function Login() {
     setMsg({ tone: "error", text: "" });
     const addr = email.trim();
     if (!addr.includes("@")) return setMsg({ tone: "error", text: "邮箱格式不对" });
+    if (newPassword && password.length < 8) return setMsg({ tone: "error", text: "密码至少 8 位" });
     if (newPassword && password !== again) return setMsg({ tone: "error", text: "两次输的密码不一样" });
     setBusy(true);
     try {
       const got =
         mode === "login" ? await signInWith("/password/login", { email: addr, password })
         : mode === "code" ? await signInWith("/email/verify", { email: addr, code: code.trim() })
-        : await signInWith(mode === "register" ? "/password/register" : "/password/reset", { email: addr, code: code.trim(), password });
+        : await signInWith(mode === "register" ? "/password/register" : "/password/reset",
+          mode === "register" && mail === false ? { email: addr, password } : { email: addr, code: code.trim(), password });
       await signIn(got);
-      router.replace("/");
+      router.replace(mode === "register" ? "/welcome" : "/");
     } catch (e) {
       setMsg({ tone: "error", text: (e as Error).message });
       // 没成功先停一下再让点：连点会把验证码的 5 次机会很快用完
@@ -109,14 +115,14 @@ export default function Login() {
             <Field placeholder="再输一遍密码" value={again} onChangeText={setAgain} secureTextEntry autoComplete="new-password" />
           </>
         )}
-        {noMail && <Note>{mode === "register" ? "邮件服务还没配好，暂时不能注册。" : "邮件服务还没配好，暂时不能找回密码。"}</Note>}
-        <Button title={SUBMIT[mode]} onPress={submit} disabled={busy || noMail} />
+        {mode === "register" && mail === false && <Note>现在不发验证码，邮箱就是登录名；暂时不能找回密码，请记好密码。</Note>}
+        <Button title={SUBMIT[mode]} onPress={submit} disabled={busy} />
         <Note tone={msg.tone}>{msg.text}</Note>
       </Panel>
       <View style={s.links}>
-        {mode === "login" && <LinkButton title="用验证码登录" onPress={() => go("code")} />}
+        {mode === "login" && mail !== false && <LinkButton title="用验证码登录" onPress={() => go("code")} />}
         {mode === "code" && <LinkButton title="用密码登录" onPress={() => go("login")} />}
-        {(mode === "login" || mode === "code") && <LinkButton title="忘记密码" onPress={() => go("reset")} />}
+        {(mode === "login" || mode === "code") && mail !== false && <LinkButton title="忘记密码" onPress={() => go("reset")} />}
         {mode === "reset" && <LinkButton title="想起来了，去登录" onPress={() => go("login")} />}
       </View>
     </Screen>

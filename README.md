@@ -57,3 +57,8 @@ make run                # http://127.0.0.1:18090
 ```
 
 演示账号：`you@mirobody.ai`，验证码 `111111`（mirobody 自带的演示数据，均为合成数据）。
+
+## 许可
+
+iron-m 以 [Apache License 2.0](LICENSE) 发布。`vendor/mirobody` 是 mirobody 1.5.8 原样，按它自己的 Apache-2.0 许可（见 `vendor/mirobody/LICENSE`、`LICENSE-3RD-PARTY`）。
+配图不在仓库里，`scripts/fetch_images.py` 按清单从原网站下载，每张的作者和许可写在 `ironm_agent/*_images.yaml`，页面上署名。

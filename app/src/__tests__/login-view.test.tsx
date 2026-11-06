@@ -36,3 +36,32 @@ it("sends one code however many times the button is pressed while sending", asyn
   expect(screen.getByText(/以最新一封为准/)).toBeTruthy();
   expect(screen.getByText(/秒后重发/)).toBeTruthy();
 });
+
+it("without mail (§174): register takes only email and password, no code, no code-login or reset links, then goes to the profile step", async () => {
+  const auth = jest.requireMock<{ mailReady: jest.Mock; signInWith: jest.Mock }>("@/api/auth");
+  const { router } = jest.requireMock<{ router: { replace: jest.Mock } }>("expo-router");
+  auth.mailReady.mockResolvedValueOnce(false);
+  auth.signInWith.mockResolvedValueOnce("tok");
+  await render(
+    <SafeAreaProvider initialMetrics={METRICS}>
+      <Login />
+    </SafeAreaProvider>,
+  );
+  await act(async () => {});
+  expect(screen.queryByText("用验证码登录")).toBeNull();
+  expect(screen.queryByText("忘记密码")).toBeNull();
+  await fireEvent.press(screen.getByText("注册"));
+  expect(screen.queryByPlaceholderText("验证码")).toBeNull();
+  expect(screen.getByText("现在不发验证码，邮箱就是登录名；暂时不能找回密码，请记好密码。")).toBeTruthy();
+  await fireEvent.changeText(screen.getByPlaceholderText("邮箱"), "a@b.com");
+  await fireEvent.changeText(screen.getByPlaceholderText("设密码（至少 8 位）"), "short");
+  await fireEvent.changeText(screen.getByPlaceholderText("再输一遍密码"), "short");
+  await fireEvent.press(screen.getAllByText("注册")[1]);
+  expect(screen.getByText("密码至少 8 位")).toBeTruthy();
+  await fireEvent.changeText(screen.getByPlaceholderText("设密码（至少 8 位）"), "longenough");
+  await fireEvent.changeText(screen.getByPlaceholderText("再输一遍密码"), "longenough");
+  await fireEvent.press(screen.getAllByText("注册")[1]);
+  await act(async () => {});
+  expect(auth.signInWith).toHaveBeenCalledWith("/password/register", { email: "a@b.com", password: "longenough" });
+  expect(router.replace).toHaveBeenCalledWith("/welcome");
+});
