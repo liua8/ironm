@@ -584,22 +584,50 @@ def weights(per_week: float, start: float = 80.0, days: int = 28) -> tuple[tuple
     )
 
 
-def test_goal_progress_predicts_date() -> None:
+JUDGED = ("落后", "超前", "晚约", "早约", "由你决定", "太快", "建议", "按期", "反方向")
+
+
+def test_goal_progress_gives_facts_not_judgments() -> None:
+    """§182：只给事实——每周变化、预计哪天到、离目标日期几天、要按期到每周得变多少；不判断落后、超前、太快。"""
     w = weights(-0.5)  # 每周掉 0.5 公斤，现在 78.07
     g = Goal(75, TODAY + timedelta(days=60), TODAY - timedelta(days=27), start=80)
     p = progress(g, w, weight_trend(w, TODAY), TODAY)
     assert p["start"] == 80 and p["current"] == w[0][1] and p["target"] == 75
     pred = date.fromisoformat(p["predicted"])
     assert abs((pred - TODAY).days - round((w[0][1] - 75) / 0.5 * 7)) <= 1
-    assert p["status"] == "on_track" and "预计" in p["message"]
+    assert p["status"] == "going" and not p["reached"] and p["days_left"] == 60
+    assert p["weekly"] == -0.5 and p["weekly_pct"] == round(-0.5 / w[0][1] * 100, 2)
+    assert p["need_weekly"] == round((75 - w[0][1]) / (60 / 7), 2) and p["need_pct"] < 0
+    text = "".join(p["facts"])
+    assert "每周 -0.50 公斤" in text and "预计" in text and "离目标日期还有 60 天" in text
+    assert "message" not in p and "pace" not in p
+    for by in (14, 200):  # 以前算"落后"、"超前"的两种：一样只给事实
+        q = progress(replace(g, by=TODAY + timedelta(days=by)), w, weight_trend(w, TODAY), TODAY)
+        assert q["status"] == "going" and q["predicted"] == p["predicted"]
+        assert not any(x in "".join(q["facts"]).replace("要在目标日期前到", "") for x in JUDGED)
     late = progress(replace(g, by=TODAY + timedelta(days=14)), w, weight_trend(w, TODAY), TODAY)
-    assert late["status"] == "behind" and "晚约" in late["message"] and "1%" in late["pace"]
-    early = progress(replace(g, by=TODAY + timedelta(days=200)), w, weight_trend(w, TODAY), TODAY)
-    assert early["status"] == "ahead" and "由你决定" in early["message"]
+    assert late["need_pct"] < -1  # 要按期到每周得减体重的 1% 以上：事实给出，判断交给管家
     wrong = progress(g, weights(0.5), weight_trend(weights(0.5), TODAY), TODAY)
-    assert wrong["status"] == "wrong_way" and wrong["predicted"] is None
+    assert wrong["predicted"] is None and wrong["weekly"] == 0.5 and wrong["status"] == "going"
+    over = progress(replace(g, by=TODAY - timedelta(days=3)), w, weight_trend(w, TODAY), TODAY)
+    assert "目标日期已经过了 3 天" in "".join(over["facts"]) and over["need_weekly"] is None
     done = progress(replace(g, value=79), w, weight_trend(w, TODAY), TODAY)
-    assert done["status"] == "reached"
+    assert done["status"] == "reached" and done["reached"]
+
+
+def test_goal_line_is_facts_only() -> None:
+    from types import SimpleNamespace
+
+    from ironm_agent.goal import line
+
+    w = weights(-0.5)
+    g = Goal(75, TODAY + timedelta(days=14), TODAY - timedelta(days=27), start=80)
+    snap = SimpleNamespace(
+        metrics=(weight_trend(w, TODAY),), readings=SimpleNamespace(weight=w), today=TODAY
+    )
+    got = line(g, snap)
+    assert "每周 -0.50 公斤" in got and "按现在的速度预计" in got
+    assert not any(x in got for x in ("会晚一些", "会提前", "能按期", "反方向"))
 
 
 def test_goal_progress_says_what_is_missing() -> None:

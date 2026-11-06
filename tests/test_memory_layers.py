@@ -11,12 +11,10 @@ import pytest
 
 from ironm_agent.llm import Reply
 from ironm_agent.memory_extract import changes_of, handles, validate
-from ironm_agent.memory_layers import AUTO, daily_asks, layers, search
+from ironm_agent.memory_layers import AUTO, STALE_MAX, layers, search, unconfirmed_lines
 from ironm_agent.memory_store import Item, MemoryBook
 from ironm_agent.session_summary import Summary, due, promises
-from ironm_agent.training import Plan, WorkoutLog
 from tests.fakes import jsonr
-from tests.test_plan_ops import plan
 from tests.test_single_agent import single
 from tests.test_turn_flow import run
 
@@ -141,28 +139,45 @@ def test_followup_from_answer_gets_a_due_date() -> None:
     assert ops2[0].until == TODAY + timedelta(days=7)  # 没写哪天：一周后
 
 
-def test_daily_asks_for_recurring_pain_and_training_gap() -> None:
-    pains = [("joint.knee", TODAY - timedelta(days=d)) for d in (1, 5, 9)]
-    got = daily_asks([], pains, None, [], TODAY)
-    assert len(got) == 1 and got[0].item is not None and "膝盖疼" in got[0].item.content
-    assert got[0].item.evidence == AUTO + "pain:joint.knee" and got[0].item.origin == "system"
-    known_injury = [item("i", "injury", "左膝旧伤，蹲深了疼")]
-    assert daily_asks(known_injury, pains, None, [], TODAY) == []  # 画像里已有
-    asked = [got[0].item]
-    assert daily_asks(asked, pains, None, [], TODAY) == []  # 30 天内不重复
-    assert daily_asks([], pains[:2], None, [], TODAY) == []  # 只有 2 天
+def test_old_auto_asks_are_not_shown_but_his_own_followups_are() -> None:
+    """§182：代码每天生成的"该问的"去掉了，以前存下的（evidence 带 auto:）不再带，他要的跟进照旧。"""
+    items = [
+        item("a", "followup", "最近一个月有 3 天说膝盖疼：问一句要不要记成长期的伤病",
+             until=TODAY, evidence=AUTO + "pain:joint.knee", origin="system"),
+        item("b", "followup", "计划每周练 4 次，最近 3 周分别练了 1、1、1 次：问一句要不要改",
+             until=TODAY, evidence=AUTO + "gap:2026-10-05", origin="system"),
+        item("c", "followup", "问问左膝下楼还疼不疼", until=TODAY),
+    ]  # fmt: skip
+    lay = layers(items, TODAY)
+    assert len(lay.asks) == 1 and "问问左膝" in lay.asks[0]
+    assert "膝盖疼" not in lay.text(TODAY) and "最近 3 周" not in lay.text(TODAY)
 
-    four = Plan.model_validate({**plan().model_dump(), "days_per_week": 4})
-    monday = TODAY - timedelta(days=TODAY.weekday())
-    logs = [WorkoutLog(day=monday - timedelta(days=7 * k + 2)) for k in range(3)]  # 每周 1 次
-    gap = daily_asks([], [], four, logs, TODAY)
+
+def test_long_unconfirmed_memories_are_listed_as_facts_with_dates() -> None:
+    """§182："哪些记忆很久没确认"带上次确认的日期列给管家，问不问由管家定；最久的在前、最多 3 条。"""
+    old = date(2026, 6, 1)
+    items = [
+        item("e", "equipment", "家里有一对 10 公斤哑铃", old),
+        item("s", "schedule", "每周一三五晚上能练 60 分钟", old + timedelta(days=5)),
+        item("l", "level", "练了半年", old + timedelta(days=10)),
+        item("i", "injury", "左膝旧伤", TODAY - timedelta(days=61)),
+        item("n", "equipment", "办了楼下健身房的卡", TODAY - timedelta(days=10)),  # 刚说的：不算
+        item("d", "level", "按记录推的新手", old, origin="data"),  # 训练记录推出来的：不算
+    ]
+    lay = layers(items, TODAY)
+    assert len(lay.stale) == STALE_MAX == 3
+    text = lay.text(TODAY)
+    assert "很久没确认的记忆" in text and "问不问、什么时候问由你定" in text
+    assert "家里有一对 10 公斤哑铃（6月1日）" in text and "左膝旧伤" not in "".join(lay.stale)
+    assert "楼下健身房" not in "".join(lay.stale) and "按记录推的" not in "".join(lay.stale)
+    assert "答完问一句还是不是这样" not in text  # 不再由代码要求问
+    lines = unconfirmed_lines(items, TODAY)
     assert (
-        len(gap) == 1
-        and gap[0].item is not None
-        and "最近 3 周分别练了 1、1、1 次" in gap[0].item.content
+        lines[0] == "器械与场地：家里有一对 10 公斤哑铃（上次确认 6月1日，150 天前）"
+        and len(lines) == 3
     )
-    enough = logs + [WorkoutLog(day=monday - timedelta(days=7 * k + 3)) for k in range(3)]
-    assert daily_asks([], [], four, enough, TODAY) == []  # 每周 2 次，不到一半才问
+    assert layers(items[3:], TODAY).stale[0].endswith("左膝旧伤（8月29日）")  # 伤病 60 天
+    assert layers([item("x", "equipment", "哑铃", TODAY - timedelta(days=89))], TODAY).stale == []
 
 
 # ---- 会话摘要 ------------------------------------------------------------------------------

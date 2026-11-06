@@ -391,9 +391,7 @@ class MyFitnessService:
         lines = [
             f"目标体重 {g.value:g} 公斤，{g.by.isoformat()} 前；起点 {p['start']}，当前 {p['current']}"
         ]
-        lines += [x for x in (p["message"], p["missing"], p["pace"], p["retest"]["text"]) if x]
-        if p["predicted"]:
-            lines.append(f"按现在的速度预计 {p['predicted']} 达成")
+        lines += [*p["facts"], *(x for x in (p["missing"], p["retest"]["text"]) if x)]  # 只给事实（§182）
         return {"result": "\n".join(lines)}
 
     async def query_coach_plan(

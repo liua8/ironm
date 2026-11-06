@@ -2,8 +2,8 @@
 
 - 起点：设目标时最新的体重（那时还没有体重记录，就用设目标之后的第一次）；当前：最新的体重；
 - 预计达成日期 = 今天 + 还差多少 ÷ 每周变化（与数据页"体重每周变化"同一份计算）；体重记录不够两周时说明还缺什么；
-- 预计比目标日期晚 2 周以上算落后、早 4 周以上算超前，只提示，改不改目标或计划由用户决定；
-- 要按期达到时每周减重超过体重的 1%（K37）或增重超过 0.5%（经验），提示目标定得太快；
+- 只给事实（§182）：每周变化（公斤和占体重的百分比）、预计哪天到、离目标日期几天、要按期到每周得变多少；
+  落后、超前、定得太快不再由代码判断，交给管家看事实判断（回答里每周减重超过 1 公斤照旧由回答核对拦）；
 - 距上次复测（或设目标）满 4 周提醒复测体重、腰围和关键动作，满 6 周写明已经超过。
 不调用模型；目标加密存储，日志不写内容。
 """
@@ -14,18 +14,12 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
-from typing import Any, Literal, Protocol
+from typing import Any, Protocol
 
 from ironm_agent.metrics import Metric, Point
 
-type Status = Literal["reached", "on_track", "behind", "ahead", "wrong_way", "unknown"]
-
 RETEST_DAYS = 28
 RETEST_LATE = 42
-BEHIND_DAYS = 14
-AHEAD_DAYS = 28
-FAST_LOSS = 0.01
-FAST_GAIN = 0.005
 CLOSE = 0.2  # 差 0.2 公斤以内算达到
 
 
@@ -79,9 +73,13 @@ def start_of(goal: Goal, weights: Sequence[Point]) -> float | None:
 def progress(
     goal: Goal, weights: Sequence[Point], trend: Metric | None, today: date
 ) -> dict[str, Any]:
+    """目标进度的事实（§182）：起点、当前、目标、变了多少、每周变化（公斤和占体重的百分比）、按现在的速度
+    预计哪天到、离目标日期还有几天、要按期到每周得变多少、到了没有、还缺什么数据。不判断落后、超前、太快，
+    这些交给管家看事实判断。"""
     pts = sorted(weights)
     current = pts[-1][1] if pts else None
     start = start_of(goal, pts)
+    days_left = (goal.by - today).days
     out: dict[str, Any] = {
         "name": "体重",
         "unit": "公斤",
@@ -89,16 +87,22 @@ def progress(
         "current": current,
         "target": goal.value,
         "by": goal.by.isoformat(),
-        "predicted": None,
-        "status": "unknown",
-        "message": "",
+        "days_left": days_left,  # 离目标日期还有几天（负数是已经过了几天）
+        "predicted": None,  # 按现在的速度预计哪天到
+        "weekly": None,  # 体重每周变化（公斤，负数是减）
+        "weekly_pct": None,  # 每周变化占现在体重的百分比
+        "need_weekly": None,  # 要在目标日期前到，每周得变多少公斤
+        "need_pct": None,
+        "reached": False,
+        "status": "unknown",  # reached / going / unknown：只是到没到、有没有数，不是判断
+        "facts": [],  # 给人看的事实，一条一句
         "missing": "",
-        "pace": "",
         "retest": retest(goal, today),
         "percent": None,  # 从起点到目标完成了百分之几（§93）
         "changed": None,  # 从起点到现在变了多少公斤（负数是减了）
         "celebrate": False,  # 达到目标、还没庆祝过
     }
+    facts: list[str] = out["facts"]
     if current is not None and start is not None:
         out["changed"] = round(current - start, 1)
         span = goal.value - start
@@ -111,78 +115,62 @@ def progress(
     toward = start is None or (start - goal.value) * (current - goal.value) > 0
     if abs(need) <= CLOSE or not toward:
         out["status"] = "reached"
-        out["message"] = f"已经达到目标体重 {_g(goal.value)} 公斤：可以设一个新目标，或者转为保持。"
+        out["reached"] = True
+        facts.append(f"已经到了目标体重 {_g(goal.value)} 公斤（现在 {_g(current)} 公斤）。")
         out["percent"] = 100 if out["percent"] is not None else None
         out["celebrate"] = goal.celebrated is None
         return out
-    days_left = (goal.by - today).days
+    out["status"] = "going"
+    facts.append(
+        f"离目标日期还有 {days_left} 天。"
+        if days_left > 0
+        else f"目标日期已经过了 {-days_left} 天。"
+        if days_left < 0
+        else "今天就是目标日期。"
+    )
     if days_left > 0:
         per_week = need / (days_left / 7)
-        if per_week < 0 and -per_week > current * FAST_LOSS:
-            out["pace"] = (
-                f"要按期达到，每周得减 {-per_week:.2f} 公斤，超过体重的 1%（{current * FAST_LOSS:.2f} 公斤），"
-                "减得太快容易丢肌肉：建议把日期往后放。"
-            )
-        elif per_week > 0 and per_week > current * FAST_GAIN:
-            out["pace"] = (
-                f"要按期达到，每周得增 {per_week:.2f} 公斤，超过体重的 0.5%（{current * FAST_GAIN:.2f} 公斤），"
-                "可能多长脂肪：建议把日期往后放。"
-            )
+        out["need_weekly"] = round(per_week, 2)
+        out["need_pct"] = round(per_week / current * 100, 2)
+        facts.append(
+            f"要在目标日期前到，每周要{'减' if per_week < 0 else '增'} {abs(per_week):.2f} 公斤"
+            f"（现在体重的 {abs(per_week) / current * 100:.1f}%）。"
+        )
     if trend is None or trend.value is None:
         why = "；".join(trend.missing) if trend is not None and trend.missing else "体重记录"
-        out["missing"] = f"体重记录还不够两周，算不出预计日期（还缺：{why}）。"
+        out["missing"] = f"体重记录还不够两周，算不出每周变化和预计日期（还缺：{why}）。"
         return out
-    slope = trend.value
+    slope = float(trend.value)
+    out["weekly"] = round(slope, 2)
+    out["weekly_pct"] = round(slope / current * 100, 2)
+    facts.insert(0, f"最近体重每周 {slope:+.2f} 公斤（现在体重的 {slope / current * 100:+.1f}%）。")
     if trend.brief == "基本持平" or slope == 0:
-        out["message"] = "体重这几周基本持平，按现在的趋势还看不出什么时候能达到。"
-        out["status"] = "behind" if days_left <= 0 else "unknown"
+        facts.append("按现在的速度算不出哪天到（体重基本持平）。")
         return out
     if slope * need < 0:
-        out["status"] = "wrong_way"
-        out["message"] = (
-            f"体重这几周在往反方向变（每周 {slope:+.2f} 公斤）：可以看看计划和饮食要不要调整。"
-        )
+        facts.append("按现在的速度算不出哪天到（体重在往离目标更远的方向变）。")
         return out
     predicted = today + timedelta(days=round(need / slope * 7))
     out["predicted"] = predicted.isoformat()
-    late = (predicted - goal.by).days
-    if days_left <= 0:
-        out["status"] = "behind"
-        out["message"] = (
-            f"目标日期已经过了；按现在的速度预计 {_cn(predicted)} 达到：可以重新定个日期。"
-        )
-    elif late > BEHIND_DAYS:
-        out["status"] = "behind"
-        out["message"] = (
-            f"按现在的速度预计 {_cn(predicted)} 达到，比目标日期晚约 {round(late / 7)} 周："
-            "可以把日期往后放，或者调整计划和饮食，由你决定。"
-        )
-    elif -late > AHEAD_DAYS:
-        out["status"] = "ahead"
-        out["message"] = (
-            f"按现在的速度预计 {_cn(predicted)} 达到，比目标日期早约 {round(-late / 7)} 周："
-            "可以提前目标，或者放慢一点更稳妥，由你决定。"
-        )
-    else:
-        out["status"] = "on_track"
-        out["message"] = f"按现在的速度预计 {_cn(predicted)} 达到，和目标日期差不多。"
+    facts.append(f"按现在的速度预计 {_cn(predicted)} 到。")
     return out
 
 
-_PACE = {"ahead": "按现在的速度会提前", "on_track": "按现在的速度能按期", "behind": "按现在的速度会晚一些",
-         "wrong_way": "这几周体重在往反方向变", "reached": "已经达到"}  # fmt: skip
-
-
 def line(goal: Goal, snapshot: Any) -> str:
-    """一句话说清目标（排新计划前确认、计划说明里用，spec [2026-10-23] §55 需求 2）：
-    "2027年10月26日前体重到 65 公斤，现在 67 公斤，按现在的速度会提前（10月26日设的）"。"""
+    """一句话说清目标（排新计划前确认、计划说明、档案里用，spec [2026-10-23] §55 需求 2）：只写事实（§182）
+    "2027年10月26日前体重到 65 公斤，现在 67 公斤，每周 -0.30 公斤，按现在的速度预计 2027年9月1日到（10月26日设的）"。"""
     trend = next((m for m in snapshot.metrics if m.key == "weight_trend"), None)
     p = progress(goal, snapshot.readings.weight, trend, snapshot.today)
     parts = [f"{_cn(goal.by)}前体重到 {_g(goal.value)} 公斤"]
     if p["current"] is not None:
         parts.append(f"现在 {_g(p['current'])} 公斤")
-    if p["status"] in _PACE:
-        parts.append(_PACE[p["status"]])
+    if p["reached"]:
+        parts.append("已经到了")
+    else:
+        if p["weekly"] is not None:
+            parts.append(f"每周 {p['weekly']:+.2f} 公斤")
+        if p["predicted"]:
+            parts.append(f"按现在的速度预计 {_cn(date.fromisoformat(p['predicted']))}到")
     return "，".join(parts) + f"（{goal.set_day.month}月{goal.set_day.day}日设的）"
 
 

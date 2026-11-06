@@ -64,6 +64,9 @@ def test_compute_lists_each_item_with_reason_and_basis() -> None:
         "alert:pain" not in items and "proposal:review" not in items
     )  # 规则的提醒、每周建议都交给管家（§163）
     assert items["goal"].kind == "goal" and items["retest"].kind == "retest"
+    goal = items["goal"]  # 目标只给事实（§182）：离目标日期几天、按期每周要变多少，不说落后超前
+    assert "离目标日期还有 90 天" in goal.why and goal.value["status"] == "going"
+    assert not any(w in goal.title + goal.why for w in ("落后", "超前", "晚约", "由你决定", "太快"))
     kinds = [x.kind for x in compute(inp, TODAY)]
     assert kinds[0] == "today" and "alert" not in kinds and kinds.index("kcal") < kinds.index("target")
     rest = {x.key: x for x in compute(Inputs(snapshot=snap()), TODAY)}

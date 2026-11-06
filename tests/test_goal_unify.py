@@ -80,13 +80,15 @@ def test_bad_goals_are_sent_back(
     assert drafts(a) == [] and why in s.last
 
 
-def test_jin_is_converted_and_a_fast_pace_is_flagged(monkeypatch: Any) -> None:
+def test_jin_is_converted_and_the_needed_pace_is_a_fact(monkeypatch: Any) -> None:
+    """改目标卡片写按期到每周要变多少（事实，§182）；快不快由管家说，卡片上不写"太快、建议往后放"。"""
     soon = (TODAY + timedelta(days=21)).isoformat()
     a, _ = turn(monkeypatch, "三周减到 130 斤", {"value": 130, "unit": "斤", "by": soon})
     [d] = drafts(a)
-    assert d.content["goal"]["value"] == 65.0 and any(
-        "超过体重的 1%" in x for x in d.content["items"]
-    )
+    assert d.content["goal"]["value"] == 65.0
+    [pace] = [x for x in d.content["items"] if x.startswith("按期到每周要减")]
+    assert "公斤（体重的" in pace and "%）" in pace
+    assert not any(w in "".join(d.content["items"]) for w in ("太快", "建议", "超过体重的 1%"))
 
 
 def test_desk_treats_the_goal_card_like_a_preview() -> None:

@@ -71,7 +71,6 @@ from ironm_agent.illness import (
     Episode,
     IllnessStore,
     default_illness,
-    detect,
     due,
     mentions,
     question,
@@ -101,16 +100,14 @@ from ironm_agent.memory_extract import (
     validate,
 )
 from ironm_agent.memory_layers import (
-    PAIN_DAYS,
     RECALL,
     RECALL_SCHEMA,
-    daily_asks,
     layers,
     recall_tool,
 )
 from ironm_agent.memory_prefs import due as prefs_due
 from ironm_agent.memory_prefs import refresh as refresh_prefs
-from ironm_agent.memory_store import Change, Item, MemoryStore, default_store
+from ironm_agent.memory_store import Item, MemoryStore, default_store
 from ironm_agent.memory_view import Recall
 from ironm_agent.metrics import GOALS
 from ironm_agent.personal import Personal, personal_basics
@@ -184,13 +181,12 @@ from ironm_agent.training import (
     trusted_log,
     weekday_name,
 )
-from ironm_agent.triggers import PainStore, default_pain, pain_parts
+from ironm_agent.triggers import PainStore, default_pain
 from ironm_agent.weather import Weather
 from ironm_agent.weather import case_line as weather_line
 from ironm_agent.weather import for_user as weather_for
 
 _log = logging.getLogger("ironm_agent.run")
-_DAILY: dict[str, date] = {}  # 每个人今天查过"该问的"没有（§73，同一进程内）
 SYNC_WAIT_S = 20  # 作答前最多等上一轮的档案与记忆更新多少秒（spec [2026-10-23] §51）
 
 FAILED = "IronM 这次没能回答，请稍后再试。"
@@ -690,32 +686,6 @@ class IronMAgent:
             _log.warning("memory unavailable: error_type=%s", type(e).__name__)
             return []
 
-    async def _daily_memory(self, user_id: str, today: date, run: dict[str, Any]) -> None:
-        """每天第一次聊天前查一次（§73 需求 7、9，只用规则）：反复说疼、练得远少于计划 → 生成该问的。"""
-        if _DAILY.get(user_id) == today:
-            return
-        _DAILY[user_id] = today
-        try:
-            store = self._memory_store()
-            if await store.paused(user_id):
-                return
-            items = await store.items(user_id, current_only=False, recent=today)
-            pains = await self._pain_store().since(user_id, today - timedelta(days=PAIN_DAYS))
-            from ironm_agent.body_now import fresh
-
-            pains = fresh(pains, items)  # 说好了的那处，之前的疼不再算（§158）
-            training = self._training_store()
-            plan = await training.plan(user_id)
-            logs = await training.workouts(user_id, today - timedelta(days=28))
-            asks = daily_asks(
-                items, pains, plan.plan if plan else None, [x.log for x in logs], today
-            )
-            if asks:
-                await store.apply(user_id, asks)
-            run["memory_daily"] = len(asks)
-        except Exception as e:  # 查不了不影响回答
-            _log.warning("daily memory check failed: error_type=%s", type(e).__name__)
-
     async def _summarize(self, user_id: str, session_id: str, turns: int) -> None:
         """会话摘要（§73 需求 4、6）：3 句以上写第一次，之后每多 4 句更新；答应的事记成待跟进。日志只记条数。"""
         start = time.perf_counter()
@@ -839,9 +809,10 @@ class IronMAgent:
             was = f"（原来 {old.value:g} 公斤）" if old is not None else ""
             items.append(f"目标体重：{kg:g} 公斤，{by.year}年{by.month}月{by.day}日前{was}")
             trend = next((m for m in snapshot.metrics if m.key == "weight_trend"), None)
-            pace = progress(Goal(kg, by, today), snapshot.readings.weight, trend, today).get("pace")
-            if pace:
-                items.append(str(pace))
+            p = progress(Goal(kg, by, today), snapshot.readings.weight, trend, today)
+            if p["need_weekly"] is not None:  # 只写要按期到每周得变多少（事实，§182），快不快由管家说
+                items.append(f"按期到每周要{'减' if p['need_weekly'] < 0 else '增'} {abs(p['need_weekly']):.2f} 公斤"
+                             f"（体重的 {abs(p['need_pct']):.1f}%）")  # fmt: skip
         content = {"title": "改目标", "headline": str(args.get("why") or "")[:60] or "确认后才改",
                    "items": items,
                    "goal": {"type": kind or None, "value": kg, "by": by.isoformat() if by else None},
@@ -1368,7 +1339,6 @@ class IronMAgent:
         # 2. 读本会话前几轮与这个人的记忆（全部有效记忆，不靠检索）；同时开始读他的数据（档案、健康数据、
         #    指标），与路由并行（spec [2026-10-23] §7）
         await self._sync(user_id, run)  # 先等上一轮的档案和记忆写完再读（spec [2026-10-23] §51）
-        await self._daily_memory(user_id, date.today(), run)
         read = time.perf_counter()
         history, recall, ill, day = await asyncio.gather(
             (self._history or partial(recent, keep=KEEP_WHOLE))(
@@ -1596,7 +1566,8 @@ class IronMAgent:
             f"{s.updated.astimezone().month}月{s.updated.astimezone().day}日：{s.text}" for s in earlier_sessions
         ])  # fmt: skip
         run["memory_layers"] = {"profile": len(lay.profile), "episodes": len(lay.episodes),
-                                "asks": len(lay.asks), "summaries": len(earlier_sessions)}  # fmt: skip
+                                "asks": len(lay.asks), "stale": len(lay.stale),
+                                "summaries": len(earlier_sessions)}  # fmt: skip
         toolbox = Toolbox(
             GENERAL, kb=self._kb, health=self._health_source(), user_id=user_id,
             session_id=session_id, calcs=case.calcs, context=tools_ctx,
@@ -1763,17 +1734,6 @@ class IronMAgent:
                 x for x in (extra, *(CONFIRM_NOTE[k] for k in desk.kinds)) if x
             )
             composed = replace(composed, text=composed.text.rstrip() + "\n\n" + extra_note)
-        if not (kinds or ask_ill or cards or pain_parts(text) or detect(text) or sick_now):
-            from ironm_agent.memory_layers import stale_question
-
-            still, due_ask = stale_question(lay, composed.text)  # 很久没确认的那条：管家没问就补一句（§160）
-            if still and due_ask is not None:
-                composed = replace(composed, text=composed.text.rstrip() + "\n\n" + still)
-                run["stale_ask"] = "fixed"
-                try:  # 补问过了：这条该问的结束，他不答也不再每轮补（30 天后到期再问，复核 11-04）
-                    await self._memory_store().apply(user_id, [Change("status", id=due_ask.id, status="resolved")])
-                except Exception as e:
-                    _log.warning("stale ask close failed: error_type=%s", type(e).__name__)
         blocks = self._answer(composed, prefix, run, said)
         tail = 2 if blocks[-1].get("tool_call_id") == SOURCES_ID else 0
         for block in [*blocks[: len(blocks) - tail], *cards, *blocks[len(blocks) - tail :]]:
@@ -2519,6 +2479,18 @@ class IronMAgent:
             lines += [(f"管家今天提了改计划、还没确认：{d.title}（原因：{d.why}）", f"{d.title}。原因：{d.why}")
                       for d in review.done if not d.undone and d.type == "propose"]  # fmt: skip
             lines += [(f"管家今天核对了以前的调整：{x}", x) for x in review.checked]  # §89
+        if state is not None:  # 前几天提的、还挂着的建议，他 14 天内拒绝过的（§182）
+            from ironm_agent.coach_state import alive, carry, hanging_lines, refusals
+
+            mine = {d.key for d in review.done} if review is not None and review.day == today else set()
+            try:
+                hanging = [d for d in await alive(user_id, self._training_store(), carry(state, today))
+                           if d.key not in mine]  # fmt: skip
+            except Exception as e:  # 读不到预览：不带
+                _log.info("hanging suggestions unavailable: error_type=%s", type(e).__name__)
+                hanging = []
+            lines += [("管家" + x if x.startswith("还挂着") else x, x)
+                      for x in hanging_lines(hanging, refusals(state, today), today)]  # fmt: skip
         if state is not None and state.stage_text and state.stage_day is not None:
             when = f"{state.stage_day.month}月{state.stage_day.day}日"
             lines.append((f"最近一次 4 周阶段小结（{when}）：{state.stage_text}", state.stage_text))

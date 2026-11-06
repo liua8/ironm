@@ -22,14 +22,22 @@ from typing import Any
 from ironm_agent.actions import ADJUST_TODAY, KCAL_CHANGE, PLAN_EDIT, TEMP_CHANGE
 from ironm_agent.casefile import risks
 from ironm_agent.coach_state import (
+    NOT_REFUSED,
+    REFUSE_DAYS,
     Change,
     Deps,
     Done,
     Inputs,
+    Refusal,
     Review,
     State,
     _gather,
+    alive,
+    carry,
     evaluate,
+    expiry,
+    hanging_lines,
+    refusals,
     state_lock,
 )
 from ironm_agent.expect import RESULT_WORDS, judge, measure, parse_check, stage_due, stage_facts
@@ -37,7 +45,7 @@ from ironm_agent.insights import compare
 from ironm_agent.kb import default_kb
 from ironm_agent.llm import LLM, parse_json
 from ironm_agent.metrics import KcalAdjust, safe_floor
-from ironm_agent.training import REST_WORDS, plan_content, week_start, weekday_name
+from ironm_agent.training import DRAFT_HOURS, REST_WORDS, plan_content, week_start, weekday_name
 from ironm_agent.user_models import pick_quiet
 
 _log = logging.getLogger("ironm_agent.review")
@@ -125,6 +133,9 @@ TOOLS: dict[str, dict[str, Any]] = {
                 {"kind": {"type": "string", "enum": ["note", "ask"]}, "text": {"type": "string"}}, ["kind", "text"]),
 }  # fmt: skip
 _TYPE = {ADJUST_TODAY: "today", KCAL_CHANGE: "kcal", PLAN_EDIT: "plan", TEMP_CHANGE: "temp"}
+# 每类调整是哪一件事（§182：同一件事新的替换旧的、说了不用 14 天内不再提）
+_KEY = {"today": "review:today", "kcal": "review:kcal", "plan": "review:propose", "temp": "review:temp",
+        "note": "review:note", "ask": "review:ask"}  # fmt: skip
 _LOCKS: dict[str, asyncio.Lock] = {}  # 每个人一把：同一天的复查不并发跑两次
 
 
@@ -178,6 +189,9 @@ def facts(
             lines.append(f"{ago(log.day, today)}没练：{REST_WORDS.get(log.rest, log.rest)}")
     if inp.advice is not None and inp.advice.reasons:  # 天气：户外练不练由管家定
         lines.append(f"今天的天气：{inp.advice.name}（{'；'.join(inp.advice.reasons)}）")
+    from ironm_agent.memory_layers import unconfirmed_lines
+
+    lines += [f"很久没确认的记忆：{x}" for x in unconfirmed_lines(inp.memory, today)]  # 问不问由管家定（§182）
     lines += extra
     return {f"F{i}": x for i, x in enumerate(lines, start=1)}, tuple(dict.fromkeys(refs))
 
@@ -258,6 +272,11 @@ async def _run(user_id: str, deps: Deps, llm: LLM, *, today: date, force: bool, 
     kept = list(earlier.done) if earlier is not None else []  # 失败的那次已经生效的也留着（复核 11-05）
     extra += [f"今天已经定过：{d.title}（要改就再调一次，同一项以这次为准）" for d in kept if not d.undone]
     extra += [f"今天他撤销了：{d.title}（别再这样调）" for d in kept if d.undone]
+    # 前几天提的、还挂着的建议和 14 天内他拒绝过的（§182）：再提同一件事会替换旧的；拒绝过的系统不再执行
+    refused_now = refusals(state, today)
+    mine = {d.key for d in kept}
+    hanging = [d for d in await alive(user_id, deps.training, carry(state, today)) if d.key not in mine]
+    extra += hanging_lines(hanging, refused_now, today, skip={d.key for d in kept if d.undone})
     fs, refs = facts(inp, today, extra)
     blocked = any(r.block for r in risks(inp.snapshot.readings, inp.memory, today))
     skills = _due_skills(inp, today, staging or weekly)
@@ -319,6 +338,7 @@ async def _run(user_id: str, deps: Deps, llm: LLM, *, today: date, force: bool, 
                     today,
                     review,
                     root,
+                    refused_now,
                 )
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": said})
     except Exception as e:  # 模型不可用：不调整，不退回规则（§85 需求 5）；已经生效的照记，能撤销
@@ -364,12 +384,20 @@ async def _call(
     base: str,
     user_id: str, deps: Deps, inp: Inputs, name: str, args: dict[str, Any], allowed: set[str],
     fs: dict[str, str], blocked: bool, today: date, review: Review, root: str = "",
+    refused_now: dict[str, Refusal] | None = None,
 ) -> str:  # fmt: skip
-    """执行一次复查里的工具调用：校验沿用 §85 的 _apply；同一项调两次以后一次为准。日志只记工具名和结果。"""
+    """执行一次复查里的工具调用：校验沿用 §85 的 _apply；同一项调两次以后一次为准；他 14 天内拒绝过的同一件事
+    不执行（§182）。日志只记工具名和结果。"""
     if name not in allowed:
         _log.info("review tool: tool=%s result=locked", name)
         return f"今天的复查没有 {name}（没到复查它的时候），不调这一项。"
     kind = str(args.get("kind") or "note") if name == NOTE else _TYPE[name]
+    no = (refused_now or {}).get(_KEY.get(kind, ""))
+    if no is not None and _KEY.get(kind) not in NOT_REFUSED:
+        _log.info("review tool: tool=%s result=refused", name)
+        n = (today - no.day).days
+        return (f"没执行：他{'今天' if n == 0 else f' {n} 天前'}拒绝过「{no.title}」，同一件事 {REFUSE_DAYS} 天内不再提；"
+                "别的可以照常调，或者不调。")  # fmt: skip
     a = {**args, "type": kind, "_base": base, "_root": root}
     first = (
         next((d for d in review.done if d.key == "review:kcal" and not d.undone), None) if kind == "kcal" else None
@@ -390,6 +418,8 @@ async def _call(
         await deps.diet.apply(
             user_id, KcalAdjust(int(first.value.get("after") or 0), today, first.why or "管家复盘")
         )
+    if done is not None:  # 出现日期和到期日（§182）：带预览的已经按预览的有效期写好
+        done = done.model_copy(update={"appeared": today, "expires": done.expires or expiry(today)})
     if done is None:
         _log.info("review tool: tool=%s result=rejected", name)
         return ("没执行：依据要写事实编号（至少一个 F，资料编号要存在）；危急情况不调训练；"
@@ -509,7 +539,7 @@ async def _apply(
                         why=why, basis=basis, expect=expect, value={"ratio": r}, **track)  # fmt: skip
         return None
     if kind == "plan":
-        got = await _plan(user_id, deps, inp, a, why, basis, expect)
+        got = await _plan(user_id, deps, inp, a, why, basis, expect, today)
         return got.model_copy(update=track) if got is not None else None
     if kind == "temp":
         got = await _temp(user_id, deps, inp, a, why, basis, expect, today)
@@ -526,8 +556,9 @@ async def _apply(
 
 
 async def _plan(
-    user_id: str, deps: Deps, inp: Inputs, a: dict[str, Any], why: str, basis: str, expect: str
-) -> Done | None:
+    user_id: str, deps: Deps, inp: Inputs, a: dict[str, Any], why: str, basis: str, expect: str,
+    today: date | None = None,
+) -> Done | None:  # fmt: skip
     from ironm_agent.plan_ops import Conflict, apply, parse_ops
     from ironm_agent.protools.plan_check import check_plan
 
@@ -560,8 +591,11 @@ async def _plan(
     draft = await deps.training.add_draft(
         user_id, "plan", content
     )  # 存成预览，他同意才保存（§129）
+    day = today or date.today()
+    last = day + timedelta(days=-(-DRAFT_HOURS // 24))  # 预览还能确认的最后一天（24 小时：到明天）
     return Done(key="review:propose", type="propose", title="建议这样改计划：" + "；".join(got.lines)[:100],
-                why=why, basis=basis, expect=expect, value={"draft": draft.id})  # fmt: skip
+                why=why, basis=basis, expect=expect, value={"draft": draft.id},
+                expires=expiry(day, last))  # fmt: skip
 
 
 async def _temp(
@@ -597,7 +631,8 @@ async def _temp(
     draft = await deps.training.add_draft(user_id, "temp", content)
     span = f"{start.month}月{start.day}日" + (f"到{end.month}月{end.day}日" if end != start else "")
     return Done(key="review:temp", type="propose", title=f"建议{span}临时这样练：" + "；".join(got.lines)[:90],
-                why=why, basis=basis, expect=expect, value={"draft": draft.id, "temp": True})  # fmt: skip
+                why=why, basis=basis, expect=expect, value={"draft": draft.id, "temp": True},
+                expires=expiry(today, start))  # 过了开始日期预览就作废（§163）  # fmt: skip
 
 
 async def _kcal(
@@ -665,7 +700,19 @@ async def _save_locked(user_id: str, deps: Deps, review: Review, today: date) ->
                       status="info" if d.type in ("note", "ask") else "confirm" if d.type == "propose" else "auto",
                       expect=d.expect, check=d.check, due=d.due)
                for d in review.done if not d.undone and d not in prev]  # fmt: skip  # 早上记过的、撤销了的不再记（复核 11-05）
-    update: dict[str, Any] = {"review": review}
+    # 前几天提的、还挂着的建议（§182）：今天又提了同一件事的，新的替换旧的（旧的预览作废）
+    mine = {d.key: d for d in review.done}
+    carried = []
+    for d in carry(state, today):
+        new = mine.get(d.key)
+        if new is None:
+            carried.append(d)
+        elif d.type == "propose" and d.value.get("draft") and d.value.get("draft") != new.value.get("draft"):
+            try:
+                await deps.training.cancel(user_id, str(d.value["draft"]))
+            except Exception as e:
+                _log.info("replaced draft not cancelled: error_type=%s", type(e).__name__)
+    update: dict[str, Any] = {"review": review, "carried": carried, "refused": refusals(state, today)}
     if review.stage:  # 阶段小结写成了：下一次从今天起算 28 天（§89）
         update.update(stage_day=today, stage_text=review.stage)
     if review.weekly and not review.failed:  # 这周看过了（失败的下次再看）
@@ -726,22 +773,27 @@ def daily_later(user_id: str, deps: Deps) -> None:
     task.add_done_callback(_BACKGROUND.discard)
 
 
-async def undo(user_id: str, deps: Deps, key: str, today: date | None = None) -> Done | None:
-    """ "不用这样调"：计划恢复上一版、热量恢复原来的、今天回到原计划；记进调整经历。"""
+async def undo(
+    user_id: str, deps: Deps, key: str, today: date | None = None, *, refuse: bool = True
+) -> Done | None:
+    """ "不用这样调"：计划恢复上一版、热量恢复原来的、今天回到原计划；记进调整经历。前几天提的、还挂着的也能撤。
+    refuse：是他说的不用，同一件事 14 天内不再提（§182）；计划后来改过、预览过时了由系统收起的不算。"""
     today = today or date.today()
     async with state_lock(user_id):
-        done = await _undo(user_id, deps, key, today)
+        done = await _undo(user_id, deps, key, today, refuse)
     if done is not None:
         await evaluate(user_id, deps, reason="不用这样调", today=today)
     return done
 
 
-async def _undo(user_id: str, deps: Deps, key: str, today: date) -> Done | None:
+async def _undo(user_id: str, deps: Deps, key: str, today: date, refuse: bool = True) -> Done | None:
     state = await deps.store.get(user_id)
-    review = state.review if state is not None else None
-    if state is None or review is None or review.day != today:
+    if state is None:
         return None
-    done = next((d for d in review.done if d.key == key and not d.undone), None)
+    review = state.review if state.review is not None and state.review.day == today else None
+    done = next((d for d in review.done if d.key == key and not d.undone), None) if review is not None else None
+    if done is None:  # 前几天提的、还挂着的（§182）
+        done = next((d for d in carry(state, today) if d.key == key), None)
     if done is None or done.type in ("note", "ask"):
         return None
     if done.type == "plan":
@@ -756,11 +808,44 @@ async def _undo(user_id: str, deps: Deps, key: str, today: date) -> Done | None:
             return None
     if done.type == "kcal":
         await deps.diet.undo(user_id)
-    new = review.model_copy(update={"done": [d.model_copy(update={"undone": True}) if d is done else d
-                                            for d in review.done]})  # fmt: skip
-    change = Change(id=uuid.uuid4().hex[:16], at=datetime.now(UTC), day=today, version=state.version,
-                    key=key, kind="review", change="declined", after=done.title, why=done.why,
-                    basis=done.basis, status="auto")  # fmt: skip
-    await deps.store.save(user_id, State.model_validate({**state.model_dump(), "review": new.model_dump()}),
-                          [change])  # fmt: skip
+    await _declined(user_id, deps, state, review, done, today, refuse)
     return done
+
+
+async def _declined(
+    user_id: str, deps: Deps, state: State, review: Review | None, done: Done, today: date, refuse: bool
+) -> None:
+    """记下这条不要了：今天提的标成撤销，前几天提的从挂着的里拿掉；他说的不用记进 refused（§182）。"""
+    update: dict[str, Any] = {}
+    if review is not None and any(d is done for d in review.done):
+        update["review"] = review.model_copy(update={"done": [d.model_copy(update={"undone": True}) if d is done else d
+                                                              for d in review.done]})  # fmt: skip
+    else:  # 前几天提的：把挂着的接好（更早那次复盘的已经接进来了，不再留着它，免得再接一次）
+        update["carried"] = [d for d in carry(state, today) if d.key != done.key]
+        update["review"] = review
+    refused_now = refusals(state, today)
+    if refuse and done.key not in NOT_REFUSED:
+        refused_now[done.key] = Refusal(title=done.title, day=today)
+    update["refused"] = refused_now
+    change = Change(id=uuid.uuid4().hex[:16], at=datetime.now(UTC), day=today, version=state.version,
+                    key=done.key, kind="review", change="declined", after=done.title, why=done.why,
+                    basis=done.basis, status="auto")  # fmt: skip
+    await deps.store.save(user_id, state.model_copy(update=update), [change])
+    _log.info("review declined %s", json.dumps({"type": done.type, "refused": refuse}))
+
+
+async def declined_draft(user_id: str, deps: Deps, draft_id: str, today: date | None = None) -> bool:
+    """他在预览卡片上点了取消：管家提的这条算他说了不用（§182），同一件事 14 天内不再提。预览已经作废，这里只记。"""
+    today = today or date.today()
+    async with state_lock(user_id):
+        state = await deps.store.get(user_id)
+        if state is None:
+            return False
+        review = state.review if state.review is not None and state.review.day == today else None
+        live = [*(d for d in (review.done if review is not None else []) if not d.undone), *carry(state, today)]
+        done = next((d for d in live if d.type == "propose" and str(d.value.get("draft")) == draft_id), None)
+        if done is None:
+            return False
+        await _declined(user_id, deps, state, review, done, today, True)
+    await evaluate(user_id, deps, reason="不用这样调", today=today)
+    return True

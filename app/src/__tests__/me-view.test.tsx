@@ -56,7 +56,7 @@ beforeEach(() => {
     seen.push({ path, method, body: init?.body ? JSON.parse(String(init.body)) : null });
     const reply = (body: unknown, status = 200) => Promise.resolve({ status, ok: status < 300, json: () => Promise.resolve(body) } as Response);
     if (path === "/iron/api/profile") return reply({ profile: { height_cm: 175, birth: null, sex: "male", goal: "gain", activity: null }, sources: {}, options: { goal: { gain: "增肌" }, activity: { light: "轻度活动" } } });
-    if (path === "/iron/api/goal") return reply({ goal: { value: 68, by: "2026-12-31" }, progress: { status: "on_track", start: 74, current: 72.4, target: 68, changed: -1.6, percent: 27, message: "照现在的速度能按时到" } });
+    if (path === "/iron/api/goal") return reply({ goal: { value: 68, by: "2026-12-31" }, progress: { status: "going", start: 74, current: 72.4, target: 68, changed: -1.6, percent: 27, weekly: -0.4, weekly_pct: -0.55, predicted: "2026-12-20" } });
     if (path === "/iron/api/memory" && method === "GET") return reply({ categories: { injury: "伤病与身体状况" }, items: [{ id: "m1", category: "injury", content: "左膝旧伤", status: "active" }] });
     if (path === "/iron/api/memory/m1" && method === "DELETE") return reply({ ok: true });
     if (path === "/iron/api/my-model") return reply({ model: null, presets: { deepseek: { name: "DeepSeek", chat: ["deepseek-chat"], vision: [] } } });
@@ -75,6 +75,7 @@ it("me: role card, goal, settings rows; memory delete needs a second tap; sign o
   expect(await screen.findByText("175 厘米 · 男 · 增肌")).toBeTruthy();
   expect(await screen.findByText("目标体重 68 公斤")).toBeTruthy();
   expect(screen.getByText("已减 1.6 公斤 · 完成 27%")).toBeTruthy();
+  expect(screen.getByText("每周变化：-0.4 公斤（体重的 0.55%）")).toBeTruthy(); // 只给事实，不说落后超前（§182）
 
   await fireEvent.press(screen.getByText("身体数据"));
   expect(mockRouter.push).toHaveBeenCalledWith("/body");

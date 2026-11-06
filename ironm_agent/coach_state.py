@@ -14,7 +14,7 @@ import json
 import logging
 import uuid
 import weakref
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal, Protocol
@@ -36,6 +36,10 @@ type ChangeKind = Literal[
 ]  # 后两种是用户的选择
 
 HISTORY_DAYS = 63  # 读多久的训练记录（平台期要看 9 周）
+SUGGEST_DAYS = 7  # 管家的建议没处理时挂几天（§182）；带预览的跟着预览的有效期
+REFUSE_DAYS = 14  # 他说"不用这样调"、撤销、取消预览后，同一件事几天内不再提（§182）
+SUGGEST_TYPES = ("propose", "note", "ask")  # 挂着等他处理的建议；今天怎么练、热量是当场生效的，不挂
+NOT_REFUSED = ("review:today",)  # 今天怎么练只管今天：撤销了不影响以后几天
 
 
 class Item(BaseModel):
@@ -56,6 +60,13 @@ class Choice(BaseModel):
     day: date
 
 
+class Refusal(BaseModel):
+    """他说了不用的一件事（§182）：同一件事（同一个 key）14 天内不再提。"""
+
+    title: str
+    day: date
+
+
 class State(BaseModel):
     version: int
     day: date
@@ -72,6 +83,8 @@ class State(BaseModel):
     targets: dict[str, Any] = Field(
         default_factory=dict
     )  # 管家练完后定的下次目标（§132）：动作 → Decided
+    carried: list[Done] = Field(default_factory=list)  # 前几天提的、还挂着的建议（§182，今天提的在 review 里）
+    refused: dict[str, Refusal] = Field(default_factory=dict)  # 他说了不用的：key → 哪天、说的哪条
 
     def decided(self) -> dict[str, Any]:
         from ironm_agent.progression import Decided
@@ -105,6 +118,8 @@ class Done(BaseModel):
         default_factory=dict
     )  # today: ratio / rest；plan: draft；kcal: before、after
     undone: bool = False  # 他说了"不用这样调"
+    appeared: date | None = None  # 哪天提的（§182）；旧数据没有，按那次复盘的日子算
+    expires: date | None = None  # 哪天起不再挂着（不含这天）：默认 7 天，带预览的跟着预览的有效期
 
 
 class Review(BaseModel):
@@ -165,6 +180,7 @@ class Inputs:
     memory: list[Any] = field(default_factory=list)  # 记忆条目（§95 认特殊情况）
     seen: Any = None  # diet_adjust.Observed：按记的吃和体重变化估的实际消耗（§118）
     decided: dict[str, Any] = field(default_factory=dict)  # 管家练完后定的下次目标（§132）
+    carried: list[Any] = field(default_factory=list)  # Done：前几天提的、还挂着的建议（§182）
 
 
 @dataclass(frozen=True)
@@ -307,9 +323,10 @@ def _goal_items(inp: Inputs) -> list[Item]:
     if p["predicted"]:
         d = date.fromisoformat(p["predicted"])
         title += f"，按现在的速度预计 {d.year}年{d.month}月{d.day}日达成"
-    out = [Item(key="goal", kind="goal", title=title, why=p["message"] or p["missing"] or p["pace"],
-                basis="体重趋势（直线回归）" + ("；减重速度〔K37〕" if p["pace"] else ""),
-                value={"status": p["status"], "predicted": p["predicted"]})]  # fmt: skip
+    why = "".join(p["facts"]) + p["missing"]  # 只给事实（§182）：落后、超前、太快由管家看事实判断
+    out = [Item(key="goal", kind="goal", title=title, why=why, basis="体重趋势（直线回归）",
+                value={"status": p["status"], "reached": p["reached"], "predicted": p["predicted"],
+                       "weekly": p["weekly"], "days_left": p["days_left"]})]  # fmt: skip
     if p["retest"]["due"]:
         out.append(Item(key="retest", kind="retest", title="该复测了", why=p["retest"]["text"],
                         basis="每 4–6 周复测一次（经验）"))  # fmt: skip
@@ -323,14 +340,18 @@ def _proposed(inp: Inputs) -> bool:
 
 
 def _review_items(inp: Inputs) -> list[Item]:
-    """管家复盘里已经生效的调整（§85），给页面和管家消息看；撤销了的不再列出。"""
-    if inp.review is None:
-        return []
+    """管家复盘里已经生效的调整（§85）和前几天提的、还挂着的建议（§182），给页面和管家消息看；撤销了的不再列出。"""
+    today = [d for d in inp.review.done if not d.undone] if inp.review is not None else []
+    mine = {d.key for d in inp.review.done} if inp.review is not None else set()
     out = [Item(key=d.key, kind="proposal" if d.type == "propose" else "review", title=d.title, why=d.why,
                 basis=d.basis,
                 action="confirm" if d.type == "propose" else "info" if d.type in ("note", "ask") else "auto",
-                value={"type": d.type, "expect": d.expect, **d.value})
-           for d in inp.review.done if not d.undone]  # fmt: skip
+                value={"type": d.type, "expect": d.expect, **d.value,
+                       **({"appeared": d.appeared.isoformat()} if d.appeared else {}),
+                       **({"expires": d.expires.isoformat()} if d.expires else {})})
+           for d in [*today, *(c for c in inp.carried if c.key not in mine)]]  # fmt: skip
+    if inp.review is None:
+        return out
     # 今天核对完的以前的调整、4 周阶段小结（§89）：只告诉他
     out += [Item(key=f"review:checked:{i}", kind="review", title="上次的调整效果怎么样", why=x,
                  value={"type": "checked"}) for i, x in enumerate(inp.review.checked)]  # fmt: skip
@@ -638,6 +659,9 @@ async def _evaluate(
     )
     inp.review = review
     inp.decided = old.decided() if old is not None else {}
+    mine = {d.key for d in review.done} if review is not None else set()
+    inp.carried = [d for d in await alive(user_id, deps.training, carry(old, today)) if d.key not in mine]
+    kept = {"carried": inp.carried, "refused": refusals(old, today)}
     items = compute(inp, today)
     version = (old.version + 1) if old else 1
     changes = diff(old, items, today, version)
@@ -645,7 +669,7 @@ async def _evaluate(
         if (
             items != old.items
         ):  # 只是说明变了（比如管家定的下次目标和规则一样，§132）：照存、不加版本、不记经历
-            fresh = old.model_copy(update={"items": items})
+            fresh = old.model_copy(update={"items": items, **kept})
             await deps.store.save(user_id, fresh, [])
             return fresh, []
         return old, []
@@ -654,7 +678,7 @@ async def _evaluate(
                   report_seen=old.report_seen if old else None,
                   review=review, stage_day=old.stage_day if old else None,
                   stage_text=old.stage_text if old else "", week_day=old.week_day if old else None,
-                  targets=old.targets if old else {})  # fmt: skip
+                  targets=old.targets if old else {}, **kept)  # fmt: skip
     await deps.store.save(user_id, state, changes)
     _log.info("coach evaluated %s", json.dumps({"version": version, "items": len(items),
                                                 "changes": len(changes)}))  # fmt: skip
@@ -712,8 +736,98 @@ def pending(state: State, today: date) -> list[Item]:
         c = state.choices.get(x.key)
         if c is not None and c.title == x.title and (c.decision == "accept" or c.day == today):
             continue
+        if (r := refused(state, x.key, today)) is not None and str(x.value.get("appeared") or "") <= r.day.isoformat():
+            continue  # 他说了不用以后提的才算新的；之前那条不再问（§182）
+        if x.value.get("expires") and str(x.value["expires"]) <= today.isoformat():
+            continue  # 到期了
         out.append(x)
     return out
+
+
+# ---- 管家建议的生命周期（§182）：出现日期、到期、同一件事新的替换旧的、说了不用 14 天内不再提 -------------
+
+
+def expiry(appeared: date, last: date | None = None) -> date:
+    """建议哪天起不再挂着（不含这天）：默认出现后 7 天；带预览的跟着预览的有效期，last 是预览还能确认的最后一天
+    （改计划的预览 24 小时、临时调整到开始那天，预览先作废就先撤）。"""
+    end = appeared + timedelta(days=SUGGEST_DAYS)
+    return min(end, last + timedelta(days=1)) if last is not None else end
+
+
+def refused(state: State | None, key: str, today: date) -> Refusal | None:
+    """这件事他 14 天内说过不用：返回那次；今天怎么练不算（只管当天）。"""
+    if state is None or key in NOT_REFUSED:
+        return None
+    r = state.refused.get(key)
+    return r if r is not None and 0 <= (today - r.day).days < REFUSE_DAYS else None
+
+
+def refusals(state: State | None, today: date) -> dict[str, Refusal]:
+    """14 天内他说过不用的（key → 那次）。"""
+    out: dict[str, Refusal] = {}
+    for k in state.refused if state is not None else {}:
+        if (r := refused(state, k, today)) is not None:
+            out[k] = r
+    return out
+
+
+def carry(state: State | None, today: date) -> list[Done]:
+    """前几天提的、还挂着的建议（§182）：更早那次复盘提的接进来（同一件事新的替换旧的），到期的、撤销了的、
+    他说过不用的、确认过的去掉。今天这次复盘提的不在这里（在 review 里）。旧数据没有日期的按那次复盘的日子算。"""
+    if state is None:
+        return []
+    out = {d.key: d for d in state.carried}
+    old = state.review
+    if old is not None and old.day < today:
+        for d in old.done:
+            if d.type in SUGGEST_TYPES:
+                out[d.key] = d.model_copy(update={"appeared": d.appeared or old.day})
+    keep = []
+    for d in out.values():
+        appeared = d.appeared or today
+        expires = d.expires or expiry(appeared)
+        r = state.refused.get(d.key)
+        c = state.choices.get(d.key)
+        if (d.undone or today >= expires or (r is not None and r.day >= appeared)
+                or (c is not None and c.decision == "accept" and c.title == d.title)):  # fmt: skip
+            continue
+        keep.append(d.model_copy(update={"appeared": appeared, "expires": expires}))
+    return keep
+
+
+async def alive(user_id: str, training: Any, carried: Sequence[Done]) -> list[Done]:
+    """带预览的建议：预览已经确认、作废或过期了就不再挂着（他在卡片上处理过了）。读不到预览的照留着。"""
+    out = []
+    for d in carried:
+        if d.type == "propose" and d.value.get("draft"):
+            try:
+                draft = await training.draft(user_id, str(d.value["draft"]))
+            except Exception as e:
+                _log.info("suggestion draft unavailable: error_type=%s", type(e).__name__)
+                out.append(d)
+                continue
+            if draft is None or draft.state != "pending" or draft.expired():
+                continue
+        out.append(d)
+    return out
+
+
+def hanging_lines(carried: Sequence[Done], refused_now: Mapping[str, Refusal], today: date,
+                  skip: Collection[str] = ()) -> list[str]:  # fmt: skip
+    """给管家看的：还挂着的建议、他 14 天内拒绝过的（§182）。skip：今天已经说过的（不重复）。"""
+    out = [f"还挂着的建议：{d.title}（{_md(d.appeared or today)}提的，他还没处理"
+           + (f"，{_md(d.expires - timedelta(days=1))}以后撤" if d.expires else "") + "）"
+           for d in carried]  # fmt: skip
+    for k, r in refused_now.items():
+        if k in skip:
+            continue
+        n = (today - r.day).days
+        out.append(f"他{'今天' if n == 0 else f' {n} 天前'}拒绝过：{r.title}（同一件事 {REFUSE_DAYS} 天内不再提）")
+    return out
+
+
+def _md(d: date) -> str:
+    return f"{d.month}月{d.day}日"
 
 
 def unseen(state: State, history: Sequence[Change]) -> list[Change]:

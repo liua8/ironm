@@ -7,7 +7,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from ironm_agent.memory_extract import changes_of, validate
-from ironm_agent.memory_layers import AUTO, daily_asks, layers
+from ironm_agent.memory_layers import AUTO, layers, unconfirmed_lines
 from ironm_agent.memory_store import Change, MemoryBook
 from tests.test_memory_layers import TODAY, at, item
 
@@ -83,45 +83,41 @@ def stale(i: str, cat: str, days: int, **kw: object) -> object:
     return item(i, cat, f"{cat} 的说法 {i}", TODAY - timedelta(days=days), **kw)  # type: ignore[arg-type]
 
 
-def test_long_kept_facts_get_one_question_a_day() -> None:
+def test_long_kept_facts_are_listed_with_their_date() -> None:
+    """§182：很久没确认的不再由代码每天生成"该问的"，改成事实列给管家（带上次确认的日期），问不问由管家定。"""
     gear, rest = stale("a", "equipment", 90), stale("b", "schedule", 120)
-    [ask] = [c.item for c in daily_asks([gear, rest], [], None, [], TODAY) if c.item]
-    assert ask.evidence == AUTO + "stale:b" and "三个月没确认" in ask.content  # 最久的先问
-    assert [c.item.evidence for c in daily_asks([gear], [], None, [], TODAY) if c.item] == [
-        AUTO + "stale:a"
-    ]
-    assert ask.until == TODAY and ask.category == "followup"
-    assert daily_asks([stale("a", "equipment", 89)], [], None, [], TODAY) == []
-    hurt = [c.item for c in daily_asks([stale("i", "injury", 60)], [], None, [], TODAY) if c.item]
-    assert "好久没提了" in hurt[0].content and "resolve" in hurt[0].content
-    assert daily_asks([stale("i", "injury", 59)], [], None, [], TODAY) == []
-    assert daily_asks([stale("p", "preference", 400)], [], None, [], TODAY) == []  # 喜好不问
-    assert (
-        daily_asks([stale("d", "level", 200, origin="data")], [], None, [], TODAY) == []
-    )  # 训练记录推的不问
+    lines = unconfirmed_lines([gear, rest], TODAY)
+    assert [x.split("：")[0] for x in lines] == ["可练时间与作息", "器械与场地"]  # 最久的在前
+    assert "上次确认" in lines[0] and "120 天前" in lines[0]
+    assert unconfirmed_lines([stale("a", "equipment", 89)], TODAY) == []
+    assert unconfirmed_lines([stale("i", "injury", 60)], TODAY) != []
+    assert unconfirmed_lines([stale("i", "injury", 59)], TODAY) == []
+    assert unconfirmed_lines([stale("p", "preference", 400)], TODAY) == []  # 喜好不算
+    assert unconfirmed_lines([stale("d", "level", 200, origin="data")], TODAY) == []  # 训练记录推的不算
 
 
-def test_the_same_fact_is_not_asked_again_within_a_month() -> None:
+def test_the_listed_fact_points_at_its_profile_line_and_goes_once_confirmed() -> None:
     gear = stale("a", "equipment", 100)
-    [first] = [c.item for c in daily_asks([gear], [], None, [], TODAY) if c.item]
-    first = replace(first, created=at(TODAY), updated=at(TODAY))
-    assert daily_asks([gear, first], [], None, [], TODAY + timedelta(days=29)) == []
-    again = daily_asks([gear, first], [], None, [], TODAY + timedelta(days=31))
-    assert [c.item.evidence for c in again if c.item] == [AUTO + "stale:a"]
-
-
-def test_the_question_points_at_the_fact_and_goes_once_confirmed() -> None:
-    gear = stale("a", "equipment", 100)
-    [ask] = [c.item for c in daily_asks([gear], [], None, [], TODAY) if c.item]
-    lay = layers([gear, ask], TODAY)
-    [line] = lay.asks
-    assert line.endswith("（是 m1 那条）") and lay.handles["m1"] is gear
-    assert lay.profile[0].endswith("很久没确认：用到它时答完问一句还是不是这样）")  # 画像那行也标出来
+    lay = layers([gear], TODAY)
+    assert lay.asks == [] and lay.stale == [f"m1｜器械与场地：equipment 的说法 a（{_md(TODAY - timedelta(days=100))}）"]
+    assert lay.handles["m1"] is gear and lay.profile[0].endswith("很久没确认）")  # 画像那行只标事实
     assert "很久没确认" not in layers([stale("n", "equipment", 89)], TODAY).profile[0]
-    later = replace(ask, created=at(TODAY))
     confirmed = replace(gear, updated=at(TODAY) + timedelta(hours=1))
-    assert layers([confirmed, later], TODAY).asks == []
-    assert layers([replace(gear, status="superseded"), later], TODAY).asks == []
+    assert layers([confirmed], TODAY).stale == []
+    assert layers([replace(gear, status="superseded")], TODAY).stale == []
+
+
+def test_old_generated_still_questions_are_not_shown() -> None:
+    """以前代码生成的"还是这样吗"（auto:stale:）不再带；那条记忆照样列在很久没确认里。"""
+    gear = stale("a", "equipment", 100)
+    old_ask = item("q", "followup", "三个月没确认了：问一句", TODAY, until=TODAY, origin="system",
+                   evidence=AUTO + "stale:a")  # fmt: skip
+    lay = layers([gear, old_ask], TODAY)
+    assert lay.asks == [] and len(lay.stale) == 1
+
+
+def _md(d: object) -> str:
+    return f"{d.month}月{d.day}日"  # type: ignore[attr-defined]
 
 
 def test_not_right_is_not_a_confirmation() -> None:
@@ -166,16 +162,14 @@ def test_a_dismissed_guess_event_still_ends_the_usual_way() -> None:
     assert [c.kind for c in changes_of([op])] == ["status", "insert"]  # 近况照旧：记一条已结束
 
 
-def test_a_system_question_does_not_hide_a_cold() -> None:
-    """长期没提的伤病生成了该问的：不顶掉正在生效的近况（复核 11-03）。"""
+def test_a_long_unconfirmed_injury_does_not_hide_a_cold() -> None:
+    """长期没提的伤病列在很久没确认里：不顶掉正在生效的近况（复核 11-03）。"""
     hurt = item("i", "injury", "右肩撞击，推举时会疼", TODAY - timedelta(days=70))
     cold = item(
         "c", "event", "感冒了，这周不练", TODAY - timedelta(days=1), until=TODAY + timedelta(days=3)
     )
-    [ask] = [c.item for c in daily_asks([hurt, cold], [], None, [], TODAY) if c.item]
-    ask = replace(ask, created=at(TODAY), updated=at(TODAY))
-    lay = layers([hurt, cold, ask], TODAY)
-    assert any("感冒了" in e for e in lay.episodes) and any("右肩撞击" in a for a in lay.asks)
+    lay = layers([hurt, cold], TODAY)
+    assert any("感冒了" in e for e in lay.episodes) and any("右肩撞击" in a for a in lay.stale)
 
 
 def test_a_guess_does_not_hide_what_he_said() -> None:
@@ -187,9 +181,7 @@ def test_a_guess_does_not_hide_what_he_said() -> None:
     assert len(now_) == 2 and any("左膝疼（" in x for x in now_) and any("？" in x for x in now_)
     later = layers([said, replace(guess, created=at(TODAY - timedelta(days=4)))], TODAY).profile
     assert len(later) == 1 and "左膝疼（" in later[0]
-    assert daily_asks(
-        [replace(said, updated=at(TODAY - timedelta(days=60))), guess], [], None, [], TODAY
-    )
+    assert unconfirmed_lines([replace(said, updated=at(TODAY - timedelta(days=60))), guess], TODAY)
 
 
 def test_reminders_he_asked_for_come_before_guesses() -> None:
@@ -200,68 +192,3 @@ def test_reminders_he_asked_for_come_before_guesses() -> None:
     due = item("f", "followup", "提醒他今天去复查膝盖", until=TODAY)
     asks = layers([*guesses, due], TODAY).asks
     assert len(asks) == 3 and "复查膝盖" in asks[0]
-
-
-def test_one_question_a_day_even_after_a_restart() -> None:
-    a, b = stale("a", "equipment", 120), stale("b", "schedule", 100)
-    [first] = [c.item for c in daily_asks([a, b], [], None, [], TODAY) if c.item]
-    first = replace(first, created=at(TODAY), updated=at(TODAY))
-    assert daily_asks([a, b, first], [], None, [], TODAY) == []  # 同一天再查：今天已经问过一条
-    [nxt] = [
-        c.item for c in daily_asks([a, b, first], [], None, [], TODAY + timedelta(days=1)) if c.item
-    ]
-    assert nxt.evidence == AUTO + "stale:b"
-
-
-def test_confirming_a_guess_keeps_what_he_said_about_the_same_knee() -> None:
-    """他说过"左膝疼，深蹲会疼，不做深蹲"（带字段），推测成半月板损伤后他说对了：字段和他的话都留着（复核 11-03）。"""
-    from ironm_agent.latest import current
-
-    knee = {"parts": ["joint.knee"], "side": "左"}
-    said = replace(item("s", "injury", "左膝疼，深蹲会疼", TODAY - timedelta(days=5)), key="injury:joint.knee:左",
-                   data={**knee, "triggers": ["深蹲"], "avoid": ["深蹲"], "severity": "中"})  # fmt: skip
-    guess = replace(GUESS, key="injury:joint.knee:左", data=dict(knee))
-    [op], bad = validate({"ops": [{"op": "confirm", "target": "m2", "quote": "就是半月板"}]},
-                         {"m1": said, "m2": guess}, "对，就是半月板", "", today=TODAY)  # fmt: skip
-    assert not bad and op.content == "左膝半月板损伤，左膝疼，深蹲会疼"
-    assert op.data["avoid"] == ["深蹲"] and op.data["severity"] == "中" and op.data["side"] == "左"
-    book = MemoryBook()
-    asyncio.run(book.apply("42", [Change("insert", item=said), Change("insert", item=guess)]))
-    asyncio.run(book.apply("42", changes_of([op])))
-    [now_] = current(asyncio.run(book.items("42")))  # 读的时候只剩合起来的这一条
-    assert now_.data["avoid"] == ["深蹲"] and "深蹲会疼" in now_.content
-
-
-def test_punctuation_differences_still_confirm() -> None:
-    for said, quote in (("对,就是半月板", "对，就是半月板"), ("对 就是半月板", "对就是半月板")):
-        ops, bad = validate({"ops": [{"op": "confirm", "target": "m1", "quote": quote}]}, {"m1": GUESS},
-                            said, "", today=TODAY)  # fmt: skip
-        assert not bad and [o.op for o in ops] == ["confirm"], said
-
-
-def test_confirms_go_last_when_there_are_too_many() -> None:
-    from ironm_agent.memory_extract import MAX_OPS
-
-    bells = item("b", "equipment", "家里有一对哑铃")
-    again = {
-        "op": "add",
-        "category": "equipment",
-        "content": "家里有一对哑铃",
-        "quote": "家里有一对哑铃",
-    }
-    likes = [{"op": "add", "category": "preference", "content": f"喜欢动作{i}", "quote": f"喜欢动作{i}"}
-             for i in range(MAX_OPS)]  # fmt: skip
-    text = "家里有一对哑铃，" + "，".join(f"喜欢动作{i}" for i in range(MAX_OPS))
-    ops, _ = validate({"ops": [again, *likes]}, {"m1": bells}, text, "", today=TODAY)
-    assert len(ops) == MAX_OPS and all(o.op == "add" for o in ops)
-
-
-def test_a_confirmed_guess_is_not_a_new_illness() -> None:
-    """后台提取：推测的说对了换成的那条标出来，不再当新说的事看一次生病（复核 11-03）。"""
-    from ironm_agent.memory_extract import extract
-    from tests.fakes import FakeLLM, jsonr
-
-    reply = jsonr({"ops": [{"op": "confirm", "target": "m1", "quote": "就是半月板"}]})
-    out = asyncio.run(extract(FakeLLM(lambda *_: reply), [GUESS], "对，就是半月板", "好的。"))
-    [new] = [c.item for c in out.changes if c.item is not None]
-    assert out.confirmed == {new.id}

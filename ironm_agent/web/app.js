@@ -1502,7 +1502,6 @@ function goalBlock() {
       return;
     }
     const kg = (v) => (v == null ? "—" : `${num(v)}`);
-    const tone = { reached: "good", on_track: "good", ahead: "good", behind: "warn", wrong_way: "warn" }[p.status] || "";
     if (p.status === "reached") {  // 达到目标（§93）：换成"目标达成"，第一次看到放彩带，服务端记下
       const days = Math.max(0, Math.floor((Date.now() - new Date(`${g.set_day}T00:00:00`).getTime()) / 86400000));
       const moved = p.changed != null ? `${p.changed < 0 ? "减了" : "增了"} ${num(Math.abs(p.changed))} 公斤` : "";
@@ -1530,10 +1529,10 @@ function goalBlock() {
         ...[["起点", p.start], ["当前", p.current], ["目标", p.target]].map(([k, v]) => h("div", {}, h("span", { class: "muted" }, k), h("b", {}, kg(v)), h("span", { class: "muted" }, "公斤")))),
       bar ? h("div", { class: "goal-progress" }, bar,
         h("p", {}, p.changed ? `已${p.changed < 0 ? "减" : "增"} ${num(Math.abs(p.changed))} 公斤 · ` : "", h("b", {}, `完成 ${pct}%`))) : null,
-      p.predicted ? h("p", {}, "预计达成：", h("b", {}, fmtDay(p.predicted))) : null,
-      p.message ? h("p", { class: tone ? `tone-${tone}` : "" }, p.message) : null,
+      p.predicted ? h("p", {}, "按现在的速度预计：", h("b", {}, fmtDay(p.predicted))) : null,
+      p.weekly != null ? h("p", {}, "每周变化：", h("b", {}, `${p.weekly > 0 ? "+" : ""}${num(p.weekly)} 公斤`), h("span", { class: "muted" }, `（体重的 ${num(Math.abs(p.weekly_pct ?? 0))}%）`)) : null,
+      p.need_weekly != null ? h("p", { class: "muted" }, `按期到每周要${p.need_weekly < 0 ? "减" : "增"} ${num(Math.abs(p.need_weekly))} 公斤`) : null,
       p.missing ? h("p", { class: "muted" }, p.missing) : null,
-      p.pace ? h("div", { class: "notice-line" }, icon("alert", "xs"), p.pace) : null,
       p.retest.due ? h("div", { class: "notice-line" }, icon("alert", "xs"), h("div", {}, p.retest.text,
         h("button", { class: "link", type: "button", onclick: async () => draw(await api("/iron/api/goal/retest", { method: "POST" })) }, "已复测"))) : null));
   };

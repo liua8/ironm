@@ -122,15 +122,14 @@ type Progress = {
   changed?: number | null;
   percent?: number | null;
   predicted?: string | null;
-  message?: string;
+  weekly?: number | null; // 每周变化（公斤）
+  weekly_pct?: number | null;
+  need_weekly?: number | null; // 按期到每周要变多少
   missing?: string;
-  pace?: string;
   retest?: { due?: boolean; text?: string };
   celebrate?: boolean;
 };
 type GoalState = { goal: { value: number; by: string; set_day?: string } | null; progress?: Progress };
-
-const TONE: Record<string, "good" | "warn"> = { reached: "good", on_track: "good", ahead: "good", behind: "warn", wrong_way: "warn" };
 
 /** 我的目标（同网页 goalBlock）：起点、当前、目标、进度条、预计达成；能设、改、清除；到了换成"目标达成"。 */
 export function GoalBlock() {
@@ -176,7 +175,6 @@ export function GoalBlock() {
     );
   } else {
     const pct = p.percent;
-    const tone = TONE[p.status ?? ""];
     body = (
       <>
         <View style={s.goalHead}>
@@ -206,10 +204,10 @@ export function GoalBlock() {
             <T>{`${p.changed ? `已${p.changed < 0 ? "减" : "增"} ${num(Math.abs(p.changed))} 公斤 · ` : ""}完成 ${pct}%`}</T>
           </View>
         ) : null}
-        {p.predicted ? <T>{`预计达成：${fmtDay(p.predicted)}`}</T> : null}
-        {p.message ? <T style={tone === "good" ? s.good : tone === "warn" ? s.warn : undefined}>{stripRefs(p.message)}</T> : null}
+        {p.predicted ? <T>{`按现在的速度预计：${fmtDay(p.predicted)}`}</T> : null}
+        {p.weekly != null ? <T>{`每周变化：${p.weekly > 0 ? "+" : ""}${num(p.weekly)} 公斤（体重的 ${num(Math.abs(p.weekly_pct ?? 0))}%）`}</T> : null}
+        {p.need_weekly != null ? <T muted>{`按期到每周要${p.need_weekly < 0 ? "减" : "增"} ${num(Math.abs(p.need_weekly))} 公斤`}</T> : null}
         {p.missing ? <T muted>{stripRefs(p.missing)}</T> : null}
-        {p.pace ? <Text style={s.notice}>{stripRefs(p.pace)}</Text> : null}
         {p.retest?.due ? (
           <View style={s.notice}>
             <T>{stripRefs(p.retest.text)}</T>
@@ -305,7 +303,5 @@ const s = StyleSheet.create({
   progress: { gap: 6 },
   bar: { height: 14, backgroundColor: color.paperLight, borderWidth: 1, borderRadius: 14, borderColor: color.wood },
   fill: { height: "100%", backgroundColor: color.accent },
-  good: { color: color.accentText },
-  warn: { color: "#8a5a10" },
   notice: { color: color.ink2, backgroundColor: "rgba(242, 193, 78, 0.3)", borderLeftWidth: 1, borderLeftColor: "#8a5a10", padding: space.s, fontSize: 14, gap: 4 },
 });

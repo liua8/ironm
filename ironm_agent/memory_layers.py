@@ -2,30 +2,29 @@
 
 - 用户画像：长期的情况（目标、水平、伤病、器械、时间、饮食、喜好、回答风格），每行写更新日期和来源，推测的带"？"；
 - 情景记忆：发生过的事（近期事件、给过的建议、待跟进），只追加；每轮只带还在影响训练的；
-- 该问的：过了结束日没听他说结束的近况、刚推测还没确认的、到期的待跟进、每天检查出来的（反复疼、练得远少于计划、
-  长期的很久没确认），最多 3 条；
+- 该问的：过了结束日没听他说结束的近况、刚推测还没确认的、到期的待跟进（他要的、管家记的），最多 3 条；
+  代码每天生成的"该问的"（反复疼、练得远少于计划、很久没确认）去掉了（§182）：以前生成的不再带；
+- 很久没确认的记忆：器械、可练时间、训练水平 90 天、伤病 60 天没更新的，带上次确认的日期列给管家（事实，最多 3 条），
+  问不问由管家定；
 - 查记忆工具：按关键词、天数（传入 similar 时再加上语义相似）查全部记忆，含已结束、被取代的。
 
 每轮只常驻目标和安全相关的几类，其余按这一轮的决定取（spec 2026-10-30 记忆改进）：日程、饮食、偏好
 不再全量拼进提示词，条目多了也不稀释注意力；没给决定时（测试、旧调用）仍全带。
-画像、情景还是存在 ironm_memory 里（同一张表、同一套核对），这里只管怎么分层、怎么拼给 Agent、每天检查什么。
+画像、情景还是存在 ironm_memory 里（同一张表、同一套核对），这里只管怎么分层、怎么拼给 Agent。
 不调用模型。
 """
 
 from __future__ import annotations
 
 import re
-from collections import Counter
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
 from ironm_agent.memory_extract import norm
-from ironm_agent.memory_store import CATEGORIES, Category, Change, Item, absolute, new_id, now
+from ironm_agent.memory_store import CATEGORIES, Category, Item, absolute
 from ironm_agent.memory_view import advice_expired, faded, fading
-from ironm_agent.protools.movement import JOINT_NAMES
-from ironm_agent.training import Plan, WorkoutLog
 
 PROFILE: tuple[str, ...] = (
     "goal",
@@ -64,13 +63,10 @@ _RECALL_KINDS = tuple(re.compile(p) for p in (
     r"器械|哑铃|壶铃|弹力带|杠铃|单杠|健身房",
 ))  # fmt: skip
 RELATED_MAX = 8  # 同一处身体、同一类事最多补几条（复核 11-04：别把关键词命中的挤出去）
-PAIN_DAYS, PAIN_TIMES = 30, 3  # 30 天里说疼 3 天以上，问要不要记成长期的
-GAP_WEEKS = 3  # 连续几周都练不到计划的一半，问要不要改得更现实
-AUTO = "auto:"  # 系统生成的该问的：evidence 里放这个前缀加去重键
+AUTO = "auto:"  # 以前代码每天生成的该问的（evidence 带这个前缀）：§182 起不再生成、也不再带
 PENDING_DAYS = 3  # 推测的几天内带着问一句，过了还没确认就不再带（§154）
-STALE_DAYS: dict[str, int] = {"equipment": 90, "schedule": 90, "level": 90, "injury": 60}  # 多久没更新问一句
-STALE_PER_DAY = 1  # 每天最多新生成几条"还是这样吗"
-STALE = "stale:"  # 去重键前缀，后面是那条记忆的编号
+STALE_DAYS: dict[str, int] = {"equipment": 90, "schedule": 90, "level": 90, "injury": 60}  # 多久没更新算很久没确认
+STALE_MAX = 3  # 很久没确认的最多列几条（最久的在前）
 
 
 def _day(x: Item) -> date:
@@ -99,7 +95,7 @@ class Layers:
     profile: list[str] = field(default_factory=list)
     episodes: list[str] = field(default_factory=list)
     asks: list[str] = field(default_factory=list)
-    stale: list[tuple[Item, Item]] = field(default_factory=list)  # 给管家看到的"还是这样吗"：(那条记忆, 该问的)（§160）
+    stale: list[str] = field(default_factory=list)  # 很久没确认的记忆和上次确认的日期（事实，§182）
 
     def text(self, today: date, summaries: Sequence[str] = ()) -> str:
         """日期在档案里已经写了，这里不再重复（§96）。"""
@@ -114,6 +110,11 @@ class Layers:
                 "该问的、到期的跟进（由你决定这一轮提不提：一次最多提一件；他在问急事、说身体不适时不提；"
                 "这一轮回答要用到其中说的推测的、很久没确认的那条（比如按那份器械排训练），就照它答完在最后加一句问还是不是这样；"
                 "提了或他答了，用编号标为已解决）：\n" + "\n".join(self.asks)
+            )
+        if self.stale:
+            parts.append(
+                "很久没确认的记忆（括号里是上次确认的日期；问不问、什么时候问由你定，"
+                "他说还是这样就 confirm、变了就 update、好了就 resolve）：\n" + "\n".join(self.stale)
             )
         if summaries:
             parts.append(
@@ -160,10 +161,13 @@ def layers(items: Sequence[Item], today: date, focus: Collection[str] | None = N
         state = "（已好）" if x.status == "resolved" else ""
         src = "推测的" if x.status == "pending" else "你说的" if x.origin != "data" else "训练记录"
         h = handle(x)
-        old = (x.status == "active" and x.category in STALE_DAYS and x.origin not in ("data", "system")
-               and (today - x.updated.astimezone().date()).days >= STALE_DAYS[x.category])  # fmt: skip
-        stale = ("，很久没确认：用到它时答完问一句还是不是这样" if old  # 和该问的同一个口径（§154）
-                 else "，两个月前说的：用到时可以顺带问一句还是不是这样" if fading(x, today) else "")  # §157  # fmt: skip
+        stale = (
+            "，很久没确认"
+            if _unconfirmed(x, today)  # 只写事实（§182），列在"很久没确认的记忆"里
+            else "，两个月前说的：用到时可以顺带问一句还是不是这样"
+            if fading(x, today)
+            else ""
+        )  # §157
         out.profile.append(f"{h}｜{CATEGORIES[x.category]}{state}：{said(x)}{mark}"
                            f"（{_md(x.updated.astimezone().date())}，{src}{stale}）")  # fmt: skip
         if x.status == "pending":
@@ -183,150 +187,48 @@ def layers(items: Sequence[Item], today: date, focus: Collection[str] | None = N
     for x in sorted(advice, key=_day)[-ADVICE_KEEP:]:
         out.episodes.append(f"{handle(x)}｜给过的建议：{said(x)}（{_md(_day(x))}）")
 
-    shown = {x.id: h for h, x in out.handles.items()}
-    by_id = {x.id: x for x in live}
     due = [x for x in live if x.category == "followup" and x.status == "active" and x.until
            and x.until <= today and (today - x.until).days <= DUE_KEEP]  # fmt: skip
     for x in sorted(due, key=lambda x: x.until or today):
-        about = x.evidence[len(AUTO + STALE):] if x.evidence.startswith(AUTO + STALE) else ""
-        if about:  # "还是这样吗"：那条确认过、改过、不带了，就不再问（§154）
-            fact = by_id.get(about)
-            if fact is None or about not in shown or fact.updated > x.created:
-                continue
-            out.asks.append(f"{handle(x)}｜{said(x)}（是 {shown[about]} 那条）")
-            out.stale.append((fact, x))
+        if x.evidence.startswith(AUTO):  # 以前代码每天生成的（§182 去掉了）：不再带，数据不删
             continue
         out.asks.append(f"{handle(x)}｜{said(x)}（{_md(x.until or today)}到期）")
     out.asks += guesses  # 到期的跟进（他要的提醒）排在推测的前面（复核 11-03）
     out.asks = out.asks[:ASK_MAX]
-    asked = {out.handles[a.split("｜", 1)[0]].id for a in out.asks}
-    out.stale = [(f, x) for f, x in out.stale if x.id in asked]  # 截掉的那几条管家没看到，代码也不补（复核 11-04）
+    shown = {x.id: h for h, x in out.handles.items()}
+    for x in unconfirmed(live, today):
+        h = shown.get(x.id) or handle(x)
+        out.stale.append(f"{h}｜{CATEGORIES[x.category]}：{said(x)}（{_md(x.updated.astimezone().date())}）")
     return out
 
 
-# ---- 每天检查一次（不调用模型）：生成"该问的" --------------------------------------------------------
-
-
-def _auto(key: str, content: str, today: date) -> Change:
-    at = now()
-    return Change("insert", item=Item(new_id(), "followup", content, AUTO + key, "system", "active",
-                                      at, at, None, today))  # fmt: skip
-
-
-def daily_asks(
-    items: Sequence[Item],
-    pains: Sequence[tuple[str, date]],
-    plan: Plan | None,
-    logs: Sequence[WorkoutLog],
-    today: date,
-) -> list[Change]:
-    """反复说疼、画像里还没有这处伤病 → 问要不要记成长期的；计划每周 N 练、连续几周都不到一半 → 问要不要改。
-    同一个去重键 30 天内不重复生成。"""
-    seen = {x.evidence for x in items if x.category == "followup" and x.evidence.startswith(AUTO)
-            and (today - _day(x)).days <= 30}  # fmt: skip
-    out: list[Change] = []
-    # 已经记着的只算还在的伤病：好了以后又反复疼，照样问要不要记成长期的（§158）
-    profile = " ".join(
-        x.content for x in items if x.category == "injury" and x.status in ("active", "pending")
+def _unconfirmed(x: Item, today: date) -> bool:
+    """很久没确认：器械、可练时间、训练水平 90 天、伤病 60 天没更新（更新日期就是上次确认的日子，§154）；
+    训练记录推出来的、系统写的不算。"""
+    return (
+        x.status == "active"
+        and x.category in STALE_DAYS
+        and x.origin not in ("data", "system")
+        and (today - x.updated.astimezone().date()).days >= STALE_DAYS[x.category]
     )
-    recorded = {p for x in items if x.category == "injury" and x.status in ("active", "pending")
-                for p in (x.data.get("parts") or [])}  # 结构化的部位（§148）  # fmt: skip
-    days = Counter(code for code, _ in {(c, d) for c, d in pains if (today - d).days < PAIN_DAYS})
-    for code, n in days.items():
-        name = JOINT_NAMES.get(code, "")
-        key = f"pain:{code}"
-        if (
-            n < PAIN_TIMES
-            or not name
-            or AUTO + key in seen
-            or code in recorded
-            or _short(name) in profile
-        ):
-            continue
-        out.append(
-            _auto(
-                key,
-                f"最近一个月有 {n} 天说{name}疼：问一句是不是一直有，要不要记成长期的伤病（他确认了才写进画像）",
-                today,
-            )
-        )
-    if plan is not None and plan.days_per_week:
-        want = plan.days_per_week
-        monday = today - timedelta(days=today.weekday())
-        weeks = [monday - timedelta(days=7 * (k + 1)) for k in range(GAP_WEEKS)]
-        done = [
-            sum(1 for x in logs if x.done and w <= x.day < w + timedelta(days=7)) for w in weeks
-        ]
-        key = f"gap:{weeks[0].isoformat()}"
-        if all(d * 2 < want for d in done) and not any(s.startswith(AUTO + "gap:") for s in seen):
-            got = "、".join(str(d) for d in reversed(done))
-            out.append(
-                _auto(
-                    key,
-                    f"计划每周练 {want} 次，最近 {GAP_WEEKS} 周分别练了 {got} 次：问一句要不要改成更现实的安排（只问，不改计划）",
-                    today,
-                )
-            )
-    return out + _stale_asks(items, seen, today)
 
 
-ASKED_STILL = re.compile(r"还是(?:不是)?(?:这样|那样|那些|那对|那个)|还在|还有|变了|有变化|换了")
-_SOLID = re.compile(r"\d+\s*(?:分钟|次|天|小时)|周[一二三四五六日]")
-_QUESTION = re.compile(r"[^。！？!?\n]*[？?]")
-
-
-def _marks(fact: Item) -> list[str]:
-    """回答里出现这些，就是用到了那条：器械看器械名；可练时间看次数、分钟、星期，要对上两样。"""
-    if fact.category == "equipment":
-        return [*(fact.data.get("gear") or []), *(fact.data.get("custom") or [])]
-    return list(dict.fromkeys(_SOLID.findall(said(fact)))) if fact.category == "schedule" else []
-
-
-def stale_question(lay: Layers, answer: str) -> tuple[str, Item | None]:
-    """这一轮回答用到了很久没确认的器械、可练时间，又没问还是不是这样：补一句（§160），并返回那条该问的
-    （补了就算问过）。管家换了说法问过（问句里提到那条或问"还在、还有、变了"）不补。不调用模型。"""
-    text = norm(answer)
-    asks = [norm(q) for q in _QUESTION.findall(answer)]
-    for fact, ask in lay.stale:
-        marks = [norm(m) for m in _marks(fact) if m]
-        used = [m for m in marks if m in text]
-        if len(used) < (2 if fact.category == "schedule" else 1):
-            continue
-        if any(ASKED_STILL.search(q) or any(m in q for m in marks) for q in asks):
-            return "", None
-        return f"顺便问一下：你之前说「{said(fact)}」，现在还是这样吗？", ask
-    return "", None
-
-
-def _stale_asks(items: Sequence[Item], seen: Collection[str], today: date) -> list[Change]:
-    """器械、可练时间、训练水平 90 天、伤病 60 天没更新：问一句还是不是这样（§154）。
-    更新日期就是上次确认的日子；训练记录推出来的、系统生成的不问；最久的先问，每天最多 1 条，30 天内不重问。"""
+def unconfirmed(items: Sequence[Item], today: date, limit: int = STALE_MAX) -> list[Item]:
+    """很久没确认的记忆（事实，§182）：被取代的、同一件事有更新说法的不算；最久的在前，最多 limit 条。"""
     from ironm_agent.latest import shadowed
 
     gone = shadowed(items)
-    made = sum(1 for x in items if x.category == "followup" and x.evidence.startswith(AUTO + STALE)
-               and _day(x) == today)  # 重启后同一天再查一次：今天已经问过的算上（复核 11-03）  # fmt: skip
-    old = [x for x in items if x.category in STALE_DAYS and x.status == "active" and x.id not in gone
-           and x.origin not in ("data", "system")
-           and (today - x.updated.astimezone().date()).days >= STALE_DAYS[x.category]
-           and AUTO + STALE + x.id not in seen]  # fmt: skip
+    old = [x for x in items if x.status != "superseded" and x.id not in gone and _unconfirmed(x, today)]
+    return sorted(old, key=lambda x: x.updated)[:limit]
+
+
+def unconfirmed_lines(items: Sequence[Item], today: date, limit: int = STALE_MAX) -> list[str]:
+    """给管家复盘看的一行一条："器械：家里有一对哑铃（上次确认 6月1日，95 天前）"。"""
     out = []
-    for x in sorted(old, key=lambda x: x.updated)[: max(0, STALE_PER_DAY - made)]:
-        when = _md(x.updated.astimezone().date())
-        ask = (f"「{CATEGORIES[x.category]}：{said(x)}」是{when}说的，好久没提了：这一轮要用到它或聊到训练时，顺带问一句现在怎么样了"
-               "（好了就 resolve 那条，还那样就 confirm，有变化就 update）"
-               if x.category == "injury" else
-               f"「{CATEGORIES[x.category]}：{said(x)}」是{when}说的，三个月没确认了：这一轮要用到它（排训练、选动作）时，"
-               "照它答完在最后顺带问一句现在还是不是这样（是就 confirm 那条，变了就 update）")  # fmt: skip
-        out.append(_auto(STALE + x.id, ask, today))
+    for x in unconfirmed(items, today, limit):
+        day = x.updated.astimezone().date()
+        out.append(f"{CATEGORIES[x.category]}：{said(x)}（上次确认 {_md(day)}，{(today - day).days} 天前）")
     return out
-
-
-def _short(name: str) -> str:
-    """关节名的简称，用来看画像里是不是已经有这处伤病：膝盖 → 膝，手腕 → 腕，腰椎 → 腰，脚踝 → 踝。"""
-    for w in ("关节", "手", "椎", "盖", "脚"):
-        name = name.replace(w, "")
-    return name
 
 
 # ---- 查记忆工具 ------------------------------------------------------------------------------

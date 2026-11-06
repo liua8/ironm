@@ -11,7 +11,6 @@ import pytest
 
 from ironm_agent.body_now import fresh, healed_on, sore
 from ironm_agent.memory_extract import validate
-from ironm_agent.memory_layers import daily_asks
 from ironm_agent.memory_store import Change, MemoryBook
 from ironm_agent.triggers import PainBook
 from tests.test_memory_layers import TODAY, at, item
@@ -61,11 +60,11 @@ def test_the_coach_also_drops_pain_from_before_it_healed() -> None:
     assert inp.pains == []
 
 
-def test_after_it_healed_repeated_pain_is_asked_about_again() -> None:
+def test_after_it_healed_repeated_pain_is_still_a_fact_for_the_coach() -> None:
+    """好了以后又反复疼：照样算进说疼的事实交给管家（§158）；问不问、要不要记成长期的由管家定，代码不再生成该问的（§182）。"""
     pains = [("joint.knee", TODAY - timedelta(days=d)) for d in (1, 5, 9)]
-    assert daily_asks([knee("active", 20)], pains, None, [], TODAY) == []  # 还记着：不问
-    [ask] = [c.item for c in daily_asks([knee("resolved", 20)], pains, None, [], TODAY) if c.item]
-    assert "膝" in ask.content  # 好了以后又反复疼：问要不要记成长期的
+    assert fresh(pains, [knee("resolved", 20)]) == pains
+    assert fresh(pains, [knee("resolved", 3)]) == [pains[0]]
 
 
 def test_case_file_avoids_parts_that_hurt_lately() -> None:

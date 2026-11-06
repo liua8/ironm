@@ -106,6 +106,7 @@ def test_meals_goal_and_compute_tools(data: mcp_tools.Sources) -> None:
     assert "格式" in str(call("query_my_meals", {"day": "昨天"}))
     goal = text(call("query_my_goal"))
     assert "目标体重 80 公斤" in goal and "起点 75" in goal
+    assert "由你决定" not in goal and "晚约" not in goal  # 只给事实（§182）
     assert "1RM" in text(
         call("estimate_strength", {"weight_kg": 80, "reps": 8})
     ) or "最大重量" in text(call("estimate_strength", {"weight_kg": 80, "reps": 8}))

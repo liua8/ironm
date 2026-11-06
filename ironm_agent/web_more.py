@@ -773,17 +773,22 @@ async def review_proposal(
 
 
 async def _checkup_proposal(user_id: str, training: TrainingStore) -> dict[str, Any] | None:
-    """今天的复查提了改计划、临时调整、预览还没确认：把还在等他确认的那份交给页面（不再重新生成）。
-    一天可能有两份（改计划一份、临时调整一份）：处理过的、过时的跳过，给下一份，more 是还剩几份（复核 11-05）。"""
+    """复查提了改计划、临时调整、预览还没确认：把还在等他确认的那份交给页面（不再重新生成）。
+    今天提的和前几天提的、还挂着的都算（§182）；可能有两份（改计划一份、临时调整一份）：处理过的、过时的跳过，
+    给下一份，more 是还剩几份（复核 11-05）。"""
+    from ironm_agent.coach_state import carry
+
+    today = date.today()
     try:
         state = await coach_deps().store.get(user_id)
     except Exception as e:
         _log.warning("coach state unavailable: error_type=%s", type(e).__name__)
         return None
-    review = state.review if state is not None else None
-    if review is None or review.day != date.today():
-        return None
-    proposed = [x for x in review.done if x.type == "propose" and not x.undone]
+    review = state.review if state is not None and state.review is not None and state.review.day == today else None
+    done = review.done if review is not None else []
+    mine = [x for x in done if not x.undone]
+    earlier = [x for x in carry(state, today) if x.key not in {d.key for d in done}]  # 前几天提的、还挂着的
+    proposed = [x for x in (*mine, *earlier) if x.type == "propose"]
     if not proposed:
         return None
     stored = await training.plan(user_id)
@@ -796,7 +801,7 @@ async def _checkup_proposal(user_id: str, training: TrainingStore) -> dict[str, 
         if stored is None or draft.content.get("base") != stored.id:  # 计划后来改过：这份预览过时了
             from ironm_agent.review import undo
 
-            await undo(user_id, coach_deps(), d.key, today=review.day)  # 作废预览，这条待确认也一并收起
+            await undo(user_id, coach_deps(), d.key, today=today, refuse=False)  # 作废预览，这条待确认也一并收起；不是他说的不用
             stale = True
             continue
         waiting.append((d, draft))
@@ -1218,6 +1223,18 @@ def coach_deps() -> Any:
         memory=_web().memory_store(),
         meals=meal_store(),
     )
+
+
+async def coach_declined(user_id: str, draft: dict[str, Any]) -> None:
+    """他在管家复查提的预览上点了取消：同一件事 14 天内不再提（§182）。出错只记错误类型。"""
+    from ironm_agent.review import CHECKUP, declined_draft
+
+    if draft.get("source") != CHECKUP or draft.get("state") != "cancelled":
+        return
+    try:
+        await declined_draft(user_id, coach_deps(), str(draft.get("id")))
+    except Exception as e:  # 不影响这次请求
+        _log.warning("coach decline failed: error_type=%s", type(e).__name__)
 
 
 def plan_change_later(user_id: str, draft: dict[str, Any], *, undone: bool = False) -> None:

@@ -417,7 +417,11 @@ async def confirm_draft(
 async def cancel_draft(
     draft_id: str, user_id: str = Depends(_verify()), store: TrainingStore = TRAINING
 ) -> dict[str, Any]:
-    return await _draft_action(store, user_id, draft_id, "cancel")
+    out = await _draft_action(store, user_id, draft_id, "cancel")
+    from ironm_agent import web_more
+
+    await web_more.coach_declined(user_id, out.get("draft") or {})  # 管家提的预览他不要：14 天内不再提（§182）
+    return out
 
 
 @router.post("/iron/api/drafts/{draft_id}/undo")
