@@ -1,5 +1,5 @@
 # 推荐食谱（spec [2026-10-23] §118 需求 5）：原料和克数（名字都在食物库里，肉写生重）、油、几份、做法三四步。
-# 营养由代码按食物库算，每份 = 全部原料加油 ÷ 份数。tags：减脂、增肌、早餐、带饭、素食（蛋奶素：不放肉和水产）。
+# 营养由代码按食物库算，每份 = 全部原料加油 ÷ 份数。tags：减脂、增肌、早餐、带饭、外卖（外卖和食堂，§191）、素食（蛋奶素：不放肉和水产）。
 # 内容由 Claude 按常见家常做法整理，待审定。
 version: "0.1"
 review: claude_draft
@@ -405,3 +405,254 @@ recipes:
     parts: {牛奶（全脂）: 250, 鸡蛋: 50, 全麦面包: 30}
     oil: 0
     steps: [牛奶温热, 鸡蛋水煮 8 分钟, 配一片全麦面包]
+
+  # ---- §191 补充（11-06）：外卖食堂、带饭、高蛋白素食、不含奶的早餐加餐、增重好入口的 ----
+  # 外卖、食堂那几道用食物库里的菜品（按常见做法估的每 100 克），份量按常见一份写
+
+  - id: takeout-huangmen-chicken
+    name: 黄焖鸡米饭加青菜
+    tags: [外卖, 增肌]
+    servings: 1
+    parts: {黄焖鸡: 250, 米饭: 200, 清炒青菜: 150}
+    oil: 0
+    steps: [汤汁少浇，别拌进饭里, 加点一份青菜, 鸡肉先吃完再吃饭]
+
+  - id: takeout-beef-noodle-egg
+    name: 牛肉面加蛋加青菜
+    tags: [外卖, 增肌]
+    servings: 1
+    parts: {牛肉面: 500, 鸡蛋: 50, 清炒青菜: 100}
+    oil: 0
+    steps: [点牛肉加量、加一个蛋, 加一份青菜, 汤少喝]
+
+  - id: takeout-malatang
+    name: 麻辣烫多肉多菜少粉
+    tags: [外卖]
+    servings: 1
+    parts: {麻辣烫: 450, 鸡蛋: 50, 老豆腐: 80}
+    oil: 0
+    steps: [选瘦肉、蛋、豆腐和绿叶菜, 粉面只拿一小份, 汤底选清汤，汤少喝]
+
+  - id: takeout-tomato-egg-rice
+    name: 番茄炒蛋盖饭加西兰花
+    tags: [外卖, 素食]
+    servings: 1
+    parts: {番茄炒蛋: 200, 米饭: 200, 清炒西兰花: 100}
+    oil: 0
+    steps: [盖饭加点一份清炒西兰花, 饭吃八成饱就停]
+
+  - id: canteen-two-meat-one-veg
+    name: 食堂宫保鸡丁加炒蛋青菜
+    tags: [外卖, 增肌]
+    servings: 1
+    parts: {宫保鸡丁: 150, 番茄炒蛋: 100, 清炒青菜: 150, 米饭: 200}
+    oil: 0
+    steps: [两个荤菜一个素菜, 荤菜捞着吃，少带汤汁, 米饭一碗]
+
+  - id: takeout-steamed-fish
+    name: 清蒸鱼配西兰花米饭
+    tags: [外卖, 减脂]
+    servings: 1
+    parts: {清蒸鱼: 200, 清炒西兰花: 150, 米饭: 150}
+    oil: 0
+    steps: [点清蒸、白灼这类做法, 蔬菜要一份清炒的, 米饭小碗]
+
+  - id: takeout-shrimp-greens
+    name: 白灼虾配青菜米饭
+    tags: [外卖, 减脂]
+    servings: 1
+    parts: {白灼虾: 150, 清炒青菜: 150, 米饭: 150}
+    oil: 0
+    steps: [蘸料少放, 青菜清炒, 米饭小碗]
+
+  - id: takeout-tomato-brisket
+    name: 番茄牛腩饭配拍黄瓜
+    tags: [外卖, 增肌]
+    servings: 1
+    parts: {番茄牛腩: 250, 米饭: 200, 拍黄瓜: 100}
+    oil: 0
+    steps: [牛腩连番茄一起盖在饭上, 配一份拍黄瓜]
+
+  - id: takeout-chicken-salad-corn
+    name: 鸡胸肉沙拉加玉米
+    tags: [外卖, 减脂]
+    servings: 1
+    parts: {鸡胸肉沙拉: 300, 玉米（煮）: 150}
+    oil: 0
+    steps: [沙拉酱单独放，蘸着吃, 加一根玉米当主食]
+
+  - id: takeout-jianbing-soymilk
+    name: 煎饼果子配豆浆
+    tags: [早餐, 外卖]
+    servings: 1
+    parts: {煎饼果子: 200, 豆浆（无糖）: 300}
+    oil: 0
+    steps: [煎饼加一个蛋、薄脆换生菜, 配一杯无糖豆浆]
+
+  - id: takeout-congee-egg
+    name: 皮蛋瘦肉粥配鸡蛋馒头
+    tags: [早餐, 外卖]
+    servings: 1
+    parts: {皮蛋瘦肉粥: 350, 鸡蛋: 50, 馒头: 60}
+    oil: 0
+    steps: [粥一碗, 加一个水煮蛋, 半个到一个馒头]
+
+  - id: lunchbox-chicken-sweetpotato
+    name: 鸡胸肉红薯西兰花便当
+    tags: [带饭, 减脂]
+    servings: 1
+    parts: {鸡胸肉（生）: 150, 红薯（蒸）: 200, 西兰花: 150}
+    oil: 5
+    steps: [鸡胸肉切片，少油煎熟, 红薯蒸熟切块, 西兰花焯水 1 分钟, 装盒，吃前微波加热]
+
+  - id: lunchbox-beef-tofu-rice
+    name: 牛肉末烧豆腐盖饭
+    tags: [带饭, 增肌]
+    servings: 1
+    parts: {牛肉末（生）: 100, 老豆腐: 150, 米饭: 200, 青菜: 100}
+    oil: 8
+    steps: [牛肉末炒散, 豆腐切块下锅，加生抽和少量水烧 5 分钟, 青菜焯水, 盖在米饭上装盒]
+
+  - id: lunchbox-chicken-pasta
+    name: 鸡腿肉番茄西葫芦意面
+    tags: [带饭, 增肌]
+    servings: 1
+    parts: {鸡腿肉（生、去皮）: 150, 全麦意面（煮熟）: 200, 番茄: 100, 西葫芦: 100}
+    oil: 8
+    steps: [鸡腿肉切块煎熟, 番茄、西葫芦切块炒软, 拌入煮好的意面, 装盒]
+
+  - id: lunchbox-shrimp-soba
+    name: 虾仁西兰花荞麦面
+    tags: [带饭, 减脂]
+    servings: 1
+    parts: {虾仁（生）: 120, 荞麦面（煮熟）: 200, 西兰花: 150}
+    oil: 5
+    steps: [荞麦面煮好过凉水, 虾仁、西兰花少油炒熟, 和面拌在一起，加点生抽]
+
+  - id: lunchbox-chicken-fried-rice
+    name: 鸡腿肉鸡蛋炒饭
+    tags: [带饭, 增肌]
+    servings: 1
+    parts: {鸡腿肉（生、去皮）: 120, 米饭: 300, 鸡蛋: 50, 胡萝卜: 50, 洋葱: 50}
+    oil: 12
+    steps: [鸡腿肉切丁炒熟盛出, 鸡蛋炒散, 下胡萝卜、洋葱和米饭炒匀, 倒回鸡肉翻炒，加盐]
+
+  - id: lunchbox-tuna-avocado-sandwich
+    name: 金枪鱼牛油果全麦三明治
+    tags: [带饭, 增肌]
+    servings: 1
+    parts: {全麦面包: 80, 金枪鱼罐头（水浸）: 80, 牛油果: 60, 生菜: 30, 番茄: 50}
+    oil: 0
+    steps: [牛油果压成泥抹在面包上, 铺金枪鱼、生菜、番茄片, 盖上面包对半切]
+
+  - id: veg-egg-tofu-fried-rice
+    name: 豆腐鸡蛋炒饭
+    tags: [素食, 增肌, 带饭]
+    servings: 1
+    parts: {鸡蛋: 150, 老豆腐: 100, 米饭: 200, 青菜: 100}
+    oil: 10
+    steps: [豆腐切丁煎到微黄, 鸡蛋炒散, 下米饭和青菜炒匀，加盐]
+
+  - id: veg-chickpea-edamame-bowl
+    name: 鹰嘴豆毛豆藜麦碗
+    tags: [素食, 增肌]
+    servings: 1
+    parts: {鹰嘴豆（煮）: 150, 毛豆（煮）: 100, 藜麦（煮熟）: 150, 菠菜: 80, 番茄: 80}
+    oil: 8
+    steps: [菠菜焯水, 鹰嘴豆、毛豆、藜麦、番茄块放进碗里, 淋油、醋和盐拌匀]
+
+  - id: veg-protein-oat-bowl
+    name: 希腊酸奶蛋白燕麦碗
+    tags: [早餐, 素食, 增肌]
+    servings: 1
+    parts: {希腊酸奶（无糖脱脂）: 200, 乳清蛋白粉: 25, 燕麦片（干）: 40, 蓝莓: 80}
+    oil: 0
+    steps: [蛋白粉拌进酸奶, 加燕麦片和蓝莓]
+
+  - id: veg-lentil-tofu-curry
+    name: 小扁豆豆腐咖喱饭
+    tags: [素食, 增肌]
+    servings: 1
+    parts: {小扁豆（煮）: 150, 嫩豆腐: 150, 洋葱: 50, 胡萝卜: 80, 米饭: 180}
+    oil: 8
+    steps: [洋葱、胡萝卜炒软, 加小扁豆、咖喱粉和水煮 10 分钟, 放豆腐块再煮 3 分钟, 浇在米饭上]
+
+  - id: veg-blackbean-egg-wrap
+    name: 黑豆鸡蛋全麦卷
+    tags: [早餐, 素食]
+    servings: 1
+    parts: {全麦面包: 80, 鸡蛋: 100, 黑豆（煮）: 80, 生菜: 30, 番茄: 50}
+    oil: 3
+    steps: [鸡蛋炒散, 和黑豆、生菜、番茄一起夹进面包]
+
+  - id: nodairy-soy-oat-egg
+    name: 豆浆燕麦配鸡蛋苹果
+    tags: [早餐, 减脂, 素食]
+    servings: 1
+    parts: {燕麦片（干）: 40, 豆浆（无糖）: 300, 鸡蛋: 100, 苹果: 150}
+    oil: 0
+    steps: [燕麦片用热豆浆泡 3 分钟, 鸡蛋水煮, 配一个苹果]
+
+  - id: nodairy-sweetpotato-egg
+    name: 红薯鸡蛋配豆浆
+    tags: [早餐, 减脂, 素食]
+    servings: 1
+    parts: {红薯（蒸）: 150, 鸡蛋: 100, 豆浆（无糖）: 300}
+    oil: 0
+    steps: [红薯蒸熟, 鸡蛋水煮, 配一杯无糖豆浆]
+
+  - id: nodairy-pb-banana-toast
+    name: 花生酱香蕉吐司配豆浆
+    tags: [早餐, 增肌, 素食]
+    servings: 1
+    parts: {全麦面包: 60, 花生酱: 20, 香蕉: 100, 豆浆（无糖）: 250}
+    oil: 0
+    steps: [面包抹花生酱, 铺香蕉片, 配一杯豆浆]
+
+  - id: nodairy-edamame-nuts
+    name: 毛豆坚果配橙子
+    tags: [减脂, 素食]
+    servings: 1
+    parts: {毛豆（煮）: 100, 混合坚果（无盐）: 15, 橙子: 150}
+    oil: 0
+    steps: [毛豆煮好晾凉, 配一小把坚果和一个橙子]
+
+  - id: nodairy-egg-tofu-snack
+    name: 鸡蛋豆干配黄瓜
+    tags: [减脂, 素食]
+    servings: 1
+    parts: {鸡蛋: 100, 豆干: 50, 黄瓜: 100}
+    oil: 0
+    steps: [鸡蛋水煮, 豆干切条, 黄瓜切段一起吃]
+
+  - id: gain-shake
+    name: 增重奶昔
+    tags: [增肌, 早餐, 素食]
+    servings: 1
+    parts: {牛奶（全脂）: 400, 燕麦片（干）: 60, 香蕉: 120, 花生酱: 30, 乳清蛋白粉: 30}
+    oil: 0
+    steps: [全部放进料理机, 打 30 秒到顺滑，分两次喝也行]
+
+  - id: gain-yogurt-nut-bowl
+    name: 酸奶坚果燕麦碗
+    tags: [增肌, 素食]
+    servings: 1
+    parts: {无糖酸奶: 250, 混合坚果（无盐）: 30, 香蕉: 100, 燕麦片（干）: 30}
+    oil: 0
+    steps: [酸奶倒进碗里, 加燕麦、香蕉片和坚果]
+
+  - id: gain-dumplings-egg-soup
+    name: 饺子配鸡蛋青菜汤
+    tags: [增肌]
+    servings: 1
+    parts: {饺子（猪肉白菜）: 300, 鸡蛋: 50, 青菜: 100}
+    oil: 3
+    steps: [饺子煮熟, 另起锅烧水，下青菜，淋蛋液, 加盐和几滴香油]
+
+  - id: maintain-salmon-rice
+    name: 香煎三文鱼配米饭芦笋
+    tags: [增肌]
+    servings: 1
+    parts: {三文鱼（生）: 130, 米饭: 180, 芦笋: 120}
+    oil: 5
+    steps: [三文鱼两面各煎 3 分钟, 芦笋焯水或一起煎, 配一碗米饭]

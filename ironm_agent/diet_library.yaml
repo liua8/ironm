@@ -392,3 +392,173 @@ plans:
         晚餐: {type: recipe, id: salmon-sweet-potato, servings: 1}
         加餐: {type: recipe, id: edamame-snack, servings: 1}
     refs: [K09, K36, K123, K125]
+
+  # ---- §191 补充（11-06）：增肌外卖、减脂带饭、维持期、瘦人增重、高蛋白素食 ----
+
+  - id: bulk-takeout
+    name: 增肌·外卖食堂
+    goals: [muscle]
+    summary: 天天吃外卖、食堂也能增肌：每顿点一份肉蛋、一碗饭、一份菜，练后那顿吃饱。
+    suits:
+      - 想增肌、没条件做饭的上班族和学生〔经验〕
+      - 每周练 3 次以上力量的成年人〔经验〕
+    not_for:
+      - 18 岁以下：按正常吃饱吃好，具体量先问医生〔经验〕
+      - 有肾病的：高蛋白不适用，先问医生〔K90〕
+      - 孕期、哺乳期、糖尿病在用药的：热量和蛋白质请医生或营养师定
+    energy: 按你的每日热量目标吃：增肌多吃的部分已经算在目标里（比维持多 10–20%〔K88〕），这里不再另加；外卖油多，体重每周涨超过体重的 0.5% 就少点一份主食〔K88〕〔K89〕。
+    macros:
+      protein: 每天 1.6–2.2 克/公斤体重〔K88〕，每顿都有一份肉、蛋、鱼或豆腐。
+      carbs: 每顿一碗饭或一份面〔经验〕；每天练 1 小时左右的 5–7 克/公斤〔K38〕。
+      fat: 外卖本来油就多，汤汁少浇、汤少喝〔经验〕。
+    points:
+      - 每顿看一眼有没有一份蛋白质：没有就加个蛋、加份肉〔K36〕。
+      - 两荤一素比一荤两素更容易吃够蛋白质〔经验〕。
+      - 练后两小时内吃一顿正餐〔K36〕。
+      - 外卖备注少油少盐、汤汁分开〔经验〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: takeout-jianbing-soymilk, servings: 1}
+        午餐: {type: recipe, id: canteen-two-meat-one-veg, servings: 1}
+        晚餐: {type: recipe, id: takeout-huangmen-chicken, servings: 1}
+        加餐: {type: recipe, id: protein-shake, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: takeout-congee-egg, servings: 1}
+        午餐: {type: recipe, id: takeout-beef-noodle-egg, servings: 1}
+        晚餐: {type: recipe, id: takeout-tomato-brisket, servings: 1}
+        加餐: {type: recipe, id: edamame-snack, servings: 1}
+    refs: [K36, K38, K88, K89, K90]
+
+  - id: cut-lunchbox
+    name: 减脂·上班带饭
+    goals: [fat_loss]
+    summary: 头天晚上做好第二天的饭盒：一份瘦肉或虾、一份粗粮、一大份蔬菜，热量好控制。
+    suits:
+      - 想减脂、上班能带饭的成年人〔经验〕
+      - 想把午饭热量控制住、少吃外卖的人
+    not_for:
+      - 孕期、哺乳期、18 岁以下：不做热量缺口，先问医生〔经验〕
+      - 有肾病的：高蛋白不适用，先问医生〔K90〕
+      - 糖尿病在用药、正在吃减重药的：热量和蛋白质请医生或营养师定
+    energy: 按你的每日热量目标吃：减脂的缺口已经算在目标里（每天缺口不超过约 500 千卡〔K87〕），这里不再另减；每周掉体重的 0.5–1% 正合适〔K37〕。
+    macros:
+      protein: 每天 1.4–2.0 克/公斤体重，往高的一端吃〔K09〕。
+      carbs: 饭盒里放红薯、荞麦面、糙米这类粗粮〔K17〕。
+      fat: 脂肪占热量的 20–30%〔K124〕，带饭的菜少油、不勾芡。
+    points:
+      - 一次做两三天的，冷藏放不超过两天〔经验〕。
+      - 蔬菜焯水装盒不容易发黄，绿叶菜当天炒〔经验〕。
+      - 每顿 20–40 克蛋白质〔K36〕。
+      - 体重看一周的平均〔K97〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: nodairy-sweetpotato-egg, servings: 1}
+        午餐: {type: recipe, id: lunchbox-chicken-sweetpotato, servings: 1}
+        晚餐: {type: recipe, id: lunchbox-shrimp-soba, servings: 1}
+        加餐: {type: recipe, id: greek-yogurt-bowl, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: soymilk-egg-toast, servings: 1}
+        午餐: {type: recipe, id: lunchbox-tuna-avocado-sandwich, servings: 1}
+        晚餐: {type: recipe, id: steamed-fish-meal, servings: 1}
+        加餐: {type: recipe, id: nodairy-egg-tofu-snack, servings: 1}
+    refs: [K09, K17, K36, K37, K87, K90, K97, K124]
+
+  - id: maintain-strength
+    name: 维持期·练力量
+    goals: [health, muscle]
+    summary: 体重不想变、照常练力量：吃够蛋白质，主食跟着训练量走，吃得均衡。
+    suits:
+      - 体重满意、想保持并照常练力量的成年人〔经验〕
+      - 减脂或增肌告一段落、想休整一阵的人
+    not_for:
+      - 18 岁以下：按正常吃饱吃好〔经验〕
+      - 有肾病的：高蛋白不适用，先问医生〔K90〕
+      - 孕期、哺乳期、糖尿病在用药的：热量和蛋白质请医生或营养师定
+    energy: 按你的每日热量目标吃（目标选"健康"时就是维持的量）；连续两三周体重的周平均往一个方向变超过 0.5 公斤，再小幅调〔K97〕〔经验〕。
+    macros:
+      protein: 每天 1.4–2.0 克/公斤体重〔K09〕。
+      carbs: 练的那天多吃一点主食，休息日少一点〔K38〕。
+      fat: 照膳食指南，油每天 25–30 克〔K17〕。
+    points:
+      - 每餐一份优质蛋白，20–40 克〔K36〕。
+      - 蔬菜每天不少于 300 克、水果 200–350 克〔K17〕。
+      - 体重看一周的平均，不看单天〔K97〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: oat-egg-breakfast, servings: 1}
+        午餐: {type: recipe, id: beef-broccoli, servings: 1}
+        晚餐: {type: recipe, id: maintain-salmon-rice, servings: 1}
+        加餐: {type: recipe, id: yogurt-banana-snack, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: avocado-egg-toast, servings: 1}
+        午餐: {type: recipe, id: lunchbox-chicken-pasta, servings: 1}
+        晚餐: {type: recipe, id: tomato-egg-tofu-rice, servings: 1}
+        加餐: {type: recipe, id: nuts-apple-snack, servings: 1}
+    refs: [K09, K17, K36, K38, K90, K97]
+
+  - id: gain-easy
+    name: 瘦人增重·好入口
+    goals: [muscle]
+    summary: 吃不胖、胃口小的人用：多选热量密度高、好入口的，奶昔和坚果补在两餐之间。
+    suits:
+      - 偏瘦、怎么吃都不长肉、想增重增肌的成年人〔经验〕
+      - 胃口小、一顿吃不了太多的人
+    not_for:
+      - 18 岁以下：按正常吃饱吃好，具体量先问医生〔经验〕
+      - 突然消瘦、吃了也一直掉体重的：先去医院查原因〔经验〕
+      - 有肾病的：高蛋白不适用，先问医生〔K90〕
+    energy: 按你的每日热量目标吃：增肌多吃的部分已经算在目标里（比维持多 10–20%〔K88〕），这里不再另加；每周体重涨 0.25–0.5% 正合适〔K88〕。
+    macros:
+      protein: 每天 1.6–2.2 克/公斤体重〔K88〕。
+      carbs: 主食吃足，不刻意少吃碳水〔K38〕。
+      fat: 坚果、花生酱、全脂奶这类热量高又好入口的放心吃〔经验〕。
+    points:
+      - 喝比吃容易：一杯奶昔就有几百千卡〔经验〕。
+      - 正餐吃不下就少量多餐，两餐之间加奶、蛋、坚果〔经验〕。
+      - 每 3–4 小时吃一次蛋白质〔K36〕。
+      - 涨得太快多长的主要是脂肪〔K89〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: nodairy-pb-banana-toast, servings: 1}
+        午餐: {type: recipe, id: lunchbox-chicken-fried-rice, servings: 1}
+        晚餐: {type: recipe, id: gain-dumplings-egg-soup, servings: 1}
+        加餐: {type: recipe, id: gain-shake, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: gain-yogurt-nut-bowl, servings: 1}
+        午餐: {type: recipe, id: takeout-tomato-brisket, servings: 1}
+        晚餐: {type: recipe, id: maintain-salmon-rice, servings: 1}
+        加餐: {type: recipe, id: gain-shake, servings: 1}
+    refs: [K36, K38, K88, K89, K90]
+
+  - id: veg-protein
+    name: 高蛋白素食
+    goals: [muscle, health]
+    summary: 吃蛋奶素也能吃够蛋白质：蛋、奶、豆腐、豆干、毛豆、杂豆轮着来，每顿都有。
+    suits:
+      - 吃蛋奶素、在练力量想增肌的成年人〔K120〕
+      - 想少吃肉、但不想蛋白质不够的人
+    not_for:
+      - 纯素（不吃蛋奶）的：这份有蛋奶，维生素 B12 要另外补，先问营养师〔K120〕
+      - 有肾病的：高蛋白不适用，先问医生〔K90〕
+      - 孕期、哺乳期、18 岁以下：营养素需要更多，先问医生或营养师〔K120〕
+    energy: 按你的每日热量目标吃，这里不另加减。
+    macros:
+      protein: 每天 1.6–2.0 克/公斤体重〔K09〕，蛋、奶、豆制品每顿都有。
+      carbs: 主食搭杂豆，蛋白质更足〔K17〕。
+      fat: 坚果每天一小把，用油照膳食指南〔K17〕。
+    points:
+      - 每顿 20–40 克蛋白质〔K36〕；一块豆腐、两个蛋、一杯奶都能凑。
+      - 豆制品换着吃，豆腐、豆干、毛豆、鹰嘴豆轮流〔经验〕。
+      - 合理搭配的素食营养充足，运动员也能吃〔K120〕。
+    days:
+      weekday:
+        早餐: {type: recipe, id: veg-protein-oat-bowl, servings: 1}
+        午餐: {type: recipe, id: veg-egg-tofu-fried-rice, servings: 1}
+        晚餐: {type: recipe, id: veg-lentil-tofu-curry, servings: 1}
+        加餐: {type: recipe, id: nodairy-edamame-nuts, servings: 1}
+      weekend:
+        早餐: {type: recipe, id: veg-blackbean-egg-wrap, servings: 1}
+        午餐: {type: recipe, id: veg-chickpea-edamame-bowl, servings: 1}
+        晚餐: {type: recipe, id: takeout-tomato-egg-rice, servings: 1}
+        加餐: {type: recipe, id: yogurt-banana-snack, servings: 1}
+    refs: [K09, K17, K36, K90, K120]

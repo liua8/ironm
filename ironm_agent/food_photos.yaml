@@ -224,6 +224,38 @@ queries:
   recipe:lowfat-milk-kiwi: kiwifruit milk
   recipe:egg-almond-snack: boiled egg almonds
   recipe:milk-egg-bread-snack: milk egg whole wheat bread
+  # §191 补充的食谱
+  recipe:takeout-huangmen-chicken: braised chicken rice
+  recipe:takeout-beef-noodle-egg: beef noodle soup egg
+  recipe:takeout-malatang: malatang
+  recipe:takeout-tomato-egg-rice: tomato egg stir fry with rice
+  recipe:canteen-two-meat-one-veg: chinese canteen meal tray
+  recipe:takeout-steamed-fish: steamed fish chinese
+  recipe:takeout-shrimp-greens: boiled shrimp
+  recipe:takeout-tomato-brisket: tomato beef brisket stew
+  recipe:takeout-chicken-salad-corn: chicken salad corn
+  recipe:takeout-jianbing-soymilk: jianbing
+  recipe:takeout-congee-egg: century egg pork congee
+  recipe:lunchbox-chicken-sweetpotato: chicken sweet potato broccoli meal prep
+  recipe:lunchbox-beef-tofu-rice: minced beef tofu rice
+  recipe:lunchbox-chicken-pasta: chicken pasta zucchini tomato
+  recipe:lunchbox-shrimp-soba: soba noodles shrimp
+  recipe:lunchbox-chicken-fried-rice: chicken fried rice
+  recipe:lunchbox-tuna-avocado-sandwich: tuna avocado sandwich
+  recipe:veg-egg-tofu-fried-rice: egg fried rice
+  recipe:veg-chickpea-edamame-bowl: chickpea quinoa bowl
+  recipe:veg-protein-oat-bowl: greek yogurt oats blueberries
+  recipe:veg-lentil-tofu-curry: lentil curry rice
+  recipe:veg-blackbean-egg-wrap: black bean egg wrap
+  recipe:nodairy-soy-oat-egg: oatmeal boiled egg apple
+  recipe:nodairy-sweetpotato-egg: sweet potato boiled egg
+  recipe:nodairy-pb-banana-toast: peanut butter banana toast
+  recipe:nodairy-edamame-nuts: edamame
+  recipe:nodairy-egg-tofu-snack: boiled egg cucumber
+  recipe:gain-shake: banana peanut butter smoothie
+  recipe:gain-yogurt-nut-bowl: yogurt nuts banana bowl
+  recipe:gain-dumplings-egg-soup: boiled dumplings
+  recipe:maintain-salmon-rice: salmon rice asparagus
   # 减脂餐
   preset:takeout-chicken-rice: "File:Lemongrass chicken rice bowl with kimchi.jpg"
   preset:takeout-beef-noodle: beef noodle soup bowl

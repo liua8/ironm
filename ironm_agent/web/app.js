@@ -2608,7 +2608,7 @@ function recipeEditSheet(x, reload) {
     h("div", { class: "qa-row" }, h("span", { class: "label" }, "一共几份"),
       h("button", { class: "icon-btn", type: "button", "aria-label": "少一份", onclick: () => { servings = Math.max(1, servings - 1); sv.textContent = String(servings); } }, "−"), sv,
       h("button", { class: "icon-btn", type: "button", "aria-label": "多一份", onclick: () => { servings = Math.min(10, servings + 1); sv.textContent = String(servings); } }, "+")),
-    h("div", { class: "pills", role: "group" }, ["减脂", "增肌", "早餐", "带饭"].map((tg) => h("button", { class: `pill${tags.has(tg) ? " on" : ""}`, type: "button", "aria-pressed": String(tags.has(tg)),
+    h("div", { class: "pills", role: "group" }, ["减脂", "增肌", "早餐", "带饭", "外卖"].map((tg) => h("button", { class: `pill${tags.has(tg) ? " on" : ""}`, type: "button", "aria-pressed": String(tags.has(tg)),
       onclick: (e) => { if (!tags.delete(tg)) tags.add(tg); e.currentTarget.classList.toggle("on"); e.currentTarget.setAttribute("aria-pressed", String(tags.has(tg))); } }, tg))),
     h("h3", { class: "pm-title" }, "原料（全部份数的量，生重）"), lines.el,
     h("label", { class: "pm-row" }, h("span", {}, h("b", {}, "油"), h("small", { class: "muted" }, "整锅用了多少克，一勺约 10 克")), oil),
